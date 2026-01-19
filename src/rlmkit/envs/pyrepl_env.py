@@ -7,6 +7,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from typing import Any, Dict, Optional
 
 from rlmkit.envs.sandbox import create_safe_globals
+from rlmkit.envs.timeout import create_timeout, TimeoutError as ExecTimeoutError
 
 
 class PyReplEnv:
@@ -102,17 +103,25 @@ class PyReplEnv:
         stdout_buffer = io.StringIO()
         stderr_buffer = io.StringIO()
         exception_msg: Optional[str] = None
-        timeout = False
+        timeout_occurred = False
         truncated = False
         
         try:
+            # Create timeout context
+            timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=True)
+            
             # Redirect stdout and stderr
             with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                # Execute code in persistent globals
-                exec(code, self.env_globals)
+                # Execute code with timeout
+                with timeout_ctx:
+                    exec(code, self.env_globals)
                 
+        except ExecTimeoutError as e:
+            # Timeout occurred
+            timeout_occurred = True
+            exception_msg = str(e)
         except Exception as e:
-            # Capture exception with traceback
+            # Other exception
             exception_msg = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
         
         # Get output
@@ -132,7 +141,7 @@ class PyReplEnv:
             'stdout': stdout,
             'stderr': stderr,
             'exception': exception_msg,
-            'timeout': timeout,
+            'timeout': timeout_occurred,
             'truncated': truncated,
         }
     
