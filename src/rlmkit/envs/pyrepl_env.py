@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from rlmkit.envs.sandbox import create_safe_globals
 from rlmkit.envs.timeout import create_timeout, TimeoutError as ExecTimeoutError
+from rlmkit.tools import peek, grep, chunk, select
 
 
 class PyReplEnv:
@@ -62,6 +63,12 @@ class PyReplEnv:
                 '__builtins__': __builtins__,
                 '__name__': '__rlm__',
             }
+        
+        # Add content navigation tools
+        self.env_globals['peek'] = peek
+        self.env_globals['grep'] = grep
+        self.env_globals['chunk'] = chunk
+        self.env_globals['select'] = select
         
     def set_content(self, content: str) -> None:
         """
@@ -155,6 +162,12 @@ class PyReplEnv:
         else:
             self.env_globals['__builtins__'] = __builtins__
             self.env_globals['__name__'] = '__rlm__'
+        
+        # Restore content navigation tools
+        self.env_globals['peek'] = peek
+        self.env_globals['grep'] = grep
+        self.env_globals['chunk'] = chunk
+        self.env_globals['select'] = select
         
         # Restore content if set
         if self._content is not None:
