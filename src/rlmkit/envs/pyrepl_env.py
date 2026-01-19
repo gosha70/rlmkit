@@ -80,6 +80,13 @@ class PyReplEnv:
         self._content = content
         self.env_globals['P'] = content
         
+        # Create wrapper functions that automatically pass content as first arg
+        # This allows LLM to call peek(0, 10) instead of peek(P, 0, 10)
+        self.env_globals['peek'] = lambda *args, **kwargs: peek(content, *args, **kwargs)
+        self.env_globals['grep'] = lambda *args, **kwargs: grep(content, *args, **kwargs)
+        self.env_globals['chunk'] = lambda *args, **kwargs: chunk(content, *args, **kwargs)
+        self.env_globals['select'] = lambda *args, **kwargs: select(content, *args, **kwargs)
+        
     def get_var(self, name: str) -> Any:
         """
         Get a variable value from the environment.
@@ -163,12 +170,18 @@ class PyReplEnv:
             self.env_globals['__builtins__'] = __builtins__
             self.env_globals['__name__'] = '__rlm__'
         
-        # Restore content navigation tools
-        self.env_globals['peek'] = peek
-        self.env_globals['grep'] = grep
-        self.env_globals['chunk'] = chunk
-        self.env_globals['select'] = select
-        
         # Restore content if set
         if self._content is not None:
-            self.env_globals['P'] = self._content
+            content = self._content  # Capture for lambda closure
+            self.env_globals['P'] = content
+            # Bind tools to content
+            self.env_globals['peek'] = lambda *args, **kwargs: peek(content, *args, **kwargs)
+            self.env_globals['grep'] = lambda *args, **kwargs: grep(content, *args, **kwargs)
+            self.env_globals['chunk'] = lambda *args, **kwargs: chunk(content, *args, **kwargs)
+            self.env_globals['select'] = lambda *args, **kwargs: select(content, *args, **kwargs)
+        else:
+            # No content set, use unbound tools
+            self.env_globals['peek'] = peek
+            self.env_globals['grep'] = grep
+            self.env_globals['chunk'] = chunk
+            self.env_globals['select'] = select

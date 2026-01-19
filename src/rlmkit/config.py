@@ -108,6 +108,7 @@ class ExecutionConfig:
     default_timeout: float = 5.0
     max_output_chars: int = 10000
     default_safe_mode: bool = False
+    max_steps: int = 16  # Maximum execution steps for RLM loop
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""

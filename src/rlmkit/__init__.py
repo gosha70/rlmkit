@@ -1,19 +1,45 @@
 """
-RLMKit: Recursive Language Model toolkit for managing large context through code generation.
+RLMKit: Recursive Language Model Toolkit
 
-This package provides tools for LLMs to explore and analyze large content by writing
-Python code, without exceeding context window limitations.
+A toolkit for building LLM-based systems that can handle arbitrarily large contexts
+through code generation and recursive exploration.
+
+Based on the RLM paper (arXiv:2512.24601).
 """
+
+from .core import (
+    RLM,
+    RLMResult,
+    LLMClient,
+    RLMError,
+    BudgetExceeded,
+    ExecutionError,
+    SecurityError,
+)
+from .config import RLMConfig, SecurityConfig, ExecutionConfig, MonitoringConfig
+from .llm import MockLLMClient
+from .prompts import format_system_prompt, get_default_system_prompt
 
 __version__ = "0.1.0"
 
-from rlmkit.core.errors import RLMError, BudgetExceeded, ExecutionError, ParseError, SecurityError
-
 __all__ = [
-    "__version__",
+    # Core RLM
+    "RLM",
+    "RLMResult",
+    "LLMClient",
+    # Configuration
+    "RLMConfig",
+    "SecurityConfig",
+    "ExecutionConfig",
+    "MonitoringConfig",
+    # Errors
     "RLMError",
     "BudgetExceeded",
     "ExecutionError",
-    "ParseError",
     "SecurityError",
+    # LLM Clients
+    "MockLLMClient",
+    # Prompts
+    "format_system_prompt",
+    "get_default_system_prompt",
 ]
