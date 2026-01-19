@@ -1,0 +1,214 @@
+# RLMKit Configuration Example
+# Copy this file to one of the following locations and customize:
+#   - ./rlmkit_config.yaml (project directory)
+#   - ~/.rlmkit/config.yaml (user home)
+#   - /etc/rlmkit/config.yaml (system-wide)
+# Or set RLMKIT_CONFIG_PATH environment variable
+
+# Security Configuration
+security:
+  # Modules that are always blocked (high security risk)
+  blocked_modules:
+    # System operations
+    - os
+    - sys
+    - subprocess
+    - socket
+    - socketserver
+    
+    # Network operations
+    - http
+    - urllib
+    - ftplib
+    - telnetlib
+    - smtplib
+    
+    # File system operations
+    - pathlib
+    - shutil
+    - tempfile
+    - glob
+    - fnmatch
+    
+    # Low-level system access
+    - pty
+    - tty
+    - pipes
+    - resource
+    - syslog
+    - ctypes
+    - cffi
+    - mmap
+    - signal
+    - fcntl
+    
+    # Serialization (security risk)
+    - pickle
+    - shelve
+    - dbm
+    - sqlite3
+    
+    # Import manipulation
+    - importlib
+    - pkgutil
+    - modulefinder
+    - runpy
+    - __builtin__
+    - __builtins__
+    - builtins
+  
+  # Modules that are allowed in safe mode
+  safe_modules:
+    # Data processing
+    - json
+    - re
+    - math
+    - datetime
+    - time
+    - calendar
+    - decimal
+    - fractions
+    - statistics
+    - random
+    
+    # String operations
+    - string
+    - textwrap
+    - unicodedata
+    
+    # Functional programming
+    - itertools
+    - functools
+    - operator
+    - collections
+    - heapq
+    - bisect
+    - array
+    - copy
+    - pprint
+    
+    # Type utilities
+    - enum
+    - dataclasses
+    - typing
+  
+  # Builtins that are blocked in safe mode
+  blocked_builtins:
+    - open
+    - input
+    - compile
+    - eval
+    - exec
+    - __import__
+    - breakpoint
+    - exit
+    - quit
+    - help
+  
+  # Builtins that are allowed in safe mode
+  safe_builtins:
+    # Basic functions
+    - abs
+    - all
+    - any
+    - ascii
+    - bin
+    - bool
+    - bytearray
+    - bytes
+    - callable
+    - chr
+    - classmethod
+    - complex
+    - delattr
+    - dict
+    - dir
+    - divmod
+    - enumerate
+    - filter
+    - float
+    - format
+    - frozenset
+    - getattr
+    - hasattr
+    - hash
+    - hex
+    - id
+    - int
+    - isinstance
+    - issubclass
+    - iter
+    - len
+    - list
+    - locals
+    - map
+    - max
+    - min
+    - next
+    - object
+    - oct
+    - ord
+    - pow
+    - print
+    - property
+    - range
+    - repr
+    - reversed
+    - round
+    - set
+    - setattr
+    - slice
+    - sorted
+    - staticmethod
+    - str
+    - sum
+    - super
+    - tuple
+    - type
+    - vars
+    - zip
+    
+    # Exceptions
+    - Exception
+    - ValueError
+    - TypeError
+    - KeyError
+    - IndexError
+    - AttributeError
+    - RuntimeError
+    - StopIteration
+    - AssertionError
+    
+    # Constants
+    - "True"
+    - "False"
+    - "None"
+    - NotImplemented
+    - Ellipsis
+    - __name__
+    - __doc__
+    - __package__
+    - __loader__
+    - __spec__
+
+# Execution Configuration
+execution:
+  # Default timeout for code execution (in seconds)
+  default_timeout: 5.0
+  
+  # Maximum characters in stdout/stderr output
+  max_output_chars: 10000
+  
+  # Default safe mode setting
+  default_safe_mode: false
+
+# Monitoring Configuration
+monitoring:
+  # Enable telemetry collection
+  enable_telemetry: false
+  
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  log_level: INFO
+  
+  # Export format for telemetry (json, csv, prometheus)
+  export_format: json

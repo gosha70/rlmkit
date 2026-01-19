@@ -2,46 +2,22 @@
 
 from typing import Any, Dict, Optional
 from rlmkit.core.errors import SecurityError
+from rlmkit.config import SecurityConfig
 
 
 class RestrictedBuiltins:
     """Provides restricted builtins for safe code execution."""
     
-    # Dangerous builtins to block
-    BLOCKED_BUILTINS = {
-        'open',
-        'input',
-        'compile',
-        'eval',
-        'exec',
-        '__import__',
-        'breakpoint',
-        'exit',
-        'quit',
-        'help',
-    }
+    def __init__(self, security_config: Optional[SecurityConfig] = None):
+        """
+        Initialize restricted builtins.
+        
+        Args:
+            security_config: Security configuration (uses default if None)
+        """
+        self.config = security_config or SecurityConfig()
     
-    # Safe builtins to allow
-    SAFE_BUILTINS = {
-        'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes',
-        'callable', 'chr', 'classmethod', 'complex', 'delattr', 'dict',
-        'dir', 'divmod', 'enumerate', 'filter', 'float', 'format',
-        'frozenset', 'getattr', 'hasattr', 'hash', 'hex', 'id', 'int',
-        'isinstance', 'issubclass', 'iter', 'len', 'list', 'locals',
-        'map', 'max', 'min', 'next', 'object', 'oct', 'ord', 'pow',
-        'print', 'property', 'range', 'repr', 'reversed', 'round',
-        'set', 'setattr', 'slice', 'sorted', 'staticmethod', 'str',
-        'sum', 'super', 'tuple', 'type', 'vars', 'zip',
-        # Exceptions
-        'Exception', 'ValueError', 'TypeError', 'KeyError', 'IndexError',
-        'AttributeError', 'RuntimeError', 'StopIteration', 'AssertionError',
-        # Other safe built-ins
-        'True', 'False', 'None', 'NotImplemented', 'Ellipsis',
-        '__name__', '__doc__', '__package__', '__loader__', '__spec__',
-    }
-    
-    @classmethod
-    def get_restricted_builtins(cls) -> Dict[str, Any]:
+    def get_restricted_builtins(self) -> Dict[str, Any]:
         """
         Get restricted builtins dict for safe execution.
         
@@ -51,7 +27,7 @@ class RestrictedBuiltins:
         import builtins
         
         safe_builtins = {}
-        for name in cls.SAFE_BUILTINS:
+        for name in self.config.safe_builtins:
             if hasattr(builtins, name):
                 safe_builtins[name] = getattr(builtins, name)
         
@@ -64,36 +40,24 @@ class RestrictedBuiltins:
 class SafeImporter:
     """Controls which modules can be imported."""
     
-    # Dangerous modules to always block
-    BLOCKED_MODULES = {
-        'os', 'sys', 'subprocess', 'socket', 'socketserver',
-        'http', 'urllib', 'ftplib', 'telnetlib', 'smtplib',
-        'pathlib', 'shutil', 'tempfile', 'glob', 'fnmatch',
-        'pty', 'tty', 'pipes', 'resource', 'syslog',
-        'ctypes', 'cffi', 'mmap', 'signal', 'fcntl',
-        'pickle', 'shelve', 'dbm', 'sqlite3',
-        'importlib', 'pkgutil', 'modulefinder', 'runpy',
-        '__builtin__', '__builtins__', 'builtins',
-    }
-    
-    # Safe modules (always allowed)
-    SAFE_MODULES = {
-        'json', 're', 'math', 'datetime', 'time', 'calendar',
-        'decimal', 'fractions', 'statistics', 'random',
-        'string', 'textwrap', 'unicodedata',
-        'itertools', 'functools', 'operator', 'collections',
-        'heapq', 'bisect', 'array', 'copy', 'pprint',
-        'enum', 'dataclasses', 'typing',
-    }
-    
-    def __init__(self, allowed_imports: Optional[list[str]] = None):
+    def __init__(
+        self,
+        security_config: Optional[SecurityConfig] = None,
+        allowed_imports: Optional[list[str]] = None
+    ):
         """
         Initialize safe importer.
         
         Args:
-            allowed_imports: Additional modules to allow (beyond SAFE_MODULES)
+            security_config: Security configuration (uses default if None)
+            allowed_imports: Additional modules to allow (beyond config)
         """
-        self.allowed_imports = set(self.SAFE_MODULES)
+        self.config = security_config or SecurityConfig()
+        
+        # Start with safe modules from config
+        self.allowed_imports = set(self.config.safe_modules)
+        
+        # Add any additional allowed imports
         if allowed_imports:
             self.allowed_imports.update(allowed_imports)
     
@@ -110,8 +74,8 @@ class SafeImporter:
         # Extract base module name (e.g., 'json.decoder' -> 'json')
         base_module = module_name.split('.')[0]
         
-        # Check if explicitly blocked
-        if base_module in self.BLOCKED_MODULES:
+        # Check if explicitly blocked in config
+        if base_module in self.config.blocked_modules:
             return False
         
         # Check if in allowed list
@@ -133,9 +97,10 @@ class SafeImporter:
             SecurityError: If import is not allowed
         """
         if not self.check_import(name):
+            blocked_list = ', '.join(sorted(self.config.blocked_modules)[:10])
             raise SecurityError(
                 f"Import of module '{name}' is not allowed in safe mode. "
-                f"Blocked modules: {', '.join(sorted(self.BLOCKED_MODULES)[:10])}..."
+                f"Blocked modules: {blocked_list}..."
             )
         
         # Use the real __import__
@@ -145,7 +110,8 @@ class SafeImporter:
 
 def create_safe_globals(
     allowed_imports: Optional[list[str]] = None,
-    additional_globals: Optional[Dict[str, Any]] = None
+    additional_globals: Optional[Dict[str, Any]] = None,
+    security_config: Optional[SecurityConfig] = None
 ) -> Dict[str, Any]:
     """
     Create safe globals dictionary for code execution.
@@ -153,15 +119,17 @@ def create_safe_globals(
     Args:
         allowed_imports: List of additional modules to allow importing
         additional_globals: Additional global variables to include
+        security_config: Security configuration (uses default if None)
         
     Returns:
         Safe globals dictionary with restricted builtins and safe __import__
     """
-    # Get restricted builtins
-    safe_builtins = RestrictedBuiltins.get_restricted_builtins()
+    # Get restricted builtins using config
+    builtins_provider = RestrictedBuiltins(security_config)
+    safe_builtins = builtins_provider.get_restricted_builtins()
     
-    # Create safe importer
-    importer = SafeImporter(allowed_imports)
+    # Create safe importer with same config
+    importer = SafeImporter(security_config, allowed_imports)
     
     # Add __import__ to the builtins dict (where Python looks for it)
     safe_builtins['__import__'] = importer.safe_import
