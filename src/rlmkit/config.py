@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from dataclasses import dataclass, field
 import importlib.resources
+from .llm.config import LLMConfig
 
 
 @dataclass
@@ -172,6 +173,7 @@ class RLMConfig:
         security: Optional[SecurityConfig] = None,
         execution: Optional[ExecutionConfig] = None,
         monitoring: Optional[MonitoringConfig] = None,
+        llm: Optional[LLMConfig] = None,
     ):
         """
         Initialize RLMKit configuration.
@@ -180,10 +182,12 @@ class RLMConfig:
             security: Security configuration
             execution: Execution configuration
             monitoring: Monitoring configuration
+            llm: LLM provider configuration
         """
         self.security = security or SecurityConfig()
         self.execution = execution or ExecutionConfig()
         self.monitoring = monitoring or MonitoringConfig()
+        self.llm = llm or LLMConfig()
     
     @classmethod
     def load(cls, config_path: Optional[str] = None) -> 'RLMConfig':
@@ -248,8 +252,14 @@ class RLMConfig:
         security = SecurityConfig.from_dict(data.get('security', {}))
         execution = ExecutionConfig.from_dict(data.get('execution', {}))
         monitoring = MonitoringConfig.from_dict(data.get('monitoring', {}))
+        llm = LLMConfig.from_dict(data.get('llm', {}))
         
-        return cls(security=security, execution=execution, monitoring=monitoring)
+        return cls(
+            security=security,
+            execution=execution,
+            monitoring=monitoring,
+            llm=llm
+        )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
@@ -257,6 +267,7 @@ class RLMConfig:
             'security': self.security.to_dict(),
             'execution': self.execution.to_dict(),
             'monitoring': self.monitoring.to_dict(),
+            'llm': self.llm.to_dict(),
         }
     
     def save(self, filepath: str) -> None:

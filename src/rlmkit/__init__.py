@@ -22,8 +22,20 @@ from .core import (
     estimate_tokens,
 )
 from .config import RLMConfig, SecurityConfig, ExecutionConfig, MonitoringConfig
-from .llm import MockLLMClient
+from .llm import MockLLMClient, BaseLLMProvider, LLMResponse
+from .llm.config import LLMConfig, LLMProviderConfig, ModelPricing
 from .prompts import format_system_prompt, get_default_system_prompt
+
+# Optional external LLM providers
+try:
+    from .llm import OpenAIClient
+except ImportError:
+    OpenAIClient = None
+
+try:
+    from .llm import ClaudeClient
+except ImportError:
+    ClaudeClient = None
 
 __version__ = "0.1.0"
 
@@ -37,6 +49,9 @@ __all__ = [
     "SecurityConfig",
     "ExecutionConfig",
     "MonitoringConfig",
+    "LLMConfig",
+    "LLMProviderConfig",
+    "ModelPricing",
     # Errors
     "RLMError",
     "BudgetExceeded",
@@ -50,7 +65,15 @@ __all__ = [
     "estimate_tokens",
     # LLM Clients
     "MockLLMClient",
+    "BaseLLMProvider",
+    "LLMResponse",
     # Prompts
     "format_system_prompt",
     "get_default_system_prompt",
 ]
+
+# Add optional providers to __all__ if available
+if OpenAIClient is not None:
+    __all__.append("OpenAIClient")
+if ClaudeClient is not None:
+    __all__.append("ClaudeClient")
