@@ -30,55 +30,111 @@ RLMKit is an intelligent context middleware that acts as a middleman between use
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install in editable mode with dev dependencies
+# Basic installation
 pip install -e ".[dev]"
+
+# With UI support (Streamlit, charts, file processing)
+pip install -e ".[ui]"
+
+# Everything (recommended for development)
+pip install -e ".[all]"
 ```
 
 ### Basic Usage
 
 ```python
-from rlmkit.envs import PyReplEnv
+from rlmkit import RLM, RLMConfig
+from rlmkit.llm import MockLLMClient
 
-# Create execution environment
-env = PyReplEnv()
+# Create LLM client (use OpenAI, Anthropic, etc. in production)
+client = MockLLMClient([
+    "```python\nprint(len(P))\n```",
+    "FINAL: The document is about..."
+])
 
-# Set large content (could be 100K+ tokens)
-env.set_content("Your large document content here...")
+# Create RLM instance
+rlm = RLM(client=client, config=RLMConfig())
 
-# Execute code to explore content
-result = env.execute("""
-# P is the large content
-print(f"Content length: {len(P)}")
-print(f"First 100 chars: {P[:100]}")
-""")
+# Run on large content
+result = rlm.run(
+    prompt="Your large document content here...",
+    query="What is this document about?"
+)
 
-print(result['stdout'])
-# Output:
-# Content length: ...
-# First 100 chars: ...
+print(result.answer)
+# Output: The document is about...
 ```
 
-## 📦 Current Status: Week 1 - Execution Foundation
+### 🆕 NEW: RLM vs Direct Mode Comparison
 
-### ✅ Completed (Vertical Slice 1.1 & 1.2)
+```python
+from rlmkit import RLM, RLMConfig
+from rlmkit.llm import get_llm_client
+
+# Create LLM client
+client = get_llm_client(provider="openai", model="gpt-4")
+
+# Create RLM instance
+rlm = RLM(client=client, config=RLMConfig())
+
+# Compare RLM vs Direct mode
+result = rlm.run_comparison(
+    prompt="Large document...",
+    query="Summarize this"
+)
+
+# View comparison metrics
+summary = result.get_summary()
+print(f"Token Savings: {summary['token_savings']['savings_percent']:.1f}%")
+print(f"Recommendation: {summary['recommendation']}")
+```
+
+### 🎨 Interactive UI
+
+Launch the Streamlit web interface for interactive testing:
+
+```bash
+# Install UI dependencies
+pip install -e ".[ui]"
+
+# Launch the app
+streamlit run src/rlmkit/ui/app.py
+```
+
+Features:
+- 📁 Upload PDF, DOCX, TXT, and other files
+- 🔄 Toggle between RLM and Direct modes
+- 📊 Compare performance metrics with interactive charts
+- 💾 Export results as JSON or Markdown
+- 📈 Visualize token usage, costs, and execution time
+
+## 📦 Current Status: Week 6 - Polish & Release! ✨
+
+### ✅ Completed Features
+
+#### Core Functionality (Weeks 1-5)
 - **PyReplEnv**: Python REPL-like execution environment
 - **Code Execution**: Run Python code with stdout/stderr capture
 - **Exception Handling**: Safe exception capture and reporting
 - **Persistent State**: Variables persist across executions
 - **Content Access**: Large content available via `P` variable
-- **Output Limits**: Automatic truncation of huge outputs
-- **Test Coverage**: 96% with 15 passing tests
+- **Safety Layer**: Sandbox restrictions for secure execution
+- **Execution Limits**: Timeout mechanism
+- **Content Tools**: peek, grep, chunk, select for navigation
+- **Controller Loop**: LLM-driven exploration
+- **Recursion**: subcall support for nested queries
+- **Provider Integration**: OpenAI, Anthropic, Ollama, LM Studio, vLLM
+- **Budget Tracking**: Token usage, costs, and limits
 
-### 🚧 In Progress (Week 1)
-- **Safety Layer**: Sandbox restrictions (Day 3-4)
-- **Execution Limits**: Timeout mechanism (Day 5)
-
-### 📅 Upcoming (Weeks 2-6)
-- **Week 2**: Content navigation tools (peek, grep, chunk, select)
-- **Week 3**: Controller loop (LLM-driven exploration)
-- **Week 4**: Recursion via subcall
-- **Week 5**: Provider integration (local LLMs)
-- **Week 6**: Polish, examples, documentation
+#### New in Week 6: Polish & Release Features
+- **🔄 RLM Toggle**: Easily switch between RLM and Direct mode
+- **📊 Comparison Mode**: Run both modes and compare metrics side-by-side
+- **📈 Performance Metrics**: Track tokens, cost, time, and efficiency
+- **🎨 Interactive UI**: Streamlit web interface for testing
+- **📁 File Processing**: Support for PDF, DOCX, TXT, MD, JSON, and code files
+- **📉 Visualizations**: Interactive charts comparing RLM vs Direct mode
+- **💾 Export Results**: JSON and Markdown report generation
+- **Test Coverage**: 96% with comprehensive test suite
 
 ## 🧪 Running Tests
 

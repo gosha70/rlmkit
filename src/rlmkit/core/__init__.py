@@ -9,6 +9,10 @@ from .budget import (
     CostTracker,
     estimate_tokens,
 )
+from .comparison import (
+    ComparisonResult,
+    ExecutionMetrics,
+)
 from .parsing import (
     ParsedResponse,
     parse_response,
@@ -35,6 +39,9 @@ __all__ = [
     "TokenUsage",
     "CostTracker",
     "estimate_tokens",
+    # Comparison
+    "ComparisonResult",
+    "ExecutionMetrics",
     # Parsing
     "ParsedResponse",
     "parse_response",

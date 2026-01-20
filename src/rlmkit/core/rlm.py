@@ -11,9 +11,11 @@ controller loop that:
 
 from dataclasses import dataclass
 from typing import Optional, Protocol, List, Dict, Any
+import time
 from .parsing import parse_response, format_result_for_llm, ParsedResponse
 from .errors import BudgetExceeded
-from .budget import BudgetTracker, BudgetLimits, CostTracker
+from .budget import BudgetTracker, BudgetLimits, CostTracker, TokenUsage, estimate_tokens
+from .comparison import ExecutionMetrics, ComparisonResult
 from ..envs.pyrepl_env import PyReplEnv
 from ..config import RLMConfig
 from ..prompts import format_system_prompt
@@ -280,3 +282,172 @@ class RLM:
             System prompt string
         """
         return format_system_prompt(prompt_length=prompt_length)
+    
+    def run_direct(
+        self,
+        prompt: str,
+        query: str,
+        system_prompt: Optional[str] = None
+    ) -> RLMResult:
+        """
+        Run in direct mode (no RLM exploration, just send full prompt to LLM).
+        
+        This mode sends the entire prompt and query to the LLM in a single request,
+        bypassing the RLM exploration loop. Useful for comparison and baseline testing.
+        
+        Args:
+            prompt: Large content to analyze
+            query: Question to answer about the prompt
+            system_prompt: Optional custom system prompt
+            
+        Returns:
+            RLMResult with answer and metrics
+        """
+        start_time = time.time()
+        
+        # Build message for direct query
+        messages = []
+        
+        if system_prompt is None:
+            system_prompt = "You are a helpful assistant. Answer the user's question based on the provided content."
+        
+        messages.append({
+            "role": "system",
+            "content": system_prompt
+        })
+        
+        # Combine prompt and query
+        combined_content = f"Content:\n{prompt}\n\nQuestion: {query}"
+        
+        messages.append({
+            "role": "user",
+            "content": combined_content
+        })
+        
+        try:
+            # Get LLM response
+            response = self.client.complete(messages)
+            
+            elapsed_time = time.time() - start_time
+            
+            return RLMResult(
+                answer=response,
+                steps=0,  # Direct mode = 0 steps
+                trace=[{
+                    "step": 0,
+                    "role": "assistant",
+                    "content": response,
+                    "mode": "direct"
+                }],
+                success=True
+            )
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            return RLMResult(
+                answer="",
+                steps=0,
+                trace=[],
+                success=False,
+                error=str(e)
+            )
+    
+    def run_comparison(
+        self,
+        prompt: str,
+        query: str,
+        system_prompt: Optional[str] = None
+    ) -> ComparisonResult:
+        """
+        Run both RLM and Direct modes and compare results.
+        
+        This method executes the same query using both RLM exploration mode
+        and direct mode, tracking metrics for comparison. Useful for demonstrating
+        the value of RLM and understanding when it helps.
+        
+        Args:
+            prompt: Large content to analyze
+            query: Question to answer about the prompt
+            system_prompt: Optional custom system prompt (used for RLM mode)
+            
+        Returns:
+            ComparisonResult with metrics from both modes
+        """
+        comparison = ComparisonResult()
+        
+        # Run RLM mode
+        if self.config.execution.enable_rlm:
+            rlm_start = time.time()
+            try:
+                rlm_result = self.run(prompt, query, system_prompt)
+                rlm_elapsed = time.time() - rlm_start
+                
+                # Calculate token usage for RLM mode
+                rlm_tokens = TokenUsage()
+                for trace_item in rlm_result.trace:
+                    if trace_item.get('role') == 'assistant':
+                        rlm_tokens.add_output(estimate_tokens(trace_item['content']))
+                    elif trace_item.get('role') == 'execution':
+                        # Count execution results as input to next step
+                        rlm_tokens.add_input(estimate_tokens(trace_item['content']))
+                
+                # Add initial prompt
+                rlm_tokens.add_input(estimate_tokens(prompt + query))
+                
+                comparison.rlm_metrics = ExecutionMetrics(
+                    mode="rlm",
+                    answer=rlm_result.answer,
+                    steps=rlm_result.steps,
+                    tokens=rlm_tokens,
+                    elapsed_time=rlm_elapsed,
+                    success=rlm_result.success,
+                    error=rlm_result.error,
+                    trace=rlm_result.trace
+                )
+            except Exception as e:
+                rlm_elapsed = time.time() - rlm_start
+                comparison.rlm_metrics = ExecutionMetrics(
+                    mode="rlm",
+                    answer="",
+                    steps=0,
+                    tokens=TokenUsage(),
+                    elapsed_time=rlm_elapsed,
+                    success=False,
+                    error=str(e),
+                    trace=[]
+                )
+        
+        # Run Direct mode
+        direct_start = time.time()
+        try:
+            direct_result = self.run_direct(prompt, query)
+            direct_elapsed = time.time() - direct_start
+            
+            # Calculate token usage for Direct mode
+            direct_tokens = TokenUsage()
+            direct_tokens.add_input(estimate_tokens(prompt + query))
+            direct_tokens.add_output(estimate_tokens(direct_result.answer))
+            
+            comparison.direct_metrics = ExecutionMetrics(
+                mode="direct",
+                answer=direct_result.answer,
+                steps=0,
+                tokens=direct_tokens,
+                elapsed_time=direct_elapsed,
+                success=direct_result.success,
+                error=direct_result.error,
+                trace=direct_result.trace
+            )
+        except Exception as e:
+            direct_elapsed = time.time() - direct_start
+            comparison.direct_metrics = ExecutionMetrics(
+                mode="direct",
+                answer="",
+                steps=0,
+                tokens=TokenUsage(),
+                elapsed_time=direct_elapsed,
+                success=False,
+                error=str(e),
+                trace=[]
+            )
+        
+        return comparison
