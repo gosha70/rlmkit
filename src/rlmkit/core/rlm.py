@@ -13,9 +13,11 @@ from dataclasses import dataclass
 from typing import Optional, Protocol, List, Dict, Any
 from .parsing import parse_response, format_result_for_llm, ParsedResponse
 from .errors import BudgetExceeded
+from .budget import BudgetTracker, BudgetLimits, CostTracker
 from ..envs.pyrepl_env import PyReplEnv
 from ..config import RLMConfig
 from ..prompts import format_system_prompt
+from ..tools.recursion import create_subcall
 
 
 class LLMClient(Protocol):
@@ -80,7 +82,8 @@ class RLM:
     def __init__(
         self,
         client: LLMClient,
-        config: Optional[RLMConfig] = None
+        config: Optional[RLMConfig] = None,
+        budget_tracker: Optional[BudgetTracker] = None,
     ):
         """
         Initialize RLM controller.
@@ -88,10 +91,12 @@ class RLM:
         Args:
             client: LLM client implementing LLMClient protocol
             config: Configuration for execution limits and security
+            budget_tracker: Optional budget tracker (created if not provided)
         """
         self.client = client
         self.config = config or RLMConfig()
         self.env: Optional[PyReplEnv] = None
+        self._budget_tracker = budget_tracker  # For recursion tracking
         
     def run(
         self,
@@ -129,6 +134,10 @@ class RLM:
             max_stdout_chars=self.config.execution.max_output_chars,
         )
         self.env.set_content(prompt)
+        
+        # Bind subcall function to REPL environment for recursion support
+        subcall_func = create_subcall(self)
+        self.env.env_globals['subcall'] = subcall_func
         
         # Build message history
         messages = []
