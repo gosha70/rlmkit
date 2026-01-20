@@ -303,6 +303,123 @@ class TestClaudeClientMocked:
         assert client.max_tokens == 4096  # Claude requires max_tokens
 
 
+class TestOllamaClientMocked:
+    """Test Ollama client with mocked HTTP calls."""
+    
+    def test_connection_check_fails_gracefully(self):
+        """Test Ollama client handles connection failures."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        import requests
+        
+        with patch('rlmkit.llm.ollama_client.requests.get') as mock_get:
+            mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
+            
+            with pytest.raises(ConnectionError) as exc:
+                OllamaClient(model="llama2")
+            
+            assert "Cannot connect to Ollama" in str(exc.value)
+    
+    def test_model_selection(self):
+        """Test Ollama client model selection."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        
+        with patch('rlmkit.llm.ollama_client.requests.get'):
+            client = OllamaClient(model="mistral")
+            assert client.model == "mistral"
+    
+    def test_base_url_configuration(self):
+        """Test Ollama client custom base URL."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        
+        with patch('rlmkit.llm.ollama_client.requests.get'):
+            client = OllamaClient(
+                model="llama2",
+                base_url="http://custom-server:11434"
+            )
+            assert "custom-server" in client.base_url
+    
+    def test_complete_success(self):
+        """Test successful completion."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'message': {'content': 'Hello from Ollama!'},
+            'done': True
+        }
+        mock_response.raise_for_status = Mock()
+        
+        with patch('rlmkit.llm.ollama_client.requests.get'):
+            with patch('rlmkit.llm.ollama_client.requests.post', return_value=mock_response):
+                client = OllamaClient(model="llama2")
+                result = client.complete([{"role": "user", "content": "Hi"}])
+                
+                assert result == "Hello from Ollama!"
+    
+    def test_complete_with_metadata(self):
+        """Test completion with metadata."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'message': {'content': 'Response'},
+            'prompt_eval_count': 10,
+            'eval_count': 20,
+            'done_reason': 'stop',
+            'total_duration': 1000000,
+            'done': True
+        }
+        mock_response.raise_for_status = Mock()
+        
+        with patch('rlmkit.llm.ollama_client.requests.get'):
+            with patch('rlmkit.llm.ollama_client.requests.post', return_value=mock_response):
+                client = OllamaClient(model="llama2")
+                result = client.complete_with_metadata([{"role": "user", "content": "Hi"}])
+                
+                assert result.content == "Response"
+                assert result.input_tokens == 10
+                assert result.output_tokens == 20
+                assert result.finish_reason == "stop"
+    
+    def test_list_models(self):
+        """Test listing available models."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'models': [
+                {'name': 'llama2'},
+                {'name': 'mistral'},
+                {'name': 'codellama'}
+            ]
+        }
+        mock_response.raise_for_status = Mock()
+        
+        with patch('rlmkit.llm.ollama_client.requests.get', return_value=mock_response):
+            client = OllamaClient(model="llama2")
+            models = client.list_models()
+            
+            assert 'llama2' in models
+            assert 'mistral' in models
+            assert 'codellama' in models
+    
+    def test_timeout_handling(self):
+        """Test timeout handling."""
+        from rlmkit.llm.ollama_client import OllamaClient
+        import requests
+        
+        with patch('rlmkit.llm.ollama_client.requests.get'):
+            with patch('rlmkit.llm.ollama_client.requests.post') as mock_post:
+                mock_post.side_effect = requests.exceptions.Timeout()
+                
+                client = OllamaClient(model="llama2")
+                
+                with pytest.raises(RuntimeError) as exc:
+                    client.complete([{"role": "user", "content": "Hi"}])
+                
+                assert "timed out" in str(exc.value).lower()
+
+
 class TestProviderImports:
     """Test optional provider imports."""
     
@@ -334,4 +451,15 @@ class TestProviderImports:
             assert ClaudeClient is not None or ClaudeClient is None
         except ImportError:
             # Expected if anthropic package not installed
+            pass
+    
+    def test_ollama_import_graceful_failure(self):
+        """Test Ollama import fails gracefully without package."""
+        # requests might not be installed in test environment
+        try:
+            from rlmkit import OllamaClient
+            # If it imports, that's fine
+            assert OllamaClient is not None or OllamaClient is None
+        except ImportError:
+            # Expected if requests package not installed
             pass

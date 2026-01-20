@@ -23,3 +23,10 @@ try:
     __all__.append("ClaudeClient")
 except ImportError:
     ClaudeClient = None
+
+# Try to import Ollama client
+try:
+    from .ollama_client import OllamaClient
+    __all__.append("OllamaClient")
+except ImportError:
+    OllamaClient = None

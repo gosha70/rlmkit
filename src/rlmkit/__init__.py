@@ -37,6 +37,11 @@ try:
 except ImportError:
     ClaudeClient = None
 
+try:
+    from .llm import OllamaClient
+except ImportError:
+    OllamaClient = None
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -77,3 +82,5 @@ if OpenAIClient is not None:
     __all__.append("OpenAIClient")
 if ClaudeClient is not None:
     __all__.append("ClaudeClient")
+if OllamaClient is not None:
+    __all__.append("OllamaClient")
