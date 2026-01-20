@@ -15,6 +15,11 @@ from .core import (
     BudgetExceeded,
     ExecutionError,
     SecurityError,
+    BudgetTracker,
+    BudgetLimits,
+    TokenUsage,
+    CostTracker,
+    estimate_tokens,
 )
 from .config import RLMConfig, SecurityConfig, ExecutionConfig, MonitoringConfig
 from .llm import MockLLMClient
@@ -37,6 +42,12 @@ __all__ = [
     "BudgetExceeded",
     "ExecutionError",
     "SecurityError",
+    # Budget Tracking
+    "BudgetTracker",
+    "BudgetLimits",
+    "TokenUsage",
+    "CostTracker",
+    "estimate_tokens",
     # LLM Clients
     "MockLLMClient",
     # Prompts

@@ -2,6 +2,13 @@
 
 from .rlm import RLM, RLMResult, LLMClient
 from .errors import RLMError, BudgetExceeded, ExecutionError, SecurityError
+from .budget import (
+    BudgetTracker,
+    BudgetLimits,
+    TokenUsage,
+    CostTracker,
+    estimate_tokens,
+)
 from .parsing import (
     ParsedResponse,
     parse_response,
@@ -22,6 +29,12 @@ __all__ = [
     "BudgetExceeded",
     "ExecutionError",
     "SecurityError",
+    # Budget tracking
+    "BudgetTracker",
+    "BudgetLimits",
+    "TokenUsage",
+    "CostTracker",
+    "estimate_tokens",
     # Parsing
     "ParsedResponse",
     "parse_response",
