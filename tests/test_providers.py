@@ -420,6 +420,86 @@ class TestOllamaClientMocked:
                 assert "timed out" in str(exc.value).lower()
 
 
+class TestLMStudioClient:
+    """Test LM Studio client (OpenAI-compatible)."""
+    
+    @pytest.fixture
+    def mock_openai(self):
+        """Mock openai module."""
+        with patch.dict('sys.modules', {'openai': MagicMock()}):
+            yield
+    
+    def test_default_configuration(self, mock_openai):
+        """Test LM Studio client default configuration."""
+        from rlmkit.llm.lmstudio_client import LMStudioClient
+        
+        client = LMStudioClient(model="local-model")
+        
+        assert client.model == "local-model"
+        assert "localhost:1234" in client.base_url
+        assert client.api_key == "lm-studio"
+    
+    def test_custom_base_url(self, mock_openai):
+        """Test LM Studio client with custom base URL."""
+        from rlmkit.llm.lmstudio_client import LMStudioClient
+        
+        client = LMStudioClient(
+            model="llama-2",
+            base_url="http://custom-host:5000/v1"
+        )
+        
+        assert "custom-host:5000" in client.base_url
+    
+    def test_zero_cost(self, mock_openai):
+        """Test LM Studio has zero cost (local)."""
+        from rlmkit.llm.lmstudio_client import LMStudioClient
+        
+        client = LMStudioClient(model="local-model")
+        cost = client.calculate_cost(1000, 500)
+        
+        assert cost == 0.0
+
+
+class TestvLLMClient:
+    """Test vLLM client (OpenAI-compatible)."""
+    
+    @pytest.fixture
+    def mock_openai(self):
+        """Mock openai module."""
+        with patch.dict('sys.modules', {'openai': MagicMock()}):
+            yield
+    
+    def test_default_configuration(self, mock_openai):
+        """Test vLLM client default configuration."""
+        from rlmkit.llm.vllm_client import vLLMClient
+        
+        client = vLLMClient(model="meta-llama/Llama-2-7b-hf")
+        
+        assert client.model == "meta-llama/Llama-2-7b-hf"
+        assert "localhost:8000" in client.base_url
+        assert client.api_key == "EMPTY"
+    
+    def test_custom_base_url(self, mock_openai):
+        """Test vLLM client with custom base URL."""
+        from rlmkit.llm.vllm_client import vLLMClient
+        
+        client = vLLMClient(
+            model="mistralai/Mistral-7B-v0.1",
+            base_url="http://gpu-server:9000/v1"
+        )
+        
+        assert "gpu-server:9000" in client.base_url
+    
+    def test_zero_cost_by_default(self, mock_openai):
+        """Test vLLM has zero cost by default (self-hosted)."""
+        from rlmkit.llm.vllm_client import vLLMClient
+        
+        client = vLLMClient(model="meta-llama/Llama-2-7b-hf")
+        cost = client.calculate_cost(1000, 500)
+        
+        assert cost == 0.0
+
+
 class TestProviderImports:
     """Test optional provider imports."""
     

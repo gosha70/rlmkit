@@ -30,3 +30,17 @@ try:
     __all__.append("OllamaClient")
 except ImportError:
     OllamaClient = None
+
+# Try to import LM Studio client
+try:
+    from .lmstudio_client import LMStudioClient
+    __all__.append("LMStudioClient")
+except ImportError:
+    LMStudioClient = None
+
+# Try to import vLLM client
+try:
+    from .vllm_client import vLLMClient
+    __all__.append("vLLMClient")
+except ImportError:
+    vLLMClient = None

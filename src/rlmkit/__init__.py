@@ -42,6 +42,16 @@ try:
 except ImportError:
     OllamaClient = None
 
+try:
+    from .llm import LMStudioClient
+except ImportError:
+    LMStudioClient = None
+
+try:
+    from .llm import vLLMClient
+except ImportError:
+    vLLMClient = None
+
 __version__ = "0.1.0"
 
 __all__ = [
@@ -84,3 +94,7 @@ if ClaudeClient is not None:
     __all__.append("ClaudeClient")
 if OllamaClient is not None:
     __all__.append("OllamaClient")
+if LMStudioClient is not None:
+    __all__.append("LMStudioClient")
+if vLLMClient is not None:
+    __all__.append("vLLMClient")
