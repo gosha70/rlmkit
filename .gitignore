@@ -6,3 +6,7 @@ dist/
 build/
 .eggs/
 *.egg-info/
+
+# Internal documentation - not for public repos
+doc_internal/
+DOC_INTERNAL/
