@@ -159,6 +159,79 @@ class TestMetricsCollector:
         )
         assert "custom" in collector.provider_pricing
         assert "custom-model" in collector.provider_pricing["custom"]
+    
+    def test_calculate_cost_openai_gpt4(self):
+        """Test cost calculation for OpenAI GPT-4."""
+        collector = MetricsCollector()
+        # GPT-4: input $0.03/1k, output $0.06/1k
+        # 1000 input tokens = $0.03
+        # 500 output tokens = $0.03
+        # Total = $0.06
+        cost = collector._calculate_cost(1000, 500, "openai", "gpt-4")
+        assert abs(cost - 0.06) < 0.0001
+    
+    def test_calculate_cost_anthropic_haiku(self):
+        """Test cost calculation for Anthropic Claude 3 Haiku."""
+        collector = MetricsCollector()
+        # Claude 3 Haiku: input $0.00025/1k, output $0.00125/1k
+        # 1000 input tokens = $0.00025
+        # 1000 output tokens = $0.00125
+        # Total = $0.0015
+        cost = collector._calculate_cost(1000, 1000, "anthropic", "claude-3-haiku")
+        assert abs(cost - 0.0015) < 0.0001
+    
+    def test_calculate_cost_unknown_provider(self):
+        """Test cost calculation with unknown provider."""
+        collector = MetricsCollector()
+        cost = collector._calculate_cost(1000, 500, "unknown-provider", "model")
+        assert cost == 0.0
+    
+    def test_calculate_cost_unknown_model(self):
+        """Test cost calculation with unknown model."""
+        collector = MetricsCollector()
+        cost = collector._calculate_cost(1000, 500, "openai", "unknown-model")
+        assert cost == 0.0
+    
+    def test_cost_breakdown_openai_gpt4(self):
+        """Test cost breakdown for OpenAI GPT-4."""
+        collector = MetricsCollector()
+        # GPT-4: input $0.03/1k, output $0.06/1k
+        # 1000 input tokens = $0.03
+        # 500 output tokens = $0.03
+        breakdown = collector._cost_breakdown(1000, 500, "openai", "gpt-4")
+        assert abs(breakdown["input"] - 0.03) < 0.0001
+        assert abs(breakdown["output"] - 0.03) < 0.0001
+    
+    def test_cost_breakdown_structure(self):
+        """Test cost breakdown returns correct structure."""
+        collector = MetricsCollector()
+        breakdown = collector._cost_breakdown(1000, 500, "openai", "gpt-4")
+        assert isinstance(breakdown, dict)
+        assert "input" in breakdown
+        assert "output" in breakdown
+        assert isinstance(breakdown["input"], float)
+        assert isinstance(breakdown["output"], float)
+    
+    def test_cost_breakdown_unknown_provider(self):
+        """Test cost breakdown with unknown provider."""
+        collector = MetricsCollector()
+        breakdown = collector._cost_breakdown(1000, 500, "unknown", "model")
+        assert breakdown["input"] == 0.0
+        assert breakdown["output"] == 0.0
+    
+    def test_cost_calculation_consistency(self):
+        """Test that _calculate_cost equals sum of breakdown."""
+        collector = MetricsCollector()
+        input_tokens = 1234
+        output_tokens = 567
+        provider = "openai"
+        model = "gpt-4-turbo"
+        
+        total_cost = collector._calculate_cost(input_tokens, output_tokens, provider, model)
+        breakdown = collector._cost_breakdown(input_tokens, output_tokens, provider, model)
+        breakdown_sum = breakdown["input"] + breakdown["output"]
+        
+        assert abs(total_cost - breakdown_sum) < 0.0001
 
 
 class TestLLMConfigManager:

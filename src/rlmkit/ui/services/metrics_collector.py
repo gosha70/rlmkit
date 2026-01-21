@@ -128,12 +128,29 @@ class MetricsCollector:
         Returns:
             Cost in USD
             
-        Implementation notes:
-        - Should look up pricing from self.provider_pricing
-        - Should handle unknown providers/models gracefully
-        - Should return 0.0 for unsupported combinations
+        Example:
+            >>> collector = MetricsCollector()
+            >>> cost = collector._calculate_cost(1000, 500, "openai", "gpt-4")
+            >>> print(f"${cost:.4f}")
+            $0.0450
         """
-        raise NotImplementedError("To be implemented")
+        # LATER: Handle edge cases with logging/monitoring
+        if provider not in self.provider_pricing:
+            return 0.0
+        
+        if model not in self.provider_pricing[provider]:
+            return 0.0
+        
+        pricing = self.provider_pricing[provider][model]
+        input_cost_per_1k = pricing["input"]
+        output_cost_per_1k = pricing["output"]
+        
+        # Calculate: (tokens / 1000) * cost_per_1k
+        input_cost = (input_tokens / 1000) * input_cost_per_1k
+        output_cost = (output_tokens / 1000) * output_cost_per_1k
+        
+        total_cost = input_cost + output_cost
+        return round(total_cost, 6)  # Round to 6 decimals for USD precision
     
     def _cost_breakdown(
         self,
@@ -154,11 +171,31 @@ class MetricsCollector:
         Returns:
             Dict with {'input': $x, 'output': $y}
             
-        Implementation notes:
-        - Should calculate separately for input/output
-        - Should sum to total cost
+        Example:
+            >>> collector = MetricsCollector()
+            >>> breakdown = collector._cost_breakdown(1000, 500, "openai", "gpt-4")
+            >>> print(breakdown)
+            {'input': 0.03, 'output': 0.03}
         """
-        raise NotImplementedError("To be implemented")
+        # LATER: Handle edge cases with logging/monitoring
+        if provider not in self.provider_pricing:
+            return {"input": 0.0, "output": 0.0}
+        
+        if model not in self.provider_pricing[provider]:
+            return {"input": 0.0, "output": 0.0}
+        
+        pricing = self.provider_pricing[provider][model]
+        input_cost_per_1k = pricing["input"]
+        output_cost_per_1k = pricing["output"]
+        
+        # Calculate separately: (tokens / 1000) * cost_per_1k
+        input_cost = round((input_tokens / 1000) * input_cost_per_1k, 6)
+        output_cost = round((output_tokens / 1000) * output_cost_per_1k, 6)
+        
+        return {
+            "input": input_cost,
+            "output": output_cost,
+        }
     
     def add_provider_pricing(
         self,
