@@ -124,14 +124,23 @@ class PyReplEnv:
         truncated = False
         
         try:
+            # Check if we're in the main thread (signal only works there)
+            import threading
+            is_main_thread = threading.current_thread() == threading.main_thread()
+            
             # Create timeout context
-            timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=True)
+            timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=is_main_thread)
             
             # Redirect stdout and stderr
             with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
                 # Execute code with timeout
-                with timeout_ctx:
-                    exec(code, self.env_globals)
+                if hasattr(timeout_ctx, '__enter__'):
+                    # Signal-based timeout (context manager)
+                    with timeout_ctx:
+                        exec(code, self.env_globals)
+                else:
+                    # Process-based timeout (has run method)
+                    timeout_ctx.run(lambda: exec(code, self.env_globals))
                 
         except ExecTimeoutError as e:
             # Timeout occurred

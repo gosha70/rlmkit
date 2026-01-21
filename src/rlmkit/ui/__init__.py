@@ -10,6 +10,6 @@ This package provides:
 - Results display and export functionality
 """
 
-from .file_processor import FileProcessor, process_file
+from rlmkit.ui.file_processor import FileProcessor, process_file
 
 __all__ = ['FileProcessor', 'process_file']

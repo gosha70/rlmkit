@@ -18,7 +18,7 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
-from ..core.comparison import ComparisonResult
+from rlmkit.core.comparison import ComparisonResult
 
 
 def create_token_comparison_chart(result: ComparisonResult) -> Optional[go.Figure]:

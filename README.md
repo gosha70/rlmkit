@@ -97,7 +97,10 @@ Launch the Streamlit web interface for interactive testing:
 # Install UI dependencies
 pip install -e ".[ui]"
 
-# Launch the app
+# Launch the app (from project root)
+python3 -m streamlit run src/rlmkit/ui/app.py
+
+# Or if streamlit is in your PATH:
 streamlit run src/rlmkit/ui/app.py
 ```
 

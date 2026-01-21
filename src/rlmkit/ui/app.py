@@ -15,12 +15,12 @@ import json
 from typing import Optional
 from pathlib import Path
 
-from ..core.rlm import RLM
-from ..core.comparison import ComparisonResult
-from ..config import RLMConfig, ExecutionConfig
-from ..llm import get_llm_client
-from .file_processor import process_file
-from .charts import (
+from rlmkit.core.rlm import RLM
+from rlmkit.core.comparison import ComparisonResult
+from rlmkit.config import RLMConfig, ExecutionConfig
+from rlmkit.llm import get_llm_client
+from rlmkit.ui.file_processor import process_file
+from rlmkit.ui.charts import (
     create_token_comparison_chart,
     create_cost_comparison_chart,
     create_time_comparison_chart,
@@ -92,21 +92,107 @@ def render_sidebar():
     
     # LLM Provider
     st.sidebar.subheader("LLM Provider")
+    
+    # Check which providers are available
+    from rlmkit.llm import OpenAIClient, ClaudeClient, OllamaClient
+    
+    available_providers = ["Mock (Testing)"]
+    if OpenAIClient is not None:
+        available_providers.append("OpenAI")
+    if ClaudeClient is not None:
+        available_providers.append("Anthropic")
+    if OllamaClient is not None:
+        available_providers.append("Ollama")
+    
     provider = st.sidebar.selectbox(
         "Provider:",
-        ["Mock (Testing)", "OpenAI", "Anthropic", "Ollama", "LM Studio"],
+        available_providers,
         help="Select the LLM provider to use"
     )
     
-    # Model selection (based on provider)
-    if provider == "OpenAI":
-        model = st.sidebar.text_input("Model", value="gpt-4", help="OpenAI model name")
-    elif provider == "Anthropic":
-        model = st.sidebar.text_input("Model", value="claude-3-sonnet-20240229", help="Anthropic model name")
-    elif provider == "Ollama":
-        model = st.sidebar.text_input("Model", value="llama2", help="Ollama model name")
-    else:
+    # Configuration based on provider
+    model = None
+    api_key = None
+    
+    if provider == "Mock (Testing)":
         model = "mock"
+        st.sidebar.info("📝 Mock mode - for testing UI without API calls")
+    
+    elif provider == "OpenAI":
+        model = st.sidebar.text_input("Model", value="gpt-4", help="e.g., gpt-4, gpt-3.5-turbo")
+        api_key = st.sidebar.text_input(
+            "API Key",
+            type="password",
+            help="Your OpenAI API key (or set OPENAI_API_KEY environment variable)"
+        )
+        if not api_key:
+            st.sidebar.warning("⚠️ API key required. Set OPENAI_API_KEY env var or enter above.")
+            with st.sidebar.expander("🔧 Setup Instructions"):
+                st.markdown("""
+                **Option 1: Environment Variable (Recommended)**
+                ```bash
+                export OPENAI_API_KEY='your-key-here'
+                ```
+                
+                **Option 2: Enter above**
+                - Get your key from: https://platform.openai.com/api-keys
+                - Enter it in the field above
+                
+                **Install:**
+                ```bash
+                pip install openai
+                ```
+                """)
+    
+    elif provider == "Anthropic":
+        model = st.sidebar.text_input("Model", value="claude-3-sonnet-20240229", 
+                                       help="e.g., claude-3-sonnet-20240229")
+        api_key = st.sidebar.text_input(
+            "API Key",
+            type="password",
+            help="Your Anthropic API key (or set ANTHROPIC_API_KEY environment variable)"
+        )
+        if not api_key:
+            st.sidebar.warning("⚠️ API key required. Set ANTHROPIC_API_KEY env var or enter above.")
+            with st.sidebar.expander("🔧 Setup Instructions"):
+                st.markdown("""
+                **Option 1: Environment Variable (Recommended)**
+                ```bash
+                export ANTHROPIC_API_KEY='your-key-here'
+                ```
+                
+                **Option 2: Enter above**
+                - Get your key from: https://console.anthropic.com/
+                - Enter it in the field above
+                
+                **Install:**
+                ```bash
+                pip install anthropic
+                ```
+                """)
+    
+    elif provider == "Ollama":
+        model = st.sidebar.text_input("Model", value="llama2", help="e.g., llama2, mistral, codellama")
+        st.sidebar.info("🦙 Ollama runs locally - no API key needed")
+        with st.sidebar.expander("🔧 Setup Instructions"):
+            st.markdown("""
+            **Install Ollama:**
+            1. Download from: https://ollama.ai
+            2. Install and start Ollama
+            3. Pull a model:
+               ```bash
+               ollama pull llama2
+               ```
+            4. Verify it's running:
+               ```bash
+               ollama list
+               ```
+            
+            **Install Python package:**
+            ```bash
+            pip install ollama
+            ```
+            """)
     
     st.sidebar.divider()
     
@@ -117,23 +203,53 @@ def render_sidebar():
         'timeout': timeout,
         'provider': provider,
         'model': model,
+        'api_key': api_key,
     }
 
 
-def render_file_upload():
-    """Render file upload section."""
-    st.subheader("📁 File Upload")
+def render_content_input():
+    """Render content input section - file upload or direct text."""
+    st.subheader("📄 Content")
     
-    col1, col2 = st.columns([2, 1])
+    # Tabs for different input methods
+    input_tab1, input_tab2, input_tab3 = st.tabs(["✍️ Enter Text", "📁 Upload File", "📚 Sample Content"])
     
-    with col1:
+    # Tab 1: Direct text input
+    with input_tab1:
+        direct_text = st.text_area(
+            "Enter your content directly:",
+            height=200,
+            placeholder="Paste your document, article, or any text here...",
+            help="Enter the content you want to analyze",
+            key="direct_text_input"
+        )
+        
+        if st.button("📝 Use This Text", key="use_direct_text"):
+            if direct_text.strip():
+                from rlmkit.ui.file_processor import FileInfo, FileProcessor
+                st.session_state.file_content = direct_text
+                st.session_state.file_info = FileInfo(
+                    filename="direct_input.txt",
+                    content=direct_text,
+                    file_type=".txt",
+                    size_bytes=len(direct_text.encode()),
+                    char_count=len(direct_text),
+                    estimated_tokens=FileProcessor.estimate_tokens(direct_text),
+                    success=True
+                )
+                st.success(f"✓ Content loaded ({len(direct_text)} characters)")
+                st.rerun()
+            else:
+                st.warning("Please enter some text first")
+    
+    # Tab 2: File upload
+    with input_tab2:
         uploaded_file = st.file_uploader(
             "Upload a file (PDF, DOCX, TXT, MD, JSON, code files)",
             type=['pdf', 'docx', 'txt', 'md', 'json', 'py', 'js', 'ts', 'java', 'cpp', 'c', 'h'],
             help="Upload a large file to test RLMKit's ability to handle large prompts"
         )
-    
-    with col2:
+        
         if uploaded_file is not None:
             # Process file
             file_bytes = uploaded_file.read()
@@ -144,21 +260,25 @@ def render_file_upload():
                 st.session_state.file_info = file_info
                 
                 st.success(f"✓ Loaded {uploaded_file.name}")
-                st.metric("File Size", f"{file_info.size_bytes / 1024:.1f} KB")
-                st.metric("Est. Tokens", f"{file_info.estimated_tokens:,}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("File Size", f"{file_info.size_bytes / 1024:.1f} KB")
+                with col2:
+                    st.metric("Est. Tokens", f"{file_info.estimated_tokens:,}")
             else:
                 st.error(f"Error: {file_info.error}")
                 st.session_state.file_content = None
                 st.session_state.file_info = None
     
-    # Sample files section
-    with st.expander("📚 Use Sample Content"):
+    # Tab 3: Sample content
+    with input_tab3:
         sample_choice = st.radio(
             "Select sample:",
             ["Short Text (Demo)", "Medium Article", "Long Documentation"],
+            key="sample_choice"
         )
         
-        if st.button("Load Sample"):
+        if st.button("📚 Load Sample", key="load_sample"):
             if sample_choice == "Short Text (Demo)":
                 content = "This is a short sample text for testing RLMKit.\n" * 10
             elif sample_choice == "Medium Article":
@@ -166,7 +286,7 @@ def render_file_upload():
             else:
                 content = "Long documentation content.\n" * 500
             
-            from .file_processor import FileInfo, FileProcessor
+            from rlmkit.ui.file_processor import FileInfo, FileProcessor
             st.session_state.file_content = content
             st.session_state.file_info = FileInfo(
                 filename=f"{sample_choice}.txt",
@@ -177,7 +297,14 @@ def render_file_upload():
                 estimated_tokens=FileProcessor.estimate_tokens(content),
                 success=True
             )
+            st.success("✓ Sample content loaded")
             st.rerun()
+    
+    # Show current content status
+    if st.session_state.file_content:
+        st.info(f"✅ Content loaded: {st.session_state.file_info.filename if st.session_state.file_info else 'text'} "
+                f"({len(st.session_state.file_content)} chars, "
+                f"~{st.session_state.file_info.estimated_tokens if st.session_state.file_info else 'N/A'} tokens)")
 
 
 def render_query_input():
@@ -197,15 +324,34 @@ def render_query_input():
 
 def render_run_button(config, query):
     """Render run button and execute comparison."""
-    if st.session_state.file_content is None:
-        st.warning("⚠️ Please upload a file first")
-        return
+    # Check if content and query are provided
+    has_content = st.session_state.file_content is not None
+    has_query = query and query.strip()
     
-    if not query.strip():
-        st.warning("⚠️ Please enter a query")
-        return
+    # Show status
+    col1, col2 = st.columns(2)
+    with col1:
+        if has_content:
+            st.success("✓ Content ready")
+        else:
+            st.warning("⚠️ No content loaded")
     
-    if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
+    with col2:
+        if has_query:
+            st.success("✓ Query entered")
+        else:
+            st.warning("⚠️ No query entered")
+    
+    # Disable button if not ready
+    can_run = has_content and has_query
+    
+    if st.button(
+        "🚀 Run Analysis" if can_run else "⏸️ Enter Content & Query First",
+        type="primary" if can_run else "secondary",
+        use_container_width=True,
+        disabled=not can_run,
+        key="run_analysis_btn"
+    ):
         st.session_state.last_query = query
         
         # Create RLM configuration
@@ -219,7 +365,7 @@ def render_run_button(config, query):
         # Get LLM client
         try:
             if config['provider'] == "Mock (Testing)":
-                from ..llm.mock_client import MockLLMClient
+                from rlmkit.llm.mock_client import MockLLMClient
                 client = MockLLMClient([
                     "```python\nx = len(P)\nprint(f'Content length: {x}')\n```",
                     "FINAL: This is a mock response for testing purposes."
@@ -227,7 +373,8 @@ def render_run_button(config, query):
             else:
                 client = get_llm_client(
                     provider=config['provider'].lower(),
-                    model=config['model']
+                    model=config['model'],
+                    api_key=config.get('api_key')
                 )
         except Exception as e:
             st.error(f"Error creating LLM client: {str(e)}")
@@ -246,8 +393,8 @@ def render_run_button(config, query):
                     )
                     st.session_state.comparison_result = result
                 elif config['mode'] == "RLM Only":
-                    from ..core.comparison import ComparisonResult, ExecutionMetrics
-                    from ..core.budget import TokenUsage
+                    from rlmkit.core.comparison import ComparisonResult, ExecutionMetrics
+                    from rlmkit.core.budget import TokenUsage
                     import time
                     
                     start = time.time()
@@ -268,8 +415,8 @@ def render_run_button(config, query):
                     )
                     st.session_state.comparison_result = result
                 else:  # Direct Only
-                    from ..core.comparison import ComparisonResult, ExecutionMetrics
-                    from ..core.budget import TokenUsage
+                    from rlmkit.core.comparison import ComparisonResult, ExecutionMetrics
+                    from rlmkit.core.budget import TokenUsage
                     
                     direct_result = rlm.run_direct(st.session_state.file_content, query)
                     
@@ -497,7 +644,7 @@ def main():
     config = render_sidebar()
     
     # Main content
-    render_file_upload()
+    render_content_input()
     query = render_query_input()
     render_run_button(config, query)
     render_results()
