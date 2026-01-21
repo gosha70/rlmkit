@@ -6,6 +6,7 @@ from .models import (
     ExecutionMetrics,
     ComparisonMetrics,
     LLMProviderConfig,
+    SessionMetrics,
 )
 from .chat_manager import ChatManager
 from .metrics_collector import MetricsCollector
@@ -18,6 +19,7 @@ __all__ = [
     "ExecutionMetrics",
     "ComparisonMetrics",
     "LLMProviderConfig",
+    "SessionMetrics",
     "ChatManager",
     "MetricsCollector",
     "MemoryMonitor",
