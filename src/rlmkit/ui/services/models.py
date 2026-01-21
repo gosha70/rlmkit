@@ -81,23 +81,51 @@ class ExecutionMetrics:
 class ComparisonMetrics:
     """Comparison metrics between RLM and Direct execution."""
     
-    token_savings_percent: float
-    """Percentage of tokens saved by RLM."""
+    # RLM Metrics
+    rlm_cost_usd: float
+    """Cost of RLM execution."""
     
-    token_savings_absolute: int
-    """Absolute number of tokens saved."""
+    rlm_time_seconds: float
+    """Execution time for RLM."""
     
-    cost_savings_percent: float
-    """Percentage of cost saved by RLM."""
+    rlm_tokens: int
+    """Total tokens used by RLM."""
     
-    cost_savings_absolute: float
-    """Absolute cost savings in USD."""
+    rlm_steps: int
+    """Number of RLM exploration steps."""
     
-    time_difference_seconds: float
-    """Time difference (positive = Direct faster)."""
+    # Direct Metrics
+    direct_cost_usd: float
+    """Cost of direct LLM execution."""
     
+    direct_time_seconds: float
+    """Execution time for direct LLM."""
+    
+    direct_tokens: int
+    """Total tokens used by direct LLM."""
+    
+    direct_steps: int
+    """Number of direct execution steps (always 0)."""
+    
+    # Deltas
+    cost_delta_usd: float
+    """Absolute cost difference (RLM - Direct)."""
+    
+    cost_delta_percent: float
+    """Percentage cost difference (RLM vs Direct)."""
+    
+    time_delta_seconds: float
+    """Absolute time difference (RLM - Direct)."""
+    
+    time_delta_percent: float
+    """Percentage time difference (RLM vs Direct)."""
+    
+    token_delta: int
+    """Absolute token difference (RLM - Direct)."""
+    
+    # Recommendation
     recommendation: str
-    """Recommendation: 'Use RLM', 'Use Direct', 'Trade-off'."""
+    """Recommendation based on trade-offs."""
     
     reasoning: Optional[str] = None
     """Explanation of the recommendation."""
@@ -248,7 +276,7 @@ class LLMProviderConfig:
     @property
     def is_configured(self) -> bool:
         """Check if provider has minimal configuration."""
-        return self.model and (self.api_key or self.api_key_env_var)
+        return bool(self.model and (self.api_key or self.api_key_env_var))
     
     @property
     def is_ready(self) -> bool:

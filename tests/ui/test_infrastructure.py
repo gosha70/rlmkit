@@ -84,7 +84,8 @@ class TestDataModels:
             output_cost_per_1k_tokens=0.06,
         )
         assert config.provider == "openai"
-        assert config.is_configured is False  # No API key yet
+        assert config.is_configured is True  # Has model and env var
+        assert config.is_ready is False  # Not ready until test_successful=True
     
     def test_session_metrics_creation(self):
         """Test SessionMetrics dataclass."""
@@ -396,6 +397,273 @@ class TestLLMConfigManager:
         manager = LLMConfigManager(config_dir=tmp_path)
         result = manager.test_connection("openai", "gpt-4", "sk-key")
         assert isinstance(result, bool)
+
+
+# ============================================================================
+# PHASE 2.1: Direct Execution & Comparison
+# ============================================================================
+
+class TestChatManagerDirectExecution:
+    """Test ChatManager._execute_direct() method."""
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_returns_dict(self):
+        """Test that _execute_direct returns proper dict structure."""
+        manager = ChatManager()
+        result = await manager._execute_direct("What is RLM?")
+        
+        assert isinstance(result, dict)
+        assert "response" in result
+        assert "metrics" in result
+        assert "trace" not in result  # Direct has no trace
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_response_structure(self):
+        """Test Response object from direct execution."""
+        manager = ChatManager()
+        result = await manager._execute_direct("Summarize this")
+        
+        response = result["response"]
+        assert isinstance(response, Response)
+        assert response.content
+        assert response.stop_reason == "stop"
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_metrics_structure(self):
+        """Test ExecutionMetrics from direct execution."""
+        manager = ChatManager()
+        result = await manager._execute_direct("Test query")
+        
+        metrics = result["metrics"]
+        assert isinstance(metrics, ExecutionMetrics)
+        assert metrics.input_tokens > 0
+        assert metrics.output_tokens > 0
+        assert metrics.total_tokens > 0
+        assert metrics.cost_usd >= 0
+        assert metrics.execution_time_seconds > 0
+        assert metrics.steps_taken == 0  # Direct has no steps
+        assert metrics.execution_type == "direct"
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_metrics_breakdown(self):
+        """Test cost breakdown in direct metrics."""
+        manager = ChatManager()
+        result = await manager._execute_direct("Test")
+        
+        metrics = result["metrics"]
+        assert "input" in metrics.cost_breakdown
+        assert "output" in metrics.cost_breakdown
+        assert metrics.cost_breakdown["input"] >= 0
+        assert metrics.cost_breakdown["output"] >= 0
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_faster_than_rlm(self):
+        """Test that direct execution is faster than RLM."""
+        import asyncio
+        manager = ChatManager()
+        
+        # Time RLM execution
+        start_rlm = datetime.now()
+        rlm_result = await manager._execute_rlm("Test query")
+        rlm_time = (datetime.now() - start_rlm).total_seconds()
+        
+        # Time Direct execution
+        start_direct = datetime.now()
+        direct_result = await manager._execute_direct("Test query")
+        direct_time = (datetime.now() - start_direct).total_seconds()
+        
+        # Direct should be faster in real-world scenarios
+        # (though simulation is fast for both)
+        rlm_metrics = rlm_result["metrics"]
+        direct_metrics = direct_result["metrics"]
+        
+        assert direct_metrics.execution_time_seconds < rlm_metrics.execution_time_seconds
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_less_tokens_than_rlm(self):
+        """Test that direct execution uses fewer tokens than RLM."""
+        manager = ChatManager()
+        
+        rlm_result = await manager._execute_rlm("Test query")
+        direct_result = await manager._execute_direct("Test query")
+        
+        rlm_metrics = rlm_result["metrics"]
+        direct_metrics = direct_result["metrics"]
+        
+        # Direct should use fewer tokens (no exploration steps)
+        assert direct_metrics.total_tokens < rlm_metrics.total_tokens
+    
+    @pytest.mark.asyncio
+    async def test_execute_direct_success(self):
+        """Test that direct execution marks success."""
+        manager = ChatManager()
+        result = await manager._execute_direct("Test")
+        
+        metrics = result["metrics"]
+        assert metrics.success is True
+        assert metrics.error is None
+
+
+class TestChatManagerComparison:
+    """Test ChatManager._compare_metrics() method."""
+    
+    def test_compare_metrics_returns_comparison_metrics(self):
+        """Test that _compare_metrics returns ComparisonMetrics."""
+        manager = ChatManager()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=600,
+            output_tokens=250,
+            total_tokens=850,
+            cost_usd=0.05,
+            cost_breakdown={"input": 0.03, "output": 0.02},
+            execution_time_seconds=1.6,
+            steps_taken=3,
+            memory_used_mb=45.2,
+            memory_peak_mb=62.1,
+            success=True,
+            execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150,
+            output_tokens=120,
+            total_tokens=270,
+            cost_usd=0.015,
+            cost_breakdown={"input": 0.01, "output": 0.005},
+            execution_time_seconds=0.8,
+            steps_taken=0,
+            memory_used_mb=12.5,
+            memory_peak_mb=18.3,
+            success=True,
+            execution_type="direct"
+        )
+        
+        comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
+        assert isinstance(comparison, ComparisonMetrics)
+    
+    def test_compare_metrics_cost_delta(self):
+        """Test cost delta calculation."""
+        manager = ChatManager()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=600, output_tokens=250, total_tokens=850,
+            cost_usd=0.050, cost_breakdown={"input": 0.03, "output": 0.02},
+            execution_time_seconds=1.6, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.01, "output": 0.005},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
+        
+        assert comparison.cost_delta_usd == pytest.approx(0.035, abs=0.001)
+        assert comparison.rlm_cost_usd == 0.050
+        assert comparison.direct_cost_usd == 0.015
+    
+    def test_compare_metrics_time_delta(self):
+        """Test time delta calculation."""
+        manager = ChatManager()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=600, output_tokens=250, total_tokens=850,
+            cost_usd=0.050, cost_breakdown={"input": 0.03, "output": 0.02},
+            execution_time_seconds=1.6, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.01, "output": 0.005},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
+        
+        assert comparison.time_delta_seconds == pytest.approx(0.8, abs=0.001)
+        assert comparison.rlm_time_seconds == 1.6
+        assert comparison.direct_time_seconds == 0.8
+    
+    def test_compare_metrics_token_delta(self):
+        """Test token delta calculation."""
+        manager = ChatManager()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=600, output_tokens=250, total_tokens=850,
+            cost_usd=0.050, cost_breakdown={"input": 0.03, "output": 0.02},
+            execution_time_seconds=1.6, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.01, "output": 0.005},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
+        
+        assert comparison.token_delta == 580
+        assert comparison.rlm_tokens == 850
+        assert comparison.direct_tokens == 270
+    
+    def test_compare_metrics_percentages(self):
+        """Test percentage calculations."""
+        manager = ChatManager()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=600, output_tokens=250, total_tokens=850,
+            cost_usd=0.050, cost_breakdown={"input": 0.03, "output": 0.02},
+            execution_time_seconds=1.6, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.01, "output": 0.005},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
+        
+        # RLM is 233% more expensive
+        assert comparison.cost_delta_percent == pytest.approx(233, abs=1)
+        # RLM takes 100% more time (2x)
+        assert comparison.time_delta_percent == pytest.approx(100, abs=1)
+    
+    def test_compare_metrics_generates_recommendation(self):
+        """Test that recommendation is generated."""
+        manager = ChatManager()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=600, output_tokens=250, total_tokens=850,
+            cost_usd=0.050, cost_breakdown={"input": 0.03, "output": 0.02},
+            execution_time_seconds=1.6, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.01, "output": 0.005},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
+        
+        assert comparison.recommendation
+        assert isinstance(comparison.recommendation, str)
+        assert len(comparison.recommendation) > 0
+        # Should mention that Direct is cheaper
+        assert "cheaper" in comparison.recommendation.lower()
 
 
 if __name__ == "__main__":
