@@ -1,5 +1,8 @@
-"""Data models for RLMKit UI - Chat messages, metrics, responses."""
-
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+"""
+Data models for RLMKit UI - Chat messages, metrics, responses.
+"""
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal

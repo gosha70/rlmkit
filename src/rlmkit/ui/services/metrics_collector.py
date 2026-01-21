@@ -1,8 +1,10 @@
-"""MetricsCollector - Collect and aggregate execution metrics."""
-
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+"""
+MetricsCollector - Collect and aggregate execution metrics.
+"""
 from typing import Optional, Dict, Any, List
 from .models import ExecutionMetrics, ComparisonMetrics
-
 
 class MetricsCollector:
     """

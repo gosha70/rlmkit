@@ -1,4 +1,8 @@
-"""ChatManager - Core message management and execution routing."""
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+"""
+ChatManager - Core message management and execution routing.
+"""
 
 from typing import Optional, List, Dict, Any
 from uuid import uuid4

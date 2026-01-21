@@ -248,6 +248,154 @@ class TestLLMConfigManager:
         manager = LLMConfigManager(config_dir=tmp_path)
         providers = manager.list_providers()
         assert isinstance(providers, list)
+    
+    def test_test_connection_openai_valid(self, tmp_path):
+        """Test connection to OpenAI with valid key."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Valid OpenAI key format (sk-...) and valid model
+        success = manager.test_connection(
+            provider="openai",
+            model="gpt-4",
+            api_key="sk-test-key-valid",
+        )
+        assert success is True
+    
+    def test_test_connection_openai_invalid_key_format(self, tmp_path):
+        """Test OpenAI connection with invalid key format."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Invalid key format (doesn't start with sk-)
+        success = manager.test_connection(
+            provider="openai",
+            model="gpt-4",
+            api_key="invalid-key",
+        )
+        assert success is False
+    
+    def test_test_connection_openai_invalid_model(self, tmp_path):
+        """Test OpenAI connection with invalid model."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Invalid model name
+        success = manager.test_connection(
+            provider="openai",
+            model="invalid-model",
+            api_key="sk-test-key",
+        )
+        assert success is False
+    
+    def test_test_connection_openai_gpt35(self, tmp_path):
+        """Test OpenAI connection with GPT-3.5."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        success = manager.test_connection(
+            provider="openai",
+            model="gpt-3.5-turbo",
+            api_key="sk-test-key",
+        )
+        assert success is True
+    
+    def test_test_connection_anthropic_valid(self, tmp_path):
+        """Test connection to Anthropic with valid key."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Valid Anthropic key format (sk-ant-...)
+        success = manager.test_connection(
+            provider="anthropic",
+            model="claude-3-opus",
+            api_key="sk-ant-test-key",
+        )
+        assert success is True
+    
+    def test_test_connection_anthropic_invalid_key_format(self, tmp_path):
+        """Test Anthropic connection with invalid key format."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Invalid Anthropic key format
+        success = manager.test_connection(
+            provider="anthropic",
+            model="claude-3-opus",
+            api_key="sk-test-key",  # OpenAI format, not Anthropic
+        )
+        assert success is False
+    
+    def test_test_connection_anthropic_invalid_model(self, tmp_path):
+        """Test Anthropic connection with invalid model."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        success = manager.test_connection(
+            provider="anthropic",
+            model="invalid-model",
+            api_key="sk-ant-test-key",
+        )
+        assert success is False
+    
+    def test_test_connection_ollama_valid(self, tmp_path):
+        """Test connection to Ollama with valid model."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Ollama doesn't need API key
+        success = manager.test_connection(
+            provider="ollama",
+            model="llama2",
+            api_key="",  # Ollama doesn't use API key
+        )
+        assert success is True
+    
+    def test_test_connection_ollama_no_model(self, tmp_path):
+        """Test Ollama connection without model."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        success = manager.test_connection(
+            provider="ollama",
+            model="",  # No model
+            api_key="",
+        )
+        assert success is False
+    
+    def test_test_connection_lmstudio_valid(self, tmp_path):
+        """Test connection to LMStudio with valid model."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # LMStudio doesn't need API key
+        success = manager.test_connection(
+            provider="lmstudio",
+            model="mistral",
+            api_key="",  # LMStudio doesn't use API key
+        )
+        assert success is True
+    
+    def test_test_connection_unknown_provider(self, tmp_path):
+        """Test connection to unknown provider."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        success = manager.test_connection(
+            provider="unknown-provider",
+            model="some-model",
+            api_key="key",
+        )
+        assert success is False
+    
+    def test_test_connection_no_api_key_openai(self, tmp_path):
+        """Test OpenAI connection without API key."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        success = manager.test_connection(
+            provider="openai",
+            model="gpt-4",
+            api_key=None,
+            api_key_env_var=None,
+        )
+        assert success is False
+    
+    def test_test_connection_env_var_fallback(self, tmp_path, monkeypatch):
+        """Test using environment variable for API key."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        # Set environment variable
+        monkeypatch.setenv("TEST_OPENAI_KEY", "sk-test-key")
+        
+        success = manager.test_connection(
+            provider="openai",
+            model="gpt-4",
+            api_key=None,
+            api_key_env_var="TEST_OPENAI_KEY",
+        )
+        assert success is True
+    
+    def test_test_connection_returns_bool(self, tmp_path):
+        """Test that test_connection always returns bool."""
+        manager = LLMConfigManager(config_dir=tmp_path)
+        result = manager.test_connection("openai", "gpt-4", "sk-key")
+        assert isinstance(result, bool)
 
 
 if __name__ == "__main__":

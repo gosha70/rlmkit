@@ -1,5 +1,8 @@
-"""MemoryMonitor - Track memory usage during execution."""
-
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+"""
+MemoryMonitor - Track memory usage during execution.
+"""
 from typing import List, Dict, Optional
 import psutil
 import os
