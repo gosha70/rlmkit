@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Recursive Language Model (RLM) controller.
 
 Based on the RLM paper (arXiv:2512.24601), this module implements the core

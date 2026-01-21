@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Prompt templates for RLM system prompts.
 
 This module provides templated system prompts that can be customized

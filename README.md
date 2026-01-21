@@ -219,7 +219,11 @@ We follow **Shape UP** methodology:
 
 ## 📄 License
 
-MIT License - See LICENSE file
+Copyright (c) 2026 EGOGE - All Rights Reserved.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+This software may be used and distributed according to the terms of the MIT license.
 
 ## 🙏 Acknowledgments
 

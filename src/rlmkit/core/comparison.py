@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Comparison metrics and utilities for RLM vs Direct mode.
 
 This module provides tools to compare RLM exploration mode against

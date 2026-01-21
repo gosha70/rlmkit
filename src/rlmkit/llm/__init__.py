@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """LLM client interfaces and implementations."""
 
 from .mock_client import MockLLMClient

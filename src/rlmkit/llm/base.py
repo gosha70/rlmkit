@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Base classes for LLM providers."""
 
 from abc import ABC, abstractmethod

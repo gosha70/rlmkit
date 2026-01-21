@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Sandbox restrictions for safe code execution."""
 
 from typing import Any, Dict, Optional

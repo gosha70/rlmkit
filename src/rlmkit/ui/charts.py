@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Chart and visualization utilities for RLMKit UI.
 
 Creates interactive charts using Plotly to visualize:

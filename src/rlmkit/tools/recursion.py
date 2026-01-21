@@ -1,3 +1,6 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
 """Recursion tools for RLM - subcall functionality.
 
 Based on the RLM paper, allows spawning sub-RLM instances to handle
