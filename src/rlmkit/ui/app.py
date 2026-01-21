@@ -60,147 +60,71 @@ def render_header():
 
 
 def render_sidebar():
-    """Render sidebar with configuration options."""
-    st.sidebar.header("⚙️ Configuration")
+    """Render simplified sidebar showing only selected provider and mode (read-only)."""
+    st.sidebar.header("📊 Current Setup")
     
-    # Execution mode
-    st.sidebar.subheader("Execution Mode")
-    mode = st.sidebar.radio(
-        "Select mode:",
-        ["RLM Only", "Direct Only", "Compare Both"],
-        index=2,
-        help="Choose whether to run RLM mode, Direct mode, or compare both"
-    )
+    # Load from session state (set by Configuration page)
+    from rlmkit.ui.services import LLMConfigManager
+    from pathlib import Path
     
-    # Budget limits
-    st.sidebar.subheader("Budget Limits")
-    max_steps = st.sidebar.slider(
-        "Max Steps (RLM)",
-        min_value=1,
-        max_value=32,
-        value=16,
-        help="Maximum execution steps for RLM mode"
-    )
+    config_dir = Path.home() / ".rlmkit"
+    manager = LLMConfigManager(config_dir=config_dir)
     
-    timeout = st.sidebar.slider(
-        "Timeout (seconds)",
-        min_value=1,
-        max_value=30,
-        value=5,
-        help="Maximum execution time per step"
-    )
+    # Get selected provider from session state
+    if 'selected_provider' not in st.session_state:
+        providers = manager.list_providers()
+        st.session_state.selected_provider = providers[0] if providers else None
     
-    # LLM Provider
-    st.sidebar.subheader("LLM Provider")
+    if 'execution_mode' not in st.session_state:
+        st.session_state.execution_mode = "Compare Both"
     
-    # Check which providers are available
-    from rlmkit.llm import OpenAIClient, ClaudeClient, OllamaClient
+    if 'max_steps' not in st.session_state:
+        st.session_state.max_steps = 16
     
-    available_providers = ["Mock (Testing)"]
-    if OpenAIClient is not None:
-        available_providers.append("OpenAI")
-    if ClaudeClient is not None:
-        available_providers.append("Anthropic")
-    if OllamaClient is not None:
-        available_providers.append("Ollama")
+    if 'timeout' not in st.session_state:
+        st.session_state.timeout = 5
     
-    provider = st.sidebar.selectbox(
-        "Provider:",
-        available_providers,
-        help="Select the LLM provider to use"
-    )
+    # Display selected LLM (read-only)
+    st.sidebar.subheader("🤖 Selected LLM")
+    if st.session_state.selected_provider:
+        config = manager.get_provider_config(st.session_state.selected_provider)
+        if config:
+            st.sidebar.write(f"**Provider:** {config.provider.upper()}")
+            st.sidebar.write(f"**Model:** `{config.model}`")
+            status = "✅ Ready" if config.is_ready else "⚠️ Not Ready"
+            st.sidebar.write(f"**Status:** {status}")
+        else:
+            st.sidebar.warning("Provider config not found")
+    else:
+        st.sidebar.warning("No provider selected. Go to Configuration page to set up.")
     
-    # Configuration based on provider
-    model = None
-    api_key = None
+    st.sidebar.divider()
     
-    if provider == "Mock (Testing)":
-        model = "mock"
-        st.sidebar.info("📝 Mock mode - for testing UI without API calls")
+    # Display execution mode (read-only)
+    st.sidebar.subheader("⚡ Execution Mode")
+    st.sidebar.write(f"**Mode:** {st.session_state.execution_mode}")
+    st.sidebar.write(f"**Max Steps:** {st.session_state.max_steps}")
+    st.sidebar.write(f"**Timeout:** {st.session_state.timeout}s")
     
-    elif provider == "OpenAI":
-        model = st.sidebar.text_input("Model", value="gpt-4", help="e.g., gpt-4, gpt-3.5-turbo")
-        api_key = st.sidebar.text_input(
-            "API Key",
-            type="password",
-            help="Your OpenAI API key (or set OPENAI_API_KEY environment variable)"
-        )
-        if not api_key:
-            st.sidebar.warning("⚠️ API key required. Set OPENAI_API_KEY env var or enter above.")
-            with st.sidebar.expander("🔧 Setup Instructions"):
-                st.markdown("""
-                **Option 1: Environment Variable (Recommended)**
-                ```bash
-                export OPENAI_API_KEY='your-key-here'
-                ```
-                
-                **Option 2: Enter above**
-                - Get your key from: https://platform.openai.com/api-keys
-                - Enter it in the field above
-                
-                **Install:**
-                ```bash
-                pip install openai
-                ```
-                """)
-    
-    elif provider == "Anthropic":
-        model = st.sidebar.text_input("Model", value="claude-3-sonnet-20240229", 
-                                       help="e.g., claude-3-sonnet-20240229")
-        api_key = st.sidebar.text_input(
-            "API Key",
-            type="password",
-            help="Your Anthropic API key (or set ANTHROPIC_API_KEY environment variable)"
-        )
-        if not api_key:
-            st.sidebar.warning("⚠️ API key required. Set ANTHROPIC_API_KEY env var or enter above.")
-            with st.sidebar.expander("🔧 Setup Instructions"):
-                st.markdown("""
-                **Option 1: Environment Variable (Recommended)**
-                ```bash
-                export ANTHROPIC_API_KEY='your-key-here'
-                ```
-                
-                **Option 2: Enter above**
-                - Get your key from: https://console.anthropic.com/
-                - Enter it in the field above
-                
-                **Install:**
-                ```bash
-                pip install anthropic
-                ```
-                """)
-    
-    elif provider == "Ollama":
-        model = st.sidebar.text_input("Model", value="llama2", help="e.g., llama2, mistral, codellama")
-        st.sidebar.info("🦙 Ollama runs locally - no API key needed")
-        with st.sidebar.expander("🔧 Setup Instructions"):
-            st.markdown("""
-            **Install Ollama:**
-            1. Download from: https://ollama.ai
-            2. Install and start Ollama
-            3. Pull a model:
-               ```bash
-               ollama pull llama2
-               ```
-            4. Verify it's running:
-               ```bash
-               ollama list
-               ```
-            
-            **Install Python package:**
-            ```bash
-            pip install ollama
-            ```
-            """)
+    st.sidebar.info("⚙️ To change settings, go to the Configuration page")
     
     st.sidebar.divider()
     
     # Return configuration
+    provider = st.session_state.selected_provider
+    if provider:
+        config = manager.get_provider_config(provider)
+        model = config.model if config else None
+        api_key = config.api_key if config else None
+    else:
+        config = None
+        model = None
+        api_key = None
+    
     return {
-        'mode': mode,
-        'max_steps': max_steps,
-        'timeout': timeout,
+        'mode': st.session_state.execution_mode,
+        'max_steps': st.session_state.max_steps,
+        'timeout': st.session_state.timeout,
         'provider': provider,
         'model': model,
         'api_key': api_key,

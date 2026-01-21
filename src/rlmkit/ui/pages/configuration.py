@@ -1,0 +1,397 @@
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
+"""Configuration Management Page - Streamlit UI for managing LLM providers."""
+
+import streamlit as st
+from pathlib import Path
+import os
+
+from rlmkit.ui.services import LLMConfigManager
+
+
+def init_config_session_state():
+    """Initialize session state for configuration page."""
+    if "llm_manager" not in st.session_state:
+        config_dir = Path.home() / ".rlmkit"
+        st.session_state.llm_manager = LLMConfigManager(config_dir=config_dir)
+    
+    if "refresh_providers" not in st.session_state:
+        st.session_state.refresh_providers = False
+
+
+def render_provider_selection():
+    """Render provider selection section in main content area."""
+    st.subheader("🤖 Select Active Provider")
+    
+    manager = st.session_state.llm_manager
+    providers = manager.list_providers()
+    
+    if providers:
+        if 'selected_provider' not in st.session_state:
+            st.session_state.selected_provider = providers[0]
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            active_provider = st.selectbox(
+                "Choose provider to use in main app:",
+                providers,
+                index=providers.index(st.session_state.selected_provider) if st.session_state.selected_provider in providers else 0,
+                help="This will be used when you run analyses in the main app",
+                label_visibility="collapsed"
+            )
+            st.session_state.selected_provider = active_provider
+        
+        with col2:
+            config = manager.get_provider_config(active_provider)
+            if config:
+                st.write(f"**Model:** `{config.model}`")
+    else:
+        st.info("📝 No providers configured yet. Add one below to get started.")
+        st.session_state.selected_provider = None
+
+
+def render_provider_list():
+    """Display list of configured providers."""
+    st.subheader("📋 Configured Providers")
+    
+    manager = st.session_state.llm_manager
+    providers = manager.list_providers()
+    
+    if not providers:
+        st.info("No providers configured yet. Add one below to get started.")
+        return
+    
+    # Create columns for provider display
+    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+    with col1:
+        st.write("**Provider**")
+    with col2:
+        st.write("**Model**")
+    with col3:
+        st.write("**Status**")
+    with col4:
+        st.write("**Actions**")
+    
+    st.divider()
+    
+    # Display each provider
+    for provider_name in providers:
+        config = manager.get_provider_config(provider_name)
+        if not config:
+            continue
+        
+        col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+        
+        with col1:
+            st.write(f"**{config.provider.upper()}**")
+        
+        with col2:
+            st.write(f"`{config.model}`")
+        
+        with col3:
+            if config.is_ready:
+                st.success("✅ Ready")
+            else:
+                st.warning("⚠️ Not Ready")
+        
+        with col4:
+            if st.button("🗑️ Delete", key=f"delete_{provider_name}"):
+                if manager.delete_provider(provider_name):
+                    st.success(f"Deleted {provider_name}")
+                    st.rerun()
+                else:
+                    st.error(f"Failed to delete {provider_name}")
+
+
+def render_add_provider_form():
+    """Display form for adding new provider."""
+    st.subheader("➕ Add New Provider")
+    
+    with st.form("add_provider_form"):
+        # Provider selection
+        provider = st.selectbox(
+            "Provider",
+            ["openai", "anthropic", "ollama", "lmstudio"],
+            help="Select the LLM provider type"
+        )
+        
+        # Model selection based on provider
+        if provider == "openai":
+            model = st.selectbox(
+                "Model",
+                [
+                    "gpt-4",
+                    "gpt-4-32k",
+                    "gpt-4-turbo",
+                    "gpt-3.5-turbo",
+                    "gpt-3.5-turbo-16k"
+                ]
+            )
+            cost_input = st.write("💰 **Pricing (auto-set)**")
+            input_cost = 0.03
+            output_cost = 0.06
+        elif provider == "anthropic":
+            model = st.selectbox(
+                "Model",
+                [
+                    "claude-3-opus",
+                    "claude-3-sonnet",
+                    "claude-3-haiku",
+                    "claude-2.1",
+                    "claude-2"
+                ]
+            )
+            st.write("💰 **Pricing (auto-set)**")
+            input_cost = 0.015
+            output_cost = 0.075
+        elif provider == "ollama":
+            model = st.text_input(
+                "Model Name",
+                placeholder="e.g., llama2, neural-chat, mistral",
+                help="Name of the model running on Ollama"
+            )
+            st.write("💰 **Pricing: Local (no cost)**")
+            input_cost = 0.0
+            output_cost = 0.0
+        else:  # lmstudio
+            model = st.text_input(
+                "Model Name",
+                placeholder="e.g., mistral, neural-chat",
+                help="Name of the model running on LMStudio"
+            )
+            st.write("💰 **Pricing: Local (no cost)**")
+            input_cost = 0.0
+            output_cost = 0.0
+        
+        # API Key input
+        st.write("🔑 **API Key Configuration**")
+        
+        api_key_option = st.radio(
+            "How to provide API key?",
+            ["Environment Variable", "Direct Input"],
+            help="For security, environment variable is recommended"
+        )
+        
+        api_key = None
+        api_key_env_var = None
+        
+        if api_key_option == "Environment Variable":
+            api_key_env_var = st.text_input(
+                "Environment Variable Name",
+                placeholder="e.g., OPENAI_API_KEY",
+                help="Name of environment variable containing the API key"
+            )
+            # Show value if set
+            if api_key_env_var:
+                env_value = os.getenv(api_key_env_var)
+                if env_value:
+                    st.success(f"✅ Found: {api_key_env_var}={env_value[:10]}...")
+                else:
+                    st.warning(f"⚠️ Environment variable not found: {api_key_env_var}")
+        else:
+            api_key = st.text_input(
+                "API Key",
+                type="password",
+                placeholder="sk-...",
+                help="Paste your API key here (not recommended for production)"
+            )
+        
+        # Temperature and other settings
+        col1, col2 = st.columns(2)
+        with col1:
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=2.0,
+                value=0.7,
+                step=0.1,
+                help="Controls randomness of responses"
+            )
+        with col2:
+            max_tokens = st.number_input(
+                "Max Tokens",
+                min_value=100,
+                max_value=32000,
+                value=2000,
+                help="Maximum tokens in response"
+            )
+        
+        # Submit button
+        submitted = st.form_submit_button("✅ Add Provider", use_container_width=True)
+        
+        if submitted:
+            if not model:
+                st.error("Please select or enter a model name")
+                return
+            
+            if not api_key and not api_key_env_var:
+                st.error("Please provide either an API key or environment variable")
+                return
+            
+            with st.spinner(f"Testing connection to {provider}..."):
+                manager = st.session_state.llm_manager
+                success = manager.add_provider(
+                    provider=provider,
+                    model=model,
+                    api_key=api_key,
+                    api_key_env_var=api_key_env_var,
+                    input_cost_per_1k=input_cost,
+                    output_cost_per_1k=output_cost,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            
+            if success:
+                st.success(f"✅ Successfully added {provider} provider!")
+                st.rerun()
+            else:
+                st.error(f"❌ Failed to connect to {provider}. Check your API key and try again.")
+
+
+def render_pricing_info():
+    """Display pricing information for all providers."""
+    st.subheader("💰 Pricing Reference")
+    
+    pricing_data = {
+        "OpenAI": {
+            "gpt-4": {"input": "$0.03", "output": "$0.06", "per": "1K tokens"},
+            "gpt-4-turbo": {"input": "$0.01", "output": "$0.03", "per": "1K tokens"},
+            "gpt-3.5-turbo": {"input": "$0.0005", "output": "$0.0015", "per": "1K tokens"},
+        },
+        "Anthropic": {
+            "claude-3-opus": {"input": "$0.015", "output": "$0.075", "per": "1K tokens"},
+            "claude-3-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-3-haiku": {"input": "$0.00025", "output": "$0.00125", "per": "1K tokens"},
+        },
+        "Local (Ollama/LMStudio)": {
+            "Any Model": {"input": "Free", "output": "Free", "per": "Local execution"},
+        }
+    }
+    
+    tabs = st.tabs(list(pricing_data.keys()))
+    
+    for tab, provider in zip(tabs, pricing_data.keys()):
+        with tab:
+            cols = st.columns([2, 1, 1, 1])
+            with cols[0]:
+                st.write("**Model**")
+            with cols[1]:
+                st.write("**Input**")
+            with cols[2]:
+                st.write("**Output**")
+            with cols[3]:
+                st.write("**Unit**")
+            
+            st.divider()
+            
+            for model, costs in pricing_data[provider].items():
+                cols = st.columns([2, 1, 1, 1])
+                with cols[0]:
+                    st.write(f"`{model}`")
+                with cols[1]:
+                    st.write(costs["input"])
+                with cols[2]:
+                    st.write(costs["output"])
+                with cols[3]:
+                    st.write(f"_{costs['per']}_")
+
+
+def render_config_sidebar():
+    """Render simple sidebar for configuration page."""
+    st.sidebar.header("⚙️ Configuration")
+    st.sidebar.info("""
+    📋 **Setup & Configuration**
+    
+    Configure your RLMKit execution environment:
+    • Set execution mode (RLM, Direct, or Compare)
+    • Configure budget limits
+    • Manage LLM providers
+    • View pricing information
+    """)
+
+
+def render_execution_settings():
+    """Render execution mode and budget limits in main content area."""
+    st.subheader("⚡ Execution Settings")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Execution Mode**")
+        mode = st.radio(
+            "Select mode:",
+            ["RLM Only", "Direct Only", "Compare Both"],
+            index=["RLM Only", "Direct Only", "Compare Both"].index(st.session_state.get('execution_mode', 'Compare Both')),
+            help="Choose whether to run RLM mode, Direct mode, or compare both",
+            label_visibility="collapsed"
+        )
+        st.session_state.execution_mode = mode
+    
+    with col2:
+        st.write("**Budget Limits**")
+        max_steps = st.slider(
+            "Max Steps (RLM)",
+            min_value=1,
+            max_value=32,
+            value=st.session_state.get('max_steps', 16),
+            help="Maximum execution steps for RLM mode",
+            label_visibility="collapsed"
+        )
+        st.session_state.max_steps = max_steps
+        
+        timeout = st.slider(
+            "Timeout (seconds)",
+            min_value=1,
+            max_value=30,
+            value=st.session_state.get('timeout', 5),
+            help="Maximum execution time per step",
+            label_visibility="collapsed"
+        )
+        st.session_state.timeout = timeout
+
+
+def main():
+    """Main configuration page."""
+    st.set_page_config(
+        page_title="Configuration - RLMKit",
+        page_icon="⚙️",
+        layout="wide"
+    )
+    
+    # Initialize session state
+    init_config_session_state()
+    
+    # Render config-specific sidebar
+    render_config_sidebar()
+    
+    # Header
+    st.title("⚙️ Configuration Management")
+    st.markdown("""
+    Configure execution settings, manage LLM providers, and view pricing information.
+    """)
+    st.divider()
+    
+    # Execution settings in main content
+    render_execution_settings()
+    st.divider()
+    
+    # Provider selection in main content
+    render_provider_selection()
+    st.divider()
+    
+    # Providers list
+    render_provider_list()
+    st.divider()
+    
+    # Add provider form
+    render_add_provider_form()
+    st.divider()
+    
+    # Pricing info
+    render_pricing_info()
+
+
+if __name__ == "__main__":
+    main()

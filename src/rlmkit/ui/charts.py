@@ -10,13 +10,19 @@ Creates interactive charts using Plotly to visualize:
 - Performance metrics
 """
 
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+
 try:
     import plotly.graph_objects as go
     import plotly.express as px
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
+    go = None  # type: ignore
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 from rlmkit.core.comparison import ComparisonResult
 
