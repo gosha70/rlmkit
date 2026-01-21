@@ -58,11 +58,21 @@ class ChatManager:
         Returns:
             ChatMessage with response(s) and metrics
             
+        Example:
+            >>> manager = ChatManager()
+            >>> message = await manager.process_message("Summarize", mode="compare")
+            >>> print(message.rlm_response.content)
+            "RLM exploration completed..."
+            >>> print(message.comparison_metrics.cost_delta_percent)
+            500
+            
         Implementation notes:
-        - Should execute RLM and/or Direct based on mode
-        - Should collect metrics using MetricsCollector
-        - Should handle errors gracefully
-        - Should update session state with new message
+        - Executes RLM and/or Direct based on mode parameter
+        - "rlm_only": Only RLM exploration (3 steps)
+        - "direct_only": Only direct LLM call (single step)
+        - "compare": Both paths, calculate deltas and recommendation
+        - Handles errors gracefully with fallback responses
+        - Updates session state with new message for history
         """
         message = ChatMessage(
             user_query=user_query,
@@ -71,23 +81,33 @@ class ChatManager:
             file_info=file_info,
         )
         
-        # TODO: Execute based on mode
-        # if mode in ("rlm_only", "compare"):
-        #     rlm_result = await self._execute_rlm(user_query, file_context)
-        #     message.rlm_response = rlm_result.response
-        #     message.rlm_metrics = rlm_result.metrics
-        #     message.rlm_trace = rlm_result.trace
+        # Execute based on mode
+        if mode in ("rlm_only", "compare"):
+            try:
+                rlm_result = await self._execute_rlm(user_query, file_context)
+                message.rlm_response = rlm_result["response"]
+                message.rlm_metrics = rlm_result["metrics"]
+                message.rlm_trace = rlm_result["trace"]
+            except Exception as e:
+                message.error = f"RLM execution failed: {str(e)}"
         
-        # if mode in ("direct_only", "compare"):
-        #     direct_result = await self._execute_direct(user_query, file_context)
-        #     message.direct_response = direct_result.response
-        #     message.direct_metrics = direct_result.metrics
+        if mode in ("direct_only", "compare"):
+            try:
+                direct_result = await self._execute_direct(user_query, file_context)
+                message.direct_response = direct_result["response"]
+                message.direct_metrics = direct_result["metrics"]
+            except Exception as e:
+                if not message.error:
+                    message.error = f"Direct execution failed: {str(e)}"
         
-        # if mode == "compare":
-        #     message.comparison_metrics = self._compare_metrics(
-        #         message.rlm_metrics,
-        #         message.direct_metrics
-        #     )
+        if mode == "compare" and message.rlm_metrics and message.direct_metrics:
+            try:
+                message.comparison_metrics = self._compare_metrics(
+                    message.rlm_metrics,
+                    message.direct_metrics
+                )
+            except Exception as e:
+                message.error = f"Comparison failed: {str(e)}"
         
         # Add to history
         self.session_state["messages"].append(message)
@@ -344,12 +364,148 @@ class ChatManager:
         Returns:
             String representation of conversation
             
+        Example:
+            >>> manager = ChatManager()
+            >>> await manager.process_message("Test query")
+            >>> json_export = manager.export_conversation("json")
+            >>> print(json_export)
+            '{"conversation_id": "...", "messages": [...]}'
+            
+            >>> markdown_export = manager.export_conversation("markdown")
+            >>> print(markdown_export)
+            '# Conversation\\n\\n## Query 1\\n...'
+            
         Implementation notes:
-        - Should handle all 3 formats
-        - Should include all metrics
-        - Should be human-readable (especially markdown)
+        - JSON: Serializable format for data processing
+        - Markdown: Human-readable with clear sections
+        - CSV: Tabular format with metrics in columns
+        - All formats include timestamp, mode, and metrics
         """
-        raise NotImplementedError("To be implemented")
+        messages = self.get_messages()
+        
+        if format == "json":
+            import json
+            export_data = {
+                "conversation_id": self.conversation_id,
+                "message_count": len(messages),
+                "messages": [
+                    {
+                        "id": msg.id,
+                        "timestamp": msg.timestamp.isoformat(),
+                        "user_query": msg.user_query,
+                        "mode": msg.mode,
+                        "file_context_length": len(msg.file_context or ""),
+                        "rlm_response": msg.rlm_response.content if msg.rlm_response else None,
+                        "rlm_metrics": {
+                            "total_tokens": msg.rlm_metrics.total_tokens,
+                            "cost_usd": float(msg.rlm_metrics.cost_usd),
+                            "execution_time_seconds": msg.rlm_metrics.execution_time_seconds,
+                            "steps_taken": msg.rlm_metrics.steps_taken,
+                        } if msg.rlm_metrics else None,
+                        "direct_response": msg.direct_response.content if msg.direct_response else None,
+                        "direct_metrics": {
+                            "total_tokens": msg.direct_metrics.total_tokens,
+                            "cost_usd": float(msg.direct_metrics.cost_usd),
+                            "execution_time_seconds": msg.direct_metrics.execution_time_seconds,
+                            "steps_taken": msg.direct_metrics.steps_taken,
+                        } if msg.direct_metrics else None,
+                        "comparison": {
+                            "cost_delta_usd": float(msg.comparison_metrics.cost_delta_usd),
+                            "cost_delta_percent": float(msg.comparison_metrics.cost_delta_percent),
+                            "token_delta": msg.comparison_metrics.token_delta,
+                            "time_delta_seconds": msg.comparison_metrics.time_delta_seconds,
+                            "recommendation": msg.comparison_metrics.recommendation,
+                        } if msg.comparison_metrics else None,
+                    }
+                    for msg in messages
+                ]
+            }
+            return json.dumps(export_data, indent=2)
+        
+        elif format == "markdown":
+            lines = [
+                f"# Conversation Report",
+                f"**ID:** {self.conversation_id}",
+                f"**Messages:** {len(messages)}",
+                "",
+            ]
+            
+            for i, msg in enumerate(messages, 1):
+                lines.append(f"## Query {i}")
+                lines.append(f"**Mode:** {msg.mode}")
+                lines.append(f"**Time:** {msg.timestamp.isoformat()}")
+                lines.append("")
+                
+                lines.append("### User Query")
+                lines.append(f"```\n{msg.user_query}\n```")
+                lines.append("")
+                
+                if msg.rlm_response:
+                    lines.append("### RLM Response")
+                    lines.append(f"```\n{msg.rlm_response.content}\n```")
+                    lines.append("")
+                    if msg.rlm_metrics:
+                        lines.append("**RLM Metrics:**")
+                        lines.append(f"- Tokens: {msg.rlm_metrics.total_tokens}")
+                        lines.append(f"- Cost: ${msg.rlm_metrics.cost_usd:.6f}")
+                        lines.append(f"- Time: {msg.rlm_metrics.execution_time_seconds:.2f}s")
+                        lines.append(f"- Steps: {msg.rlm_metrics.steps_taken}")
+                        lines.append("")
+                
+                if msg.direct_response:
+                    lines.append("### Direct Response")
+                    lines.append(f"```\n{msg.direct_response.content}\n```")
+                    lines.append("")
+                    if msg.direct_metrics:
+                        lines.append("**Direct Metrics:**")
+                        lines.append(f"- Tokens: {msg.direct_metrics.total_tokens}")
+                        lines.append(f"- Cost: ${msg.direct_metrics.cost_usd:.6f}")
+                        lines.append(f"- Time: {msg.direct_metrics.execution_time_seconds:.2f}s")
+                        lines.append(f"- Steps: {msg.direct_metrics.steps_taken}")
+                        lines.append("")
+                
+                if msg.comparison_metrics:
+                    lines.append("### Comparison")
+                    lines.append(f"{msg.comparison_metrics.recommendation}")
+                    lines.append("")
+                    lines.append("**Deltas:**")
+                    lines.append(f"- Cost: ${msg.comparison_metrics.cost_delta_usd:.6f} ({msg.comparison_metrics.cost_delta_percent:.0f}%)")
+                    lines.append(f"- Tokens: {msg.comparison_metrics.token_delta}")
+                    lines.append(f"- Time: {msg.comparison_metrics.time_delta_seconds:.2f}s ({msg.comparison_metrics.time_delta_percent:.0f}%)")
+                    lines.append("")
+            
+            return "\n".join(lines)
+        
+        elif format == "csv":
+            lines = [
+                "Query,Mode,RLM_Tokens,RLM_Cost,RLM_Time,RLM_Steps,Direct_Tokens,Direct_Cost,Direct_Time,Direct_Steps,Cost_Delta,Token_Delta,Time_Delta",
+            ]
+            
+            for msg in messages:
+                rlm_tokens = msg.rlm_metrics.total_tokens if msg.rlm_metrics else ""
+                rlm_cost = f"{msg.rlm_metrics.cost_usd:.6f}" if msg.rlm_metrics else ""
+                rlm_time = f"{msg.rlm_metrics.execution_time_seconds:.2f}" if msg.rlm_metrics else ""
+                rlm_steps = msg.rlm_metrics.steps_taken if msg.rlm_metrics else ""
+                
+                direct_tokens = msg.direct_metrics.total_tokens if msg.direct_metrics else ""
+                direct_cost = f"{msg.direct_metrics.cost_usd:.6f}" if msg.direct_metrics else ""
+                direct_time = f"{msg.direct_metrics.execution_time_seconds:.2f}" if msg.direct_metrics else ""
+                direct_steps = msg.direct_metrics.steps_taken if msg.direct_metrics else ""
+                
+                cost_delta = f"{msg.comparison_metrics.cost_delta_usd:.6f}" if msg.comparison_metrics else ""
+                token_delta = msg.comparison_metrics.token_delta if msg.comparison_metrics else ""
+                time_delta = f"{msg.comparison_metrics.time_delta_seconds:.2f}" if msg.comparison_metrics else ""
+                
+                # Escape quotes in query
+                query = msg.user_query.replace('"', '""')
+                
+                line = f'"{query}",{msg.mode},{rlm_tokens},{rlm_cost},{rlm_time},{rlm_steps},{direct_tokens},{direct_cost},{direct_time},{direct_steps},{cost_delta},{token_delta},{time_delta}'
+                lines.append(line)
+            
+            return "\n".join(lines)
+        
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'json', 'markdown', or 'csv'.")
     
     @property
     def conversation_id(self) -> str:

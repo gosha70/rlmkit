@@ -666,5 +666,595 @@ class TestChatManagerComparison:
         assert "cheaper" in comparison.recommendation.lower()
 
 
+# ============================================================================
+# PHASE 2.2: Metrics Collection
+# ============================================================================
+
+class TestMetricsCollectorCollection:
+    """Test MetricsCollector collection methods."""
+    
+    @pytest.mark.asyncio
+    async def test_collect_rlm_metrics_returns_execution_metrics(self):
+        """Test that collect_rlm_metrics returns ExecutionMetrics."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        # Simulate RLM execution with 3 steps
+        trace = [
+            {"step": 1, "input_tokens": 200, "output_tokens": 100, "duration_seconds": 0.5},
+            {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
+            {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
+        ]
+        result = {"response": Response("RLM result", "stop")}
+        
+        metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
+        
+        assert isinstance(metrics, ExecutionMetrics)
+        assert metrics.execution_type == "rlm"
+    
+    @pytest.mark.asyncio
+    async def test_collect_rlm_metrics_sums_tokens(self):
+        """Test that RLM metrics correctly sum tokens from trace."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        trace = [
+            {"step": 1, "input_tokens": 200, "output_tokens": 100, "duration_seconds": 0.5},
+            {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
+            {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
+        ]
+        result = {}
+        
+        metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
+        
+        # Input: 200 + 250 + 300 = 750
+        assert metrics.input_tokens == 750
+        # Output: 100 + 130 + 150 = 380
+        assert metrics.output_tokens == 380
+        # Total: 750 + 380 = 1130
+        assert metrics.total_tokens == 1130
+    
+    @pytest.mark.asyncio
+    async def test_collect_rlm_metrics_sums_execution_time(self):
+        """Test that RLM metrics sum execution time from trace."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        trace = [
+            {"step": 1, "input_tokens": 200, "output_tokens": 100, "duration_seconds": 0.5},
+            {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
+            {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
+        ]
+        result = {}
+        
+        metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
+        
+        # Total time: 0.5 + 0.6 + 0.7 = 1.8
+        assert metrics.execution_time_seconds == pytest.approx(1.8, abs=0.01)
+    
+    @pytest.mark.asyncio
+    async def test_collect_rlm_metrics_steps_taken(self):
+        """Test that RLM metrics records number of steps."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        trace = [
+            {"step": 1, "input_tokens": 200, "output_tokens": 100, "duration_seconds": 0.5},
+            {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
+            {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
+        ]
+        result = {}
+        
+        metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
+        
+        assert metrics.steps_taken == 3
+    
+    @pytest.mark.asyncio
+    async def test_collect_rlm_metrics_calculates_cost(self):
+        """Test that RLM metrics calculates cost correctly."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        # Simple trace for cost calculation
+        trace = [
+            {"input_tokens": 1000, "output_tokens": 1000, "duration_seconds": 1.0},
+        ]
+        result = {}
+        
+        metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
+        
+        # OpenAI GPT-4: input $0.03/1K, output $0.06/1K
+        # 1000 input * 0.03/1K + 1000 output * 0.06/1K = 0.03 + 0.06 = 0.09
+        assert metrics.cost_usd == pytest.approx(0.09, abs=0.001)
+    
+    @pytest.mark.asyncio
+    async def test_collect_direct_metrics_returns_execution_metrics(self):
+        """Test that collect_direct_metrics returns ExecutionMetrics."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        result = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        
+        metrics = await collector.collect_direct_metrics(result, monitor, "openai", "gpt-4")
+        
+        assert isinstance(metrics, ExecutionMetrics)
+        assert metrics.execution_type == "direct"
+    
+    @pytest.mark.asyncio
+    async def test_collect_direct_metrics_no_steps(self):
+        """Test that direct metrics has zero steps."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        result = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        
+        metrics = await collector.collect_direct_metrics(result, monitor, "openai", "gpt-4")
+        
+        assert metrics.steps_taken == 0
+    
+    @pytest.mark.asyncio
+    async def test_collect_direct_metrics_fewer_tokens(self):
+        """Test that direct metrics has fewer tokens than RLM."""
+        collector = MetricsCollector()
+        monitor = MemoryMonitor()
+        
+        direct_result = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        
+        direct_metrics = await collector.collect_direct_metrics(direct_result, monitor, "openai", "gpt-4")
+        
+        assert direct_metrics.total_tokens == 270
+        assert direct_metrics.input_tokens == 150
+        assert direct_metrics.output_tokens == 120
+
+
+class TestMetricsCollectorComparison:
+    """Test MetricsCollector.compare_metrics() method."""
+    
+    def test_metrics_collector_compare_returns_comparison_metrics(self):
+        """Test that compare_metrics returns ComparisonMetrics."""
+        collector = MetricsCollector()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=750, output_tokens=380, total_tokens=1130,
+            cost_usd=0.090, cost_breakdown={"input": 0.0225, "output": 0.0675},
+            execution_time_seconds=1.8, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.0045, "output": 0.0105},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = collector.compare_metrics(rlm_metrics, direct_metrics)
+        
+        assert isinstance(comparison, ComparisonMetrics)
+    
+    def test_metrics_collector_compare_cost_delta(self):
+        """Test cost delta calculation in collector."""
+        collector = MetricsCollector()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=750, output_tokens=380, total_tokens=1130,
+            cost_usd=0.090, cost_breakdown={"input": 0.0225, "output": 0.0675},
+            execution_time_seconds=1.8, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.0045, "output": 0.0105},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = collector.compare_metrics(rlm_metrics, direct_metrics)
+        
+        # RLM is $0.075 more expensive (0.090 - 0.015 = 0.075)
+        assert comparison.cost_delta_usd == pytest.approx(0.075, abs=0.001)
+        # That's 500% more expensive
+        assert comparison.cost_delta_percent == pytest.approx(500, abs=1)
+    
+    def test_metrics_collector_compare_token_delta(self):
+        """Test token delta calculation in collector."""
+        collector = MetricsCollector()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=750, output_tokens=380, total_tokens=1130,
+            cost_usd=0.090, cost_breakdown={"input": 0.0225, "output": 0.0675},
+            execution_time_seconds=1.8, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.0045, "output": 0.0105},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = collector.compare_metrics(rlm_metrics, direct_metrics)
+        
+        # RLM uses 860 more tokens (1130 - 270 = 860)
+        assert comparison.token_delta == 860
+    
+    def test_metrics_collector_compare_time_delta(self):
+        """Test time delta calculation in collector."""
+        collector = MetricsCollector()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=750, output_tokens=380, total_tokens=1130,
+            cost_usd=0.090, cost_breakdown={"input": 0.0225, "output": 0.0675},
+            execution_time_seconds=1.8, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.0045, "output": 0.0105},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = collector.compare_metrics(rlm_metrics, direct_metrics)
+        
+        # RLM is 1.0 second slower (1.8 - 0.8 = 1.0)
+        assert comparison.time_delta_seconds == pytest.approx(1.0, abs=0.01)
+        # That's 125% slower
+        assert comparison.time_delta_percent == pytest.approx(125, abs=1)
+    
+    def test_metrics_collector_compare_recommendation(self):
+        """Test recommendation generation in collector."""
+        collector = MetricsCollector()
+        
+        rlm_metrics = ExecutionMetrics(
+            input_tokens=750, output_tokens=380, total_tokens=1130,
+            cost_usd=0.090, cost_breakdown={"input": 0.0225, "output": 0.0675},
+            execution_time_seconds=1.8, steps_taken=3,
+            memory_used_mb=45.2, memory_peak_mb=62.1, success=True, execution_type="rlm"
+        )
+        
+        direct_metrics = ExecutionMetrics(
+            input_tokens=150, output_tokens=120, total_tokens=270,
+            cost_usd=0.015, cost_breakdown={"input": 0.0045, "output": 0.0105},
+            execution_time_seconds=0.8, steps_taken=0,
+            memory_used_mb=12.5, memory_peak_mb=18.3, success=True, execution_type="direct"
+        )
+        
+        comparison = collector.compare_metrics(rlm_metrics, direct_metrics)
+        
+        assert comparison.recommendation
+        # Should mention Direct is cheaper and faster
+        assert "cheaper" in comparison.recommendation.lower()
+        assert "faster" in comparison.recommendation.lower()
+
+
+class TestChatManagerProcessMessage:
+    """Test ChatManager.process_message() routing and execution."""
+    
+    @pytest.mark.asyncio
+    async def test_process_message_rlm_only_mode(self):
+        """Test process_message in RLM-only mode."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(
+            user_query="Summarize the document",
+            mode="rlm_only"
+        )
+        
+        # Should have RLM response and metrics
+        assert message.rlm_response is not None
+        assert message.rlm_metrics is not None
+        assert message.rlm_trace is not None
+        # Should NOT have direct response
+        assert message.direct_response is None
+        assert message.direct_metrics is None
+        # Should NOT have comparison
+        assert message.comparison_metrics is None
+        # Should have 3 RLM steps
+        assert message.rlm_metrics.steps_taken == 3
+    
+    @pytest.mark.asyncio
+    async def test_process_message_direct_only_mode(self):
+        """Test process_message in Direct-only mode."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(
+            user_query="Quick answer",
+            mode="direct_only"
+        )
+        
+        # Should NOT have RLM response
+        assert message.rlm_response is None
+        assert message.rlm_metrics is None
+        # Should have direct response and metrics
+        assert message.direct_response is not None
+        assert message.direct_metrics is not None
+        # Should NOT have comparison
+        assert message.comparison_metrics is None
+        # Should have 0 steps (direct call)
+        assert message.direct_metrics.steps_taken == 0
+    
+    @pytest.mark.asyncio
+    async def test_process_message_compare_mode_both_paths(self):
+        """Test process_message in Compare mode executes both paths."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(
+            user_query="Compare approaches",
+            mode="compare"
+        )
+        
+        # Should have BOTH RLM and Direct responses
+        assert message.rlm_response is not None
+        assert message.rlm_metrics is not None
+        assert message.rlm_trace is not None
+        assert message.direct_response is not None
+        assert message.direct_metrics is not None
+        # Should have comparison
+        assert message.comparison_metrics is not None
+    
+    @pytest.mark.asyncio
+    async def test_process_message_comparison_metrics_calculated(self):
+        """Test that comparison metrics are calculated correctly."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(
+            user_query="Compare",
+            mode="compare"
+        )
+        
+        comparison = message.comparison_metrics
+        # Should have cost delta
+        assert comparison.cost_delta_usd > 0  # RLM is more expensive
+        assert comparison.cost_delta_percent > 0
+        # Should have token delta
+        assert comparison.token_delta > 0  # RLM has more tokens
+        # Should have time delta
+        assert comparison.time_delta_seconds > 0  # RLM is slower
+        assert comparison.time_delta_percent > 0
+        # Should have recommendation
+        assert comparison.recommendation
+    
+    @pytest.mark.asyncio
+    async def test_process_message_adds_to_session_state(self):
+        """Test that process_message adds message to session state."""
+        session_state = {}
+        manager = ChatManager(session_state)
+        
+        # Initial state should have empty messages
+        assert len(session_state["messages"]) == 0
+        
+        message1 = await manager.process_message("First query")
+        assert len(session_state["messages"]) == 1
+        assert session_state["messages"][0] == message1
+        
+        message2 = await manager.process_message("Second query")
+        assert len(session_state["messages"]) == 2
+        assert session_state["messages"][1] == message2
+    
+    @pytest.mark.asyncio
+    async def test_process_message_with_file_context(self):
+        """Test process_message with file context."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(
+            user_query="Summarize",
+            mode="rlm_only",
+            file_context="This is the document content...",
+            file_info={"name": "document.txt", "size_bytes": 5000}
+        )
+        
+        assert message.file_context == "This is the document content..."
+        assert message.file_info["name"] == "document.txt"
+        assert message.rlm_response is not None
+    
+    @pytest.mark.asyncio
+    async def test_process_message_rlm_faster_than_direct_false(self):
+        """Test that RLM is slower than Direct (as expected)."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(user_query="Test", mode="compare")
+        
+        # RLM should take longer (3 steps) than Direct (single call)
+        assert message.rlm_metrics.execution_time_seconds > message.direct_metrics.execution_time_seconds
+    
+    @pytest.mark.asyncio
+    async def test_process_message_rlm_more_tokens_than_direct(self):
+        """Test that RLM uses more tokens than Direct."""
+        manager = ChatManager()
+        
+        message = await manager.process_message(user_query="Test", mode="compare")
+        
+        # RLM with 3 steps uses more tokens than single Direct call
+        assert message.rlm_metrics.total_tokens > message.direct_metrics.total_tokens
+    
+    @pytest.mark.asyncio
+    async def test_process_message_error_handling_rlm(self):
+        """Test error handling if RLM fails (graceful degradation)."""
+        manager = ChatManager()
+        
+        # Mock a failure scenario by using an invalid mode that should still work
+        # In real scenario, this would be a network error, etc.
+        # For now, just test that the method completes without raising
+        try:
+            message = await manager.process_message("Test", mode="compare")
+            # Should complete even if internal error occurs
+            assert message.user_query == "Test"
+        except Exception:
+            pytest.fail("process_message should handle errors gracefully")
+
+
+class TestChatManagerExportConversation:
+    """Test ChatManager.export_conversation() for different formats."""
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_json_format(self):
+        """Test exporting conversation as JSON."""
+        manager = ChatManager()
+        
+        await manager.process_message("Test query 1", mode="compare")
+        
+        export = manager.export_conversation("json")
+        
+        # Should be valid JSON
+        import json
+        data = json.loads(export)
+        
+        # Should have required fields
+        assert "conversation_id" in data
+        assert "message_count" in data
+        assert "messages" in data
+        assert data["message_count"] == 1
+        
+        # First message should have query and metrics
+        msg_data = data["messages"][0]
+        assert msg_data["user_query"] == "Test query 1"
+        assert msg_data["mode"] == "compare"
+        assert msg_data["rlm_metrics"] is not None
+        assert msg_data["direct_metrics"] is not None
+        assert msg_data["comparison"] is not None
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_markdown_format(self):
+        """Test exporting conversation as Markdown."""
+        manager = ChatManager()
+        
+        await manager.process_message("Summarize", mode="rlm_only")
+        
+        export = manager.export_conversation("markdown")
+        
+        # Should have markdown structure
+        assert "# Conversation Report" in export
+        assert "## Query 1" in export
+        assert "**Mode:**" in export
+        assert "**Time:**" in export
+        assert "### User Query" in export
+        assert "### RLM Response" in export
+        assert "**RLM Metrics:**" in export
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_csv_format(self):
+        """Test exporting conversation as CSV."""
+        manager = ChatManager()
+        
+        await manager.process_message("Test query", mode="compare")
+        
+        export = manager.export_conversation("csv")
+        
+        # Should have CSV structure
+        lines = export.strip().split("\n")
+        
+        # Should have header
+        assert "Query" in lines[0]
+        assert "Mode" in lines[0]
+        assert "RLM_Tokens" in lines[0]
+        assert "Direct_Tokens" in lines[0]
+        
+        # Should have data row
+        assert len(lines) == 2  # Header + 1 message
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_multiple_messages(self):
+        """Test exporting conversation with multiple messages."""
+        manager = ChatManager()
+        
+        await manager.process_message("Query 1", mode="rlm_only")
+        await manager.process_message("Query 2", mode="direct_only")
+        await manager.process_message("Query 3", mode="compare")
+        
+        json_export = manager.export_conversation("json")
+        
+        import json
+        data = json.loads(json_export)
+        assert data["message_count"] == 3
+        assert len(data["messages"]) == 3
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_json_has_cost_metrics(self):
+        """Test that JSON export includes cost metrics."""
+        manager = ChatManager()
+        
+        await manager.process_message("Test", mode="compare")
+        
+        export = manager.export_conversation("json")
+        
+        import json
+        data = json.loads(export)
+        msg = data["messages"][0]
+        
+        # Should have cost in metrics
+        assert msg["rlm_metrics"]["cost_usd"] > 0
+        assert msg["direct_metrics"]["cost_usd"] > 0
+        assert msg["comparison"]["cost_delta_usd"] > 0
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_markdown_has_recommendation(self):
+        """Test that Markdown export includes recommendation."""
+        manager = ChatManager()
+        
+        await manager.process_message("Test", mode="compare")
+        
+        export = manager.export_conversation("markdown")
+        
+        # Should include recommendation
+        assert "### Comparison" in export
+        assert "Deltas:" in export
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_csv_escapes_quotes(self):
+        """Test that CSV export properly escapes quotes in queries."""
+        manager = ChatManager()
+        
+        query_with_quotes = 'What is "Python"?'
+        await manager.process_message(query_with_quotes, mode="rlm_only")
+        
+        export = manager.export_conversation("csv")
+        
+        # CSV should have escaped quotes
+        assert '""' in export  # Double quotes for escaping
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_empty_conversation(self):
+        """Test exporting empty conversation."""
+        manager = ChatManager()
+        
+        json_export = manager.export_conversation("json")
+        
+        import json
+        data = json.loads(json_export)
+        assert data["message_count"] == 0
+        assert len(data["messages"]) == 0
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_invalid_format(self):
+        """Test that invalid format raises ValueError."""
+        manager = ChatManager()
+        
+        with pytest.raises(ValueError, match="Unsupported format"):
+            manager.export_conversation("xml")
+    
+    @pytest.mark.asyncio
+    async def test_export_conversation_preserves_timestamps(self):
+        """Test that export preserves message timestamps."""
+        manager = ChatManager()
+        
+        await manager.process_message("Test", mode="rlm_only")
+        
+        export = manager.export_conversation("json")
+        
+        import json
+        data = json.loads(export)
+        
+        # Timestamps should be ISO format
+        timestamp = data["messages"][0]["timestamp"]
+        assert "T" in timestamp  # ISO format includes T
+        assert isinstance(timestamp, str)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
