@@ -106,8 +106,16 @@ def render_provider_list():
 
 
 def render_add_provider_form():
-    """Display form for adding new provider."""
+    """Display form for adding new provider with simplified API key setup."""
     st.subheader("➕ Add New Provider")
+    
+    st.info("""
+    🔐 **How API Keys Work:**
+    - Paste your API key in the field below (stored in memory only, not on disk)
+    - OR set environment variable (e.g., `export OPENAI_API_KEY=sk-...`)
+    - If you set the env variable, leave the key field empty
+    - The app will use whichever is available
+    """)
     
     with st.form("add_provider_form"):
         # Provider selection
@@ -129,7 +137,6 @@ def render_add_provider_form():
                     "gpt-3.5-turbo-16k"
                 ]
             )
-            cost_input = st.write("💰 **Pricing (auto-set)**")
             input_cost = 0.03
             output_cost = 0.06
         elif provider == "anthropic":
@@ -143,7 +150,6 @@ def render_add_provider_form():
                     "claude-2"
                 ]
             )
-            st.write("💰 **Pricing (auto-set)**")
             input_cost = 0.015
             output_cost = 0.075
         elif provider == "ollama":
@@ -152,7 +158,6 @@ def render_add_provider_form():
                 placeholder="e.g., llama2, neural-chat, mistral",
                 help="Name of the model running on Ollama"
             )
-            st.write("💰 **Pricing: Local (no cost)**")
             input_cost = 0.0
             output_cost = 0.0
         else:  # lmstudio
@@ -161,53 +166,37 @@ def render_add_provider_form():
                 placeholder="e.g., mistral, neural-chat",
                 help="Name of the model running on LMStudio"
             )
-            st.write("💰 **Pricing: Local (no cost)**")
             input_cost = 0.0
             output_cost = 0.0
         
-        # API Key input
-        st.write("🔑 **API Key Configuration**")
+        # Single API Key field (simplified!)
+        st.write("🔑 **API Key** (optional if set in environment)")
         
-        api_key_option = st.radio(
-            "How to provide API key?",
-            ["Environment Variable", "Direct Input"],
-            help="For security, environment variable is recommended"
+        # Provider-specific placeholder hint
+        placeholder_hints = {
+            "openai": "sk-... (from platform.openai.com)",
+            "anthropic": "sk-ant-... (from console.anthropic.com)",
+            "ollama": "Not required for local Ollama",
+            "lmstudio": "Not required for local LM Studio"
+        }
+        placeholder = placeholder_hints.get(provider, "Paste your API key here")
+        
+        api_key_input = st.text_input(
+            "API Key (paste here or use environment variable)",
+            type="password",
+            placeholder=placeholder,
+            help="Your API key. Not saved to disk. If empty, looks for env variable like OPENAI_API_KEY or ANTHROPIC_API_KEY"
         )
         
-        api_key = None
-        api_key_env_var = None
-        
-        if api_key_option == "Environment Variable":
-            api_key_env_var = st.text_input(
-                "Environment Variable Name",
-                placeholder="e.g., OPENAI_API_KEY",
-                help="Name of environment variable containing the API key"
-            )
-            # Show value if set
-            if api_key_env_var:
-                env_value = os.getenv(api_key_env_var)
-                if env_value:
-                    st.success(f"✅ Found: {api_key_env_var}={env_value[:10]}...")
-                else:
-                    st.warning(f"⚠️ Environment variable not found: {api_key_env_var}")
-        else:
-            api_key = st.text_input(
-                "API Key",
-                type="password",
-                placeholder="sk-...",
-                help="Paste your API key here (not recommended for production)"
-            )
-        
-        # Temperature and other settings
+        # Simple settings
         col1, col2 = st.columns(2)
         with col1:
             temperature = st.slider(
-                "Temperature",
+                "Temperature (how random)",
                 min_value=0.0,
                 max_value=2.0,
                 value=0.7,
                 step=0.1,
-                help="Controls randomness of responses"
             )
         with col2:
             max_tokens = st.number_input(
@@ -215,24 +204,38 @@ def render_add_provider_form():
                 min_value=100,
                 max_value=32000,
                 value=2000,
-                help="Maximum tokens in response"
             )
         
         # Submit button
-        submitted = st.form_submit_button("✅ Add Provider", use_container_width=True)
+        submitted = st.form_submit_button("✅ Add & Test Provider", use_container_width=True)
         
         if submitted:
             if not model:
-                st.error("Please select or enter a model name")
+                st.error("❌ Please select or enter a model name")
                 return
             
-            if not api_key and not api_key_env_var:
-                st.error("Please provide either an API key or environment variable")
-                return
+            # Use provided key OR fall back to auto-finding environment variable
+            api_key = api_key_input if api_key_input else None
+            
+            # For OpenAI/Anthropic, try to auto-detect environment variable if no key provided
+            api_key_env_var = None
+            if not api_key:
+                env_map = {
+                    "openai": "OPENAI_API_KEY",
+                    "anthropic": "ANTHROPIC_API_KEY",
+                    "ollama": None,
+                    "lmstudio": None,
+                }
+                env_var_name = env_map.get(provider)
+                if env_var_name and os.getenv(env_var_name):
+                    api_key_env_var = env_var_name
+                elif provider in ["openai", "anthropic"]:
+                    st.error(f"❌ No API key provided and {env_var_name} environment variable not found")
+                    return
             
             with st.spinner(f"Testing connection to {provider}..."):
                 manager = st.session_state.llm_manager
-                success = manager.add_provider(
+                success, error_msg = manager.add_provider(
                     provider=provider,
                     model=model,
                     api_key=api_key,
@@ -244,10 +247,11 @@ def render_add_provider_form():
                 )
             
             if success:
-                st.success(f"✅ Successfully added {provider} provider!")
+                st.success(f"✅ {provider.upper()} provider added and tested successfully!")
+                st.balloons()
                 st.rerun()
             else:
-                st.error(f"❌ Failed to connect to {provider}. Check your API key and try again.")
+                st.error(f"❌ Connection test failed:\n\n{error_msg}")
 
 
 def render_pricing_info():

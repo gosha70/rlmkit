@@ -49,7 +49,7 @@ class LLMConfigManager:
         input_cost_per_1k: float = 0.0,
         output_cost_per_1k: float = 0.0,
         **kwargs
-    ) -> bool:
+    ) -> tuple:
         """
         Add or update a provider configuration.
         
@@ -63,16 +63,18 @@ class LLMConfigManager:
             **kwargs: Additional config (temperature, max_tokens, etc)
         
         Returns:
-            True if provider was added successfully, False otherwise
+            Tuple of (success: bool, error_message: str)
+            If successful: (True, "")
+            If failed: (False, "error reason")
             
         Implementation notes:
         - Should validate at least one of api_key or api_key_env_var
         - Should test connection before saving
         - Should never save api_key to disk (only env_var)
-        - Should return False if connection test fails
+        - Returns error message if connection test fails
         """
         if not api_key and not api_key_env_var:
-            raise ValueError("Must provide either api_key or api_key_env_var")
+            return False, "Must provide either api_key or api_key_env_var"
         
         config = LLMProviderConfig(
             provider=provider,
@@ -85,14 +87,25 @@ class LLMConfigManager:
         )
         
         # Test connection before saving
-        if not self.test_connection(provider, model, api_key, api_key_env_var):
-            return False
+        success, error_msg = self.test_connection(provider, model, api_key, api_key_env_var)
+        if not success:
+            print(f"DEBUG: test_connection returned False: {error_msg}")
+            return False, error_msg
+        
+        # Mark test as successful
+        config.test_successful = True
+        print(f"DEBUG: Set test_successful=True for {provider}")
         
         # Save configuration
         self._save_config(config)
         self._configs[provider] = config
+        print(f"DEBUG: Saved config. is_ready={config.is_ready}, test_successful={config.test_successful}")
         
-        return True
+        # Set as active provider (auto-select first provider added)
+        if not self._active_provider:
+            self._active_provider = provider
+        
+        return True, ""
     
     def get_provider_config(self, provider: str) -> Optional[LLMProviderConfig]:
         """
@@ -140,7 +153,7 @@ class LLMConfigManager:
         model: str,
         api_key: Optional[str] = None,
         api_key_env_var: Optional[str] = None,
-    ) -> bool:
+    ) -> tuple:
         """
         Test connection to a provider.
         
@@ -151,21 +164,23 @@ class LLMConfigManager:
             api_key_env_var: Environment variable name
         
         Returns:
-            True if connection successful, False otherwise
+            Tuple of (success: bool, error_message: str)
+            If successful: (True, "")
+            If failed: (False, "detailed error message")
             
         Example:
             >>> manager = LLMConfigManager()
-            >>> success = manager.test_connection(
+            >>> success, error = manager.test_connection(
             ...     provider="openai",
             ...     model="gpt-4",
             ...     api_key="sk-test-key..."
             ... )
-            >>> print(success)
-            True or False
+            >>> if not success:
+            ...     print(f"Error: {error}")
         """
         # Validate inputs
         if not provider or not model:
-            return False
+            return False, "Provider and model are required"
         
         # Get API key from environment if needed
         effective_api_key = api_key
@@ -174,10 +189,9 @@ class LLMConfigManager:
         
         # If no API key, only allow for local providers (ollama, lmstudio)
         if not effective_api_key and provider not in ("ollama", "lmstudio"):
-            return False
+            env_var = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}.get(provider, "API_KEY")
+            return False, f"No API key provided. Set environment variable {env_var} or provide API key."
         
-        # LATER: Implement real API calls for each provider
-        # For now, validate known providers with mock responses
         supported_providers = {
             "openai": self._test_openai_connection,
             "anthropic": self._test_anthropic_connection,
@@ -186,123 +200,186 @@ class LLMConfigManager:
         }
         
         if provider not in supported_providers:
-            return False
+            return False, f"Unsupported provider: {provider}"
         
         try:
             tester = supported_providers[provider]
-            return tester(model, effective_api_key or "")
-        except Exception:
-            return False
+            result = tester(model, effective_api_key or "")
+            if isinstance(result, tuple):
+                return result
+            return (True, "") if result else (False, f"Connection to {provider} failed")
+        except Exception as e:
+            return False, f"Connection error: {str(e)}"
     
-    def _test_openai_connection(self, model: str, api_key: str) -> bool:
+    def _test_openai_connection(self, model: str, api_key: str) -> tuple:
         """
-        Test OpenAI connection.
+        Test OpenAI connection with a dummy API request.
         
         Args:
             model: Model name
             api_key: API key
         
         Returns:
-            True if connection successful
-            
-        Implementation notes:
-        - LATER: Replace with actual OpenAI API call
-        - For now: Validate key format and model
+            Tuple of (success: bool, error_message: str)
         """
-        # Validate API key format (starts with "sk-")
-        if not api_key.startswith("sk-"):
-            return False
+        # Validate API key exists
+        if not api_key or api_key.strip() == "":
+            return False, "API key is required for OpenAI"
         
-        # LATER: Make actual API call to test connection
-        # For testing: just validate model is known
-        valid_models = [
-            "gpt-4", "gpt-4-32k", "gpt-4-turbo", "gpt-4-turbo-preview",
-            "gpt-3.5-turbo", "gpt-3.5-turbo-16k"
-        ]
-        
-        if model not in valid_models:
-            return False
-        
-        return True
+        # Try to get LLM client and make a test call
+        try:
+            print(f"DEBUG: Testing OpenAI connection with model {model}")
+            from rlmkit.llm import get_llm_client
+            client = get_llm_client(
+                provider="openai",
+                model=model,
+                api_key=api_key
+            )
+            print(f"DEBUG: OpenAI client created successfully")
+            # Make minimal test request
+            response = client.complete([
+                {"role": "user", "content": "Hello"}
+            ])
+            print(f"DEBUG: OpenAI API response received: {len(response) if response else 0} chars")
+            if response:
+                return True, ""
+            else:
+                return False, "OpenAI API returned empty response"
+        except Exception as e:
+            error_msg = str(e)
+            print(f"DEBUG: OpenAI connection error: {error_msg}")
+            # Extract the most relevant part of the error
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                return False, "Invalid API key (401 Unauthorized). Check your OPENAI_API_KEY."
+            elif "403" in error_msg or "forbidden" in error_msg.lower():
+                return False, "Access forbidden (403). Check your account permissions or billing."
+            elif "rate_limit" in error_msg.lower():
+                return False, "Rate limit exceeded. Wait a moment and try again."
+            else:
+                return False, f"OpenAI connection failed: {error_msg}"
     
-    def _test_anthropic_connection(self, model: str, api_key: str) -> bool:
+    def _test_anthropic_connection(self, model: str, api_key: str) -> tuple:
         """
-        Test Anthropic connection.
+        Test Anthropic connection with a dummy API request.
         
         Args:
             model: Model name
             api_key: API key
         
         Returns:
-            True if connection successful
-            
-        Implementation notes:
-        - LATER: Replace with actual Anthropic API call
-        - For now: Validate key format and model
+            Tuple of (success: bool, error_message: str)
         """
-        # Validate API key format (starts with "sk-ant-")
-        if not api_key.startswith("sk-ant-"):
-            return False
+        # Validate API key exists
+        if not api_key or api_key.strip() == "":
+            return False, "API key is required for Anthropic"
         
-        # LATER: Make actual API call to test connection
-        # For testing: just validate model is known
-        valid_models = [
-            "claude-3-opus", "claude-3-sonnet", "claude-3-haiku",
-            "claude-2.1", "claude-2"
-        ]
-        
-        if model not in valid_models:
-            return False
-        
-        return True
+        # Try to get LLM client and make a test call
+        try:
+            from rlmkit.llm import get_llm_client
+            client = get_llm_client(
+                provider="anthropic",
+                model=model,
+                api_key=api_key
+            )
+            # Make minimal test request
+            response = client.complete([
+                {"role": "user", "content": "Hello"}
+            ])
+            if response:
+                return True, ""
+            else:
+                return False, "Anthropic API returned empty response"
+        except Exception as e:
+            error_msg = str(e)
+            # Extract the most relevant part of the error
+            if "401" in error_msg or "unauthorized" in error_msg.lower():
+                return False, "Invalid API key (401 Unauthorized). Check your ANTHROPIC_API_KEY."
+            elif "403" in error_msg or "forbidden" in error_msg.lower():
+                return False, "Access forbidden (403). Check your account permissions or billing."
+            elif "rate_limit" in error_msg.lower() or "overloaded" in error_msg.lower():
+                return False, "Rate limit exceeded or API overloaded. Wait a moment and try again."
+            else:
+                return False, f"Anthropic connection failed: {error_msg}"
     
-    def _test_ollama_connection(self, model: str, api_key: str) -> bool:
+    def _test_ollama_connection(self, model: str, api_key: str) -> tuple:
         """
-        Test Ollama connection.
+        Test Ollama connection with HTTP request.
         
         Args:
             model: Model name
             api_key: API key (unused for Ollama, but kept for consistency)
         
         Returns:
-            True if connection successful
-            
-        Implementation notes:
-        - LATER: Replace with actual HTTP request to Ollama server
-        - For now: Just validate model name exists
-        - Ollama typically runs on localhost:11434
+            Tuple of (success: bool, error_message: str)
         """
         # Ollama doesn't need API key, but check if any model name provided
         if not model:
-            return False
+            return False, "Model name is required"
         
-        # LATER: Make actual HTTP request to http://localhost:11434/api/tags
-        # For testing: accept any model name
-        return True
+        # Test connection to Ollama server
+        try:
+            import requests
+            response = requests.get(
+                "http://localhost:11434/api/tags",
+                timeout=2
+            )
+            if response.status_code != 200:
+                return False, f"Ollama server returned status {response.status_code}"
+            
+            # Check if model is available
+            models = response.json().get("models", [])
+            model_names = [m.get("name", "").split(":")[0] for m in models]
+            if model in model_names:
+                return True, ""
+            else:
+                available = ", ".join(model_names[:3])
+                return False, f"Model '{model}' not found on Ollama. Available: {available}"
+        except requests.exceptions.ConnectionError:
+            return False, "Cannot connect to Ollama server. Is it running on localhost:11434?"
+        except requests.exceptions.Timeout:
+            return False, "Ollama server timed out. Is it responding?"
+        except Exception as e:
+            return False, f"Ollama connection failed: {str(e)}"
     
-    def _test_lmstudio_connection(self, model: str, api_key: str) -> bool:
+    def _test_lmstudio_connection(self, model: str, api_key: str) -> tuple:
         """
-        Test LMStudio connection.
+        Test LM Studio connection with HTTP request.
         
         Args:
             model: Model name
             api_key: API key (unused for LMStudio, but kept for consistency)
         
         Returns:
-            True if connection successful
-            
-        Implementation notes:
-        - LATER: Replace with actual HTTP request to LMStudio server
-        - For now: Just validate model name exists
-        - LMStudio typically runs on localhost:1234
+            Tuple of (success: bool, error_message: str)
         """
         # LMStudio doesn't need API key, but check if any model name provided
         if not model:
-            return False
+            return False, "Model name is required"
         
-        # LATER: Make actual HTTP request to http://localhost:1234/v1/models
-        # For testing: accept any model name
-        return True
+        # Test connection to LM Studio server
+        try:
+            import requests
+            response = requests.get(
+                "http://localhost:1234/v1/models",
+                timeout=2
+            )
+            if response.status_code != 200:
+                return False, f"LM Studio server returned status {response.status_code}"
+            
+            # Check if model is available
+            models = response.json().get("data", [])
+            model_ids = [m.get("id", "") for m in models]
+            if model in model_ids:
+                return True, ""
+            else:
+                available = ", ".join(model_ids[:3])
+                return False, f"Model '{model}' not found on LM Studio. Available: {available}"
+        except requests.exceptions.ConnectionError:
+            return False, "Cannot connect to LM Studio server. Is it running on localhost:1234?"
+        except requests.exceptions.Timeout:
+            return False, "LM Studio server timed out. Is it responding?"
+        except Exception as e:
+            return False, f"LM Studio connection failed: {str(e)}"
     
     def delete_provider(self, provider: str) -> bool:
         """

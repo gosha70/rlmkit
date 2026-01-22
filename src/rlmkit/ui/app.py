@@ -12,6 +12,7 @@ Interactive UI for:
 
 import streamlit as st
 import json
+import asyncio
 from typing import Optional
 from pathlib import Path
 
@@ -26,6 +27,11 @@ from rlmkit.ui.charts import (
     create_time_comparison_chart,
     create_metrics_radar_chart,
 )
+
+# Import Phase 2 service layer
+from rlmkit.ui.services.chat_manager import ChatManager
+from rlmkit.ui.services.memory_monitor import MemoryMonitor
+from rlmkit.ui.services.models import ChatMessage
 
 
 # Page configuration
@@ -47,6 +53,21 @@ def init_session_state():
         st.session_state.comparison_result = None
     if 'last_query' not in st.session_state:
         st.session_state.last_query = ""
+    # Phase 2 service layer initialization
+    if 'chat_manager' not in st.session_state:
+        st.session_state.chat_manager = ChatManager(st.session_state)
+    if 'memory_monitor' not in st.session_state:
+        st.session_state.memory_monitor = MemoryMonitor()
+    if 'chat_messages' not in st.session_state:
+        st.session_state.chat_messages = []
+    # Initialize selected_provider from config (set by Configuration page)
+    if 'selected_provider' not in st.session_state:
+        from rlmkit.ui.services import LLMConfigManager
+        from pathlib import Path
+        config_dir = Path.home() / ".rlmkit"
+        manager = LLMConfigManager(config_dir=config_dir)
+        providers = manager.list_providers()
+        st.session_state.selected_provider = providers[0] if providers else None
 
 
 def render_header():
@@ -247,7 +268,7 @@ def render_query_input():
 
 
 def render_run_button(config, query):
-    """Render run button and execute comparison."""
+    """Render run button and execute comparison using Phase 2 service layer."""
     # Check if content and query are provided
     has_content = st.session_state.file_content is not None
     has_query = query and query.strip()
@@ -278,84 +299,41 @@ def render_run_button(config, query):
     ):
         st.session_state.last_query = query
         
-        # Create RLM configuration
-        exec_config = ExecutionConfig(
-            max_steps=config['max_steps'],
-            default_timeout=config['timeout'],
-            enable_rlm=True,
-        )
-        rlm_config = RLMConfig(execution=exec_config)
+        # Map UI mode to Phase 2 mode
+        mode_mapping = {
+            "Compare Both": "compare",
+            "RLM Only": "rlm_only",
+            "Direct Only": "direct_only"
+        }
+        phase2_mode = mode_mapping.get(config['mode'], "compare")
         
-        # Get LLM client
-        try:
-            if config['provider'] == "Mock (Testing)":
-                from rlmkit.llm.mock_client import MockLLMClient
-                client = MockLLMClient([
-                    "```python\nx = len(P)\nprint(f'Content length: {x}')\n```",
-                    "FINAL: This is a mock response for testing purposes."
-                ])
-            else:
-                client = get_llm_client(
-                    provider=config['provider'].lower(),
-                    model=config['model'],
-                    api_key=config.get('api_key')
-                )
-        except Exception as e:
-            st.error(f"Error creating LLM client: {str(e)}")
-            return
-        
-        # Create RLM instance
-        rlm = RLM(client=client, config=rlm_config)
-        
-        # Run based on selected mode
+        # Use Phase 2 service layer via ChatManager
         with st.spinner(f"Running {config['mode']}..."):
             try:
-                if config['mode'] == "Compare Both":
-                    result = rlm.run_comparison(
-                        prompt=st.session_state.file_content,
-                        query=query
+                # Prepare file info for ChatManager
+                file_info = None
+                if st.session_state.file_info:
+                    file_info = {
+                        "filename": st.session_state.file_info.filename,
+                        "size_bytes": st.session_state.file_info.size_bytes,
+                        "estimated_tokens": st.session_state.file_info.estimated_tokens,
+                    }
+                
+                # Call Phase 2 ChatManager.process_message()
+                chat_message = asyncio.run(
+                    st.session_state.chat_manager.process_message(
+                        user_query=query,
+                        mode=phase2_mode,
+                        file_context=st.session_state.file_content,
+                        file_info=file_info
                     )
-                    st.session_state.comparison_result = result
-                elif config['mode'] == "RLM Only":
-                    from rlmkit.core.comparison import ComparisonResult, ExecutionMetrics
-                    from rlmkit.core.budget import TokenUsage
-                    import time
-                    
-                    start = time.time()
-                    rlm_result = rlm.run(st.session_state.file_content, query)
-                    elapsed = time.time() - start
-                    
-                    # Create comparison result with only RLM metrics
-                    result = ComparisonResult()
-                    result.rlm_metrics = ExecutionMetrics(
-                        mode="rlm",
-                        answer=rlm_result.answer,
-                        steps=rlm_result.steps,
-                        tokens=TokenUsage(),  # Simplified for now
-                        elapsed_time=elapsed,
-                        success=rlm_result.success,
-                        error=rlm_result.error,
-                        trace=rlm_result.trace
-                    )
-                    st.session_state.comparison_result = result
-                else:  # Direct Only
-                    from rlmkit.core.comparison import ComparisonResult, ExecutionMetrics
-                    from rlmkit.core.budget import TokenUsage
-                    
-                    direct_result = rlm.run_direct(st.session_state.file_content, query)
-                    
-                    result = ComparisonResult()
-                    result.direct_metrics = ExecutionMetrics(
-                        mode="direct",
-                        answer=direct_result.answer,
-                        steps=0,
-                        tokens=TokenUsage(),
-                        elapsed_time=0,
-                        success=direct_result.success,
-                        error=direct_result.error,
-                        trace=direct_result.trace
-                    )
-                    st.session_state.comparison_result = result
+                )
+                
+                # Store the chat message
+                st.session_state.chat_messages.append(chat_message)
+                
+                # Also store in legacy comparison_result for backwards compatibility
+                st.session_state.current_chat_message = chat_message
                 
                 st.success("✓ Analysis complete!")
                 st.rerun()
@@ -367,195 +345,286 @@ def render_run_button(config, query):
 
 
 def render_results():
-    """Render results section."""
-    if st.session_state.comparison_result is None:
+    """Render results section using Phase 2 ChatMessage with improved chat-like interface."""
+    if 'current_chat_message' not in st.session_state:
         return
     
-    result = st.session_state.comparison_result
+    message = st.session_state.current_chat_message
     
     st.divider()
     st.subheader("📊 Results")
     
-    # Create tabs for different views
-    tabs = st.tabs(["Answers", "Metrics", "Charts", "Trace", "Export"])
-    
-    # Tab 1: Answers
-    with tabs[0]:
-        render_answers_tab(result)
-    
-    # Tab 2: Metrics
-    with tabs[1]:
-        render_metrics_tab(result)
-    
-    # Tab 3: Charts
-    with tabs[2]:
-        render_charts_tab(result)
-    
-    # Tab 4: Trace
-    with tabs[3]:
-        render_trace_tab(result)
-    
-    # Tab 5: Export
-    with tabs[4]:
-        render_export_tab(result)
+    # Chat-like display with better UX
+    with st.container():
+        # Display user query
+        st.markdown(f"**📌 Your Query:** {message.user_query}")
+        st.divider()
+        
+        # RLM Response if available
+        if message.rlm_response:
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("#### 🤖 RLM Response (Multi-step Analysis)")
+                    st.info(message.rlm_response.content)
+                with col2:
+                    if message.rlm_metrics:
+                        st.metric("Steps", message.rlm_metrics.steps_taken, "exploration steps")
+                        st.metric("Time", f"{message.rlm_metrics.execution_time_seconds:.2f}s")
+                        st.metric("Cost", f"${message.rlm_metrics.cost_usd:.4f}")
+        
+        # Direct Response if available  
+        if message.direct_response:
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("#### 📝 Direct Response (Single Call)")
+                    st.info(message.direct_response.content)
+                with col2:
+                    if message.direct_metrics:
+                        st.metric("Type", "Direct")
+                        st.metric("Time", f"{message.direct_metrics.execution_time_seconds:.2f}s")
+                        st.metric("Cost", f"${message.direct_metrics.cost_usd:.4f}")
+        
+        # Comparison if available
+        if message.comparison_metrics and message.rlm_response and message.direct_response:
+            st.divider()
+            with st.container():
+                st.markdown("#### 💡 AI Recommendation")
+                st.success(message.comparison_metrics.recommendation)
+        
+        # Error if present
+        if message.error:
+            st.divider()
+            st.error(f"⚠️ Error: {message.error}")
+        
+        # More details in expander
+        st.divider()
+        with st.expander("📋 Detailed Metrics & Export Options"):
+            tab_names = ["Metrics Breakdown", "Detailed Comparison", "Export Results"]
+            tabs = st.tabs(tab_names)
+            
+            with tabs[0]:
+                render_metrics_comparison_tab(message)
+            with tabs[1]:
+                render_comparison_analysis_tab(message)
+            with tabs[2]:
+                render_export_phase2_tab(message)
 
 
-def render_answers_tab(result: ComparisonResult):
-    """Render answers comparison."""
-    if result.rlm_metrics:
-        st.markdown("### 🤖 RLM Mode Answer")
-        if result.rlm_metrics.success:
-            st.info(result.rlm_metrics.answer)
-            st.caption(f"Steps: {result.rlm_metrics.steps} | Time: {result.rlm_metrics.elapsed_time:.2f}s")
-        else:
-            st.error(f"Error: {result.rlm_metrics.error}")
+def render_responses_tab(message: ChatMessage):
+    """Render side-by-side responses from Phase 2."""
+    has_rlm = message.rlm_response is not None
+    has_direct = message.direct_response is not None
     
-    if result.direct_metrics:
-        st.markdown("### 📝 Direct Mode Answer")
-        if result.direct_metrics.success:
-            st.info(result.direct_metrics.answer)
-            st.caption(f"Time: {result.direct_metrics.elapsed_time:.2f}s")
-        else:
-            st.error(f"Error: {result.direct_metrics.error}")
+    if has_rlm and has_direct:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### 🤖 RLM Response")
+            st.info(message.rlm_response.content if message.rlm_response else "N/A")
+            if message.rlm_metrics:
+                st.caption(f"Steps: {message.rlm_metrics.steps_taken} | Time: {message.rlm_metrics.execution_time_seconds:.2f}s")
+        
+        with col2:
+            st.markdown("### 📝 Direct Response")
+            st.info(message.direct_response.content if message.direct_response else "N/A")
+            if message.direct_metrics:
+                st.caption(f"Direct call (0 steps) | Time: {message.direct_metrics.execution_time_seconds:.2f}s")
+    elif has_rlm:
+        st.markdown("### 🤖 RLM Response")
+        st.info(message.rlm_response.content if message.rlm_response else "N/A")
+        if message.rlm_metrics:
+            st.caption(f"Steps: {message.rlm_metrics.steps_taken} | Time: {message.rlm_metrics.execution_time_seconds:.2f}s")
+    elif has_direct:
+        st.markdown("### 📝 Direct Response")
+        st.info(message.direct_response.content if message.direct_response else "N/A")
+        if message.direct_metrics:
+            st.caption(f"Direct call (0 steps) | Time: {message.direct_metrics.execution_time_seconds:.2f}s")
 
 
-def render_metrics_tab(result: ComparisonResult):
-    """Render metrics comparison."""
-    summary = result.get_summary()
-    
-    if summary.get('can_compare'):
+def render_metrics_comparison_tab(message: ChatMessage):
+    """Render metrics comparison from Phase 2."""
+    if message.rlm_metrics and message.direct_metrics:
+        # Side-by-side metrics comparison
         col1, col2, col3 = st.columns(3)
         
+        # Cost comparison
+        with col1:
+            st.metric(
+                "💰 Total Cost",
+                f"${message.rlm_metrics.cost_usd:.6f} vs ${message.direct_metrics.cost_usd:.6f}",
+                f"RLM +${message.rlm_metrics.cost_usd - message.direct_metrics.cost_usd:.6f}"
+            )
+        
         # Token comparison
-        token_savings = summary.get('token_savings')
-        if token_savings:
-            with col1:
-                st.metric(
-                    "Token Difference",
-                    f"{token_savings['savings_tokens']:,}",
-                    f"{token_savings['savings_percent']:.1f}%",
-                    delta_color="normal" if token_savings['rlm_is_better'] else "inverse"
-                )
+        with col2:
+            st.metric(
+                "🔤 Total Tokens",
+                f"{message.rlm_metrics.total_tokens} vs {message.direct_metrics.total_tokens}",
+                f"+{message.rlm_metrics.total_tokens - message.direct_metrics.total_tokens} (RLM)"
+            )
         
         # Time comparison
-        time_comp = summary.get('time_comparison')
-        if time_comp:
-            with col2:
-                st.metric(
-                    "Time Difference",
-                    f"{abs(time_comp['difference']):.2f}s",
-                    "Direct faster" if time_comp['direct_is_faster'] else "RLM faster"
-                )
+        with col3:
+            st.metric(
+                "⏱️ Execution Time",
+                f"{message.rlm_metrics.execution_time_seconds:.2f}s vs {message.direct_metrics.execution_time_seconds:.2f}s",
+                f"+{message.rlm_metrics.execution_time_seconds - message.direct_metrics.execution_time_seconds:.2f}s (RLM)"
+            )
+        
+        # Detailed breakdown
+        st.markdown("### Detailed Breakdown")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### RLM Metrics")
+            rlm_dict = {
+                "Input Tokens": message.rlm_metrics.input_tokens,
+                "Output Tokens": message.rlm_metrics.output_tokens,
+                "Total Tokens": message.rlm_metrics.total_tokens,
+                "Cost (USD)": f"${message.rlm_metrics.cost_usd:.6f}",
+                "Cost Breakdown": message.rlm_metrics.cost_breakdown,
+                "Execution Time (s)": f"{message.rlm_metrics.execution_time_seconds:.2f}",
+                "Steps": message.rlm_metrics.steps_taken,
+                "Memory (MB)": f"{message.rlm_metrics.memory_used_mb:.1f} (peak: {message.rlm_metrics.memory_peak_mb:.1f})",
+            }
+            st.json(rlm_dict)
+        
+        with col2:
+            st.markdown("#### Direct Metrics")
+            direct_dict = {
+                "Input Tokens": message.direct_metrics.input_tokens,
+                "Output Tokens": message.direct_metrics.output_tokens,
+                "Total Tokens": message.direct_metrics.total_tokens,
+                "Cost (USD)": f"${message.direct_metrics.cost_usd:.6f}",
+                "Cost Breakdown": message.direct_metrics.cost_breakdown,
+                "Execution Time (s)": f"{message.direct_metrics.execution_time_seconds:.2f}",
+                "Steps": message.direct_metrics.steps_taken,
+                "Memory (MB)": f"{message.direct_metrics.memory_used_mb:.1f} (peak: {message.direct_metrics.memory_peak_mb:.1f})",
+            }
+            st.json(direct_dict)
+    
+    elif message.rlm_metrics:
+        st.markdown("### RLM Metrics")
+        rlm_dict = {
+            "Input Tokens": message.rlm_metrics.input_tokens,
+            "Output Tokens": message.rlm_metrics.output_tokens,
+            "Total Tokens": message.rlm_metrics.total_tokens,
+            "Cost (USD)": f"${message.rlm_metrics.cost_usd:.6f}",
+            "Execution Time (s)": f"{message.rlm_metrics.execution_time_seconds:.2f}",
+            "Steps": message.rlm_metrics.steps_taken,
+        }
+        st.json(rlm_dict)
+    
+    elif message.direct_metrics:
+        st.markdown("### Direct Metrics")
+        direct_dict = {
+            "Input Tokens": message.direct_metrics.input_tokens,
+            "Output Tokens": message.direct_metrics.output_tokens,
+            "Total Tokens": message.direct_metrics.total_tokens,
+            "Cost (USD)": f"${message.direct_metrics.cost_usd:.6f}",
+            "Execution Time (s)": f"{message.direct_metrics.execution_time_seconds:.2f}",
+            "Steps": message.direct_metrics.steps_taken,
+        }
+        st.json(direct_dict)
+
+
+def render_comparison_analysis_tab(message: ChatMessage):
+    """Render comparison analysis from Phase 2."""
+    if message.comparison_metrics:
+        comp = message.comparison_metrics
+        
+        # Key metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Cost Delta",
+                f"${comp.cost_delta_usd:.6f}",
+                f"{comp.cost_delta_percent:.0f}%"
+            )
+        
+        with col2:
+            st.metric(
+                "Token Delta",
+                f"{comp.token_delta:+d}",
+                "RLM more"
+            )
+        
+        with col3:
+            st.metric(
+                "Time Delta",
+                f"{comp.time_delta_seconds:.2f}s",
+                f"{comp.time_delta_percent:+.0f}%"
+            )
+        
+        with col4:
+            st.metric(
+                "RLM Steps",
+                f"{comp.rlm_steps}",
+                f"vs {comp.direct_steps} direct"
+            )
         
         # Recommendation
-        with col3:
-            if summary.get('recommendation'):
-                rec = summary['recommendation']
-                reason = summary.get('recommendation_reason', '')
-                
-                if rec == 'rlm':
-                    st.success(f"✓ RLM Recommended\n\n{reason}")
-                elif rec == 'direct':
-                    st.info(f"→ Direct Recommended\n\n{reason}")
-                else:
-                    st.warning(f"≈ Similar Performance\n\n{reason}")
-    
-    # Detailed metrics
-    st.markdown("### Detailed Metrics")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if result.rlm_metrics:
-            st.markdown("#### RLM Mode")
-            metrics_dict = result.rlm_metrics.to_dict()
-            st.json(metrics_dict)
-    
-    with col2:
-        if result.direct_metrics:
-            st.markdown("#### Direct Mode")
-            metrics_dict = result.direct_metrics.to_dict()
-            st.json(metrics_dict)
-
-
-def render_charts_tab(result: ComparisonResult):
-    """Render visualization charts."""
-    if not result.rlm_metrics and not result.direct_metrics:
-        st.info("No data available for charts")
-        return
-    
-    # Token comparison chart
-    if result.rlm_metrics and result.direct_metrics:
-        st.markdown("### Token Usage Comparison")
-        token_chart = create_token_comparison_chart(result)
-        if token_chart:
-            st.plotly_chart(token_chart, use_container_width=True)
+        st.markdown("### 💡 Analysis & Recommendation")
+        st.info(comp.recommendation)
         
-        # Time comparison chart
-        st.markdown("### Execution Time Comparison")
-        time_chart = create_time_comparison_chart(result)
-        if time_chart:
-            st.plotly_chart(time_chart, use_container_width=True)
+        # Trade-off visualization
+        st.markdown("### Trade-off Analysis")
+        st.markdown(f"""
+        **Cost**: RLM is ${abs(comp.cost_delta_usd):.6f} **{'more expensive' if comp.cost_delta_usd > 0 else 'cheaper'}** ({abs(comp.cost_delta_percent):.0f}%)
         
-        # Metrics radar chart
-        st.markdown("### Performance Radar")
-        radar_chart = create_metrics_radar_chart(result)
-        if radar_chart:
-            st.plotly_chart(radar_chart, use_container_width=True)
+        **Speed**: RLM is {abs(comp.time_delta_seconds):.2f}s **{'slower' if comp.time_delta_seconds > 0 else 'faster'}** ({abs(comp.time_delta_percent):.0f}%)
+        
+        **Tokens**: RLM uses {comp.token_delta} **more tokens** for {comp.rlm_steps}-step exploration vs {comp.direct_steps}-step direct call
+        
+        **Insight**: {comp.recommendation}
+        """)
+    else:
+        st.info("Run comparison mode to see detailed analysis")
 
 
-def render_trace_tab(result: ComparisonResult):
-    """Render execution trace."""
-    if result.rlm_metrics and result.rlm_metrics.trace:
-        st.markdown("### 🔍 RLM Execution Trace")
-        for item in result.rlm_metrics.trace:
-            with st.expander(f"Step {item.get('step', 0)} - {item.get('role', 'unknown')}"):
-                st.code(item.get('content', ''), language='text')
-    
-    if result.direct_metrics and result.direct_metrics.trace:
-        st.markdown("### 📝 Direct Mode Trace")
-        for item in result.direct_metrics.trace:
-            st.code(item.get('content', ''), language='text')
-
-
-def render_export_tab(result: ComparisonResult):
-    """Render export options."""
+def render_export_phase2_tab(message: ChatMessage):
+    """Render export options for Phase 2 ChatMessage."""
     st.markdown("### 💾 Export Results")
     
-    # JSON export
-    col1, col2 = st.columns(2)
+    # Get ChatManager to use export_conversation method
+    manager = st.session_state.chat_manager
     
+    col1, col2, col3 = st.columns(3)
+    
+    # JSON export
     with col1:
         st.markdown("#### JSON Export")
-        json_data = json.dumps(result.to_dict(), indent=2)
+        json_export = manager.export_conversation("json")
         st.download_button(
-            label="Download JSON",
-            data=json_data,
-            file_name="rlmkit_results.json",
+            label="📥 Download JSON",
+            data=json_export,
+            file_name="rlmkit_analysis.json",
             mime="application/json"
         )
     
+    # Markdown export
     with col2:
-        st.markdown("#### Summary Report")
-        summary = result.get_summary()
-        summary_text = f"""# RLMKit Analysis Report
-
-## File Information
-- File: {st.session_state.file_info.filename if st.session_state.file_info else 'N/A'}
-- Size: {st.session_state.file_info.size_bytes if st.session_state.file_info else 0} bytes
-- Estimated Tokens: {st.session_state.file_info.estimated_tokens if st.session_state.file_info else 0}
-
-## Query
-{st.session_state.last_query}
-
-## Results Summary
-{json.dumps(summary, indent=2)}
-"""
+        st.markdown("#### Markdown Export")
+        md_export = manager.export_conversation("markdown")
         st.download_button(
-            label="Download Report",
-            data=summary_text,
-            file_name="rlmkit_report.md",
+            label="📥 Download Markdown",
+            data=md_export,
+            file_name="rlmkit_analysis.md",
             mime="text/markdown"
+        )
+    
+    # CSV export
+    with col3:
+        st.markdown("#### CSV Export")
+        csv_export = manager.export_conversation("csv")
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv_export,
+            file_name="rlmkit_metrics.csv",
+            mime="text/csv"
         )
 
 
