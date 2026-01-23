@@ -247,6 +247,65 @@ def render_add_provider_form():
                 )
             
             if success:
+                # Store API key in session state for use by Chat page
+                # (Config is saved to disk WITHOUT the key for security)
+                if 'provider_api_keys' not in st.session_state:
+                    st.session_state.provider_api_keys = {}
+                
+                # Only store if we got an actual key (not env var based)
+                if api_key:
+                    st.session_state.provider_api_keys[provider] = api_key
+                    
+                    # Also save to persistent file with restricted permissions
+                    from pathlib import Path
+                    import json
+                    keys_file = Path.home() / ".rlmkit" / "api_keys.json"
+                    keys_file.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Load existing keys if any
+                    existing_keys = {}
+                    if keys_file.exists():
+                        try:
+                            with open(keys_file, "r") as f:
+                                existing_keys = json.load(f)
+                        except (json.JSONDecodeError, IOError):
+                            pass
+                    
+                    # Update with new key
+                    existing_keys[provider] = api_key
+                    
+                    # Save with restricted permissions (0o600 = rw-------)
+                    with open(keys_file, "w") as f:
+                        json.dump(existing_keys, f, indent=2)
+                    try:
+                        keys_file.chmod(0o600)
+                    except Exception:
+                        pass  # Windows doesn't support chmod
+                
+                # Save provider selection to .env for auto-loading on next session
+                from pathlib import Path
+                env_file = Path.home() / ".rlmkit" / ".env"
+                env_file.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Read existing .env if it exists
+                env_vars = {}
+                if env_file.exists():
+                    with open(env_file, "r") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and "=" in line and not line.startswith("#"):
+                                key, value = line.split("=", 1)
+                                env_vars[key.strip()] = value.strip()
+                
+                # Update with selected provider
+                env_vars["SELECTED_PROVIDER"] = provider
+                
+                # Write back to .env
+                with open(env_file, "w") as f:
+                    f.write("# RLMKit Configuration (Auto-generated)\n")
+                    for key, value in env_vars.items():
+                        f.write(f"{key}={value}\n")
+                
                 st.success(f"✅ {provider.upper()} provider added and tested successfully!")
                 st.balloons()
                 st.rerun()

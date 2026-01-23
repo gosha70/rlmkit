@@ -46,6 +46,8 @@ class ChatManager:
         mode: str = "compare",
         file_context: Optional[str] = None,
         file_info: Optional[Dict[str, Any]] = None,
+        selected_provider: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> ChatMessage:
         """
         Process user message and generate response(s).
@@ -85,7 +87,7 @@ class ChatManager:
         # Execute based on mode
         if mode in ("rlm_only", "compare"):
             try:
-                rlm_result = await self._execute_rlm(user_query, file_context)
+                rlm_result = await self._execute_rlm(user_query, file_context, selected_provider, api_key)
                 message.rlm_response = rlm_result["response"]
                 message.rlm_metrics = rlm_result["metrics"]
                 message.rlm_trace = rlm_result["trace"]
@@ -94,7 +96,7 @@ class ChatManager:
         
         if mode in ("direct_only", "compare"):
             try:
-                direct_result = await self._execute_direct(user_query, file_context)
+                direct_result = await self._execute_direct(user_query, file_context, selected_provider, api_key)
                 message.direct_response = direct_result["response"]
                 message.direct_metrics = direct_result["metrics"]
             except Exception as e:
@@ -119,6 +121,8 @@ class ChatManager:
         self,
         user_query: str,
         file_context: Optional[str] = None,
+        selected_provider: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute RLM (with exploration steps).
@@ -144,7 +148,7 @@ class ChatManager:
         from .models import Response, ExecutionMetrics
         from rlmkit.core.rlm import RLM
         from rlmkit.llm import get_llm_client
-        from rlmkit.config import RLMConfig
+        from rlmkit.config import RLMConfig, ExecutionConfig
         from pathlib import Path
         import os
         
@@ -154,47 +158,48 @@ class ChatManager:
             config_dir = Path.home() / ".rlmkit"
             config_manager = LLMConfigManager(config_dir=config_dir)
             
-            # Primary: use selected_provider from session state (from Configuration page)
+            # Try selected_provider from parameter (most up-to-date)
             provider_config = None
-            if self.session_state.get('selected_provider'):
-                print(f"DEBUG: Using selected_provider from session: {self.session_state['selected_provider']}")
-                provider_config = config_manager.get_provider_config(
-                    self.session_state['selected_provider']
-                )
+            if selected_provider:
+                provider_config = config_manager.get_provider_config(selected_provider)
             
-            # Fallback: try to get active provider
+            # Fallback: try to get active provider from config
             if not provider_config:
                 provider_config = config_manager.get_active_provider()
-                print(f"DEBUG: get_active_provider returned: {provider_config}")
-            
-            if provider_config:
-                print(f"DEBUG: provider={provider_config.provider}, model={provider_config.model}, is_ready={provider_config.is_ready}, test_successful={provider_config.test_successful}")
             
             # Fallback: use first available provider
             if not provider_config:
                 providers = config_manager.list_providers()
-                print(f"DEBUG: Trying fallback with first available provider from list: {providers}")
                 if providers:
                     provider_config = config_manager.get_provider_config(providers[0])
             
-            if not provider_config or not provider_config.is_ready:
-                raise ValueError("No active LLM provider configured")
+            if not provider_config:
+                raise ValueError("No LLM provider configured - go to Configuration page to set one up")
             
-            # Get API key (from memory or environment variable)
-            api_key = provider_config.api_key
-            if not api_key and provider_config.api_key_env_var:
-                api_key = os.getenv(provider_config.api_key_env_var)
+            # Use provided api_key if available, otherwise use from config
+            effective_api_key = api_key if api_key else provider_config.api_key
+            
+            if not effective_api_key:
+                # Try environment variable - load .env file first
+                if provider_config.api_key_env_var:
+                    # Ensure .env file is loaded into environment
+                    from .llm_config_manager import load_env_file
+                    load_env_file()
+                    effective_api_key = os.getenv(provider_config.api_key_env_var)
+            
+            if not effective_api_key:
+                raise ValueError(f"Provider {provider_config.provider} is configured but API key is missing")
             
             # Create LLM client
             llm_client = get_llm_client(
                 provider=provider_config.provider,
                 model=provider_config.model,
-                api_key=api_key
+                api_key=effective_api_key
             )
             
             # Create RLM instance with configuration
             rlm_config = RLMConfig(
-                execution=RLMConfig.ExecutionConfig(
+                execution=ExecutionConfig(
                     default_timeout=5.0,
                     max_steps=16,
                     default_safe_mode=True,
@@ -295,6 +300,8 @@ class ChatManager:
         self,
         user_query: str,
         file_context: Optional[str] = None,
+        selected_provider: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute Direct LLM (no exploration).
@@ -328,42 +335,43 @@ class ChatManager:
             config_dir = Path.home() / ".rlmkit"
             config_manager = LLMConfigManager(config_dir=config_dir)
             
-            # Primary: use selected_provider from session state (from Configuration page)
+            # Try selected_provider from parameter (most up-to-date)
             provider_config = None
-            if self.session_state.get('selected_provider'):
-                print(f"DEBUG (Direct): Using selected_provider from session: {self.session_state['selected_provider']}")
-                provider_config = config_manager.get_provider_config(
-                    self.session_state['selected_provider']
-                )
+            if selected_provider:
+                provider_config = config_manager.get_provider_config(selected_provider)
             
-            # Fallback: try to get active provider
+            # Fallback: try to get active provider from config
             if not provider_config:
                 provider_config = config_manager.get_active_provider()
-                print(f"DEBUG (Direct): get_active_provider returned: {provider_config}")
-            
-            if provider_config:
-                print(f"DEBUG (Direct): provider={provider_config.provider}, model={provider_config.model}, is_ready={provider_config.is_ready}, test_successful={provider_config.test_successful}")
             
             # Fallback: use first available provider
             if not provider_config:
                 providers = config_manager.list_providers()
-                print(f"DEBUG (Direct): Trying fallback with first available provider from list: {providers}")
                 if providers:
                     provider_config = config_manager.get_provider_config(providers[0])
             
-            if not provider_config or not provider_config.is_ready:
-                raise ValueError("No active LLM provider configured")
+            if not provider_config:
+                raise ValueError("No LLM provider configured - go to Configuration page to set one up")
             
-            # Get API key (from memory or environment variable)
-            api_key = provider_config.api_key
-            if not api_key and provider_config.api_key_env_var:
-                api_key = os.getenv(provider_config.api_key_env_var)
+            # Use provided api_key if available, otherwise use from config
+            effective_api_key = api_key if api_key else provider_config.api_key
+            
+            if not effective_api_key:
+                # Try environment variable - load .env file first
+                if provider_config.api_key_env_var:
+                    # Ensure .env file is loaded into environment
+                    from .llm_config_manager import load_env_file
+                    load_env_file()
+                    effective_api_key = os.getenv(provider_config.api_key_env_var)
+            
+            if not effective_api_key:
+                raise ValueError(f"Provider {provider_config.provider} is configured but API key is missing")
             
             # Create LLM client
             llm_client = get_llm_client(
                 provider=provider_config.provider,
                 model=provider_config.model,
-                api_key=api_key
+                api_key=effective_api_key
             )
             
             # Build prompt with context

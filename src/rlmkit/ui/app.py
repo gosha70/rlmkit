@@ -53,6 +53,14 @@ def init_session_state():
         st.session_state.comparison_result = None
     if 'last_query' not in st.session_state:
         st.session_state.last_query = ""
+    
+    # Initialize LLM manager first (needed by all pages)
+    if 'llm_manager' not in st.session_state:
+        from rlmkit.ui.services import LLMConfigManager
+        from pathlib import Path
+        config_dir = Path.home() / ".rlmkit"
+        st.session_state.llm_manager = LLMConfigManager(config_dir=config_dir)
+    
     # Phase 2 service layer initialization
     if 'chat_manager' not in st.session_state:
         st.session_state.chat_manager = ChatManager(st.session_state)
@@ -60,14 +68,43 @@ def init_session_state():
         st.session_state.memory_monitor = MemoryMonitor()
     if 'chat_messages' not in st.session_state:
         st.session_state.chat_messages = []
-    # Initialize selected_provider from config (set by Configuration page)
-    if 'selected_provider' not in st.session_state:
-        from rlmkit.ui.services import LLMConfigManager
+    # Initialize provider API keys from persistent storage
+    if 'provider_api_keys' not in st.session_state:
         from pathlib import Path
-        config_dir = Path.home() / ".rlmkit"
-        manager = LLMConfigManager(config_dir=config_dir)
-        providers = manager.list_providers()
-        st.session_state.selected_provider = providers[0] if providers else None
+        import json
+        
+        st.session_state.provider_api_keys = {}
+        
+        # Try to load previously saved API keys
+        keys_file = Path.home() / ".rlmkit" / "api_keys.json"
+        if keys_file.exists():
+            try:
+                with open(keys_file, "r") as f:
+                    st.session_state.provider_api_keys = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                st.session_state.provider_api_keys = {}
+    
+    # Initialize selected_provider from .env or use first available
+    if 'selected_provider' not in st.session_state:
+        providers = st.session_state.llm_manager.list_providers()
+        
+        # Try to load previously selected provider from .env
+        selected = None
+        from pathlib import Path
+        env_file = Path.home() / ".rlmkit" / ".env"
+        if env_file.exists():
+            with open(env_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("SELECTED_PROVIDER="):
+                        selected = line.split("=", 1)[1].strip()
+                        break
+        
+        # Use saved provider if it exists, otherwise use first available
+        if selected and selected in providers:
+            st.session_state.selected_provider = selected
+        else:
+            st.session_state.selected_provider = providers[0] if providers else None
 
 
 def render_header():
@@ -84,12 +121,15 @@ def render_sidebar():
     """Render simplified sidebar showing only selected provider and mode (read-only)."""
     st.sidebar.header("📊 Current Setup")
     
-    # Load from session state (set by Configuration page)
-    from rlmkit.ui.services import LLMConfigManager
-    from pathlib import Path
+    # Use manager from session state (initialized by Configuration page)
+    # This ensures we use the same instance with API keys in memory
+    if 'llm_manager' not in st.session_state:
+        from rlmkit.ui.services import LLMConfigManager
+        from pathlib import Path
+        config_dir = Path.home() / ".rlmkit"
+        st.session_state.llm_manager = LLMConfigManager(config_dir=config_dir)
     
-    config_dir = Path.home() / ".rlmkit"
-    manager = LLMConfigManager(config_dir=config_dir)
+    manager = st.session_state.llm_manager
     
     # Get selected provider from session state
     if 'selected_provider' not in st.session_state:
