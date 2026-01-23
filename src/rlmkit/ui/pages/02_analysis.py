@@ -17,8 +17,8 @@ def render_analysis_page():
     st.title("📊 Analysis Dashboard")
     st.markdown("Compare RLM vs Direct LLM performance metrics")
     
-    # Check if we have any chat history
-    conversations = st.session_state.get('chat_messages', [])
+    # Check if we have any chat history - use 'messages' key where ChatMessage objects are stored
+    conversations = st.session_state.get('messages', [])
     if not conversations:
         st.info("📝 No conversations yet. Visit **Chat** page to start analyzing documents.")
         return
@@ -46,13 +46,13 @@ def render_summary_cards():
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Get metrics
-    rlm_metrics = latest_message.get('rlm_metrics', {})
-    direct_metrics = latest_message.get('direct_metrics', {})
+    # Get metrics - ChatMessage is a dataclass, access attributes directly
+    rlm_metrics = latest_message.rlm_metrics
+    direct_metrics = latest_message.direct_metrics
     
     # Tokens metric
-    rlm_tokens = rlm_metrics.get('total_tokens', 0)
-    direct_tokens = direct_metrics.get('total_tokens', 0)
+    rlm_tokens = rlm_metrics.total_tokens if rlm_metrics else 0
+    direct_tokens = direct_metrics.total_tokens if direct_metrics else 0
     token_diff = abs(rlm_tokens - direct_tokens)
     token_winner = "Direct" if direct_tokens < rlm_tokens else "RLM"
     
@@ -64,8 +64,8 @@ def render_summary_cards():
         )
     
     # Cost metric
-    rlm_cost = rlm_metrics.get('cost_usd', 0)
-    direct_cost = direct_metrics.get('cost_usd', 0)
+    rlm_cost = rlm_metrics.cost_usd if rlm_metrics else 0
+    direct_cost = direct_metrics.cost_usd if direct_metrics else 0
     cost_diff = abs(rlm_cost - direct_cost)
     cost_pct = (cost_diff / max(direct_cost, rlm_cost) * 100) if max(direct_cost, rlm_cost) > 0 else 0
     cost_winner = "Direct" if direct_cost < rlm_cost else "RLM"
@@ -78,8 +78,8 @@ def render_summary_cards():
         )
     
     # Time metric
-    rlm_time = rlm_metrics.get('execution_time_seconds', 0)
-    direct_time = direct_metrics.get('execution_time_seconds', 0)
+    rlm_time = rlm_metrics.execution_time_seconds if rlm_metrics else 0
+    direct_time = direct_metrics.execution_time_seconds if direct_metrics else 0
     time_diff = abs(rlm_time - direct_time)
     time_pct = (time_diff / max(direct_time, rlm_time) * 100) if max(direct_time, rlm_time) > 0 else 0
     time_winner = "Direct" if direct_time < rlm_time else "RLM"
@@ -92,8 +92,8 @@ def render_summary_cards():
         )
     
     # Recommendation metric
-    comparison = latest_message.get('comparison_metrics', {})
-    recommendation = comparison.get('recommendation', 'No recommendation')
+    comparison = latest_message.comparison_metrics
+    recommendation = comparison.recommendation if comparison else 'No recommendation'
     
     with col4:
         if "faster" in recommendation.lower() or "direct" in recommendation.lower():
@@ -114,9 +114,10 @@ def render_metrics_comparison():
         st.warning("No metrics available")
         return
     
-    rlm_metrics = latest_message.get('rlm_metrics', {})
-    direct_metrics = latest_message.get('direct_metrics', {})
-    comparison = latest_message.get('comparison_metrics', {})
+    # Access dataclass attributes directly
+    rlm_metrics = latest_message.rlm_metrics
+    direct_metrics = latest_message.direct_metrics
+    comparison = latest_message.comparison_metrics
     
     # Build comparison dataframe
     data = {
@@ -131,33 +132,33 @@ def render_metrics_comparison():
             'Success'
         ],
         'RLM': [
-            rlm_metrics.get('steps_taken', 0),
-            f"{rlm_metrics.get('total_tokens', 0):,}",
-            f"{rlm_metrics.get('input_tokens', 0):,}",
-            f"{rlm_metrics.get('output_tokens', 0):,}",
-            f"{rlm_metrics.get('execution_time_seconds', 0):.3f}",
-            f"${rlm_metrics.get('cost_usd', 0):.6f}",
-            f"{rlm_metrics.get('memory_used_mb', 0):.1f}",
-            "✅" if rlm_metrics.get('success', False) else "❌"
+            rlm_metrics.steps_taken if rlm_metrics else 0,
+            f"{rlm_metrics.total_tokens if rlm_metrics else 0:,}",
+            f"{rlm_metrics.input_tokens if rlm_metrics else 0:,}",
+            f"{rlm_metrics.output_tokens if rlm_metrics else 0:,}",
+            f"{rlm_metrics.execution_time_seconds if rlm_metrics else 0:.3f}",
+            f"${rlm_metrics.cost_usd if rlm_metrics else 0:.6f}",
+            f"{rlm_metrics.memory_used_mb if rlm_metrics else 0:.1f}",
+            "✅" if (rlm_metrics and rlm_metrics.success) else "❌"
         ],
         'Direct': [
-            direct_metrics.get('steps_taken', 0),
-            f"{direct_metrics.get('total_tokens', 0):,}",
-            f"{direct_metrics.get('input_tokens', 0):,}",
-            f"{direct_metrics.get('output_tokens', 0):,}",
-            f"{direct_metrics.get('execution_time_seconds', 0):.3f}",
-            f"${direct_metrics.get('cost_usd', 0):.6f}",
-            f"{direct_metrics.get('memory_used_mb', 0):.1f}",
-            "✅" if direct_metrics.get('success', False) else "❌"
+            direct_metrics.steps_taken if direct_metrics else 0,
+            f"{direct_metrics.total_tokens if direct_metrics else 0:,}",
+            f"{direct_metrics.input_tokens if direct_metrics else 0:,}",
+            f"{direct_metrics.output_tokens if direct_metrics else 0:,}",
+            f"{direct_metrics.execution_time_seconds if direct_metrics else 0:.3f}",
+            f"${direct_metrics.cost_usd if direct_metrics else 0:.6f}",
+            f"{direct_metrics.memory_used_mb if direct_metrics else 0:.1f}",
+            "✅" if (direct_metrics and direct_metrics.success) else "❌"
         ],
         'Delta': [
-            rlm_metrics.get('steps_taken', 0) - direct_metrics.get('steps_taken', 0),
-            f"{comparison.get('token_delta', 0):,}",
-            f"{rlm_metrics.get('input_tokens', 0) - direct_metrics.get('input_tokens', 0):,}",
-            f"{rlm_metrics.get('output_tokens', 0) - direct_metrics.get('output_tokens', 0):,}",
-            f"{comparison.get('time_delta_seconds', 0):.3f}",
-            f"${comparison.get('cost_delta_usd', 0):+.6f}",
-            f"{rlm_metrics.get('memory_used_mb', 0) - direct_metrics.get('memory_used_mb', 0):+.1f}",
+            (rlm_metrics.steps_taken if rlm_metrics else 0) - (direct_metrics.steps_taken if direct_metrics else 0),
+            f"{comparison.token_delta if comparison else 0:,}",
+            f"{(rlm_metrics.input_tokens if rlm_metrics else 0) - (direct_metrics.input_tokens if direct_metrics else 0):,}",
+            f"{(rlm_metrics.output_tokens if rlm_metrics else 0) - (direct_metrics.output_tokens if direct_metrics else 0):,}",
+            f"{comparison.time_delta_seconds if comparison else 0:.3f}",
+            f"${comparison.cost_delta_usd if comparison else 0:+.6f}",
+            f"{(rlm_metrics.memory_used_mb if rlm_metrics else 0) - (direct_metrics.memory_used_mb if direct_metrics else 0):+.1f}",
             "-"
         ]
     }
@@ -176,8 +177,9 @@ def render_cost_analysis():
         st.warning("No metrics available")
         return
     
-    rlm_metrics = latest_message.get('rlm_metrics', {})
-    direct_metrics = latest_message.get('direct_metrics', {})
+    # Access dataclass attributes directly
+    rlm_metrics = latest_message.rlm_metrics
+    direct_metrics = latest_message.direct_metrics
     
     col1, col2 = st.columns(2)
     
@@ -185,10 +187,10 @@ def render_cost_analysis():
     with col1:
         st.write("**RLM Cost Breakdown**")
         
-        rlm_breakdown = rlm_metrics.get('cost_breakdown', {})
+        rlm_breakdown = rlm_metrics.cost_breakdown if rlm_metrics else {}
         rlm_input_cost = rlm_breakdown.get('input', 0)
         rlm_output_cost = rlm_breakdown.get('output', 0)
-        rlm_total = rlm_metrics.get('cost_usd', 0)
+        rlm_total = rlm_metrics.cost_usd if rlm_metrics else 0
         
         rlm_data = {
             'Category': ['Input', 'Output', 'Total'],
@@ -210,10 +212,10 @@ def render_cost_analysis():
     with col2:
         st.write("**Direct Cost Breakdown**")
         
-        direct_breakdown = direct_metrics.get('cost_breakdown', {})
+        direct_breakdown = direct_metrics.cost_breakdown if direct_metrics else {}
         direct_input_cost = direct_breakdown.get('input', 0)
         direct_output_cost = direct_breakdown.get('output', 0)
-        direct_total = direct_metrics.get('cost_usd', 0)
+        direct_total = direct_metrics.cost_usd if direct_metrics else 0
         
         direct_data = {
             'Category': ['Input', 'Output', 'Total'],
@@ -260,9 +262,10 @@ def render_quality_metrics():
         st.warning("No metrics available")
         return
     
-    comparison = latest_message.get('comparison_metrics', {})
-    rlm_metrics = latest_message.get('rlm_metrics', {})
-    direct_metrics = latest_message.get('direct_metrics', {})
+    # Access dataclass attributes directly
+    comparison = latest_message.comparison_metrics
+    rlm_metrics = latest_message.rlm_metrics
+    direct_metrics = latest_message.direct_metrics
     
     col1, col2 = st.columns(2)
     
@@ -270,9 +273,9 @@ def render_quality_metrics():
     with col1:
         st.write("**Performance Deltas**")
         
-        token_delta = comparison.get('token_delta', 0)
-        cost_delta = comparison.get('cost_delta_usd', 0)
-        time_delta = comparison.get('time_delta_seconds', 0)
+        token_delta = comparison.token_delta if comparison else 0
+        cost_delta = comparison.cost_delta_usd if comparison else 0
+        time_delta = comparison.time_delta_seconds if comparison else 0
         
         deltas_data = {
             'Metric': ['Tokens', 'Cost', 'Time'],
@@ -282,9 +285,9 @@ def render_quality_metrics():
                 f"{time_delta:+.3f}s"
             ],
             'Percentage': [
-                f"{comparison.get('token_delta', 0):+}",
-                f"{comparison.get('cost_delta_percent', 0):+.1f}%",
-                f"{comparison.get('time_delta_percent', 0):+.1f}%"
+                f"{token_delta:+}",
+                f"{comparison.cost_delta_percent if comparison else 0:+.1f}%",
+                f"{comparison.time_delta_percent if comparison else 0:+.1f}%"
             ],
             'Winner': [
                 "Direct" if token_delta > 0 else "RLM" if token_delta < 0 else "Tie",
@@ -299,8 +302,8 @@ def render_quality_metrics():
     with col2:
         st.write("**Recommendation**")
         
-        recommendation = comparison.get('recommendation', 'No recommendation available')
-        reasoning = comparison.get('reasoning', 'Based on trade-off analysis')
+        recommendation = comparison.recommendation if comparison else 'No recommendation available'
+        reasoning = comparison.reasoning if (comparison and hasattr(comparison, 'reasoning')) else 'Based on trade-off analysis'
         
         # Style recommendation
         if "faster" in recommendation.lower() or "direct" in recommendation.lower():
@@ -315,8 +318,13 @@ def render_quality_metrics():
     # Token efficiency chart
     st.write("**Token Efficiency (Cost per Token)**")
     
-    rlm_efficiency = (rlm_metrics.get('cost_usd', 0) / max(rlm_metrics.get('total_tokens', 1), 1)) * 1000000
-    direct_efficiency = (direct_metrics.get('cost_usd', 0) / max(direct_metrics.get('total_tokens', 1), 1)) * 1000000
+    rlm_cost = rlm_metrics.cost_usd if rlm_metrics else 0
+    rlm_tokens = rlm_metrics.total_tokens if rlm_metrics else 1
+    direct_cost = direct_metrics.cost_usd if direct_metrics else 0
+    direct_tokens = direct_metrics.total_tokens if direct_metrics else 1
+    
+    rlm_efficiency = (rlm_cost / max(rlm_tokens, 1)) * 1000000
+    direct_efficiency = (direct_cost / max(direct_tokens, 1)) * 1000000
     
     fig = go.Figure(data=[
         go.Bar(x=['RLM', 'Direct'], y=[rlm_efficiency, direct_efficiency])
@@ -332,15 +340,15 @@ def render_quality_metrics():
 
 
 def get_latest_message():
-    """Get the latest assistant message with metrics from chat history."""
+    """Get the latest message with metrics from chat history."""
     
-    messages = st.session_state.get('chat_messages', [])
+    messages = st.session_state.get('messages', [])  # Changed from 'chat_messages' to 'messages'
     
-    # Find latest assistant message with complete metrics
+    # Find latest message with complete metrics (ChatMessage object)
     for message in reversed(messages):
-        if (message.get('role') == 'assistant' and 
-            message.get('rlm_metrics') and 
-            message.get('direct_metrics')):
+        # ChatMessage is a dataclass, not a dict - access attributes directly
+        if (hasattr(message, 'comparison_metrics') and 
+            message.comparison_metrics is not None):
             return message
     
     return None

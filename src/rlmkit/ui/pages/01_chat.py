@@ -245,10 +245,10 @@ def render_comparison(message: dict):
     
     with col3:
         st.subheader("📊 Deltas")
-        st.metric("Token Diff", f"{comparison.token_delta:,} ({comparison.token_delta_percent:.1f}%)")
+        st.metric("Token Diff", f"{comparison.token_delta:,}")
         st.metric("Cost Diff", f"${comparison.cost_delta_usd:.4f} ({comparison.cost_delta_percent:.1f}%)")
         st.metric("Time Diff", f"{comparison.time_delta_seconds:.2f}s ({comparison.time_delta_percent:.1f}%)")
-        st.metric("Quality Diff", f"{comparison.quality_delta:.2f} pts")
+        # Note: quality_delta doesn't exist in ComparisonMetrics, removed
     
     # Show recommendation
     if comparison.recommendation:
@@ -353,8 +353,8 @@ def render_chat_input():
                     'timestamp': st.session_state.get('current_time')
                 })
                 
-                # Clear input
-                st.session_state.chat_input = ""
+                # Don't try to clear input - Streamlit doesn't allow modifying widget state
+                # Just rerun and the form will reset naturally
                 st.success("✅ Response received")
                 st.rerun()
             
