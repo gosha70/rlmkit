@@ -198,4 +198,34 @@ class LLMConfigManager:
             self._active_provider = provider
         
         return True, ""
-    # ... rest of the file unchanged ...
+
+    def delete_provider(self, provider: str) -> bool:
+        """
+        Delete a provider configuration file.
+        
+        Args:
+            provider: Provider name to delete
+            
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        try:
+            # Path to provider config file
+            config_file = self.config_dir / f"{provider}.json"
+            
+            # Delete the file if it exists
+            if config_file.exists():
+                config_file.unlink()
+            
+            # Remove from loaded configs
+            if provider in self._configs:
+                del self._configs[provider]
+            
+            # If this was the active provider, clear it
+            if self._active_provider == provider:
+                self._active_provider = None
+            
+            return True
+        except Exception as e:
+            print(f"DEBUG: Failed to delete provider {provider}: {e}")
+            return False

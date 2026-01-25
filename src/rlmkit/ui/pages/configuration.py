@@ -21,39 +21,16 @@ def init_config_session_state():
 
 
 def render_provider_selection():
-    """Render provider selection section in main content area."""
-    st.subheader("🤖 Select Active Provider")
-    
+    """Initialize selected provider if not already set."""
     manager = st.session_state.llm_manager
     providers = manager.list_providers()
     
-    if providers:
-        if 'selected_provider' not in st.session_state:
-            st.session_state.selected_provider = providers[0]
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            active_provider = st.selectbox(
-                "Choose provider to use in main app:",
-                providers,
-                index=providers.index(st.session_state.selected_provider) if st.session_state.selected_provider in providers else 0,
-                help="This will be used when you run analyses in the main app",
-                label_visibility="collapsed"
-            )
-            st.session_state.selected_provider = active_provider
-        
-        with col2:
-            config = manager.get_provider_config(active_provider)
-            if config:
-                st.write(f"**Model:** `{config.model}`")
-    else:
-        st.info("📝 No providers configured yet. Add one below to get started.")
-        st.session_state.selected_provider = None
+    if 'selected_provider' not in st.session_state:
+        st.session_state.selected_provider = providers[0] if providers else None
 
 
 def render_provider_list():
-    """Display list of configured providers."""
+    """Display list of configured providers with checkboxes for comparison."""
     st.subheader("📋 Configured Providers")
     
     manager = st.session_state.llm_manager
@@ -63,8 +40,18 @@ def render_provider_list():
         st.info("No providers configured yet. Add one below to get started.")
         return
     
-    # Create columns for provider display
-    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+    # Ensure selected_provider exists
+    if 'selected_provider' not in st.session_state or st.session_state.selected_provider not in providers:
+        st.session_state.selected_provider = providers[0]
+    
+    # Initialize enabled providers for comparison (Phase 4 feature)
+    if 'enabled_providers' not in st.session_state:
+        st.session_state.enabled_providers = {providers[0]: True}
+    
+    # Create columns for provider display (with checkbox column)
+    col_checkbox, col1, col2, col3, col4 = st.columns([0.8, 2, 2, 1, 1])
+    with col_checkbox:
+        st.write("**Use**")
     with col1:
         st.write("**Provider**")
     with col2:
@@ -76,13 +63,27 @@ def render_provider_list():
     
     st.divider()
     
-    # Display each provider
+    # Display each provider with checkbox
     for provider_name in providers:
         config = manager.get_provider_config(provider_name)
         if not config:
             continue
         
-        col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
+        col_checkbox, col1, col2, col3, col4 = st.columns([0.8, 2, 2, 1, 1])
+        
+        with col_checkbox:
+            # Checkbox to enable provider for comparison (Phase 4)
+            is_enabled = st.checkbox(
+                label=provider_name,
+                value=st.session_state.enabled_providers.get(provider_name, False),
+                key=f"checkbox_{provider_name}",
+                label_visibility="collapsed"
+            )
+            st.session_state.enabled_providers[provider_name] = is_enabled
+            
+            # Auto-select first enabled provider as active
+            if is_enabled and st.session_state.selected_provider not in st.session_state.enabled_providers or not st.session_state.enabled_providers.get(st.session_state.selected_provider, False):
+                st.session_state.selected_provider = provider_name
         
         with col1:
             st.write(f"**{config.provider.upper()}**")
@@ -100,9 +101,25 @@ def render_provider_list():
             if st.button("🗑️ Delete", key=f"delete_{provider_name}"):
                 if manager.delete_provider(provider_name):
                     st.success(f"Deleted {provider_name}")
+                    if provider_name in st.session_state.enabled_providers:
+                        del st.session_state.enabled_providers[provider_name]
                     st.rerun()
                 else:
                     st.error(f"Failed to delete {provider_name}")
+    
+    # Display selected provider summary below the table
+    st.divider()
+    st.subheader("📊 Active Provider Summary")
+    config = manager.get_provider_config(st.session_state.selected_provider)
+    if config:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Active Provider", st.session_state.selected_provider.upper())
+        with col2:
+            st.metric("Model", config.model)
+        with col3:
+            status = "✅ Ready" if config.is_ready else "⚠️ Not Ready"
+            st.metric("Status", status)
 
 
 def render_add_provider_form():
@@ -117,46 +134,98 @@ def render_add_provider_form():
     - The app will use whichever is available
     """)
     
+    # Provider selection OUTSIDE form so changes trigger re-render
+    provider_options = [
+        ("OpenAI", "openai"),
+        ("Anthropic", "anthropic"),
+        ("Ollama (Local)", "ollama"),
+        ("LM Studio (Local)", "lmstudio"),
+    ]
+    provider_labels = [opt[0] for opt in provider_options]
+    provider_values = [opt[1] for opt in provider_options]
+    
+    if 'selected_provider_idx' not in st.session_state:
+        st.session_state.selected_provider_idx = 0
+    
+    selected_idx = st.selectbox(
+        "Choose Provider",
+        range(len(provider_labels)),
+        format_func=lambda i: provider_labels[i],
+        help="Select the LLM provider type",
+        key="provider_selectbox_main",
+        index=st.session_state.selected_provider_idx,
+        on_change=lambda: st.session_state.update({'selected_provider_idx': st.session_state.provider_selectbox_main})
+    )
+    provider = provider_values[selected_idx]
+    
     with st.form("add_provider_form"):
-        # Provider selection
-        provider = st.selectbox(
-            "Provider",
-            ["openai", "anthropic", "ollama", "lmstudio"],
-            help="Select the LLM provider type"
-        )
-        
         # Model selection based on provider
         if provider == "openai":
             model = st.selectbox(
                 "Model",
                 [
-                    "gpt-4",
-                    "gpt-4-32k",
+                    "gpt-4o",
+                    "gpt-4o-mini",
                     "gpt-4-turbo",
+                    "gpt-4",
                     "gpt-3.5-turbo",
-                    "gpt-3.5-turbo-16k"
-                ]
+                    "o1",
+                    "o1-mini"
+                ],
+                index=0,
+                key=f"model_select_{provider}"
             )
-            input_cost = 0.03
-            output_cost = 0.06
+            # Dynamic pricing based on model
+            pricing_map = {
+                "gpt-4o": (0.005, 0.015),
+                "gpt-4o-mini": (0.00015, 0.0006),
+                "gpt-4-turbo": (0.01, 0.03),
+                "gpt-4": (0.03, 0.06),
+                "gpt-3.5-turbo": (0.0005, 0.0015),
+                "o1": (0.015, 0.06),
+                "o1-mini": (0.003, 0.012)
+            }
+            input_cost, output_cost = pricing_map.get(model, (0.005, 0.015))
         elif provider == "anthropic":
             model = st.selectbox(
                 "Model",
                 [
+                    "claude-opus-4-5",
+                    "claude-sonnet-4-5",
+                    "claude-haiku-4-5",
+                    "claude-opus-4",
+                    "claude-sonnet-4",
+                    "claude-3-7-sonnet",
+                    "claude-3-5-sonnet",
+                    "claude-3-5-haiku",
                     "claude-3-opus",
                     "claude-3-sonnet",
                     "claude-3-haiku",
-                    "claude-2.1",
-                    "claude-2"
-                ]
+                ],
+                index=0,
+                key=f"model_select_{provider}"
             )
-            input_cost = 0.015
-            output_cost = 0.075
+            # Dynamic pricing based on model
+            pricing_map = {
+                "claude-opus-4-5": (0.003, 0.015),
+                "claude-sonnet-4-5": (0.003, 0.015),
+                "claude-haiku-4-5": (0.008, 0.024),
+                "claude-opus-4": (0.003, 0.015),
+                "claude-sonnet-4": (0.003, 0.015),
+                "claude-3-7-sonnet": (0.003, 0.015),
+                "claude-3-5-sonnet": (0.003, 0.015),
+                "claude-3-5-haiku": (0.0008, 0.0024),
+                "claude-3-opus": (0.015, 0.075),
+                "claude-3-sonnet": (0.003, 0.015),
+                "claude-3-haiku": (0.00025, 0.00125),
+            }
+            input_cost, output_cost = pricing_map.get(model, (0.003, 0.015))
         elif provider == "ollama":
             model = st.text_input(
                 "Model Name",
                 placeholder="e.g., llama2, neural-chat, mistral",
-                help="Name of the model running on Ollama"
+                help="Name of the model running on Ollama",
+                key=f"model_select_{provider}"
             )
             input_cost = 0.0
             output_cost = 0.0
@@ -164,7 +233,8 @@ def render_add_provider_form():
             model = st.text_input(
                 "Model Name",
                 placeholder="e.g., mistral, neural-chat",
-                help="Name of the model running on LMStudio"
+                help="Name of the model running on LMStudio",
+                key=f"model_select_{provider}"
             )
             input_cost = 0.0
             output_cost = 0.0
@@ -319,11 +389,23 @@ def render_pricing_info():
     
     pricing_data = {
         "OpenAI": {
-            "gpt-4": {"input": "$0.03", "output": "$0.06", "per": "1K tokens"},
+            "gpt-4o": {"input": "$0.005", "output": "$0.015", "per": "1K tokens"},
+            "gpt-4o-mini": {"input": "$0.00015", "output": "$0.0006", "per": "1K tokens"},
             "gpt-4-turbo": {"input": "$0.01", "output": "$0.03", "per": "1K tokens"},
+            "gpt-4": {"input": "$0.03", "output": "$0.06", "per": "1K tokens"},
             "gpt-3.5-turbo": {"input": "$0.0005", "output": "$0.0015", "per": "1K tokens"},
+            "o1": {"input": "$0.015", "output": "$0.06", "per": "1K tokens"},
+            "o1-mini": {"input": "$0.003", "output": "$0.012", "per": "1K tokens"},
         },
         "Anthropic": {
+            "claude-opus-4-5": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-sonnet-4-5": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-haiku-4-5": {"input": "$0.008", "output": "$0.024", "per": "1K tokens"},
+            "claude-opus-4": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-sonnet-4": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-3-7-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-3-5-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
+            "claude-3-5-haiku": {"input": "$0.0008", "output": "$0.0024", "per": "1K tokens"},
             "claude-3-opus": {"input": "$0.015", "output": "$0.075", "per": "1K tokens"},
             "claude-3-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
             "claude-3-haiku": {"input": "$0.00025", "output": "$0.00125", "per": "1K tokens"},
@@ -440,11 +522,10 @@ def main():
     render_execution_settings()
     st.divider()
     
-    # Provider selection in main content
+    # Initialize provider selection (hidden)
     render_provider_selection()
-    st.divider()
     
-    # Providers list
+    # Providers list with integrated selection
     render_provider_list()
     st.divider()
     

@@ -414,7 +414,7 @@ class ChatManager:
                     "output": output_cost,
                 },
                 execution_time_seconds=elapsed_time,
-                steps_taken=0,  # No RLM exploration steps
+                steps_taken=1,  # Single LLM call (not 0 - that's confusing)
                 memory_used_mb=0.0,  # LATER: Get from MemoryMonitor
                 memory_peak_mb=0.0,   # LATER: Get from MemoryMonitor
                 success=True,

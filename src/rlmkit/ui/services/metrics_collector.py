@@ -206,22 +206,42 @@ class MetricsCollector:
         time_delta_pct = (time_delta / direct_metrics.execution_time_seconds * 100) if direct_metrics.execution_time_seconds > 0 else 0
         
         # Generate recommendation based on trade-offs
-        if cost_delta > 0.0001:  # RLM is more expensive
-            if time_delta_pct > 50:  # And significantly slower
+        # Consider multiple factors: cost, tokens, time, and absolute values
+
+        # Both very cheap (< $0.01)? Recommend simpler approach
+        if rlm_metrics.cost_usd < 0.01 and direct_metrics.cost_usd < 0.01:
+            recommendation = (
+                f"Both approaches are very affordable (<$0.01). "
+                f"Recommend Direct for simple queries like this - it's faster and simpler."
+            )
+        # RLM significantly more expensive (>2x AND >$0.01 difference)?
+        elif cost_delta > 0.01 and cost_delta_pct > 100:
+            if token_delta < 0:  # But RLM saved tokens
+                token_savings_pct = abs(token_delta / direct_metrics.total_tokens * 100)
                 recommendation = (
-                    f"Direct LLM is {abs(cost_delta_pct):.0f}% cheaper and "
-                    f"{abs(time_delta_pct):.0f}% faster. "
-                    f"RLM explores {rlm_metrics.steps_taken} steps for more thorough analysis."
+                    f"Direct is {abs(cost_delta_pct):.0f}% cheaper (${abs(cost_delta):.4f} saved), "
+                    f"but RLM saved {token_savings_pct:.0f}% tokens. "
+                    f"Use Direct for cost-sensitive work, RLM for token efficiency."
                 )
             else:
                 recommendation = (
-                    f"Direct LLM is {abs(cost_delta_pct):.0f}% cheaper. "
-                    f"Use Direct for cost-sensitive queries."
+                    f"Recommend Direct: {abs(cost_delta_pct):.0f}% cheaper "
+                    f"(${abs(cost_delta):.4f} saved) and "
+                    f"{abs(time_delta_pct):.0f}% faster. "
+                    f"RLM's {rlm_metrics.steps_taken} steps didn't provide clear benefit here."
                 )
+        # RLM saved significant tokens (>50%)?
+        elif token_delta < 0 and abs(token_delta / direct_metrics.total_tokens * 100) > 50:
+            token_savings_pct = abs(token_delta / direct_metrics.total_tokens * 100)
+            recommendation = (
+                f"RLM saved {token_savings_pct:.0f}% tokens ({abs(token_delta)} tokens), "
+                f"worth the {abs(time_delta_pct):.0f}% time increase for complex analysis."
+            )
+        # Similar costs
         else:
             recommendation = (
-                f"RLM and Direct have similar costs. "
-                f"Use RLM for complex analysis, Direct for speed."
+                f"Similar costs (${rlm_metrics.cost_usd:.4f} vs ${direct_metrics.cost_usd:.4f}). "
+                f"Use Direct for simple queries, RLM for complex document analysis."
             )
         
         return ComparisonMetrics(

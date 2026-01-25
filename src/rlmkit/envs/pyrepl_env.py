@@ -7,6 +7,7 @@ import io
 import sys
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
+from functools import partial
 from typing import Any, Dict, Optional
 
 from rlmkit.envs.sandbox import create_safe_globals
@@ -76,19 +77,20 @@ class PyReplEnv:
     def set_content(self, content: str) -> None:
         """
         Set the large content P that tools will operate on.
-        
+
         Args:
             content: The large text content to analyze
         """
         self._content = content
         self.env_globals['P'] = content
-        
+
         # Create wrapper functions that automatically pass content as first arg
         # This allows LLM to call peek(0, 10) instead of peek(P, 0, 10)
-        self.env_globals['peek'] = lambda *args, **kwargs: peek(content, *args, **kwargs)
-        self.env_globals['grep'] = lambda *args, **kwargs: grep(content, *args, **kwargs)
-        self.env_globals['chunk'] = lambda *args, **kwargs: chunk(content, *args, **kwargs)
-        self.env_globals['select'] = lambda *args, **kwargs: select(content, *args, **kwargs)
+        # Use functools.partial instead of lambdas to avoid pickling issues
+        self.env_globals['peek'] = partial(peek, content)
+        self.env_globals['grep'] = partial(grep, content)
+        self.env_globals['chunk'] = partial(chunk, content)
+        self.env_globals['select'] = partial(select, content)
         
     def get_var(self, name: str) -> Any:
         """
@@ -102,13 +104,17 @@ class PyReplEnv:
         """
         return self.env_globals.get(name)
     
+    def _exec_code(self, code: str) -> None:
+        """Helper method to execute code (needed for pickling with process-based timeout)."""
+        exec(code, self.env_globals)
+
     def execute(self, code: str) -> Dict[str, Any]:
         """
         Execute Python code and return result.
-        
+
         Args:
             code: Python code to execute
-            
+
         Returns:
             Dictionary with keys:
                 - stdout: str - captured stdout
@@ -122,25 +128,42 @@ class PyReplEnv:
         exception_msg: Optional[str] = None
         timeout_occurred = False
         truncated = False
-        
+
         try:
-            # Check if we're in the main thread (signal only works there)
+            # For Streamlit and similar environments, always prefer signal-based timeout
+            # even if not in main thread, as process-based timeout loses variable state
             import threading
-            is_main_thread = threading.current_thread() == threading.main_thread()
-            
-            # Create timeout context
-            timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=is_main_thread)
-            
+            import signal
+
+            # Check if SIGALRM is available (Unix-like systems)
+            has_sigalrm = hasattr(signal, 'SIGALRM')
+
+            # Use signal timeout if available, regardless of thread
+            # This works in Streamlit despite the ScriptRunContext warning
+            timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=has_sigalrm)
+
             # Redirect stdout and stderr
             with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
                 # Execute code with timeout
                 if hasattr(timeout_ctx, '__enter__'):
-                    # Signal-based timeout (context manager)
+                    # Signal-based timeout (context manager) - preferred path
                     with timeout_ctx:
                         exec(code, self.env_globals)
                 else:
-                    # Process-based timeout (has run method)
-                    timeout_ctx.run(lambda: exec(code, self.env_globals))
+                    # Process-based timeout (fallback for Windows or when signal unavailable)
+                    # WARNING: Variables won't persist due to separate process
+                    # Save subcall if present (it's a closure, can't pickle)
+                    subcall_backup = self.env_globals.pop('subcall', None)
+
+                    try:
+                        # Use partial instead of lambda to avoid pickling issues
+                        timeout_ctx.run(partial(self._exec_code, code))
+                    finally:
+                        # Restore subcall
+                        if subcall_backup is not None:
+                            self.env_globals['subcall'] = subcall_backup
+
+                        # Note: env_globals changes are lost with process-based timeout!
                 
         except ExecTimeoutError as e:
             # Timeout occurred
@@ -174,23 +197,23 @@ class PyReplEnv:
     def reset(self) -> None:
         """Reset the environment to initial state."""
         self.env_globals.clear()
-        
+
         # Restore appropriate globals based on safe_mode
         if self.safe_mode:
             self.env_globals.update(create_safe_globals(allowed_imports=self.allowed_imports))
         else:
             self.env_globals['__builtins__'] = __builtins__
             self.env_globals['__name__'] = '__rlm__'
-        
+
         # Restore content if set
         if self._content is not None:
-            content = self._content  # Capture for lambda closure
+            content = self._content
             self.env_globals['P'] = content
-            # Bind tools to content
-            self.env_globals['peek'] = lambda *args, **kwargs: peek(content, *args, **kwargs)
-            self.env_globals['grep'] = lambda *args, **kwargs: grep(content, *args, **kwargs)
-            self.env_globals['chunk'] = lambda *args, **kwargs: chunk(content, *args, **kwargs)
-            self.env_globals['select'] = lambda *args, **kwargs: select(content, *args, **kwargs)
+            # Bind tools to content using functools.partial (avoids pickling issues)
+            self.env_globals['peek'] = partial(peek, content)
+            self.env_globals['grep'] = partial(grep, content)
+            self.env_globals['chunk'] = partial(chunk, content)
+            self.env_globals['select'] = partial(select, content)
         else:
             # No content set, use unbound tools
             self.env_globals['peek'] = peek
