@@ -130,40 +130,42 @@ class PyReplEnv:
         truncated = False
 
         try:
-            # For Streamlit and similar environments, always prefer signal-based timeout
-            # even if not in main thread, as process-based timeout loses variable state
+            # Determine if we can use signal-based timeout
+            # signal.alarm() only works in the main thread
             import threading
             import signal
 
             # Check if SIGALRM is available (Unix-like systems)
             has_sigalrm = hasattr(signal, 'SIGALRM')
-
-            # Use signal timeout if available, regardless of thread
-            # This works in Streamlit despite the ScriptRunContext warning
-            timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=has_sigalrm)
-
+            
+            # Check if we're in the main thread
+            is_main_thread = threading.current_thread() == threading.main_thread()
+            
             # Redirect stdout and stderr
             with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-                # Execute code with timeout
-                if hasattr(timeout_ctx, '__enter__'):
-                    # Signal-based timeout (context manager) - preferred path
-                    with timeout_ctx:
-                        exec(code, self.env_globals)
-                else:
-                    # Process-based timeout (fallback for Windows or when signal unavailable)
-                    # WARNING: Variables won't persist due to separate process
-                    # Save subcall if present (it's a closure, can't pickle)
-                    subcall_backup = self.env_globals.pop('subcall', None)
-
+                # CRITICAL: In non-main threads (like Streamlit), we CANNOT use:
+                # - Signal-based timeout (raises ValueError)
+                # - Process-based timeout (loses variable state)
+                # Better to have no timeout than lose variable persistence!
+                
+                if has_sigalrm and is_main_thread:
+                    # Main thread: Use signal-based timeout
+                    timeout_ctx = create_timeout(self.max_exec_time_s, use_signal=True)
                     try:
-                        # Use partial instead of lambda to avoid pickling issues
-                        timeout_ctx.run(partial(self._exec_code, code))
-                    finally:
-                        # Restore subcall
-                        if subcall_backup is not None:
-                            self.env_globals['subcall'] = subcall_backup
-
-                        # Note: env_globals changes are lost with process-based timeout!
+                        with timeout_ctx:
+                            exec(code, self.env_globals)
+                    except ValueError as e:
+                        # Shouldn't happen (we checked is_main_thread)
+                        # But if it does, fall back to no timeout
+                        if "signal only works in main thread" in str(e):
+                            exec(code, self.env_globals)
+                        else:
+                            raise
+                else:
+                    # Non-main thread OR no SIGALRM: Execute without timeout
+                    # This preserves variable state across executions
+                    # Trade-off: No timeout protection, but RLM remains functional
+                    exec(code, self.env_globals)
                 
         except ExecTimeoutError as e:
             # Timeout occurred

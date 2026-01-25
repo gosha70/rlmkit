@@ -119,18 +119,24 @@ class TestErrorHandling:
     """Test error handling scenarios."""
     
     def test_code_execution_error(self):
-        """Test RLM handles execution errors gracefully."""
+        """Test RLM rejects FINAL after execution errors."""
         client = MockLLMClient([
             "```python\nx = 1 / 0\n```",  # Will cause error
-            "FINAL: Handled error"
+            "FINAL: Handled error",  # This should be REJECTED
+            "Let me fix: ```python\nx = 1 + 1\nprint(x)\n```",  # Fixed code
+            "FINAL: The result is 2"  # This should be ACCEPTED
         ])
         
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
         
-        # Should continue after error
+        # Should eventually succeed after fixing the error
         assert result.success
-        assert result.answer == "Handled error"
+        assert "result is 2" in result.answer or "2" in result.answer
+        
+        # Should have rejected first FINAL attempt
+        rejections = [t for t in result.trace if t.get("role") == "system" and "Rejected" in t.get("content", "")]
+        assert len(rejections) >= 1, "Should reject FINAL after execution error"
     
     def test_missing_final_var(self):
         """Test error when FINAL_VAR references non-existent variable."""

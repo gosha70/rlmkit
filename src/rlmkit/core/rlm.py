@@ -164,6 +164,8 @@ class RLM:
         # Main execution loop
         trace = []
         steps = 0
+        last_execution_failed = False  # Track if previous execution had errors
+        rejection_count = 0  # Track how many times we've rejected FINAL after failure
         
         try:
             while steps < self.config.execution.max_steps:
@@ -184,7 +186,61 @@ class RLM:
                 
                 # Check if complete
                 if parsed.is_complete:
-                    # Extract final answer
+                    # CRITICAL FIX: Check if there's any unresolved execution failure
+                    # According to RLM paper (arXiv:2512.24601), the LLM should
+                    # "iteratively observe any side effects from execution"
+                    # We reject FINAL answers after failures to prevent hallucination,
+                    # but allow recovery after 2 rejections (LLM can calculate directly).
+                    if last_execution_failed and rejection_count < 2:
+                        rejection_count += 1
+                        
+                        # Reject FINAL and prompt for error handling
+                        trace.append({
+                            "step": steps,
+                            "role": "system",
+                            "content": f"Rejected FINAL answer: unresolved execution failure (attempt {rejection_count}/2)"
+                        })
+                        
+                        messages.append({
+                            "role": "assistant",
+                            "content": response
+                        })
+                        
+                        if rejection_count == 1:
+                            # First rejection: prompt to fix code
+                            messages.append({
+                                "role": "user",
+                                "content": "⚠️ ERROR: Your previous code execution failed. "
+                                          "You cannot provide FINAL based on what you THINK the code should have produced.\n\n"
+                                          "Please either:\n"
+                                          "1. Fix the code and execute it successfully, OR\n"
+                                          "2. Calculate the answer directly WITHOUT code and explain your reasoning"
+                            })
+                        else:
+                            # Second rejection: more forceful, but hint at direct calculation
+                            messages.append({
+                                "role": "user",
+                                "content": "⚠️ ERROR: Code execution failed again. "
+                                          "If you cannot get the code to work, provide a DIRECT mathematical calculation "
+                                          "or reasoning WITHOUT relying on code execution. Show your work."
+                            })
+                        
+                        continue  # Don't accept the FINAL answer yet
+                    
+                    # Accept FINAL if:
+                    # - No recent failure (last_execution_failed == False), OR
+                    # - We've already rejected twice (give LLM a chance to recover)
+                    if last_execution_failed and rejection_count >= 2:
+                        # Clear the failure state after accepting with warning
+                        trace.append({
+                            "step": steps,
+                            "role": "system",
+                            "content": "Accepted FINAL after multiple rejection attempts (LLM may have calculated directly)"
+                        })
+                        last_execution_failed = False
+                        rejection_count = 0
+                    
+                    # Extract final answer (execution was successful or no recent failure)
                     answer = self._extract_final_answer(parsed)
                     
                     return RLMResult(
@@ -198,6 +254,19 @@ class RLM:
                 if parsed.has_code:
                     # Execute in REPL
                     result = self.env.execute(parsed.code)
+                    
+                    # Track if execution failed or succeeded
+                    # CRITICAL: Only clear the flag on SUCCESS, not on any text response
+                    # The LLM must successfully execute code OR acknowledge the error
+                    # before being allowed to provide a FINAL answer
+                    last_execution_failed = (
+                        result.get('exception') is not None or 
+                        result.get('timeout', False)
+                    )
+                    
+                    # Reset rejection count on successful execution
+                    if not last_execution_failed:
+                        rejection_count = 0
                     
                     # Format for LLM
                     formatted_result = format_result_for_llm(result)
@@ -221,6 +290,13 @@ class RLM:
                     })
                 else:
                     # No code and no final - unclear response
+                    # CRITICAL FIX: Do NOT clear last_execution_failed here!
+                    # The flag should only be cleared when:
+                    # 1. Code executes successfully (handled above)
+                    # 2. After we send the warning (handled in is_complete block)
+                    # If we clear it here, LLM can game the system by providing
+                    # text response to clear the flag, then FINAL answer.
+                    
                     messages.append({
                         "role": "assistant",
                         "content": response
