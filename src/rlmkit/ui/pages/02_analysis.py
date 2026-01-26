@@ -17,8 +17,8 @@ def render_analysis_page():
     st.title("📊 Analysis Dashboard")
     st.markdown("Compare RLM vs Direct LLM performance metrics")
     
-    # Check if we have any chat history - use 'messages' key where ChatMessage objects are stored
-    conversations = st.session_state.get('messages', [])
+    # Check if we have any chat history - use 'chat_messages' key where message dicts are stored
+    conversations = st.session_state.get('chat_messages', [])
     if not conversations:
         st.info("📝 No conversations yet. Visit **Chat** page to start analyzing documents.")
         return
@@ -339,18 +339,31 @@ def render_quality_metrics():
     st.plotly_chart(fig, use_container_width=True)
 
 
+class MessageWrapper:
+    """Wrapper to access dict message data with attribute syntax."""
+    def __init__(self, data):
+        self._data = data
+
+    def __getattr__(self, name):
+        value = self._data.get(name)
+        # If value is a dict, wrap it too
+        if isinstance(value, dict):
+            return MessageWrapper(value)
+        return value
+
+
 def get_latest_message():
     """Get the latest message with metrics from chat history."""
-    
-    messages = st.session_state.get('messages', [])  # Changed from 'chat_messages' to 'messages'
-    
-    # Find latest message with complete metrics (ChatMessage object)
+
+    messages = st.session_state.get('chat_messages', [])
+
+    # Find latest message with complete metrics (stored as dict)
     for message in reversed(messages):
-        # ChatMessage is a dataclass, not a dict - access attributes directly
-        if (hasattr(message, 'comparison_metrics') and 
-            message.comparison_metrics is not None):
-            return message
-    
+        # Messages are dicts, not ChatMessage objects - access via dict keys
+        if (isinstance(message, dict) and
+            message.get('comparison_metrics') is not None):
+            return MessageWrapper(message)
+
     return None
 
 

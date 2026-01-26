@@ -115,6 +115,8 @@ class ExecutionConfig:
     max_steps: int = 16  # Maximum execution steps for RLM loop
     enable_rlm: bool = True  # Enable RLM exploration mode (vs direct LLM queries)
     track_comparison_metrics: bool = True  # Track metrics for mode comparison
+    use_json_protocol: bool = True  # Use JSON action protocol (v2.0) instead of markdown parsing
+    max_parse_retries: int = 2  # Maximum retries for JSON parse errors
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""

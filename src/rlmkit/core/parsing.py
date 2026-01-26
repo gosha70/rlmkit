@@ -165,13 +165,16 @@ def parse_response(text: str) -> ParsedResponse:
         >>> resp.final_answer
         'Done'
     """
+    final_answer = extract_final_answer(text)
+    final_var = extract_final_var(text)
+    # If the model declares FINAL/FINAL_VAR, treat it as terminal and ignore code.
+    code = None if (final_answer or final_var) else extract_python_code(text)
     return ParsedResponse(
-        code=extract_python_code(text),
-        final_answer=extract_final_answer(text),
-        final_var=extract_final_var(text),
-        raw_text=text
+        code=code,
+        final_answer=final_answer,
+        final_var=final_var,
+        raw_text=text,
     )
-
 
 def format_code_for_display(code: str, max_lines: int = 10) -> str:
     """

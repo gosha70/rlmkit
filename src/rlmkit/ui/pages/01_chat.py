@@ -11,6 +11,184 @@ import asyncio
 from rlmkit.ui.services.chat_manager import ChatManager
 
 
+# -----------------------------------------------------------------------------
+# RLM Chat Composer UI skin (Streamlit)
+# -----------------------------------------------------------------------------
+
+def _inject_rlmkit_desktop_css():
+    """Global CSS RLM Chat Composer styling."""
+    st.markdown(
+        """
+        <style>
+        /* Page + padding */
+        .stApp {
+            background: #0b0b10;
+            color: #e8e8ea;
+        }
+
+        /* Remove Streamlit's top chrome */
+        header[data-testid="stHeader"],
+        div[data-testid="stToolbar"],
+        #MainMenu,
+        footer {
+            visibility: hidden;
+            height: 0;
+        }
+
+        /* Tighten vertical rhythm */
+        .block-container {
+            padding-top: 1.0rem;
+            padding-bottom: 4.5rem; /* room for bottom composer */
+            max-width: 980px;
+        }
+
+        /* Chat bubbles */
+        [data-testid="stChatMessage"] {
+            border-radius: 18px;
+        }
+        [data-testid="stChatMessage"] p,
+        [data-testid="stChatMessage"] li {
+            line-height: 1.5;
+            font-size: 0.98rem;
+        }
+
+        /* Hide default "Message" labels etc */
+        .stTextArea label, .stTextInput label {
+            display: none !important;
+        }
+
+        button[data-testid="stPopoverButton"] [data-testid="stIconMaterial"] {
+            display: none !important;
+        }   
+
+        /* Composer shell */
+        .rlmkit-composer {
+            border: 1px solid #2b2b33;
+            background: #141419;
+            border-radius: 18px;
+            overflow: hidden;
+        }
+        .rlmkit-composer:focus-within {
+            border-color: #3b3b46;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.03);
+        }
+
+        /* Textarea styling */
+        .rlmkit-composer textarea {
+            background: transparent !important;
+            border: none !important;
+            padding: 14px 14px 10px 14px !important;
+            color: #f2f2f4 !important;
+            resize: none !important;
+        }
+        .rlmkit-composer textarea:focus {
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Bottom bar */
+        .rlmkit-bottom-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-top: 1px solid #22222a;
+            background: #111116;
+        }
+
+        /* Icon buttons */
+        .rlmkit-icon button {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            border-radius: 10px !important;
+            padding: 0 !important;
+            height: 36px !important;
+            width: 36px !important;
+            min-width: 36px !important;
+            color: #c6c6cc !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 18px !important;
+            line-height: 1 !important;
+            text-align: center !important;
+        }
+        .rlmkit-icon button:hover {
+            background: rgba(255,255,255,0.06) !important;
+            border-color: rgba(255,255,255,0.06) !important;
+            color: #ffffff !important;
+        }
+        
+        /* Center all nested content inside icon buttons - target all levels */
+        .rlmkit-icon button *,
+        .rlmkit-icon button > div,
+        .rlmkit-icon button span,
+        .rlmkit-icon button [data-testid="stMarkdownContainer"],
+        .rlmkit-icon button p {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            text-align: center !important;
+            line-height: 1 !important;
+        }
+        
+        /* Hide any labels on popover buttons */
+        .rlmkit-icon [data-testid="stPopover"] label {
+            display: none !important;
+        }
+        .rlmkit-icon [data-testid="stPopover"] > div > div > span {
+            display: none !important;
+        }
+
+        /* "Send" button: circular w/ accent */
+        .rlmkit-send button {
+            background: #b55a3c !important;
+            border: none !important;
+            border-radius: 12px !important;
+            height: 36px !important;
+            width: 44px !important;
+            padding: 0 !important;
+            color: #101014 !important;
+            font-weight: 700 !important;
+        }
+        .rlmkit-send button:hover {
+            filter: brightness(1.05);
+        }
+
+        /* Pills (mode chips / model selector button) */
+        .rlmkit-pill button {
+            background: rgba(255,255,255,0.04) !important;
+            border: 1px solid rgba(255,255,255,0.06) !important;
+            border-radius: 999px !important;
+            padding: 6px 10px !important;
+            height: 32px !important;
+            color: #dedee3 !important;
+            font-size: 0.85rem !important;
+        }
+        .rlmkit-pill button:hover {
+            background: rgba(255,255,255,0.07) !important;
+        }
+
+        /* Popover content spacing */
+        div[data-testid="stPopoverBody"] {
+            padding: 10px 12px !important;
+        }
+
+        /* Subtle divider */
+        hr {
+            border-color: rgba(255,255,255,0.08) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _run_async(coro):
     """
     Run an async coroutine in Streamlit context.
@@ -43,30 +221,46 @@ def _run_async(coro):
 
 def render_chat_page():
     """Render the main chat interface page."""
-    
-    # Render sidebar with provider information
+
+    # Page config (safe if called multiple times)
+    try:
+        st.set_page_config(
+            page_title="RLM Studio",
+            page_icon="💬",
+            layout="centered",
+            initial_sidebar_state="collapsed",
+        )
+    except Exception:
+        pass
+
+    _inject_rlmkit_desktop_css()
+
+    # Optional sidebar (collapsed by default). Keeps config discoverable without
+    # dominating the UI like a traditional Streamlit app.
     render_sidebar()
-    
-    st.title("💬 RLM Studio Chat")
-    st.markdown("Interactive exploration of your documents using RLM vs Direct LLM comparison")
-    
+
+    st.markdown(
+        """<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;'>
+        <div style='font-size:1.05rem;font-weight:650;'>RLM Studio</div>
+        <div style='opacity:0.7;font-size:0.9rem;'>rlmkit-style composer • compare RLM vs direct</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
     # Initialize session state
     if 'chat_messages' not in st.session_state:
         st.session_state.chat_messages = []
     if 'current_conversation' not in st.session_state:
         st.session_state.current_conversation = None
-    
-    # Render document context
+
+    # Show attached content (compact)
     render_document_context()
-    
-    st.divider()
-    
+
     # Render message history
     render_message_history()
-    
+
+    # Bottom composer
     st.divider()
-    
-    # Render input area
     render_chat_input()
 
 
@@ -124,35 +318,31 @@ def render_sidebar():
 
 
 def render_document_context():
-    """Show currently loaded document/context."""
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        if st.session_state.get('file_info'):
-            file_info = st.session_state.file_info
-            st.info(
-                f"📄 **Document Context Loaded**\n\n"
-                f"**File:** {file_info.filename}\n"
-                f"**Size:** {file_info.size_bytes:,} bytes | "
-                f"**Chars:** {file_info.char_count:,} | "
-                f"**Tokens:** ~{file_info.estimated_tokens:,}"
+    """Show currently loaded document/context (compact version)."""
+    if st.session_state.get('file_info'):
+        file_info = st.session_state.file_info
+        col1, col2 = st.columns([4, 1])
+
+        with col1:
+            st.success(
+                f"📎 **Attached:** {file_info.filename} | "
+                f"{file_info.size_bytes / 1024:.1f} KB | "
+                f"~{file_info.estimated_tokens:,} tokens"
             )
-        else:
-            st.warning("📄 No document context loaded. Upload or paste content to get started.")
-    
-    with col2:
-        if st.button("🔄 Clear", key="clear_context"):
-            st.session_state.file_content = None
-            st.session_state.file_info = None
-            st.success("Context cleared")
-            st.rerun()
+
+        with col2:
+            if st.button("✕ Remove", key="clear_context", use_container_width=True):
+                st.session_state.file_content = None
+                st.session_state.file_info = None
+                st.rerun()
 
 
 def render_message_history():
     """Display conversation history."""
     messages = st.session_state.get('chat_messages', [])
-    
-    if not messages:
+
+    # Only show info message if no messages AND user hasn't typed anything
+    if not messages and not st.session_state.get('chat_input', '').strip():
         st.info("💭 No messages yet. Start by asking a question about your document.")
         return
     
@@ -355,42 +545,165 @@ def render_comparison(message: dict):
             # One or both responses actually failed
             st.warning("⚠️ Comparison data may be incomplete. One or both executions may have failed.")
 
-
 def render_chat_input():
-    """Render the chat input area."""
-    
-    col1, col2 = st.columns([4, 1])
-    
-    with col1:
+    """RLM Chat Composer Input Area.
+
+    Goals vs the stock Streamlit UI:
+    - Single rounded composer (textarea + bottom row)
+    - Left "plus" opens a popover with attachment + toggles
+    - Right side: model pill + send button
+    """
+
+    # ----------------------------
+    # State
+    # ----------------------------
+    if "composer_mode" not in st.session_state:
+        st.session_state.composer_mode = "compare"  # compare | rlm_only | direct_only
+    if "research_enabled" not in st.session_state:
+        st.session_state.research_enabled = False
+    if "web_search_enabled" not in st.session_state:
+        st.session_state.web_search_enabled = True
+    if "style_preset" not in st.session_state:
+        st.session_state.style_preset = "Compare"
+
+    mode_map = {
+        "Compare": "compare",
+        "RLM": "rlm_only",
+        "LLM": "direct_only",
+    }
+
+    # Provider/model text for the model pill
+    provider_label = "Model"
+    try:
+        from rlmkit.ui.services import LLMConfigManager
+        from pathlib import Path
+        manager = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
+        selected_provider = st.session_state.get("selected_provider")
+        if selected_provider:
+            cfg = manager.get_provider_config(selected_provider)
+            provider_label = f"{selected_provider.upper()} • {cfg.model}"
+    except Exception:
+        pass
+
+    # ----------------------------
+    # Composer shell
+    # ----------------------------
+    st.markdown('<div class="rlmkit-composer">', unsafe_allow_html=True)
+
+    with st.container():
         user_input = st.text_area(
-            "Your question:",
+            "Message",
             placeholder="Ask anything about the document...",
-            height=100,
-            key="chat_input"
+            height=110,
+            key="chat_input",
+            label_visibility="collapsed",
         )
-    
-    with col2:
-        st.write("")  # Spacing
-        st.write("")
-        
-        # Mode selector
-        mode = st.radio(
-            "Mode:",
-            ["Compare", "RLM Only", "Direct Only"],
-            horizontal=False,
-            key="execution_mode_selector"
-        )
-        
-        mode_map = {
+
+        st.markdown('<div class="rlmkit-bottom-bar">', unsafe_allow_html=True)
+
+        # Left side: + popover and chips
+        left, right = st.columns([7, 3], vertical_alignment="center")
+
+        with left:
+            c1, c2, c3, c4 = st.columns([1, 1, 1, 10], vertical_alignment="center")
+
+            with c1:
+                st.markdown('<div class="rlmkit-icon">', unsafe_allow_html=True)
+                with st.popover('<p style="text-align:center;">➕</p>', use_container_width=True):
+                    st.subheader("Add")
+                    uploaded_file = st.file_uploader(
+                        "Add files or photos",
+                        type=[
+                            "pdf",
+                            "docx",
+                            "txt",
+                            "md",
+                            "json",
+                            "py",
+                            "js",
+                            "ts",
+                            "java",
+                            "cpp",
+                            "c",
+                            "h",
+                            "png",
+                            "jpg",
+                            "jpeg",
+                        ],
+                        key="composer_file_upload",
+                    )
+                    if uploaded_file is not None:
+                        from rlmkit.ui.file_processor import process_file
+
+                        file_bytes = uploaded_file.read()
+                        file_info = process_file(file_bytes=file_bytes, filename=uploaded_file.name)
+                        if file_info.success:
+                            st.session_state.file_content = file_info.content
+                            st.session_state.file_info = file_info
+                            st.success(f"Attached: {uploaded_file.name}")
+                        else:
+                            st.error(f"Error: {file_info.error}")
+
+                    st.divider()
+                    st.toggle("Research", key="research_enabled")
+                    st.toggle("Web search", key="web_search_enabled")
+                    st.selectbox(
+                        "Use style",
+                        ["Normal", "Learning", "Concise", "Professional", "Friendly", "Formal"],
+                        key="style_preset",
+                    )
+                    st.caption(
+                        "Styles allow you to customize how LLM communicates,\n"
+                        "helping you achieve more while working in a way that feels natural to you.\n"                    )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        with right:
+            m1, m2 = st.columns([3, 1], vertical_alignment="center")
+            with m1:
+                st.markdown('<div class="rlmkit-pill">', unsafe_allow_html=True)
+                with st.popover(provider_label, use_container_width=True):
+                    st.subheader("Execution")
+                    st.radio(
+                        "Mode",
+                        ["Compare", "RLM only", "Direct only"],
+                        index={
+                            "compare": 0,
+                            "rlm_only": 1,
+                            "direct_only": 2,
+                        }.get(st.session_state.composer_mode, 0),
+                        key="composer_mode_radio",
+                        label_visibility="collapsed",
+                    )
+                    st.caption("These map to the RLM Studio backend execution modes.")
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with m2:
+                st.markdown('<div class="rlmkit-send">', unsafe_allow_html=True)
+                send_button = st.button("↑", use_container_width=True, key="rlmkit_send")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)  # rlmkit-bottom-bar
+
+    st.markdown("</div>", unsafe_allow_html=True)  # rlmkit-composer
+
+    # Keep composer_mode in sync
+    mode_choice = st.session_state.get("composer_mode_radio")
+    if mode_choice:
+        st.session_state.composer_mode = {
             "Compare": "compare",
-            "RLM Only": "rlm_only",
-            "Direct Only": "direct_only"
-        }
-        
-        send_button = st.button("📤 Send", use_container_width=True)
-    
+            "RLM only": "rlm_only",
+            "Direct only": "direct_only",
+        }[mode_choice]
+
+    # Map style preset into execution mode (rlmkit-like chips)
+    st.session_state.composer_mode = mode_map.get(
+        st.session_state.get("style_preset", "Compare"),
+        st.session_state.composer_mode,
+    )
+
     # Handle message submission
-    if send_button and user_input.strip():
+    if send_button and user_input and user_input.strip():
         # Add user message to history
         st.session_state.chat_messages.append({
             'role': 'user',
@@ -432,7 +745,7 @@ def render_chat_input():
                 message = _run_async(
                     chat_manager.process_message(
                         user_query=user_input,
-                        mode=mode_map[mode],
+                        mode=st.session_state.composer_mode,
                         file_context=file_context,
                         file_info=file_info,
                         selected_provider=selected_provider,
@@ -443,8 +756,8 @@ def render_chat_input():
                 # Add assistant message to history
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
-                    'content': f"Response from {mode}",
-                    'mode': mode_map[mode],
+                    'content': f"Response ({st.session_state.composer_mode})",
+                    'mode': st.session_state.composer_mode,
                     'rlm_response': message.rlm_response,
                     'rlm_metrics': message.rlm_metrics,
                     'rlm_trace': message.rlm_trace,
@@ -453,10 +766,8 @@ def render_chat_input():
                     'comparison_metrics': message.comparison_metrics,
                     'timestamp': st.session_state.get('current_time')
                 })
-                
-                # Don't try to clear input - Streamlit doesn't allow modifying widget state
-                # Just rerun and the form will reset naturally
-                st.success("✅ Response received")
+
+                # Don't modify chat_input - st.rerun() will reset it naturally
                 st.rerun()
             
             except Exception as e:
