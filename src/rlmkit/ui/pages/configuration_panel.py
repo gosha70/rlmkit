@@ -444,17 +444,9 @@ def render_pricing_info():
 
 
 def render_config_sidebar():
-    """Render simple sidebar for configuration page."""
-    st.sidebar.header("⚙️ Configuration")
-    st.sidebar.info("""
-    📋 **Setup & Configuration**
-    
-    Configure your RLMKit execution environment:
-    • Set execution mode (RLM, Direct, or Compare)
-    • Configure budget limits
-    • Manage LLM providers
-    • View pricing information
-    """)
+    """Minimal sidebar - Streamlit handles navigation automatically."""
+    # No additional sidebar content - Streamlit shows navigation by default
+    pass
 
 
 def render_execution_settings():
@@ -500,9 +492,10 @@ def render_execution_settings():
 def main():
     """Main configuration page."""
     st.set_page_config(
-        page_title="Configuration - RLMKit",
+        page_title="Configuration - RLM Studio",
         page_icon="⚙️",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="auto",
     )
     
     # Initialize session state

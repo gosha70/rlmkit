@@ -13,7 +13,18 @@ import plotly.express as px
 
 def render_analysis_page():
     """Render the analysis dashboard page."""
-    
+
+    # Page config
+    try:
+        st.set_page_config(
+            page_title="Analysis - RLM Studio",
+            page_icon="📊",
+            layout="wide",
+            initial_sidebar_state="auto",
+        )
+    except Exception:
+        pass
+
     st.title("📊 Analysis Dashboard")
     st.markdown("Compare RLM vs Direct LLM performance metrics")
     
@@ -44,12 +55,12 @@ def render_summary_cards():
         st.warning("No metrics available yet")
         return
     
-    col1, col2, col3, col4 = st.columns(4)
-    
+    col1, col2, col3, col4, col5 = st.columns(5)
+
     # Get metrics - ChatMessage is a dataclass, access attributes directly
     rlm_metrics = latest_message.rlm_metrics
     direct_metrics = latest_message.direct_metrics
-    
+
     # Tokens metric
     rlm_tokens = rlm_metrics.total_tokens if rlm_metrics else 0
     direct_tokens = direct_metrics.total_tokens if direct_metrics else 0
@@ -94,7 +105,7 @@ def render_summary_cards():
     # Recommendation metric
     comparison = latest_message.comparison_metrics
     recommendation = comparison.recommendation if comparison else 'No recommendation'
-    
+
     with col4:
         if "faster" in recommendation.lower() or "direct" in recommendation.lower():
             st.metric("Recommendation", "✅ Direct", "More efficient")
@@ -102,6 +113,26 @@ def render_summary_cards():
             st.metric("Recommendation", "✅ RLM", "More thorough")
         else:
             st.metric("Recommendation", "⚠️ Neutral", "Trade-offs")
+
+    # User Rating metric
+    rlm_rating = latest_message._data.get('rlm_user_rating')
+    direct_rating = latest_message._data.get('direct_user_rating')
+
+    with col5:
+        if rlm_rating is not None and direct_rating is not None:
+            rating_diff = rlm_rating - direct_rating
+            winner = "RLM" if rating_diff > 0 else "Direct" if rating_diff < 0 else "Tie"
+            st.metric(
+                "User Ratings",
+                f"{rlm_rating} vs {direct_rating}",
+                f"{winner} preferred" if rating_diff != 0 else "Equal"
+            )
+        elif rlm_rating is not None:
+            st.metric("RLM Rating", f"⭐ {rlm_rating}/10")
+        elif direct_rating is not None:
+            st.metric("Direct Rating", f"⭐ {direct_rating}/10")
+        else:
+            st.metric("User Ratings", "Not rated", "Rate in Chat page")
 
 
 def render_metrics_comparison():
@@ -119,6 +150,10 @@ def render_metrics_comparison():
     direct_metrics = latest_message.direct_metrics
     comparison = latest_message.comparison_metrics
     
+    # Get user ratings
+    rlm_rating = latest_message._data.get('rlm_user_rating')
+    direct_rating = latest_message._data.get('direct_user_rating')
+
     # Build comparison dataframe
     data = {
         'Metric': [
@@ -129,7 +164,8 @@ def render_metrics_comparison():
             'Execution Time (s)',
             'Cost (USD)',
             'Memory Used (MB)',
-            'Success'
+            'Success',
+            'User Rating (0-10)'
         ],
         'RLM': [
             rlm_metrics.steps_taken if rlm_metrics else 0,
@@ -139,7 +175,8 @@ def render_metrics_comparison():
             f"{rlm_metrics.execution_time_seconds if rlm_metrics else 0:.3f}",
             f"${rlm_metrics.cost_usd if rlm_metrics else 0:.6f}",
             f"{rlm_metrics.memory_used_mb if rlm_metrics else 0:.1f}",
-            "✅" if (rlm_metrics and rlm_metrics.success) else "❌"
+            "✅" if (rlm_metrics and rlm_metrics.success) else "❌",
+            f"⭐ {rlm_rating}/10" if rlm_rating is not None else "Not rated"
         ],
         'Direct': [
             direct_metrics.steps_taken if direct_metrics else 0,
@@ -149,7 +186,8 @@ def render_metrics_comparison():
             f"{direct_metrics.execution_time_seconds if direct_metrics else 0:.3f}",
             f"${direct_metrics.cost_usd if direct_metrics else 0:.6f}",
             f"{direct_metrics.memory_used_mb if direct_metrics else 0:.1f}",
-            "✅" if (direct_metrics and direct_metrics.success) else "❌"
+            "✅" if (direct_metrics and direct_metrics.success) else "❌",
+            f"⭐ {direct_rating}/10" if direct_rating is not None else "Not rated"
         ],
         'Delta': [
             (rlm_metrics.steps_taken if rlm_metrics else 0) - (direct_metrics.steps_taken if direct_metrics else 0),
@@ -159,7 +197,8 @@ def render_metrics_comparison():
             f"{comparison.time_delta_seconds if comparison else 0:.3f}",
             f"${comparison.cost_delta_usd if comparison else 0:+.6f}",
             f"{(rlm_metrics.memory_used_mb if rlm_metrics else 0) - (direct_metrics.memory_used_mb if direct_metrics else 0):+.1f}",
-            "-"
+            "-",
+            f"{(rlm_rating if rlm_rating is not None else 0) - (direct_rating if direct_rating is not None else 0):+}" if (rlm_rating is not None and direct_rating is not None) else "-"
         ]
     }
     
@@ -337,6 +376,57 @@ def render_quality_metrics():
     )
     
     st.plotly_chart(fig, use_container_width=True)
+
+    # User Rating Comparison Chart
+    rlm_rating = latest_message._data.get('rlm_user_rating')
+    direct_rating = latest_message._data.get('direct_user_rating')
+
+    if rlm_rating is not None or direct_rating is not None:
+        st.write("**User Rating Comparison**")
+
+        # Prepare data
+        ratings = []
+        labels = []
+
+        if rlm_rating is not None:
+            ratings.append(rlm_rating)
+            labels.append('RLM')
+
+        if direct_rating is not None:
+            ratings.append(direct_rating)
+            labels.append('Direct')
+
+        # Create bar chart
+        fig = go.Figure(data=[
+            go.Bar(
+                x=labels,
+                y=ratings,
+                marker_color=['#3b82f6' if l == 'RLM' else '#10b981' for l in labels],
+                text=[f"{r}/10" for r in ratings],
+                textposition='outside'
+            )
+        ])
+
+        fig.update_layout(
+            title="User Satisfaction Ratings (0 = worst, 10 = best)",
+            yaxis_title="Rating",
+            yaxis_range=[0, 10],
+            height=400,
+            showlegend=False
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Show winner
+        if rlm_rating is not None and direct_rating is not None:
+            if rlm_rating > direct_rating:
+                st.success(f"✨ **User prefers RLM** by {rlm_rating - direct_rating} points")
+            elif direct_rating > rlm_rating:
+                st.success(f"✨ **User prefers Direct** by {direct_rating - rlm_rating} points")
+            else:
+                st.info("⚖️ **User rated both equally**")
+    else:
+        st.info("💡 **Tip:** Rate responses in the Chat page to see user preference analysis here")
 
 
 class MessageWrapper:
