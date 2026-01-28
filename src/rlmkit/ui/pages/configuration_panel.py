@@ -8,6 +8,8 @@ from pathlib import Path
 import os
 
 from rlmkit.ui.services import LLMConfigManager
+from rlmkit.ui.components.navigation import render_custom_navigation
+from rlmkit.ui.app import _inject_rlmkit_desktop_css
 
 
 def init_config_session_state():
@@ -491,18 +493,24 @@ def render_execution_settings():
 
 def main():
     """Main configuration page."""
+    # Mark this as the configuration page in session state
+    st.session_state.current_nav_page = 'configuration'
+
     st.set_page_config(
         page_title="Configuration - RLM Studio",
         page_icon="⚙️",
         layout="wide",
         initial_sidebar_state="auto",
     )
+
+    # Load global CSS (includes navigation hiding and sidebar toggle fixes)
+    _inject_rlmkit_desktop_css()
     
     # Initialize session state
     init_config_session_state()
     
-    # Render config-specific sidebar
-    render_config_sidebar()
+    # Render custom navigation in sidebar
+    render_custom_navigation()
     
     # Header
     st.title("⚙️ Configuration Management")

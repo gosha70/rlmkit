@@ -9,10 +9,15 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+from rlmkit.ui.components.navigation import render_custom_navigation
+from rlmkit.ui.app import _inject_rlmkit_desktop_css
 
 
 def render_analysis_page():
     """Render the analysis dashboard page."""
+
+    # Mark this as the analysis page in session state
+    st.session_state.current_nav_page = 'analysis'
 
     # Page config
     try:
@@ -24,6 +29,12 @@ def render_analysis_page():
         )
     except Exception:
         pass
+
+    # Load global CSS (includes navigation hiding and sidebar toggle fixes)
+    _inject_rlmkit_desktop_css()
+
+    # Render custom navigation in sidebar
+    render_custom_navigation()
 
     st.title("📊 Analysis Dashboard")
     st.markdown("Compare RLM vs Direct LLM performance metrics")

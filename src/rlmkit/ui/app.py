@@ -7,200 +7,38 @@ Page 1 of RLM Studio: ChatGPT-like interface for exploring documents
 
 import streamlit as st
 import asyncio
+from pathlib import Path
 
 from rlmkit.ui.services.chat_manager import ChatManager
+from rlmkit.ui.components.navigation import render_custom_navigation
 
 
 # -----------------------------------------------------------------------------
 # RLM Chat Composer UI skin (Streamlit)
 # -----------------------------------------------------------------------------
 
-def _inject_rlmkit_desktop_css():
-    """Global CSS RLM Chat Composer styling."""
-    st.markdown(
+def _inject_rlmkit_desktop_css() -> None:
+    """Inject global CSS for the desktop-style UI.
+
+    CSS is stored in an external stylesheet (styles.css) next to this file.
+    Keeping it in a file avoids Streamlit "flash" issues caused by multiple
+    competing CSS injections across pages.
     """
-    <style>
-    /* Page + padding */
-    .stApp {
-        background: #0b0b10;
-        color: #e8e8ea;
-    }
+    # Try a few common locations relative to this module
+    candidates = [
+        Path(__file__).with_name("styles.css"),
+        Path(__file__).parent / "styles.css",
+        Path(__file__).parent / "assets" / "styles.css",
+        Path.cwd() / "styles.css",
+    ]
 
-    /* Remove Streamlit's top chrome */
-    header[data-testid="stHeader"],
-    div[data-testid="stToolbar"],
-    #MainMenu,
-    footer {
-        visibility: hidden;
-        height: 0;
-    }
+    css_path = next((p for p in candidates if p.exists()), None)
+    if not css_path:
+        # Minimal fallback: do nothing if stylesheet is missing.
+        return
 
-    /* Tighten vertical rhythm */
-    .block-container {
-        padding-top: 1.0rem;
-        padding-bottom: 4.5rem; /* room for bottom composer */
-        max-width: 980px;
-    }
-
-    /* Chat bubbles */
-    [data-testid="stChatMessage"] {
-        border-radius: 18px;
-    }
-    [data-testid="stChatMessage"] p,
-    [data-testid="stChatMessage"] li {
-        line-height: 1.5;
-        font-size: 0.98rem;
-    }
-
-    /* Hide default "Message" labels etc */
-    .stTextArea label, .stTextInput label {
-        display: none !important;
-    }
-
-    /* Composer shell */
-    .rlmkit-composer {
-        border: 1px solid #2b2b33;
-        background: #141419;
-        border-radius: 18px;
-        overflow: hidden;
-    }
-    .rlmkit-composer:focus-within {
-        border-color: #3b3b46;
-        box-shadow: 0 0 0 2px rgba(255,255,255,0.03);
-    }
-
-    /* Textarea styling */
-    .rlmkit-composer textarea {
-        background: transparent !important;
-        border: none !important;
-        padding: 14px 14px 10px 14px !important;
-        color: #f2f2f4 !important;
-        resize: none !important;
-    }
-    .rlmkit-composer textarea:focus {
-        outline: none !important;
-        box-shadow: none !important;
-    }
-
-    /* Bottom bar */
-    .rlmkit-bottom-bar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 10px;
-        padding: 8px 10px;
-        border-top: 1px solid #22222a;
-        background: #111116;
-    }
-
-    /* Icon buttons (base) */
-    .rlmkit-icon button {
-        background: transparent !important;
-        border: 1px solid transparent !important;
-        border-radius: 10px !important;
-
-        height: 36px !important;
-        width: 36px !important;
-        min-width: 36px !important;
-        padding: 0 !important;
-
-        color: #c6c6cc !important;
-
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-
-        font-size: 18px !important;
-        line-height: 1 !important;
-        text-align: center !important;
-    }
-    .rlmkit-icon button:hover {
-        background: rgba(255,255,255,0.06) !important;
-        border-color: rgba(255,255,255,0.06) !important;
-        color: #ffffff !important;
-    }
-
-    /* 1) Nuke the chevron flex item entirely (the right-side container div) */
-    button[data-testid="stPopoverButton"] > div > div:last-child {
-        display: none !important;
-    }
-
-    /* Hide Streamlit popover chevron (Material icon: expand_more) */
-    button[data-testid="stPopoverButton"] [data-testid="stIconMaterial"] {
-        display: none !important;
-    }
-
-    /* Center the remaining label */
-    .rlmkit-icon button[data-testid="stPopoverButton"] > div {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    /* Streamlit wraps label in nested divs/spans + markdown container */
-    .rlmkit-icon button[data-testid="stPopoverButton"] > div,
-    .rlmkit-icon button[data-testid="stPopoverButton"] > div > div,
-    .rlmkit-icon button[data-testid="stPopoverButton"] span,
-    .rlmkit-icon button[data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"],
-    .rlmkit-icon button[data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] p {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        width: 100% !important;
-        height: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        line-height: 1 !important;
-        text-align: center !important;
-    }
-
-    /* Hide any labels on popover widgets (safe) */
-    .rlmkit-icon [data-testid="stPopover"] label {
-        display: none !important;
-    }
-
-    /* "Send" button: circular w/ accent */
-    .rlmkit-send button {
-        background: #b55a3c !important;
-        border: none !important;
-        border-radius: 12px !important;
-        height: 36px !important;
-        width: 44px !important;
-        padding: 0 !important;
-        color: #101014 !important;
-        font-weight: 700 !important;
-    }
-    .rlmkit-send button:hover {
-        filter: brightness(1.05);
-    }
-
-    /* Pills (mode chips / model selector button) */
-    .rlmkit-pill button {
-        background: rgba(255,255,255,0.04) !important;
-        border: 1px solid rgba(255,255,255,0.06) !important;
-        border-radius: 999px !important;
-        padding: 6px 10px !important;
-        height: 32px !important;
-        color: #dedee3 !important;
-        font-size: 0.85rem !important;
-    }
-    .rlmkit-pill button:hover {
-        background: rgba(255,255,255,0.07) !important;
-    }
-
-    /* Popover content spacing */
-    div[data-testid="stPopoverBody"] {
-        padding: 10px 12px !important;
-    }
-
-    /* Subtle divider */
-    hr {
-        border-color: rgba(255,255,255,0.08) !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    css = css_path.read_text(encoding="utf-8", errors="ignore")
+    st.markdown(f"<style>\n{css}\n</style>", unsafe_allow_html=True)
 
 
 
@@ -234,25 +72,49 @@ def _run_async(coro):
             loop.close()
 
 
-def render_chat_page():
-    """Render the main chat interface page."""
 
-    # Page config (safe if called multiple times)
-    try:
-        st.set_page_config(
-            page_title="Chat - RLM Studio",
-            page_icon="💬",
-            layout="centered",
-            initial_sidebar_state="auto",
+def render_chat_page(*, embedded: bool = False):
+    """Render the chat UI.
+
+    If embedded=True, the caller is responsible for:
+      - st.set_page_config(...)
+      - injecting global CSS
+      - rendering navigation in the sidebar
+    """
+
+    if not embedded:
+        # Mark this as the chat page in session state
+        st.session_state.current_nav_page = 'chat'
+
+        # Page config (safe if called multiple times)
+        try:
+            st.set_page_config(
+                page_title="Chat - RLM Studio",
+                page_icon="💬",
+                layout="wide",
+                initial_sidebar_state="auto",
+            )
+        except Exception:
+            pass
+
+        # Hide Streamlit's default sidebar navigation
+        st.markdown(
+            """
+            <style>
+            [data-testid="stSidebarNav"] {
+                display: none !important;
+                visibility: hidden !important;
+                height: 0 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
         )
-    except Exception:
-        pass
 
-    _inject_rlmkit_desktop_css()
+        _inject_rlmkit_desktop_css()
 
-    # Optional sidebar (collapsed by default). Keeps config discoverable without
-    # dominating the UI like a traditional Streamlit app.
-    render_sidebar()
+        # Optional sidebar content
+        render_sidebar()
 
     st.markdown(
         """<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;'>
@@ -281,13 +143,13 @@ def render_chat_page():
 
 
 def render_sidebar():
-    """Minimal sidebar - Streamlit handles navigation automatically."""
+    """Render sidebar with custom navigation."""
     # Initialize ChatManager if not already done
     if 'chat_manager' not in st.session_state:
         st.session_state.chat_manager = ChatManager()
 
-    # No additional sidebar content - Streamlit shows navigation by default
-
+    # Render custom navigation
+    page =render_custom_navigation()
 
 def render_document_context():
     """Show currently loaded document/context (compact version)."""
