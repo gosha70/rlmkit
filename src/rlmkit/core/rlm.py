@@ -332,14 +332,15 @@ class RLM:
                 args = action_obj.args
 
                 # Build code to call the tool
+                # Note: Tools are wrapped with partial() in PyReplEnv, so content is auto-passed
                 if tool == "grep":
-                    code = f"print(grep(P, pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
+                    code = f"print(grep(pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
                 elif tool == "peek":
-                    code = f"print(peek(P, start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
+                    code = f"print(peek(start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
                 elif tool == "select":
-                    code = f"print(select(P, ranges={args.get('ranges')}))"
+                    code = f"print(select(ranges={args.get('ranges')}))"
                 elif tool == "chunk":
-                    code = f"print(chunk(P, size={args.get('size', 1000)}, overlap={args.get('overlap', 0)}, by={repr(args.get('by', 'chars'))}, max_chunks={args.get('max_chunks', 100)}))"
+                    code = f"print(chunk(size={args.get('size', 1000)}, overlap={args.get('overlap', 0)}, by={repr(args.get('by', 'chars'))}, max_chunks={args.get('max_chunks', 100)}))"
                 else:
                     # Unknown tool, return as text
                     return ParsedResponse(raw_text=response)
