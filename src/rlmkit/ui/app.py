@@ -501,6 +501,12 @@ def render_chat_input():
         from rlmkit.ui.services import LLMConfigManager
         from pathlib import Path
         manager = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
+
+        # Initialize selected_provider if not set
+        if 'selected_provider' not in st.session_state:
+            providers = manager.list_providers()
+            st.session_state.selected_provider = providers[0] if providers else None
+
         selected_provider = st.session_state.get("selected_provider")
         if selected_provider:
             cfg = manager.get_provider_config(selected_provider)
@@ -657,7 +663,9 @@ def render_chat_input():
     )
 
     # Handle message submission
-    if send_button and user_input and user_input.strip():
+    # Read from session state to ensure we get the latest value
+    user_input = st.session_state.get('chat_input', '').strip()
+    if send_button and user_input:
         # Add user message to history
         st.session_state.chat_messages.append({
             'role': 'user',
@@ -742,7 +750,7 @@ def render_chat_input():
                     'timestamp': st.session_state.get('current_time')
                 })
 
-                # Don't modify chat_input - st.rerun() will reset it naturally
+                # Rerun to refresh UI - input will clear naturally
                 st.rerun()
             
             except Exception as e:

@@ -17,7 +17,7 @@ import importlib.resources
 _template_cache: Dict[str, str] = {}
 
 
-def get_default_system_prompt(version: str = "1.0") -> str:
+def get_default_system_prompt(version: str = "2.0") -> str:
     """
     Get the default system prompt template from versioned template file.
     
@@ -72,7 +72,7 @@ def get_default_system_prompt(version: str = "1.0") -> str:
 def format_system_prompt(
     template: Optional[str] = None,
     prompt_length: int = 0,
-    version: str = "1.0",
+    version: str = "2.0",
     **kwargs: Any
 ) -> str:
     """

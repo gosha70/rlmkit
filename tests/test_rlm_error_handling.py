@@ -8,7 +8,7 @@ rather than acknowledging the execution failure.
 
 from rlmkit.core.rlm import RLM
 from rlmkit.llm import MockLLMClient
-from rlmkit.config import RLMConfig
+from rlmkit.config import RLMConfig, ExecutionConfig
 
 
 def test_error_then_final_answer():
@@ -33,7 +33,7 @@ def test_error_then_final_answer():
     ]
     
     client = MockLLMClient(responses)
-    config = RLMConfig(max_steps=10)
+    config = RLMConfig(execution=ExecutionConfig(max_steps=10))
     rlm = RLM(client=client, config=config)
     
     # Simulate a simple math question

@@ -112,6 +112,21 @@ div[data-testid="stToolbar"] button:not([data-testid="stExpandSidebarButton"])
     font-size: 0.98rem;
 }
 
+/* Code blocks in chat messages */
+[data-testid="stChatMessage"] code {
+    font-size: 0.85rem !important;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace !important;
+}
+
+[data-testid="stChatMessage"] pre {
+    font-size: 0.85rem !important;
+    line-height: 1.4 !important;
+}
+
+[data-testid="stChatMessage"] pre code {
+    font-size: 0.85rem !important;
+}
+
 /* --- Form Elements --- */
 
 /* Hide default "Message" labels */

@@ -6,6 +6,7 @@ Integration test for Chat Page - Verifies all components work together
 import sys
 import asyncio
 import nest_asyncio
+import pytest
 from pathlib import Path
 
 # Setup path
@@ -19,6 +20,7 @@ from rlmkit.ui.services.models import Response, ExecutionMetrics, ComparisonMetr
 from rlmkit.ui.services.llm_config_manager import LLMConfigManager
 
 
+@pytest.mark.asyncio
 async def test_chat_integration():
     """Test the complete chat flow."""
     

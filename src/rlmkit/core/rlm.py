@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Optional, Protocol, List, Dict, Any
 import time
 from .parsing import parse_response, format_result_for_llm, ParsedResponse
+from .actions import parse_action, ParseError, FinalAction, InspectAction
 from .errors import BudgetExceeded
 from .budget import BudgetTracker, BudgetLimits, CostTracker, TokenUsage, estimate_tokens
 from .comparison import ExecutionMetrics, ComparisonResult
@@ -180,8 +181,8 @@ class RLM:
                     "content": response
                 })
                 
-                # Parse response
-                parsed = parse_response(response)
+                # Parse response - try JSON format (v2.0) first, fall back to markdown (v1.0)
+                parsed = self._parse_rlm_response(response)
                 
                 # Check if complete - FINAL is a HARD STOP
                 # CRITICAL: According to control-loop engineering analysis,
@@ -301,7 +302,63 @@ class RLM:
                 return f"Error: Variable '{parsed.final_var}' not found in environment"
         
         return "Error: No final answer found"
-    
+
+    def _parse_rlm_response(self, response: str) -> ParsedResponse:
+        """
+        Parse RLM response in either JSON (v2.0) or markdown (v1.0) format.
+
+        Tries JSON format first (for v2.0 prompts), falls back to markdown parsing (for v1.0).
+        Converts JSON actions to ParsedResponse format for backward compatibility.
+
+        Args:
+            response: Raw LLM response text
+
+        Returns:
+            ParsedResponse object
+        """
+        # Try JSON format first (v2.0)
+        try:
+            action_type, action_obj = parse_action(response)
+
+            # Convert JSON action to ParsedResponse
+            if action_type == "final":
+                return ParsedResponse(
+                    final_answer=action_obj.answer,
+                    raw_text=response
+                )
+            elif action_type == "inspect":
+                # Convert inspect action to executable code
+                tool = action_obj.tool
+                args = action_obj.args
+
+                # Build code to call the tool
+                if tool == "grep":
+                    code = f"print(grep(P, pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
+                elif tool == "peek":
+                    code = f"print(peek(P, start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
+                elif tool == "select":
+                    code = f"print(select(P, ranges={args.get('ranges')}))"
+                elif tool == "chunk":
+                    code = f"print(chunk(P, size={args.get('size', 1000)}, overlap={args.get('overlap', 0)}, by={repr(args.get('by', 'chars'))}, max_chunks={args.get('max_chunks', 100)}))"
+                else:
+                    # Unknown tool, return as text
+                    return ParsedResponse(raw_text=response)
+
+                return ParsedResponse(
+                    code=code,
+                    raw_text=response
+                )
+            elif action_type == "subcall":
+                # Subcalls not yet implemented in this version
+                return ParsedResponse(raw_text=response)
+
+        except (ParseError, Exception):
+            # JSON parsing failed, fall back to markdown format (v1.0)
+            pass
+
+        # Fall back to markdown parsing (v1.0)
+        return parse_response(response)
+
     def _build_system_prompt(self, prompt_length: int) -> str:
         """
         Build default system prompt for RLM.

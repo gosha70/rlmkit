@@ -28,13 +28,13 @@ SELF-CONTAINED (no P inspection needed):
 → "How do I center text in CSS?"
 → "What's the syntax for Python list comprehensions?"
 → "How can I style a Streamlit button?"
-→ Output: {"type": "final", "answer": "..."}
+→ Output: {{"type": "final", "answer": "..."}}
 
 REQUIRES INSPECTION (must explore P):
 → "What does function process_data do in the code?"
 → "Find all TODO comments"
 → "Summarize the attached document"
-→ Output: {"type": "inspect", "tool": "grep", "args": {...}}
+→ Output: {{"type": "inspect", "tool": "grep", "args": {{...}}}}
 
 This decision is MANDATORY. Wrong choice wastes budget.
 
@@ -43,30 +43,30 @@ ACTION TYPES
 ═══════════════════════════════════════════════════════════════
 
 1. INSPECT - Use a tool to examine P
-{
+{{
   "type": "inspect",
   "tool": "grep" | "peek" | "select" | "chunk",
-  "args": {
+  "args": {{
     // tool-specific arguments
-  },
+  }},
   "note": "optional: why this inspection"
-}
+}}
 
 2. FINAL - Provide the answer (HARD STOP)
-{
+{{
   "type": "final",
   "answer": "user-facing answer text",
   "confidence": 0.0-1.0,  // optional
   "citations": ["line 42", "grep pattern"]  // optional
-}
+}}
 
 3. SUBCALL - Recursive call (expensive, use sparingly)
-{
+{{
   "type": "subcall",
   "prompt": "content for subcall",
   "query": "question for subcall",
   "note": "optional: why subcall needed"
-}
+}}
 
 ═══════════════════════════════════════════════════════════════
 TOOL SIGNATURES
@@ -89,34 +89,34 @@ TOOL USAGE EXAMPLES
 ═══════════════════════════════════════════════════════════════
 
 Find function definition:
-{
+{{
   "type": "inspect",
   "tool": "grep",
-  "args": {
+  "args": {{
     "pattern": "def process_data",
     "context_lines": 10,
     "use_regex": false
-  }
-}
+  }}
+}}
 
 View first 500 chars:
-{
+{{
   "type": "inspect",
   "tool": "peek",
-  "args": {
+  "args": {{
     "start": 0,
     "end": 500
-  }
-}
+  }}
+}}
 
 Get multiple sections:
-{
+{{
   "type": "inspect",
   "tool": "select",
-  "args": {
+  "args": {{
     "ranges": [[0, 100], [500, 600]]
-  }
-}
+  }}
+}}
 
 ═══════════════════════════════════════════════════════════════
 CRITICAL RULES
@@ -133,7 +133,7 @@ CRITICAL RULES
    • You see result, then decide next action
 
 3. FINAL IS TERMINAL
-   • Once you output {"type": "final", ...}, execution STOPS
+   • Once you output {{"type": "final", ...}}, execution STOPS
    • No more actions, no more inspection
    • Make sure answer is complete
 
@@ -161,7 +161,7 @@ TERMINATION GUARANTEE
 ═══════════════════════════════════════════════════════════════
 
 You MUST eventually produce:
-{"type": "final", "answer": "..."}
+{{"type": "final", "answer": "..."}}
 
 This is not optional. Every interaction chain must terminate with final.
 
@@ -173,33 +173,33 @@ SELF-CONTAINED QUERY:
 User: "How do I center text in Streamlit?"
 
 Response:
-{
+{{
   "type": "final",
   "answer": "To center text in Streamlit, use st.markdown with HTML/CSS:\n\nst.markdown('<div style=\"text-align: center\">Centered Text</div>', unsafe_allow_html=True)\n\nAlternatively, use columns:\n\ncol1, col2, col3 = st.columns([1,2,1])\nwith col2:\n    st.write('Centered')",
   "confidence": 0.9
-}
+}}
 
 INSPECTION-REQUIRED QUERY:
 User: "What does the process_data function do?"
 
 Step 1:
-{
+{{
   "type": "inspect",
   "tool": "grep",
-  "args": {
+  "args": {{
     "pattern": "def process_data",
     "context_lines": 15
-  }
-}
+  }}
+}}
 
 [Runtime returns grep results]
 
 Step 2:
-{
+{{
   "type": "final",
   "answer": "The process_data function takes a DataFrame and...",
   "citations": ["line 42"]
-}
+}}
 
 ═══════════════════════════════════════════════════════════════
 REMEMBER
