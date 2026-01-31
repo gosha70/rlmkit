@@ -52,8 +52,12 @@ ui = [
     "vllm>=0.4.0",       # For vLLM serving
 ]
 
+eval = [
+    "openai>=1.0.0",  # For embeddings + generation
+]
+
 all = [
-    "rlmkit[dev,ui]",
+    "rlmkit[dev,ui,eval]",
 ]
 
 [project.urls]

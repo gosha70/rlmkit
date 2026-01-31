@@ -69,7 +69,7 @@ class ExecutionMetrics:
     error: Optional[str] = None
     """Error message if execution failed."""
     
-    execution_type: Literal["rlm", "direct"] = "rlm"
+    execution_type: Literal["rlm", "direct", "rag"] = "rlm"
     """Type of execution."""
     
     def to_dict(self) -> Dict[str, Any]:
@@ -157,7 +157,7 @@ class ChatMessage:
     """File metadata: {'name': str, 'size_mb': float, 'tokens': int}."""
     
     # Execution mode
-    mode: Literal["rlm_only", "direct_only", "compare"] = "compare"
+    mode: Literal["rlm_only", "direct_only", "rag_only", "compare"] = "compare"
     """Which execution path to use."""
     
     # RLM Response (if applicable)
@@ -173,10 +173,20 @@ class ChatMessage:
     # Direct Response (if applicable)
     direct_response: Optional[Response] = None
     """Response from direct LLM execution."""
-    
+
     direct_metrics: Optional[ExecutionMetrics] = None
     """Metrics from direct LLM execution."""
-    
+
+    # RAG Response (if applicable)
+    rag_response: Optional[Response] = None
+    """Response from RAG execution."""
+
+    rag_metrics: Optional[ExecutionMetrics] = None
+    """Metrics from RAG execution."""
+
+    rag_trace: Optional[List[Dict[str, Any]]] = None
+    """Retrieval trace from RAG execution."""
+
     # Comparison
     comparison_metrics: Optional[ComparisonMetrics] = None
     """Metrics comparing RLM and Direct (if both were run)."""
@@ -200,12 +210,18 @@ class ChatMessage:
         """Check if Direct response exists."""
         return self.direct_response is not None and self.direct_response.content
     
+    def has_rag_response(self) -> bool:
+        """Check if RAG response exists."""
+        return self.rag_response is not None and self.rag_response.content
+
     def is_complete(self) -> bool:
         """Check if all expected responses are complete."""
         if self.mode == "rlm_only":
             return self.has_rlm_response() and not self.in_progress
         elif self.mode == "direct_only":
             return self.has_direct_response() and not self.in_progress
+        elif self.mode == "rag_only":
+            return self.has_rag_response() and not self.in_progress
         elif self.mode == "compare":
             return self.has_rlm_response() and self.has_direct_response() and not self.in_progress
         return False

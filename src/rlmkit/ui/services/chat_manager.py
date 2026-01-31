@@ -102,6 +102,16 @@ class ChatManager:
             except Exception as e:
                 if not message.error:
                     message.error = f"Direct execution failed: {str(e)}"
+
+        if mode == "rag_only":
+            try:
+                rag_result = await self._execute_rag(user_query, file_context, selected_provider, api_key)
+                message.rag_response = rag_result["response"]
+                message.rag_metrics = rag_result["metrics"]
+                message.rag_trace = rag_result.get("trace")
+            except Exception as e:
+                if not message.error:
+                    message.error = f"RAG execution failed: {str(e)}"
         
         if mode == "compare" and message.rlm_metrics and message.direct_metrics:
             try:
@@ -452,6 +462,111 @@ class ChatManager:
                 "metrics": metrics,
             }
     
+    async def _execute_rag(
+        self,
+        user_query: str,
+        file_context: Optional[str] = None,
+        selected_provider: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Execute RAG strategy (embed chunks, retrieve, generate)."""
+        from .models import Response, ExecutionMetrics
+        from rlmkit.llm import get_llm_client
+        from rlmkit.strategies.rag import RAGStrategy
+        from rlmkit.strategies.embeddings import OpenAIEmbedder
+        from pathlib import Path
+        import os
+
+        try:
+            from .llm_config_manager import LLMConfigManager
+            config_dir = Path.home() / ".rlmkit"
+            config_manager = LLMConfigManager(config_dir=config_dir)
+
+            provider_config = None
+            if selected_provider:
+                provider_config = config_manager.get_provider_config(selected_provider)
+            if not provider_config:
+                provider_config = config_manager.get_active_provider()
+            if not provider_config:
+                providers = config_manager.list_providers()
+                if providers:
+                    provider_config = config_manager.get_provider_config(providers[0])
+            if not provider_config:
+                raise ValueError("No LLM provider configured")
+
+            effective_api_key = api_key if api_key else provider_config.api_key
+            if not effective_api_key:
+                if provider_config.api_key_env_var:
+                    from .llm_config_manager import load_env_file
+                    load_env_file()
+                    effective_api_key = os.getenv(provider_config.api_key_env_var)
+            if not effective_api_key:
+                raise ValueError(f"Provider {provider_config.provider} API key is missing")
+
+            llm_client = get_llm_client(
+                provider=provider_config.provider,
+                model=provider_config.model,
+                api_key=effective_api_key,
+            )
+
+            embedder = OpenAIEmbedder(api_key=effective_api_key)
+            rag = RAGStrategy(client=llm_client, embedder=embedder, top_k=5)
+
+            content = file_context or "No content provided"
+            start_time = time.time()
+            result = rag.run(content=content, query=user_query)
+            elapsed_time = time.time() - start_time
+
+            input_cost = (result.tokens.input_tokens / 1000) * provider_config.input_cost_per_1k_tokens
+            output_cost = (result.tokens.output_tokens / 1000) * provider_config.output_cost_per_1k_tokens
+            total_cost = input_cost + output_cost
+
+            response = Response(
+                content=result.answer,
+                stop_reason="stop" if result.success else "error",
+                raw_response=None,
+            )
+
+            metrics = ExecutionMetrics(
+                input_tokens=result.tokens.input_tokens,
+                output_tokens=result.tokens.output_tokens,
+                total_tokens=result.tokens.total_tokens,
+                cost_usd=total_cost,
+                cost_breakdown={"input": input_cost, "output": output_cost},
+                execution_time_seconds=elapsed_time,
+                steps_taken=result.steps,
+                memory_used_mb=0.0,
+                memory_peak_mb=0.0,
+                success=result.success,
+                error=result.error,
+                execution_type="rag",
+            )
+
+            return {
+                "response": response,
+                "metrics": metrics,
+                "trace": result.trace,
+            }
+
+        except Exception as e:
+            response = Response(
+                content=f"RAG execution failed: {str(e)}",
+                stop_reason="error",
+                raw_response=None,
+            )
+            metrics = ExecutionMetrics(
+                input_tokens=0, output_tokens=0, total_tokens=0,
+                cost_usd=0.0, cost_breakdown={"input": 0.0, "output": 0.0},
+                execution_time_seconds=0.0, steps_taken=0,
+                memory_used_mb=0.0, memory_peak_mb=0.0,
+                success=False, execution_type="rag",
+            )
+            return {
+                "response": response,
+                "metrics": metrics,
+                "trace": [{"error": str(e)}],
+            }
+
     def _compare_metrics(
         self,
         rlm_metrics: ExecutionMetrics,

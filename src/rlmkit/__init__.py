@@ -55,6 +55,22 @@ try:
 except ImportError:
     vLLMClient = None
 
+# Strategy framework
+try:
+    from .strategies import (
+        LLMStrategy,
+        StrategyResult,
+        DirectStrategy,
+        RLMStrategy,
+        RAGStrategy,
+        EmbeddingProvider,
+        OpenAIEmbedder,
+        MultiStrategyEvaluator,
+        EvaluationResult,
+    )
+except ImportError:
+    pass
+
 __version__ = "0.1.0"
 
 __all__ = [

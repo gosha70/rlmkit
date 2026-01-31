@@ -223,6 +223,9 @@ def render_assistant_message(message: dict, index: int):
 
     elif mode == 'direct_only' and message.get('direct_response'):
         render_direct_response(message, message_index=index)
+
+    elif mode == 'rag_only' and message.get('rag_response'):
+        render_rag_response(message, message_index=index)
     
     # Action buttons
     col1, col2, col3 = st.columns(3)
@@ -394,6 +397,82 @@ def render_direct_response(message: dict, message_index: int = None):
                 st.metric("Cost", f"${metrics.cost_usd:.4f}")
 
 
+def render_rag_response(message: dict, message_index: int = None):
+    """Render RAG response with metrics."""
+    with st.chat_message("assistant", avatar="🔍"):
+        # Rating UI at the top
+        if message_index is not None:
+            rating_key = f"rag_rating_{message_index}"
+            current_rating = message.get('rag_user_rating', 5)
+
+            col_rating, col_label = st.columns([3, 1])
+            with col_rating:
+                new_rating = st.slider(
+                    "Rate this response (0 = worst, 10 = best)",
+                    min_value=0,
+                    max_value=10,
+                    value=current_rating,
+                    key=rating_key,
+                    help="How helpful/accurate was this RAG response?"
+                )
+            with col_label:
+                if new_rating >= 8:
+                    st.success(f"⭐ {new_rating}/10")
+                elif new_rating >= 5:
+                    st.info(f"⭐ {new_rating}/10")
+                else:
+                    st.warning(f"⭐ {new_rating}/10")
+
+            if new_rating != current_rating:
+                message['rag_user_rating'] = new_rating
+
+            st.divider()
+
+        response = message.get('rag_response')
+        metrics = message.get('rag_metrics')
+        trace = message.get('rag_trace', [])
+
+        if response:
+            if response.content:
+                if response.stop_reason == "error" or "failed:" in response.content.lower():
+                    st.error(response.content)
+                else:
+                    st.markdown(response.content)
+            else:
+                st.warning("⚠️ No response content available")
+        else:
+            st.error("❌ No response object found")
+
+        # Show metrics
+        if metrics:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Steps", metrics.steps_taken)
+            with col2:
+                st.metric("Tokens", f"{metrics.total_tokens:,}")
+            with col3:
+                st.metric("Time", f"{metrics.execution_time_seconds:.2f}s")
+            with col4:
+                st.metric("Cost", f"${metrics.cost_usd:.4f}")
+
+        # Show retrieval info
+        if trace:
+            with st.expander(f"🔍 Retrieval Details ({len(trace)} steps)"):
+                for step in trace:
+                    role = step.get('role', 'unknown')
+                    if role == 'retrieval':
+                        st.write(
+                            f"**Chunks:** {step.get('chunks_retrieved', '?')} retrieved "
+                            f"out of {step.get('chunks_total', '?')} total"
+                        )
+                        scores = step.get('top_scores', [])
+                        if scores:
+                            st.write(f"**Top scores:** {', '.join(f'{s:.3f}' for s in scores)}")
+                    elif role == 'assistant':
+                        preview = step.get('content', '')[:100]
+                        st.write(f"**Generation:** {preview}...")
+
+
 def render_comparison(message: dict, message_index: int = None):
     """Render comparison between RLM and Direct."""
     comparison = message.get('comparison_metrics')
@@ -493,6 +572,7 @@ def render_chat_input():
         "Compare": "compare",
         "RLM": "rlm_only",
         "LLM": "direct_only",
+        "RAG": "rag_only",
     }
 
     # Provider/model text for the model pill
@@ -625,11 +705,12 @@ def render_chat_input():
                     st.subheader("Execution")
                     st.radio(
                         "Mode",
-                        ["Compare", "RLM only", "Direct only"],
+                        ["Compare", "RLM only", "Direct only", "RAG only"],
                         index={
                             "compare": 0,
                             "rlm_only": 1,
                             "direct_only": 2,
+                            "rag_only": 3,
                         }.get(st.session_state.composer_mode, 0),
                         key="composer_mode_radio",
                         label_visibility="collapsed",
@@ -654,6 +735,7 @@ def render_chat_input():
             "Compare": "compare",
             "RLM only": "rlm_only",
             "Direct only": "direct_only",
+            "RAG only": "rag_only",
         }[mode_choice]
 
     # Map style preset into execution mode (rlmkit-like chips)
@@ -746,6 +828,9 @@ def render_chat_input():
                     'rlm_trace': message.rlm_trace,
                     'direct_response': message.direct_response,
                     'direct_metrics': message.direct_metrics,
+                    'rag_response': message.rag_response,
+                    'rag_metrics': message.rag_metrics,
+                    'rag_trace': message.rag_trace,
                     'comparison_metrics': message.comparison_metrics,
                     'timestamp': st.session_state.get('current_time')
                 })
