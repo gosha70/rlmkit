@@ -1,0 +1,186 @@
+name: "RLMKit Sample Benchmark"
+description: "A small benchmark dataset for testing strategy evaluation across different content types and difficulties."
+
+metadata:
+  version: "1.0"
+  created_by: "rlmkit"
+
+cases:
+  - id: "factual_short_1"
+    category: "factual"
+    difficulty: "easy"
+    tags: ["short", "science"]
+    content: |
+      Photosynthesis is the process by which green plants convert sunlight into
+      chemical energy. Plants use chlorophyll, a green pigment found in chloroplasts,
+      to absorb light energy. This energy drives the conversion of carbon dioxide
+      and water into glucose and oxygen. The overall equation is:
+      6CO2 + 6H2O + light energy -> C6H12O6 + 6O2.
+      Photosynthesis occurs in two stages: the light-dependent reactions (in the
+      thylakoid membranes) and the Calvin cycle (in the stroma).
+    query: "What are the two stages of photosynthesis and where do they occur?"
+    expected_answer: "The two stages are the light-dependent reactions (in the thylakoid membranes) and the Calvin cycle (in the stroma)."
+
+  - id: "factual_short_2"
+    category: "factual"
+    difficulty: "easy"
+    tags: ["short", "history"]
+    content: |
+      The Treaty of Westphalia, signed in 1648, ended the Thirty Years' War in
+      the Holy Roman Empire and the Eighty Years' War between Spain and the Dutch
+      Republic. It established the principle of state sovereignty, meaning each
+      state has exclusive authority over its territory. The treaty is often cited
+      as the beginning of the modern international system of sovereign states.
+    query: "What principle did the Treaty of Westphalia establish?"
+    expected_answer: "The Treaty of Westphalia established the principle of state sovereignty."
+
+  - id: "analytical_medium_1"
+    category: "analytical"
+    difficulty: "medium"
+    tags: ["medium", "technology"]
+    content: |
+      Microservices architecture decomposes an application into small, independent
+      services that communicate over the network. Each service owns its data and
+      business logic. Benefits include independent deployment, technology diversity,
+      and fault isolation. However, microservices introduce complexity: distributed
+      transactions, network latency, service discovery, and operational overhead.
+      Monolithic architectures, by contrast, package everything into a single
+      deployable unit. They are simpler to develop, test, and deploy initially,
+      but become harder to scale and maintain as the codebase grows. Teams working
+      on different features may conflict during merges, and a bug in one module
+      can bring down the entire application. A hybrid approach uses a modular
+      monolith: a single deployment unit with well-defined internal module
+      boundaries, allowing migration to microservices later if needed.
+    query: "Compare the trade-offs between microservices and monolithic architectures. When would a hybrid approach be appropriate?"
+    expected_answer: "Microservices offer independent deployment, tech diversity, and fault isolation but add distributed complexity. Monoliths are simpler initially but scale poorly. A hybrid modular monolith provides clean boundaries within a single deployment, suitable when teams want modularity without full microservice overhead, allowing later migration if needed."
+
+  - id: "analytical_medium_2"
+    category: "analytical"
+    difficulty: "medium"
+    tags: ["medium", "economics"]
+    content: |
+      Inflation is a sustained increase in the general price level of goods and
+      services. Central banks use monetary policy tools to manage inflation:
+      raising interest rates makes borrowing more expensive, which reduces
+      spending and slows price increases. Conversely, lowering rates stimulates
+      borrowing and spending. Quantitative easing (QE) involves central banks
+      purchasing government bonds to increase the money supply and lower
+      long-term interest rates. Critics argue QE inflates asset prices without
+      proportionally benefiting the real economy. Supply-side inflation, caused
+      by disruptions like pandemics or wars, is harder to address with monetary
+      policy alone, as rate hikes may further reduce output without resolving
+      supply constraints.
+    query: "Why is supply-side inflation harder to manage with traditional monetary policy?"
+    expected_answer: "Supply-side inflation stems from production disruptions rather than excess demand. Raising interest rates reduces demand but doesn't resolve supply constraints, and may further reduce economic output, making it a blunt tool for this type of inflation."
+
+  - id: "extraction_hard_1"
+    category: "extraction"
+    difficulty: "hard"
+    tags: ["long", "data"]
+    content: |
+      Q1 2024 Financial Results Summary
+
+      Revenue: $142.3M (up 12% YoY)
+      - Product revenue: $98.1M (up 15% YoY)
+      - Services revenue: $44.2M (up 6% YoY)
+
+      Operating expenses:
+      - Cost of goods sold: $71.2M
+      - Research and development: $28.4M
+      - Sales and marketing: $19.7M
+      - General and administrative: $8.3M
+      Total operating expenses: $127.6M
+
+      Operating income: $14.7M
+      Net income: $11.2M
+      Earnings per share: $0.45
+      Free cash flow: $18.9M
+
+      Key metrics:
+      - Gross margin: 50.0%
+      - Operating margin: 10.3%
+      - Net margin: 7.9%
+      - Customer count: 2,847 (up from 2,412 in Q1 2023)
+      - Net revenue retention: 118%
+      - Annual recurring revenue (ARR): $512M
+
+      Guidance for Q2 2024:
+      - Revenue: $148M - $152M
+      - Operating margin: 11% - 12%
+
+      Regional breakdown:
+      - North America: $89.4M (63% of total)
+      - Europe: $35.6M (25% of total)
+      - Asia-Pacific: $12.8M (9% of total)
+      - Rest of World: $4.5M (3% of total)
+    query: "What is the company's ARR, and what percentage of revenue comes from outside North America?"
+    expected_answer: "ARR is $512M. Revenue outside North America is 37% ($35.6M Europe + $12.8M Asia-Pacific + $4.5M Rest of World = $52.9M out of $142.3M)."
+
+  - id: "extraction_hard_2"
+    category: "extraction"
+    difficulty: "hard"
+    tags: ["long", "technical"]
+    content: |
+      System Architecture Document v2.3
+
+      1. API Gateway Layer
+         - Rate limiting: 1000 req/s per client
+         - Authentication: OAuth 2.0 + JWT
+         - Load balancing: Round-robin across 4 instances
+         - TLS termination at edge
+
+      2. Service Mesh
+         - Service discovery via Consul
+         - Circuit breaker pattern (threshold: 50% failure rate, window: 30s)
+         - Retry policy: 3 attempts with exponential backoff (base: 100ms)
+         - Distributed tracing via Jaeger
+
+      3. Data Layer
+         - Primary DB: PostgreSQL 15 (3-node cluster, synchronous replication)
+         - Cache: Redis Cluster (6 nodes, 128GB total)
+         - Search: Elasticsearch 8.x (5-node cluster)
+         - Message queue: Kafka (3 brokers, replication factor: 3)
+
+      4. Observability
+         - Metrics: Prometheus + Grafana
+         - Logs: ELK stack (Elasticsearch, Logstash, Kibana)
+         - Alerts: PagerDuty integration
+         - SLO: 99.95% availability, p99 latency < 200ms
+
+      5. Disaster Recovery
+         - RPO: 1 hour
+         - RTO: 4 hours
+         - Cross-region backup to AWS us-west-2
+         - Automated failover for database layer
+    query: "What are the circuit breaker settings and the SLO targets?"
+    expected_answer: "Circuit breaker: 50% failure rate threshold with 30-second window. SLO targets: 99.95% availability and p99 latency under 200ms."
+
+  - id: "synthesis_hard_1"
+    category: "synthesis"
+    difficulty: "hard"
+    tags: ["long", "multi-source"]
+    content: |
+      Study A (2023): Examined 500 remote workers across tech companies.
+      Found that fully remote workers reported 23% higher job satisfaction
+      but 15% lower promotion rates compared to in-office peers. Productivity
+      metrics (lines of code, tickets closed) showed no significant difference.
+      Key concern: remote workers felt less visible to management.
+
+      Study B (2023): Surveyed 1,200 managers across industries. 67% believed
+      in-office workers were more productive, despite lacking quantitative evidence.
+      42% of managers admitted to promotion bias favoring in-office employees.
+      78% of companies planned to implement hybrid models by 2025.
+
+      Study C (2024): Analyzed 3-year data from 50 companies that adopted hybrid
+      models. Companies with structured hybrid schedules (e.g., 3 days office,
+      2 days remote) saw 8% improvement in employee retention. Unstructured
+      hybrid ("come in when you want") showed no retention benefit and increased
+      scheduling conflicts. Productivity remained flat across all models when
+      measured by output metrics rather than time-in-seat.
+
+      Meta-analysis (2024): Combined data from 30 studies covering 15,000 workers.
+      Concluded that work location has minimal impact on measurable productivity.
+      The strongest predictor of remote work success was manager training in
+      asynchronous communication and output-based evaluation.
+    query: "Based on all studies, what is the most effective approach to remote/hybrid work, and what is the key success factor?"
+    expected_answer: "Structured hybrid schedules (e.g., 3 days office, 2 days remote) are most effective, improving retention by 8% while maintaining productivity. The key success factor is manager training in asynchronous communication and output-based evaluation, which the meta-analysis identified as the strongest predictor of remote work success."

@@ -71,6 +71,21 @@ try:
 except ImportError:
     pass
 
+# Benchmark harness
+try:
+    from .benchmark import (
+        BenchmarkCase,
+        BenchmarkDataset,
+        BenchmarkRunner,
+        BenchmarkRun,
+        BenchmarkReport,
+        CaseResult,
+        load_dataset,
+        load_dataset_from_dict,
+    )
+except ImportError:
+    pass
+
 __version__ = "0.1.0"
 
 __all__ = [
