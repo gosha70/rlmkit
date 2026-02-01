@@ -7,25 +7,32 @@ from datetime import datetime
 
 from .services import ChatManager, MetricsCollector, MemoryMonitor, LLMConfigManager
 from .services.models import SessionMetrics
+from rlmkit.storage import Database, ConversationStore, VectorStore
 
 
 def init_session_state() -> Dict[str, Any]:
     """
     Initialize Streamlit session state for chat UI.
-    
+
     Returns:
         Session state dict
     """
     # Initialize if not already done
     if "initialized" not in st.session_state:
         st.session_state.initialized = True
-        
+
         # Core managers
         st.session_state.chat_manager = ChatManager(st.session_state)
         st.session_state.metrics_collector = MetricsCollector()
         st.session_state.memory_monitor = MemoryMonitor()
         st.session_state.config_manager = LLMConfigManager()
-        
+
+        # Persistent storage
+        db = Database()
+        st.session_state.db = db
+        st.session_state.conversation_store = ConversationStore(db)
+        st.session_state.vector_store = VectorStore(db)
+
         # Conversation state
         st.session_state.conversation_id = str(uuid4())
         st.session_state.messages = []

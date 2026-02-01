@@ -143,13 +143,121 @@ def render_chat_page(*, embedded: bool = False):
 
 
 def render_sidebar():
-    """Render sidebar with custom navigation."""
+    """Render sidebar with custom navigation and conversation management."""
     # Initialize ChatManager if not already done
     if 'chat_manager' not in st.session_state:
         st.session_state.chat_manager = ChatManager()
 
     # Render custom navigation
-    page =render_custom_navigation()
+    page = render_custom_navigation()
+
+    # Conversation management
+    _render_conversation_sidebar()
+
+
+def _render_conversation_sidebar():
+    """Render conversation list and management controls in the sidebar."""
+    store = st.session_state.get("conversation_store")
+    if not store:
+        return
+
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("**Conversations**")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("New", key="new_conv", use_container_width=True):
+                _start_new_conversation()
+                st.rerun()
+        with col2:
+            if st.button("Save", key="save_conv", use_container_width=True):
+                _save_current_conversation()
+                st.rerun()
+
+        conversations = store.list_conversations()
+        if not conversations:
+            st.caption("No saved conversations")
+            return
+
+        for conv in conversations[:20]:
+            label = conv["name"]
+            msg_count = conv.get("message_count", 0)
+            is_active = conv["id"] == st.session_state.get("conversation_id")
+            icon = "▸ " if is_active else "  "
+
+            col_name, col_del = st.columns([5, 1])
+            with col_name:
+                if st.button(
+                    f"{icon}{label} ({msg_count})",
+                    key=f"load_{conv['id']}",
+                    use_container_width=True,
+                    disabled=is_active,
+                ):
+                    _load_conversation(conv["id"])
+                    st.rerun()
+            with col_del:
+                if st.button("×", key=f"del_{conv['id']}"):
+                    store.delete_conversation(conv["id"])
+                    if conv["id"] == st.session_state.get("conversation_id"):
+                        _start_new_conversation()
+                    st.rerun()
+
+
+def _start_new_conversation():
+    """Create a fresh conversation."""
+    from uuid import uuid4
+    st.session_state.conversation_id = str(uuid4())
+    st.session_state.messages = []
+    st.session_state.chat_messages = []
+
+
+def _save_current_conversation():
+    """Persist the current conversation if it has messages."""
+    store = st.session_state.get("conversation_store")
+    if not store:
+        return
+    conv_id = st.session_state.get("conversation_id")
+    messages = st.session_state.get("messages", [])
+    if not messages:
+        return
+
+    # Auto-name from first query
+    first_query = messages[0].user_query if messages else "Untitled"
+    name = first_query[:60] + ("..." if len(first_query) > 60 else "")
+
+    existing = store.get_conversation(conv_id)
+    if not existing:
+        mode = st.session_state.get("current_mode", "compare")
+        provider = st.session_state.get("active_provider")
+        model = st.session_state.get("active_model")
+        store.create_conversation(name=name, mode=mode, provider=provider, model=model)
+        # Backfill: store uses uuid4 internally, but we need our conv_id
+        # So we insert with our ID directly
+        store.db.execute(
+            "UPDATE conversations SET id = ? WHERE id = (SELECT id FROM conversations ORDER BY created_at DESC LIMIT 1)",
+            (conv_id,),
+        )
+        # Re-save all messages
+        for msg in messages:
+            try:
+                store.save_message(conv_id, msg)
+            except Exception:
+                pass
+
+
+def _load_conversation(conv_id: str):
+    """Load a conversation from the store into session state."""
+    store = st.session_state.get("conversation_store")
+    if not store:
+        return
+    messages = store.load_messages(conv_id)
+    st.session_state.conversation_id = conv_id
+    st.session_state.messages = messages
+    # Sync with the chat_messages display list
+    st.session_state.chat_messages = [
+        {"role": "user", "content": m.user_query} for m in messages
+    ]
 
 def render_document_context():
     """Show currently loaded document/context (compact version)."""

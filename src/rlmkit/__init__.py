@@ -63,11 +63,18 @@ try:
         DirectStrategy,
         RLMStrategy,
         RAGStrategy,
+        IndexedRAGStrategy,
         EmbeddingProvider,
         OpenAIEmbedder,
         MultiStrategyEvaluator,
         EvaluationResult,
     )
+except ImportError:
+    pass
+
+# Storage layer
+try:
+    from .storage import Database, ConversationStore, VectorStore, get_default_db_path
 except ImportError:
     pass
 

@@ -9,6 +9,7 @@ from .rlm_strategy import RLMStrategy
 from .embeddings import EmbeddingProvider, OpenAIEmbedder
 from .rag import RAGStrategy
 from .evaluator import MultiStrategyEvaluator, EvaluationResult
+from .indexed_rag import IndexedRAGStrategy
 
 __all__ = [
     "LLMStrategy",
@@ -18,6 +19,7 @@ __all__ = [
     "EmbeddingProvider",
     "OpenAIEmbedder",
     "RAGStrategy",
+    "IndexedRAGStrategy",
     "MultiStrategyEvaluator",
     "EvaluationResult",
 ]

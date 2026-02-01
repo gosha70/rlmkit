@@ -124,7 +124,16 @@ class ChatManager:
         
         # Add to history
         self.session_state["messages"].append(message)
-        
+
+        # Auto-persist to storage
+        store = self.session_state.get("conversation_store")
+        conv_id = self.session_state.get("conversation_id")
+        if store and conv_id:
+            try:
+                store.save_message(conv_id, message)
+            except Exception:
+                pass  # Non-fatal: don't break chat over persistence failure
+
         return message
     
     async def _execute_rlm(
@@ -510,7 +519,20 @@ class ChatManager:
             )
 
             embedder = OpenAIEmbedder(api_key=effective_api_key)
-            rag = RAGStrategy(client=llm_client, embedder=embedder, top_k=5)
+
+            # Use IndexedRAGStrategy when vector store is available
+            vector_store = self.session_state.get("vector_store")
+            conv_id = self.session_state.get("conversation_id")
+            if vector_store and conv_id:
+                from rlmkit.strategies.indexed_rag import IndexedRAGStrategy
+                rag = IndexedRAGStrategy(
+                    client=llm_client, embedder=embedder,
+                    vector_store=vector_store,
+                    collection=f"conv_{conv_id}_artifacts",
+                    top_k=5,
+                )
+            else:
+                rag = RAGStrategy(client=llm_client, embedder=embedder, top_k=5)
 
             content = file_context or "No content provided"
             start_time = time.time()
