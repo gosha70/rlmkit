@@ -11,6 +11,7 @@ from pathlib import Path
 
 from rlmkit.ui.services.chat_manager import ChatManager
 from rlmkit.ui.components.navigation import render_custom_navigation
+from rlmkit.ui.components.session_summary import render_session_summary
 
 
 # -----------------------------------------------------------------------------
@@ -153,6 +154,10 @@ def render_sidebar():
 
     # Conversation management
     _render_conversation_sidebar()
+
+    # Session metrics summary
+    with st.sidebar:
+        render_session_summary()
 
 
 def _render_conversation_sidebar():
@@ -403,11 +408,11 @@ def render_rlm_response(message: dict, message_index: int = None):
             with col1:
                 st.metric("Steps", metrics.steps_taken)
             with col2:
-                st.metric("Tokens", f"{metrics.total_tokens:,}")
+                st.metric("Total Tokens", f"{metrics.total_tokens:,}")
             with col3:
                 st.metric("Time", f"{metrics.execution_time_seconds:.2f}s")
             with col4:
-                st.metric("Cost", f"${metrics.cost_usd:.4f}")
+                st.metric("Total Cost", f"${metrics.cost_usd:.4f}")
 
         # Show step indicator
         if trace:
@@ -498,11 +503,11 @@ def render_direct_response(message: dict, message_index: int = None):
             with col1:
                 st.metric("Steps", metrics.steps_taken)
             with col2:
-                st.metric("Tokens", f"{metrics.total_tokens:,}")
+                st.metric("Total Tokens", f"{metrics.total_tokens:,}")
             with col3:
                 st.metric("Time", f"{metrics.execution_time_seconds:.2f}s")
             with col4:
-                st.metric("Cost", f"${metrics.cost_usd:.4f}")
+                st.metric("Total Cost", f"${metrics.cost_usd:.4f}")
 
 
 def render_rag_response(message: dict, message_index: int = None):
@@ -557,11 +562,11 @@ def render_rag_response(message: dict, message_index: int = None):
             with col1:
                 st.metric("Steps", metrics.steps_taken)
             with col2:
-                st.metric("Tokens", f"{metrics.total_tokens:,}")
+                st.metric("Total Tokens", f"{metrics.total_tokens:,}")
             with col3:
                 st.metric("Time", f"{metrics.execution_time_seconds:.2f}s")
             with col4:
-                st.metric("Cost", f"${metrics.cost_usd:.4f}")
+                st.metric("Total Cost", f"${metrics.cost_usd:.4f}")
 
         # Show retrieval info
         if trace:
@@ -619,15 +624,15 @@ def render_comparison(message: dict, message_index: int = None):
 
     with col1:
         st.subheader("⚙️ RLM")
-        st.metric("Tokens", f"{comparison.rlm_tokens:,}")
-        st.metric("Cost", f"${comparison.rlm_cost_usd:.4f}")
+        st.metric("Total Tokens", f"{comparison.rlm_tokens:,}")
+        st.metric("Total Cost", f"${comparison.rlm_cost_usd:.4f}")
         st.metric("Time", f"{comparison.rlm_time_seconds:.2f}s")
         st.metric("Steps", comparison.rlm_steps)
 
     with col2:
         st.subheader("📋 Direct")
-        st.metric("Tokens", f"{comparison.direct_tokens:,}")
-        st.metric("Cost", f"${comparison.direct_cost_usd:.4f}")
+        st.metric("Total Tokens", f"{comparison.direct_tokens:,}")
+        st.metric("Total Cost", f"${comparison.direct_cost_usd:.4f}")
         st.metric("Time", f"{comparison.direct_time_seconds:.2f}s")
         st.metric("Steps", comparison.direct_steps)
 

@@ -77,7 +77,7 @@ def render_metrics(metrics: Dict[str, Any], key_suffix: str = "") -> None:
     
     with col2:
         tokens = metrics.get('total_tokens', 0)
-        st.metric("Tokens", f"{tokens:,}")
+        st.metric("Total Tokens", f"{tokens:,}")
     
     with col3:
         time = metrics.get('execution_time_seconds', 0)
@@ -85,7 +85,7 @@ def render_metrics(metrics: Dict[str, Any], key_suffix: str = "") -> None:
     
     with col4:
         cost = metrics.get('cost_usd', 0)
-        st.metric("Cost", f"${cost:.4f}")
+        st.metric("Total Cost", f"${cost:.4f}")
     
     # Show cost breakdown if available
     if metrics.get('cost_breakdown'):
@@ -147,15 +147,15 @@ def render_comparison(comparison: Dict[str, Any], key_suffix: str = "") -> None:
     
     with col1:
         st.write("**⚙️ RLM (Multi-step)**")
-        st.metric("Tokens", f"{comparison.get('rlm_tokens', 0):,}")
-        st.metric("Cost", f"${comparison.get('rlm_cost_usd', 0):.4f}")
+        st.metric("Total Tokens", f"{comparison.get('rlm_tokens', 0):,}")
+        st.metric("Total Cost", f"${comparison.get('rlm_cost_usd', 0):.4f}")
         st.metric("Time", f"{comparison.get('rlm_time_seconds', 0):.2f}s")
         st.metric("Steps", comparison.get('rlm_steps', 0))
     
     with col2:
         st.write("**📋 Direct (Single)**")
-        st.metric("Tokens", f"{comparison.get('direct_tokens', 0):,}")
-        st.metric("Cost", f"${comparison.get('direct_cost_usd', 0):.4f}")
+        st.metric("Total Tokens", f"{comparison.get('direct_tokens', 0):,}")
+        st.metric("Total Cost", f"${comparison.get('direct_cost_usd', 0):.4f}")
         st.metric("Time", f"{comparison.get('direct_time_seconds', 0):.2f}s")
         st.metric("Steps", comparison.get('direct_steps', 0))
     
@@ -164,11 +164,11 @@ def render_comparison(comparison: Dict[str, Any], key_suffix: str = "") -> None:
         
         token_delta = comparison.get('token_delta', 0)
         token_pct = comparison.get('token_delta_percent', 0)
-        st.metric("Tokens", f"{token_delta:+,}", delta=f"{token_pct:+.1f}%")
-        
+        st.metric("Token Diff", f"{token_delta:+,}", delta=f"{token_pct:+.1f}%")
+
         cost_delta = comparison.get('cost_delta_usd', 0)
         cost_pct = comparison.get('cost_delta_percent', 0)
-        st.metric("Cost", f"${cost_delta:+.4f}", delta=f"{cost_pct:+.1f}%")
+        st.metric("Cost Diff", f"${cost_delta:+.4f}", delta=f"{cost_pct:+.1f}%")
         
         time_delta = comparison.get('time_delta_seconds', 0)
         time_pct = comparison.get('time_delta_percent', 0)

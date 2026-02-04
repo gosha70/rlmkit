@@ -105,11 +105,17 @@ def format_time(seconds: float) -> str:
 
 
 def format_memory(mb: float) -> str:
-    """Format memory usage as human-readable string."""
+    """Format memory usage as human-readable string with adaptive units."""
     if mb >= 1024:
-        return f"{mb / 1024:.1f}GB"
+        return f"{mb / 1024:.1f} GB"
+    elif mb >= 1.0:
+        return f"{mb:.1f} MB"
+    elif mb >= 0.001:
+        return f"{mb * 1024:.0f} KB"
+    elif mb > 0:
+        return f"{mb * 1024 * 1024:.0f} B"
     else:
-        return f"{mb:.1f}MB"
+        return "0 KB"
 
 
 def format_percentage(value: float, decimal_places: int = 1) -> str:

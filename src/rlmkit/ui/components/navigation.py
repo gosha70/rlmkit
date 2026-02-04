@@ -55,16 +55,22 @@ def render_custom_navigation():
         analysis_btn = st.button("📊 Analysis", key="nav_analysis", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Metrics button
+        metrics_class = "nav-button-active" if current_page == 'metrics' else "nav-button"
+        st.markdown(f'<div class="{metrics_class}">', unsafe_allow_html=True)
+        metrics_btn = st.button("📈 Metrics", key="nav_metrics", use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
         # Configuration button
         config_class = "nav-button-active" if current_page == 'configuration' else "nav-button"
         st.markdown(f'<div class="{config_class}">', unsafe_allow_html=True)
         config_btn = st.button("⚙️ Configuration", key="nav_config", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
+
         st.divider()
-    
+
     # Handle navigation after rendering
-    _nav_log(f"buttons: chat={chat_btn} analysis={analysis_btn} config={config_btn}")
+    _nav_log(f"buttons: chat={chat_btn} analysis={analysis_btn} metrics={metrics_btn} config={config_btn}")
     if chat_btn:
         _nav_log("CLICK chat")
         st.session_state.current_nav_page = 'chat'
@@ -73,6 +79,10 @@ def render_custom_navigation():
         _nav_log("CLICK analysis")
         st.session_state.current_nav_page = 'analysis'
         st.switch_page("pages/analysis_panel.py")
+    elif metrics_btn:
+        _nav_log("CLICK metrics")
+        st.session_state.current_nav_page = 'metrics'
+        st.switch_page("pages/metrics_dashboard.py")
     elif config_btn:
         _nav_log("CLICK config")
         st.session_state.current_nav_page = 'configuration'

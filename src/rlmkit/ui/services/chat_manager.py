@@ -10,6 +10,7 @@ import asyncio
 import time
 
 from .models import ChatMessage, ExecutionMetrics, ComparisonMetrics
+from .memory_monitor import MemoryMonitor
 
 
 class ChatManager:
@@ -231,27 +232,22 @@ class ChatManager:
             content = file_context or "No content provided"
             
             # Run RLM
+            mem = MemoryMonitor()
+            mem.reset()
             start_time = time.time()
             rlm_result = rlm.run(prompt=content, query=user_query)
             elapsed_time = time.time() - start_time
+            mem.capture()
             
-            # Extract metrics from trace
-            total_input_tokens = 0
-            total_output_tokens = 0
-            
-            if rlm_result.trace:
+            # Extract actual token counts from RLMResult (populated by API metadata)
+            total_input_tokens = rlm_result.total_input_tokens
+            total_output_tokens = rlm_result.total_output_tokens
+
+            # Fallback to per-step trace counts if RLMResult totals are zero
+            if total_input_tokens == 0 and total_output_tokens == 0:
                 for step in rlm_result.trace:
-                    # Count tokens in trace (rough estimate)
-                    if "content" in step:
-                        content_len = len(step["content"].split())
-                        total_output_tokens += content_len * 1.3  # Rough conversion
-            
-            # If no token info in trace, estimate from content
-            if total_output_tokens == 0:
-                total_output_tokens = len(rlm_result.answer.split()) * 1.3
-            
-            # Estimate input tokens from query and content
-            total_input_tokens = (len(user_query.split()) + len(content.split()) / 100) * 1.3
+                    total_input_tokens += step.get("input_tokens", 0)
+                    total_output_tokens += step.get("output_tokens", 0)
             
             # Calculate cost using provider pricing
             input_cost = (total_input_tokens / 1000) * provider_config.input_cost_per_1k_tokens
@@ -277,8 +273,8 @@ class ChatManager:
                 },
                 execution_time_seconds=elapsed_time,
                 steps_taken=rlm_result.steps,
-                memory_used_mb=0.0,  # LATER: Get from MemoryMonitor
-                memory_peak_mb=0.0,   # LATER: Get from MemoryMonitor
+                memory_used_mb=mem.current_mb(),
+                memory_peak_mb=mem.peak_mb(),
                 success=rlm_result.success,
                 execution_type="rlm"
             )
@@ -399,16 +395,32 @@ class ChatManager:
             else:
                 prompt = user_query
             
-            # Call LLM directly
+            # Call LLM directly (with metadata for accurate token counts)
+            mem = MemoryMonitor()
+            mem.reset()
             start_time = time.time()
-            response_text = llm_client.complete([
-                {"role": "user", "content": prompt}
-            ])
+            if hasattr(llm_client, 'complete_with_metadata'):
+                try:
+                    llm_response = llm_client.complete_with_metadata([
+                        {"role": "user", "content": prompt}
+                    ])
+                    response_text = llm_response.content
+                    input_tokens = llm_response.input_tokens or 0
+                    output_tokens = llm_response.output_tokens or 0
+                except (NotImplementedError, AttributeError):
+                    response_text = llm_client.complete([
+                        {"role": "user", "content": prompt}
+                    ])
+                    input_tokens = 0
+                    output_tokens = 0
+            else:
+                response_text = llm_client.complete([
+                    {"role": "user", "content": prompt}
+                ])
+                input_tokens = 0
+                output_tokens = 0
             elapsed_time = time.time() - start_time
-            
-            # Estimate tokens
-            input_tokens = len(prompt.split()) * 1.3
-            output_tokens = len(response_text.split()) * 1.3
+            mem.capture()
             
             # Calculate cost using provider pricing
             input_cost = (input_tokens / 1000) * provider_config.input_cost_per_1k_tokens
@@ -434,8 +446,8 @@ class ChatManager:
                 },
                 execution_time_seconds=elapsed_time,
                 steps_taken=1,  # Single LLM call (not 0 - that's confusing)
-                memory_used_mb=0.0,  # LATER: Get from MemoryMonitor
-                memory_peak_mb=0.0,   # LATER: Get from MemoryMonitor
+                memory_used_mb=mem.current_mb(),
+                memory_peak_mb=mem.peak_mb(),
                 success=True,
                 execution_type="direct"
             )
@@ -535,9 +547,12 @@ class ChatManager:
                 rag = RAGStrategy(client=llm_client, embedder=embedder, top_k=5)
 
             content = file_context or "No content provided"
+            mem = MemoryMonitor()
+            mem.reset()
             start_time = time.time()
             result = rag.run(content=content, query=user_query)
             elapsed_time = time.time() - start_time
+            mem.capture()
 
             input_cost = (result.tokens.input_tokens / 1000) * provider_config.input_cost_per_1k_tokens
             output_cost = (result.tokens.output_tokens / 1000) * provider_config.output_cost_per_1k_tokens
@@ -557,8 +572,8 @@ class ChatManager:
                 cost_breakdown={"input": input_cost, "output": output_cost},
                 execution_time_seconds=elapsed_time,
                 steps_taken=result.steps,
-                memory_used_mb=0.0,
-                memory_peak_mb=0.0,
+                memory_used_mb=mem.current_mb(),
+                memory_peak_mb=mem.peak_mb(),
                 success=result.success,
                 error=result.error,
                 execution_type="rag",

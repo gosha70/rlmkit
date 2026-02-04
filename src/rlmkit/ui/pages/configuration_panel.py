@@ -9,6 +9,7 @@ import os
 
 from rlmkit.ui.services import LLMConfigManager
 from rlmkit.ui.components.navigation import render_custom_navigation
+from rlmkit.ui.components.session_summary import render_session_summary
 from rlmkit.ui.app import _inject_rlmkit_desktop_css
 
 
@@ -511,7 +512,11 @@ def main():
     
     # Render custom navigation in sidebar
     render_custom_navigation()
-    
+
+    # Session metrics summary in sidebar
+    with st.sidebar:
+        render_session_summary()
+
     # Header
     st.title("⚙️ Configuration Management")
     st.markdown("""

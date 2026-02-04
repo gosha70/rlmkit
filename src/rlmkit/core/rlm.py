@@ -48,21 +48,27 @@ class LLMClient(Protocol):
 @dataclass
 class RLMResult:
     """Result from RLM execution."""
-    
+
     answer: str
     """Final answer extracted from LLM"""
-    
+
     steps: int
     """Number of execution steps taken"""
-    
+
     trace: List[Dict[str, Any]]
     """Full execution trace (messages + execution results)"""
-    
+
     success: bool = True
     """Whether execution completed successfully"""
-    
+
     error: Optional[str] = None
     """Error message if execution failed"""
+
+    total_input_tokens: int = 0
+    """Total input tokens across all LLM calls (from API metadata)"""
+
+    total_output_tokens: int = 0
+    """Total output tokens across all LLM calls (from API metadata)"""
 
 
 class RLM:
@@ -166,19 +172,37 @@ class RLM:
         trace = []
         steps = 0
         last_execution_failed = False  # Track if previous execution had errors
-        
+        cumulative_input_tokens = 0
+        cumulative_output_tokens = 0
+
         try:
             while steps < self.config.execution.max_steps:
                 steps += 1
-                
-                # Get LLM response
-                response = self.client.complete(messages)
-                
+
+                # Get LLM response — prefer complete_with_metadata() for real token counts
+                step_input_tokens = 0
+                step_output_tokens = 0
+                if hasattr(self.client, 'complete_with_metadata'):
+                    try:
+                        llm_response = self.client.complete_with_metadata(messages)
+                        response = llm_response.content
+                        step_input_tokens = llm_response.input_tokens or 0
+                        step_output_tokens = llm_response.output_tokens or 0
+                    except (NotImplementedError, AttributeError):
+                        response = self.client.complete(messages)
+                else:
+                    response = self.client.complete(messages)
+
+                cumulative_input_tokens += step_input_tokens
+                cumulative_output_tokens += step_output_tokens
+
                 # Add to trace
                 trace.append({
                     "step": steps,
                     "role": "assistant",
-                    "content": response
+                    "content": response,
+                    "input_tokens": step_input_tokens,
+                    "output_tokens": step_output_tokens,
                 })
                 
                 # Parse response - try JSON format (v2.0) first, fall back to markdown (v1.0)
@@ -207,7 +231,9 @@ class RLM:
                         answer=answer,
                         steps=steps,
                         trace=trace,
-                        success=True
+                        success=True,
+                        total_input_tokens=cumulative_input_tokens,
+                        total_output_tokens=cumulative_output_tokens,
                     )
                 
                 # Execute code if present
@@ -275,7 +301,9 @@ class RLM:
                 steps=steps,
                 trace=trace,
                 success=False,
-                error=str(e)
+                error=str(e),
+                total_input_tokens=cumulative_input_tokens,
+                total_output_tokens=cumulative_output_tokens,
             )
     
     def _extract_final_answer(self, parsed: ParsedResponse) -> str:

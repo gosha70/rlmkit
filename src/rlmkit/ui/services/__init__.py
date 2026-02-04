@@ -12,6 +12,7 @@ from .chat_manager import ChatManager
 from .metrics_collector import MetricsCollector
 from .memory_monitor import MemoryMonitor
 from .llm_config_manager import LLMConfigManager
+from .analytics_engine import AnalyticsEngine, SessionAnalytics
 
 __all__ = [
     "ChatMessage",
@@ -24,4 +25,6 @@ __all__ = [
     "MetricsCollector",
     "MemoryMonitor",
     "LLMConfigManager",
+    "AnalyticsEngine",
+    "SessionAnalytics",
 ]

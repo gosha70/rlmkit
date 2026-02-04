@@ -10,7 +10,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from rlmkit.ui.components.navigation import render_custom_navigation
+from rlmkit.ui.components.session_summary import render_session_summary
 from rlmkit.ui.app import _inject_rlmkit_desktop_css
+from rlmkit.ui.utils import format_memory
 
 
 def render_analysis_page():
@@ -35,6 +37,10 @@ def render_analysis_page():
 
     # Render custom navigation in sidebar
     render_custom_navigation()
+
+    # Session metrics summary in sidebar
+    with st.sidebar:
+        render_session_summary()
 
     st.title("📊 Analysis Dashboard")
     st.markdown("Compare RLM vs Direct LLM performance metrics")
@@ -80,7 +86,7 @@ def render_summary_cards():
     
     with col1:
         st.metric(
-            "Tokens",
+            "Total Tokens",
             f"{rlm_tokens:,} vs {direct_tokens:,}",
             f"Δ {token_diff:,} ({token_winner} wins)" if token_diff > 0 else "Equal"
         )
@@ -94,7 +100,7 @@ def render_summary_cards():
     
     with col2:
         st.metric(
-            "Cost",
+            "Total Cost",
             f"${rlm_cost:.4f} vs ${direct_cost:.4f}",
             f"Δ ${cost_diff:.4f} ({cost_pct:.0f}%) ({cost_winner} wins)" if cost_diff > 0 else "Equal"
         )
@@ -174,7 +180,7 @@ def render_metrics_comparison():
             'Output Tokens',
             'Execution Time (s)',
             'Cost (USD)',
-            'Memory Used (MB)',
+            'Memory Used',
             'Success',
             'User Rating (0-10)'
         ],
@@ -185,7 +191,7 @@ def render_metrics_comparison():
             f"{rlm_metrics.output_tokens if rlm_metrics else 0:,}",
             f"{rlm_metrics.execution_time_seconds if rlm_metrics else 0:.3f}",
             f"${rlm_metrics.cost_usd if rlm_metrics else 0:.6f}",
-            f"{rlm_metrics.memory_used_mb if rlm_metrics else 0:.1f}",
+            format_memory(rlm_metrics.memory_used_mb if rlm_metrics else 0),
             "✅" if (rlm_metrics and rlm_metrics.success) else "❌",
             f"⭐ {rlm_rating}/10" if rlm_rating is not None else "Not rated"
         ],
@@ -196,7 +202,7 @@ def render_metrics_comparison():
             f"{direct_metrics.output_tokens if direct_metrics else 0:,}",
             f"{direct_metrics.execution_time_seconds if direct_metrics else 0:.3f}",
             f"${direct_metrics.cost_usd if direct_metrics else 0:.6f}",
-            f"{direct_metrics.memory_used_mb if direct_metrics else 0:.1f}",
+            format_memory(direct_metrics.memory_used_mb if direct_metrics else 0),
             "✅" if (direct_metrics and direct_metrics.success) else "❌",
             f"⭐ {direct_rating}/10" if direct_rating is not None else "Not rated"
         ],
@@ -207,7 +213,7 @@ def render_metrics_comparison():
             f"{(rlm_metrics.output_tokens if rlm_metrics else 0) - (direct_metrics.output_tokens if direct_metrics else 0):,}",
             f"{comparison.time_delta_seconds if comparison else 0:.3f}",
             f"${comparison.cost_delta_usd if comparison else 0:+.6f}",
-            f"{(rlm_metrics.memory_used_mb if rlm_metrics else 0) - (direct_metrics.memory_used_mb if direct_metrics else 0):+.1f}",
+            format_memory(abs((rlm_metrics.memory_used_mb if rlm_metrics else 0) - (direct_metrics.memory_used_mb if direct_metrics else 0))),
             "-",
             f"{(rlm_rating if rlm_rating is not None else 0) - (direct_rating if direct_rating is not None else 0):+}" if (rlm_rating is not None and direct_rating is not None) else "-"
         ]

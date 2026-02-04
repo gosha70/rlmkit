@@ -1,8 +1,7 @@
 """UI Components - Reusable Streamlit components."""
 
-# Components will be imported here as they're created
-# Example:
-# from .chat_display import render_chat_message
-# from .metrics_display import render_metrics_cards
+from .session_summary import render_session_summary
 
-__all__ = []
+__all__ = [
+    "render_session_summary",
+]
