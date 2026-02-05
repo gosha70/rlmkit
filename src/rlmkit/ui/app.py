@@ -10,6 +10,7 @@ import asyncio
 from pathlib import Path
 
 from rlmkit.ui.services.chat_manager import ChatManager
+from rlmkit.ui.services.models import ExecutionPlan, ExecutionSlot, RAGConfig
 from rlmkit.ui.components.navigation import render_custom_navigation
 from rlmkit.ui.components.session_summary import render_session_summary
 
@@ -316,6 +317,12 @@ def render_user_message(message: dict, index: int):
 
 def render_assistant_message(message: dict, index: int):
     """Render an assistant message with both RLM and Direct responses."""
+
+    # New multi-provider execution results path
+    if message.get('execution_results'):
+        render_multi_result_message(message, index)
+        return
+
     mode = message.get('mode', 'compare')
 
     # Create tabs for different response types
@@ -660,6 +667,95 @@ def render_comparison(message: dict, message_index: int = None):
             # One or both responses actually failed
             st.warning("⚠️ Comparison data may be incomplete. One or both executions may have failed.")
 
+def render_multi_result_message(message: dict, index: int):
+    """Render message with N execution results using tabs."""
+    results = message['execution_results']
+    comparison = message.get('generalized_comparison')
+
+    if len(results) == 1:
+        # Single result — delegate to existing renderer
+        r = results[0]
+        _render_execution_result(r, message, index, tab_index=0)
+        return
+
+    # Multiple results — tabs
+    tab_labels = [r.slot.label for r in results]
+    if comparison:
+        tab_labels.append("Comparison")
+
+    tabs = st.tabs(tab_labels)
+
+    for i, (tab, r) in enumerate(zip(tabs, results)):
+        with tab:
+            _render_execution_result(r, message, index, tab_index=i)
+
+    if comparison:
+        with tabs[-1]:
+            render_generalized_comparison(comparison, index)
+
+
+def _render_execution_result(result, message: dict, message_index: int, tab_index: int = 0):
+    """Render a single ExecutionResult using the existing per-mode renderers."""
+    mode = result.slot.mode
+    suffix_key = f"{message_index}_{tab_index}"
+
+    # Build a synthetic message dict for the existing renderers
+    if mode == "rlm":
+        synth = {
+            'rlm_response': result.response,
+            'rlm_metrics': result.metrics,
+            'rlm_trace': result.trace,
+            'rlm_user_rating': message.get(f'rating_{suffix_key}', 5),
+        }
+        render_rlm_response(synth, message_index=int(f"{message_index}{tab_index}"))
+    elif mode == "direct":
+        synth = {
+            'direct_response': result.response,
+            'direct_metrics': result.metrics,
+            'direct_user_rating': message.get(f'rating_{suffix_key}', 5),
+        }
+        render_direct_response(synth, message_index=int(f"{message_index}{tab_index}"))
+    elif mode == "rag":
+        synth = {
+            'rag_response': result.response,
+            'rag_metrics': result.metrics,
+            'rag_trace': result.trace,
+            'rag_user_rating': message.get(f'rating_{suffix_key}', 5),
+        }
+        render_rag_response(synth, message_index=int(f"{message_index}{tab_index}"))
+
+
+def render_generalized_comparison(comparison, message_index: int):
+    """Render a comparison across N execution results."""
+    results = comparison.results
+
+    # Summary bar
+    parts = []
+    if comparison.cheapest_label:
+        parts.append(f"**Cheapest:** {comparison.cheapest_label}")
+    if comparison.fastest_label:
+        parts.append(f"**Fastest:** {comparison.fastest_label}")
+    if parts:
+        st.markdown(" | ".join(parts))
+
+    if comparison.recommendation:
+        st.success(f"💡 {comparison.recommendation}")
+
+    # Comparison table
+    import pandas as pd
+    rows = []
+    for r in results:
+        rows.append({
+            "Label": r.slot.label,
+            "Total Tokens": f"{r.metrics.total_tokens:,}",
+            "Total Cost": f"${r.metrics.cost_usd:.4f}",
+            "Time": f"{r.metrics.execution_time_seconds:.2f}s",
+            "Steps": r.metrics.steps_taken,
+        })
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
 def render_chat_input():
     """RLM Chat Composer Input Area.
 
@@ -919,23 +1015,38 @@ def render_chat_input():
                         'file_count': len(st.session_state.attached_files)
                     }
 
-                # Execute async message processing
-                message = _run_async(
-                    chat_manager.process_message(
-                        user_query=user_input,
-                        mode=st.session_state.composer_mode,
-                        file_context=file_context,
-                        file_info=file_info,
-                        selected_provider=selected_provider,
-                        api_key=api_key
+                # Build execution plan if one exists (from Config panel)
+                execution_plan = st.session_state.get('execution_plan')
+
+                if execution_plan and execution_plan.slots:
+                    # Multi-provider path via process_message_v2
+                    message = _run_async(
+                        chat_manager.process_message_v2(
+                            user_query=user_input,
+                            execution_plan=execution_plan,
+                            file_context=file_context,
+                            file_info=file_info,
+                        )
                     )
-                )
-                
+                else:
+                    # Legacy single-provider path
+                    message = _run_async(
+                        chat_manager.process_message(
+                            user_query=user_input,
+                            mode=st.session_state.composer_mode,
+                            file_context=file_context,
+                            file_info=file_info,
+                            selected_provider=selected_provider,
+                            api_key=api_key
+                        )
+                    )
+
                 # Add assistant message to history
                 st.session_state.chat_messages.append({
                     'role': 'assistant',
                     'content': f"Response ({st.session_state.composer_mode})",
                     'mode': st.session_state.composer_mode,
+                    # Legacy fields
                     'rlm_response': message.rlm_response,
                     'rlm_metrics': message.rlm_metrics,
                     'rlm_trace': message.rlm_trace,
@@ -945,6 +1056,9 @@ def render_chat_input():
                     'rag_metrics': message.rag_metrics,
                     'rag_trace': message.rag_trace,
                     'comparison_metrics': message.comparison_metrics,
+                    # New multi-provider fields
+                    'execution_results': message.execution_results,
+                    'generalized_comparison': message.generalized_comparison,
                     'timestamp': st.session_state.get('current_time')
                 })
 

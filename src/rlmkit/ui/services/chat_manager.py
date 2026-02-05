@@ -4,13 +4,18 @@
 ChatManager - Core message management and execution routing.
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from uuid import uuid4
 import asyncio
 import time
 
-from .models import ChatMessage, ExecutionMetrics, ComparisonMetrics
+from .models import (
+    ChatMessage, ExecutionMetrics, ComparisonMetrics,
+    ExecutionPlan, ExecutionSlot, ExecutionResult, GeneralizedComparison,
+    RAGConfig, Response, LLMProviderConfig,
+)
 from .memory_monitor import MemoryMonitor
+from .profile_store import resolve_system_prompt
 
 
 class ChatManager:
@@ -40,7 +45,54 @@ class ChatManager:
             self.session_state["messages"] = []
         if "conversation_id" not in self.session_state:
             self.session_state["conversation_id"] = str(uuid4())
-    
+
+    def _resolve_provider(
+        self,
+        provider_name: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ) -> Tuple[LLMProviderConfig, str]:
+        """Resolve provider config and effective API key.
+
+        Returns:
+            (provider_config, effective_api_key)
+
+        Raises:
+            ValueError: if no provider is configured or API key is missing
+        """
+        from .llm_config_manager import LLMConfigManager
+        from .secret_store import resolve_api_key
+        from pathlib import Path
+
+        config_dir = Path.home() / ".rlmkit"
+        config_manager = LLMConfigManager(config_dir=config_dir)
+
+        provider_config = None
+        if provider_name:
+            provider_config = config_manager.get_provider_config(provider_name)
+        if not provider_config:
+            provider_config = config_manager.get_active_provider()
+        if not provider_config:
+            providers = config_manager.list_providers()
+            if providers:
+                provider_config = config_manager.get_provider_config(providers[0])
+        if not provider_config:
+            raise ValueError(
+                "No LLM provider configured - go to Configuration page to set one up"
+            )
+
+        # Resolve API key: explicit arg → session cache → SecretStore → env var
+        effective_api_key = api_key if api_key else provider_config.api_key
+        if not effective_api_key:
+            effective_api_key = resolve_api_key(
+                provider_config.provider, self.session_state
+            )
+        if not effective_api_key:
+            raise ValueError(
+                f"Provider {provider_config.provider} is configured but API key is missing"
+            )
+
+        return provider_config, effective_api_key
+
     async def process_message(
         self,
         user_query: str,
@@ -165,51 +217,15 @@ class ChatManager:
         - Integrates with configured LLM provider
         - Collects real token counts and timing metrics
         """
-        from .models import Response, ExecutionMetrics
         from rlmkit.core.rlm import RLM
         from rlmkit.llm import get_llm_client
         from rlmkit.config import RLMConfig, ExecutionConfig
-        from pathlib import Path
-        import os
-        
+
         try:
-            # Get active provider configuration
-            from .llm_config_manager import LLMConfigManager
-            config_dir = Path.home() / ".rlmkit"
-            config_manager = LLMConfigManager(config_dir=config_dir)
-            
-            # Try selected_provider from parameter (most up-to-date)
-            provider_config = None
-            if selected_provider:
-                provider_config = config_manager.get_provider_config(selected_provider)
-            
-            # Fallback: try to get active provider from config
-            if not provider_config:
-                provider_config = config_manager.get_active_provider()
-            
-            # Fallback: use first available provider
-            if not provider_config:
-                providers = config_manager.list_providers()
-                if providers:
-                    provider_config = config_manager.get_provider_config(providers[0])
-            
-            if not provider_config:
-                raise ValueError("No LLM provider configured - go to Configuration page to set one up")
-            
-            # Use provided api_key if available, otherwise use from config
-            effective_api_key = api_key if api_key else provider_config.api_key
-            
-            if not effective_api_key:
-                # Try environment variable - load .env file first
-                if provider_config.api_key_env_var:
-                    # Ensure .env file is loaded into environment
-                    from .llm_config_manager import load_env_file
-                    load_env_file()
-                    effective_api_key = os.getenv(provider_config.api_key_env_var)
-            
-            if not effective_api_key:
-                raise ValueError(f"Provider {provider_config.provider} is configured but API key is missing")
-            
+            provider_config, effective_api_key = self._resolve_provider(
+                selected_provider, api_key
+            )
+
             # Create LLM client
             llm_client = get_llm_client(
                 provider=provider_config.provider,
@@ -230,12 +246,15 @@ class ChatManager:
             
             # Prepare content (use file_context if provided)
             content = file_context or "No content provided"
-            
+
+            # Resolve system prompt for RLM mode
+            sys_prompt = resolve_system_prompt("rlm", self.session_state)
+
             # Run RLM
             mem = MemoryMonitor()
             mem.reset()
             start_time = time.time()
-            rlm_result = rlm.run(prompt=content, query=user_query)
+            rlm_result = rlm.run(prompt=content, query=user_query, system_prompt=sys_prompt)
             elapsed_time = time.time() - start_time
             mem.capture()
             
@@ -339,49 +358,13 @@ class ChatManager:
         - Much faster but potentially less thorough
         - Still collects full metrics for comparison
         """
-        from .models import Response, ExecutionMetrics
         from rlmkit.llm import get_llm_client
-        from pathlib import Path
-        import os
-        
+
         try:
-            # Get active provider configuration
-            from .llm_config_manager import LLMConfigManager
-            config_dir = Path.home() / ".rlmkit"
-            config_manager = LLMConfigManager(config_dir=config_dir)
-            
-            # Try selected_provider from parameter (most up-to-date)
-            provider_config = None
-            if selected_provider:
-                provider_config = config_manager.get_provider_config(selected_provider)
-            
-            # Fallback: try to get active provider from config
-            if not provider_config:
-                provider_config = config_manager.get_active_provider()
-            
-            # Fallback: use first available provider
-            if not provider_config:
-                providers = config_manager.list_providers()
-                if providers:
-                    provider_config = config_manager.get_provider_config(providers[0])
-            
-            if not provider_config:
-                raise ValueError("No LLM provider configured - go to Configuration page to set one up")
-            
-            # Use provided api_key if available, otherwise use from config
-            effective_api_key = api_key if api_key else provider_config.api_key
-            
-            if not effective_api_key:
-                # Try environment variable - load .env file first
-                if provider_config.api_key_env_var:
-                    # Ensure .env file is loaded into environment
-                    from .llm_config_manager import load_env_file
-                    load_env_file()
-                    effective_api_key = os.getenv(provider_config.api_key_env_var)
-            
-            if not effective_api_key:
-                raise ValueError(f"Provider {provider_config.provider} is configured but API key is missing")
-            
+            provider_config, effective_api_key = self._resolve_provider(
+                selected_provider, api_key
+            )
+
             # Create LLM client
             llm_client = get_llm_client(
                 provider=provider_config.provider,
@@ -394,29 +377,30 @@ class ChatManager:
                 prompt = f"Context:\n{file_context}\n\nQuestion: {user_query}"
             else:
                 prompt = user_query
-            
+
+            # Resolve system prompt for direct mode
+            sys_prompt = resolve_system_prompt("direct", self.session_state)
+            messages: list = []
+            if sys_prompt:
+                messages.append({"role": "system", "content": sys_prompt})
+            messages.append({"role": "user", "content": prompt})
+
             # Call LLM directly (with metadata for accurate token counts)
             mem = MemoryMonitor()
             mem.reset()
             start_time = time.time()
             if hasattr(llm_client, 'complete_with_metadata'):
                 try:
-                    llm_response = llm_client.complete_with_metadata([
-                        {"role": "user", "content": prompt}
-                    ])
+                    llm_response = llm_client.complete_with_metadata(messages)
                     response_text = llm_response.content
                     input_tokens = llm_response.input_tokens or 0
                     output_tokens = llm_response.output_tokens or 0
                 except (NotImplementedError, AttributeError):
-                    response_text = llm_client.complete([
-                        {"role": "user", "content": prompt}
-                    ])
+                    response_text = llm_client.complete(messages)
                     input_tokens = 0
                     output_tokens = 0
             else:
-                response_text = llm_client.complete([
-                    {"role": "user", "content": prompt}
-                ])
+                response_text = llm_client.complete(messages)
                 input_tokens = 0
                 output_tokens = 0
             elapsed_time = time.time() - start_time
@@ -489,40 +473,17 @@ class ChatManager:
         file_context: Optional[str] = None,
         selected_provider: Optional[str] = None,
         api_key: Optional[str] = None,
+        rag_config: Optional[RAGConfig] = None,
     ) -> Dict[str, Any]:
         """Execute RAG strategy (embed chunks, retrieve, generate)."""
-        from .models import Response, ExecutionMetrics
         from rlmkit.llm import get_llm_client
         from rlmkit.strategies.rag import RAGStrategy
         from rlmkit.strategies.embeddings import OpenAIEmbedder
-        from pathlib import Path
-        import os
 
         try:
-            from .llm_config_manager import LLMConfigManager
-            config_dir = Path.home() / ".rlmkit"
-            config_manager = LLMConfigManager(config_dir=config_dir)
-
-            provider_config = None
-            if selected_provider:
-                provider_config = config_manager.get_provider_config(selected_provider)
-            if not provider_config:
-                provider_config = config_manager.get_active_provider()
-            if not provider_config:
-                providers = config_manager.list_providers()
-                if providers:
-                    provider_config = config_manager.get_provider_config(providers[0])
-            if not provider_config:
-                raise ValueError("No LLM provider configured")
-
-            effective_api_key = api_key if api_key else provider_config.api_key
-            if not effective_api_key:
-                if provider_config.api_key_env_var:
-                    from .llm_config_manager import load_env_file
-                    load_env_file()
-                    effective_api_key = os.getenv(provider_config.api_key_env_var)
-            if not effective_api_key:
-                raise ValueError(f"Provider {provider_config.provider} API key is missing")
+            provider_config, effective_api_key = self._resolve_provider(
+                selected_provider, api_key
+            )
 
             llm_client = get_llm_client(
                 provider=provider_config.provider,
@@ -530,7 +491,33 @@ class ChatManager:
                 api_key=effective_api_key,
             )
 
-            embedder = OpenAIEmbedder(api_key=effective_api_key)
+            # RAG config (from parameter, session state, or defaults)
+            rc = rag_config or self.session_state.get("rag_config") or RAGConfig()
+
+            # Resolve embedding API key: prefer OpenAI provider key for embeddings
+            embedding_api_key = effective_api_key
+            if provider_config.provider != "openai":
+                # Try to find an OpenAI provider key for embeddings
+                from .llm_config_manager import LLMConfigManager, load_env_file
+                from pathlib import Path
+                import os
+                mgr = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
+                openai_cfg = mgr.get_provider_config("openai")
+                if openai_cfg:
+                    embedding_api_key = openai_cfg.api_key
+                    if not embedding_api_key and openai_cfg.api_key_env_var:
+                        load_env_file()
+                        embedding_api_key = os.getenv(openai_cfg.api_key_env_var)
+                if not embedding_api_key:
+                    embedding_api_key = effective_api_key  # fallback
+
+            embedder = OpenAIEmbedder(
+                model=rc.embedding_model,
+                api_key=embedding_api_key,
+            )
+
+            # Resolve system prompt for RAG mode
+            sys_prompt = resolve_system_prompt("rag", self.session_state)
 
             # Use IndexedRAGStrategy when vector store is available
             vector_store = self.session_state.get("vector_store")
@@ -541,10 +528,19 @@ class ChatManager:
                     client=llm_client, embedder=embedder,
                     vector_store=vector_store,
                     collection=f"conv_{conv_id}_artifacts",
-                    top_k=5,
+                    chunk_size=rc.chunk_size,
+                    chunk_overlap=rc.chunk_overlap,
+                    top_k=rc.top_k,
+                    system_prompt=sys_prompt,
                 )
             else:
-                rag = RAGStrategy(client=llm_client, embedder=embedder, top_k=5)
+                rag = RAGStrategy(
+                    client=llm_client, embedder=embedder,
+                    chunk_size=rc.chunk_size,
+                    chunk_overlap=rc.chunk_overlap,
+                    top_k=rc.top_k,
+                    system_prompt=sys_prompt,
+                )
 
             content = file_context or "No content provided"
             mem = MemoryMonitor()
@@ -604,6 +600,164 @@ class ChatManager:
                 "trace": [{"error": str(e)}],
             }
 
+    async def process_message_v2(
+        self,
+        user_query: str,
+        execution_plan: ExecutionPlan,
+        file_context: Optional[str] = None,
+        file_info: Optional[Dict[str, Any]] = None,
+    ) -> ChatMessage:
+        """Process user message using an ExecutionPlan with N slots.
+
+        Each slot is executed independently (RLM, Direct, or RAG with its
+        own provider).  Results are collected and, when there are 2+ slots,
+        a generalized comparison is generated.
+
+        Legacy fields (rlm_response, direct_response, etc.) are also
+        populated for backward compatibility with saved conversations and
+        existing rendering code.
+        """
+        mode = "compare" if execution_plan.is_comparison else (
+            execution_plan.slots[0].mode + "_only" if execution_plan.slots else "compare"
+        )
+
+        message = ChatMessage(
+            user_query=user_query,
+            mode=mode,
+            file_context=file_context,
+            file_info=file_info,
+            execution_plan=execution_plan,
+        )
+
+        results: List[ExecutionResult] = []
+
+        for slot in execution_plan.slots:
+            # Auto-generate label if missing
+            if not slot.label:
+                from .llm_config_manager import LLMConfigManager
+                from pathlib import Path
+                mgr = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
+                cfg = mgr.get_provider_config(slot.provider_name)
+                model_name = cfg.model if cfg else slot.provider_name
+                mode_label = {"rlm": "RLM", "direct": "Direct", "rag": "RAG"}[slot.mode]
+                slot.label = f"{mode_label} ({model_name})"
+
+            try:
+                if slot.mode == "rlm":
+                    raw = await self._execute_rlm(
+                        user_query, file_context, slot.provider_name
+                    )
+                elif slot.mode == "direct":
+                    raw = await self._execute_direct(
+                        user_query, file_context, slot.provider_name
+                    )
+                elif slot.mode == "rag":
+                    raw = await self._execute_rag(
+                        user_query, file_context, slot.provider_name,
+                        rag_config=slot.rag_config,
+                    )
+                else:
+                    continue
+
+                results.append(ExecutionResult(
+                    slot=slot,
+                    response=raw["response"],
+                    metrics=raw["metrics"],
+                    trace=raw.get("trace"),
+                ))
+            except Exception as e:
+                err_response = Response(
+                    content=f"{slot.label} failed: {str(e)}",
+                    stop_reason="error",
+                )
+                err_metrics = ExecutionMetrics(
+                    input_tokens=0, output_tokens=0, total_tokens=0,
+                    cost_usd=0.0, cost_breakdown={"input": 0.0, "output": 0.0},
+                    execution_time_seconds=0.0, steps_taken=0,
+                    memory_used_mb=0.0, memory_peak_mb=0.0,
+                    success=False, execution_type=slot.mode,
+                )
+                results.append(ExecutionResult(
+                    slot=slot, response=err_response, metrics=err_metrics,
+                ))
+
+        message.execution_results = results
+
+        # Populate legacy fields for backward compat
+        for r in results:
+            if r.slot.mode == "rlm" and message.rlm_response is None:
+                message.rlm_response = r.response
+                message.rlm_metrics = r.metrics
+                message.rlm_trace = r.trace
+            elif r.slot.mode == "direct" and message.direct_response is None:
+                message.direct_response = r.response
+                message.direct_metrics = r.metrics
+            elif r.slot.mode == "rag" and message.rag_response is None:
+                message.rag_response = r.response
+                message.rag_metrics = r.metrics
+                message.rag_trace = r.trace
+
+        # Build legacy comparison for 2-slot RLM+Direct case
+        if (message.rlm_metrics and message.direct_metrics
+                and len(results) == 2):
+            try:
+                message.comparison_metrics = self._compare_metrics(
+                    message.rlm_metrics, message.direct_metrics
+                )
+            except Exception:
+                pass
+
+        # Build generalized comparison for all multi-slot cases
+        if len(results) > 1:
+            message.generalized_comparison = self._generalized_compare(results)
+
+        # Add to history
+        self.session_state["messages"].append(message)
+
+        # Auto-persist
+        store = self.session_state.get("conversation_store")
+        conv_id = self.session_state.get("conversation_id")
+        if store and conv_id:
+            try:
+                store.save_message(conv_id, message)
+            except Exception:
+                pass
+
+        return message
+
+    def _generalized_compare(
+        self,
+        results: List[ExecutionResult],
+    ) -> GeneralizedComparison:
+        """Compare N execution results and generate summary."""
+        if not results:
+            return GeneralizedComparison()
+
+        successful = [r for r in results if r.metrics.success]
+        if not successful:
+            return GeneralizedComparison(
+                results=results,
+                recommendation="All executions failed.",
+            )
+
+        cheapest = min(successful, key=lambda r: r.metrics.cost_usd)
+        fastest = min(successful, key=lambda r: r.metrics.execution_time_seconds)
+
+        parts = []
+        if cheapest.slot.label:
+            parts.append(f"{cheapest.slot.label} is cheapest (${cheapest.metrics.cost_usd:.4f})")
+        if fastest.slot.label and fastest.slot.label != cheapest.slot.label:
+            parts.append(f"{fastest.slot.label} is fastest ({fastest.metrics.execution_time_seconds:.2f}s)")
+
+        recommendation = ". ".join(parts) + "." if parts else ""
+
+        return GeneralizedComparison(
+            results=results,
+            cheapest_label=cheapest.slot.label,
+            fastest_label=fastest.slot.label,
+            recommendation=recommendation,
+        )
+
     def _compare_metrics(
         self,
         rlm_metrics: ExecutionMetrics,
@@ -630,8 +784,6 @@ class ChatManager:
         - RLM is slower but more thorough (explores multiple paths)
         - Direct is faster and cheaper but single-path
         """
-        from .models import ComparisonMetrics
-        
         # Calculate deltas
         cost_delta = rlm_metrics.cost_usd - direct_metrics.cost_usd
         time_delta = rlm_metrics.execution_time_seconds - direct_metrics.execution_time_seconds

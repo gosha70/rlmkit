@@ -20,18 +20,8 @@ class MetricsCollector:
     
     def __init__(self):
         """Initialize MetricsCollector."""
-        self.provider_pricing: Dict[str, Dict[str, float]] = {
-            "openai": {
-                "gpt-4": {"input": 0.03, "output": 0.06},
-                "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-                "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-            },
-            "anthropic": {
-                "claude-3-opus": {"input": 0.015, "output": 0.075},
-                "claude-3-sonnet": {"input": 0.003, "output": 0.015},
-                "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-            },
-        }
+        from rlmkit.ui.data.providers_catalog import build_metrics_pricing
+        self.provider_pricing: Dict[str, Dict[str, float]] = build_metrics_pricing()
     
     async def collect_rlm_metrics(
         self,

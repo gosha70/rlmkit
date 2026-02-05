@@ -13,6 +13,16 @@ from .metrics_collector import MetricsCollector
 from .memory_monitor import MemoryMonitor
 from .llm_config_manager import LLMConfigManager
 from .analytics_engine import AnalyticsEngine, SessionAnalytics
+from .secret_store import (
+    SecretStore,
+    EnvSecretStore,
+    FileSecretStore,
+    KeyringSecretStore,
+    create_secret_store,
+    get_secret_store,
+    resolve_api_key,
+    KEY_POLICY_OPTIONS,
+)
 
 __all__ = [
     "ChatMessage",
@@ -27,4 +37,12 @@ __all__ = [
     "LLMConfigManager",
     "AnalyticsEngine",
     "SessionAnalytics",
+    "SecretStore",
+    "EnvSecretStore",
+    "FileSecretStore",
+    "KeyringSecretStore",
+    "create_secret_store",
+    "get_secret_store",
+    "resolve_api_key",
+    "KEY_POLICY_OPTIONS",
 ]

@@ -78,7 +78,10 @@ class LLMConfigManager:
         api_key_env_var = config_dict.get("api_key_env_var")
         if api_key_env_var:
             config_dict["api_key"] = os.getenv(api_key_env_var)
-        config = LLMProviderConfig(**config_dict)
+        # Filter out unknown keys for forward-compat (e.g., old files with extra fields)
+        known_fields = set(LLMProviderConfig.__dataclass_fields__.keys())
+        filtered_dict = {k: v for k, v in config_dict.items() if k in known_fields}
+        config = LLMProviderConfig(**filtered_dict)
         self._configs[provider] = config
 
     def _load_all_configs(self) -> None:
@@ -86,7 +89,7 @@ class LLMConfigManager:
         for config_file in self.config_dir.glob("*.json"):
             provider = config_file.stem
             # Skip non-provider files
-            if provider not in ["encryption", "api_keys"]:
+            if provider not in ["encryption", "api_keys", "system_prompt_custom", "profiles"]:
                 self._load_config(provider)
 
     def _save_config(self, config: LLMProviderConfig) -> None:
@@ -177,14 +180,10 @@ class LLMConfigManager:
         config.test_successful = True
         print(f"DEBUG: Set test_successful=True for {provider}")
         
-        # --- NEW: Write API key to .env if provided ---
+        # Record the env var name so config knows where to look on reload
         if api_key:
-            env_var = {
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY",
-                "ollama": "OLLAMA_API_KEY"
-            }.get(provider, f"{provider.upper()}_API_KEY")
-            update_env_file(env_var, api_key)
+            from rlmkit.ui.data.providers_catalog import get_env_var
+            env_var = get_env_var(provider) or f"{provider.upper()}_API_KEY"
             config.api_key_env_var = env_var
             config.api_key = None  # Do not keep in memory
         

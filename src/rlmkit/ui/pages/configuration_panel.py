@@ -8,9 +8,23 @@ from pathlib import Path
 import os
 
 from rlmkit.ui.services import LLMConfigManager
+from rlmkit.ui.services.models import RAGConfig, ExecutionSlot, ExecutionPlan
+from rlmkit.ui.services.secret_store import (
+    get_secret_store, resolve_api_key, KEY_POLICY_OPTIONS,
+)
+from rlmkit.ui.services.profile_store import (
+    RunProfile, RunProfileStore,
+    SYSTEM_PROMPT_TEMPLATE_NAMES, SYSTEM_PROMPT_TEMPLATES,
+    load_custom_prompts, save_custom_prompts,
+)
 from rlmkit.ui.components.navigation import render_custom_navigation
 from rlmkit.ui.components.session_summary import render_session_summary
 from rlmkit.ui.app import _inject_rlmkit_desktop_css
+from rlmkit.ui.data.providers_catalog import (
+    PROVIDERS, PROVIDER_OPTIONS, PROVIDERS_BY_KEY,
+    get_provider, get_model_pricing, get_model_names, get_env_var,
+    get_embedding_model_names, build_pricing_table,
+)
 
 
 def init_config_session_state():
@@ -18,7 +32,7 @@ def init_config_session_state():
     if "llm_manager" not in st.session_state:
         config_dir = Path.home() / ".rlmkit"
         st.session_state.llm_manager = LLMConfigManager(config_dir=config_dir)
-    
+
     if "refresh_providers" not in st.session_state:
         st.session_state.refresh_providers = False
 
@@ -27,129 +41,107 @@ def render_provider_selection():
     """Initialize selected provider if not already set."""
     manager = st.session_state.llm_manager
     providers = manager.list_providers()
-    
+
     if 'selected_provider' not in st.session_state:
         st.session_state.selected_provider = providers[0] if providers else None
 
 
 def render_provider_list():
-    """Display list of configured providers with checkboxes for comparison."""
-    st.subheader("📋 Configured Providers")
-    
+    """Display configured providers as cards with Test / Set default / Delete actions."""
+    st.subheader("Configured Providers")
+
     manager = st.session_state.llm_manager
     providers = manager.list_providers()
-    
+
     if not providers:
         st.info("No providers configured yet. Add one below to get started.")
         return
-    
+
     # Ensure selected_provider exists
-    if 'selected_provider' not in st.session_state or st.session_state.selected_provider not in providers:
+    if "selected_provider" not in st.session_state or st.session_state.selected_provider not in providers:
         st.session_state.selected_provider = providers[0]
-    
-    # Initialize enabled providers for comparison (Phase 4 feature)
-    if 'enabled_providers' not in st.session_state:
-        st.session_state.enabled_providers = {providers[0]: True}
-    
-    # Create columns for provider display (with checkbox column)
-    col_checkbox, col1, col2, col3, col4 = st.columns([0.8, 2, 2, 1, 1])
-    with col_checkbox:
-        st.write("**Use**")
-    with col1:
-        st.write("**Provider**")
-    with col2:
-        st.write("**Model**")
-    with col3:
-        st.write("**Status**")
-    with col4:
-        st.write("**Actions**")
-    
-    st.divider()
-    
-    # Display each provider with checkbox
+
     for provider_name in providers:
         config = manager.get_provider_config(provider_name)
         if not config:
             continue
-        
-        col_checkbox, col1, col2, col3, col4 = st.columns([0.8, 2, 2, 1, 1])
-        
-        with col_checkbox:
-            # Checkbox to enable provider for comparison (Phase 4)
-            is_enabled = st.checkbox(
-                label=provider_name,
-                value=st.session_state.enabled_providers.get(provider_name, False),
-                key=f"checkbox_{provider_name}",
-                label_visibility="collapsed"
-            )
-            st.session_state.enabled_providers[provider_name] = is_enabled
-            
-            # Auto-select first enabled provider as active
-            if is_enabled and st.session_state.selected_provider not in st.session_state.enabled_providers or not st.session_state.enabled_providers.get(st.session_state.selected_provider, False):
-                st.session_state.selected_provider = provider_name
-        
-        with col1:
-            st.write(f"**{config.provider.upper()}**")
-        
-        with col2:
-            st.write(f"`{config.model}`")
-        
-        with col3:
-            if config.is_ready:
-                st.success("✅ Ready")
-            else:
-                st.warning("⚠️ Not Ready")
-        
-        with col4:
-            if st.button("🗑️ Delete", key=f"delete_{provider_name}"):
-                if manager.delete_provider(provider_name):
-                    st.success(f"Deleted {provider_name}")
-                    if provider_name in st.session_state.enabled_providers:
-                        del st.session_state.enabled_providers[provider_name]
-                    st.rerun()
-                else:
-                    st.error(f"Failed to delete {provider_name}")
-    
-    # Display selected provider summary below the table
-    st.divider()
-    st.subheader("📊 Active Provider Summary")
-    config = manager.get_provider_config(st.session_state.selected_provider)
-    if config:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Active Provider", st.session_state.selected_provider.upper())
-        with col2:
-            st.metric("Model", config.model)
-        with col3:
-            status = "✅ Ready" if config.is_ready else "⚠️ Not Ready"
-            st.metric("Status", status)
+
+        entry = get_provider(config.provider)
+        display_name = entry.display_name if entry else config.provider.upper()
+        is_default = st.session_state.selected_provider == provider_name
+
+        with st.container(border=True):
+            # Header row: badge + model + status
+            col_info, col_actions = st.columns([3, 2])
+
+            with col_info:
+                badge = "**[Default]** " if is_default else ""
+                status_icon = "Ready" if config.is_ready else "Not tested"
+                st.markdown(
+                    f"### {badge}{display_name}  \n"
+                    f"`{config.model}` — {status_icon}"
+                )
+
+            with col_actions:
+                btn_cols = st.columns(3)
+                with btn_cols[0]:
+                    if st.button("Test", key=f"test_{provider_name}", use_container_width=True):
+                        success, msg = manager.test_connection(
+                            config.provider, config.model,
+                            api_key=config.api_key,
+                            api_key_env_var=config.api_key_env_var,
+                        )
+                        if success:
+                            config.test_successful = True
+                            manager._save_config(config)
+                            st.success("Connection OK")
+                        else:
+                            st.error(msg)
+                with btn_cols[1]:
+                    if not is_default:
+                        if st.button("Set default", key=f"default_{provider_name}", use_container_width=True):
+                            st.session_state.selected_provider = provider_name
+                            st.rerun()
+                with btn_cols[2]:
+                    if st.button("Delete", key=f"delete_{provider_name}", use_container_width=True):
+                        manager.delete_provider(provider_name)
+                        st.rerun()
 
 
 def render_add_provider_form():
     """Display form for adding new provider with simplified API key setup."""
     st.subheader("➕ Add New Provider")
-    
-    st.info("""
-    🔐 **How API Keys Work:**
-    - Paste your API key in the field below (stored in memory only, not on disk)
-    - OR set environment variable (e.g., `export OPENAI_API_KEY=sk-...`)
-    - If you set the env variable, leave the key field empty
-    - The app will use whichever is available
-    """)
-    
+
+    # Key persistence policy selector
+    if "key_policy" not in st.session_state:
+        st.session_state.key_policy = "file"  # backward-compatible default
+
+    policy_labels = [label for _, label in KEY_POLICY_OPTIONS]
+    policy_keys = [k for k, _ in KEY_POLICY_OPTIONS]
+    current_idx = policy_keys.index(st.session_state.key_policy) if st.session_state.key_policy in policy_keys else 0
+
+    selected_policy_idx = st.selectbox(
+        "🔐 Key Storage Policy",
+        range(len(policy_labels)),
+        format_func=lambda i: policy_labels[i],
+        index=current_idx,
+        help="Where API keys are persisted between sessions.",
+        key="key_policy_selector",
+    )
+    st.session_state.key_policy = policy_keys[selected_policy_idx]
+
+    if st.session_state.key_policy == "file":
+        st.caption("⚠️ Keys stored unencrypted at `~/.rlmkit/api_keys.json` (chmod 600).")
+    elif st.session_state.key_policy == "env":
+        st.caption("Keys are read from environment variables only — nothing is written to disk.")
+
     # Provider selection OUTSIDE form so changes trigger re-render
-    provider_options = [
-        ("OpenAI", "openai"),
-        ("Anthropic", "anthropic"),
-        ("Ollama (Local)", "ollama"),
-        ("LM Studio (Local)", "lmstudio"),
-    ]
-    provider_labels = [opt[0] for opt in provider_options]
-    provider_values = [opt[1] for opt in provider_options]
-    
+    provider_labels = [opt[0] for opt in PROVIDER_OPTIONS]
+    provider_values = [opt[1] for opt in PROVIDER_OPTIONS]
+
     if 'selected_provider_idx' not in st.session_state:
         st.session_state.selected_provider_idx = 0
-    
+
     selected_idx = st.selectbox(
         "Choose Provider",
         range(len(provider_labels)),
@@ -159,227 +151,87 @@ def render_add_provider_form():
         index=st.session_state.selected_provider_idx,
         on_change=lambda: st.session_state.update({'selected_provider_idx': st.session_state.provider_selectbox_main})
     )
-    provider = provider_values[selected_idx]
-    
+    provider_key = provider_values[selected_idx]
+    catalog_entry = get_provider(provider_key)
+
     with st.form("add_provider_form"):
-        # Model selection based on provider
-        if provider == "openai":
+        # Model selection based on provider — driven by catalog
+        model_names = get_model_names(provider_key)
+        if model_names:
             model = st.selectbox(
                 "Model",
-                [
-                    "gpt-4o",
-                    "gpt-4o-mini",
-                    "gpt-4-turbo",
-                    "gpt-4",
-                    "gpt-3.5-turbo",
-                    "o1",
-                    "o1-mini"
-                ],
+                model_names,
                 index=0,
-                key=f"model_select_{provider}"
+                key=f"model_select_{provider_key}",
             )
-            # Dynamic pricing based on model
-            pricing_map = {
-                "gpt-4o": (0.005, 0.015),
-                "gpt-4o-mini": (0.00015, 0.0006),
-                "gpt-4-turbo": (0.01, 0.03),
-                "gpt-4": (0.03, 0.06),
-                "gpt-3.5-turbo": (0.0005, 0.0015),
-                "o1": (0.015, 0.06),
-                "o1-mini": (0.003, 0.012)
-            }
-            input_cost, output_cost = pricing_map.get(model, (0.005, 0.015))
-        elif provider == "anthropic":
-            model = st.selectbox(
-                "Model",
-                [
-                    "claude-opus-4-5",
-                    "claude-sonnet-4-5",
-                    "claude-haiku-4-5",
-                    "claude-opus-4",
-                    "claude-sonnet-4",
-                    "claude-3-7-sonnet",
-                    "claude-3-5-sonnet",
-                    "claude-3-5-haiku",
-                    "claude-3-opus",
-                    "claude-3-sonnet",
-                    "claude-3-haiku",
-                ],
-                index=0,
-                key=f"model_select_{provider}"
-            )
-            # Dynamic pricing based on model
-            pricing_map = {
-                "claude-opus-4-5": (0.003, 0.015),
-                "claude-sonnet-4-5": (0.003, 0.015),
-                "claude-haiku-4-5": (0.008, 0.024),
-                "claude-opus-4": (0.003, 0.015),
-                "claude-sonnet-4": (0.003, 0.015),
-                "claude-3-7-sonnet": (0.003, 0.015),
-                "claude-3-5-sonnet": (0.003, 0.015),
-                "claude-3-5-haiku": (0.0008, 0.0024),
-                "claude-3-opus": (0.015, 0.075),
-                "claude-3-sonnet": (0.003, 0.015),
-                "claude-3-haiku": (0.00025, 0.00125),
-            }
-            input_cost, output_cost = pricing_map.get(model, (0.003, 0.015))
-        elif provider == "ollama":
+            input_cost, output_cost = get_model_pricing(provider_key, model)
+        else:
+            # Local providers: free-text model input
             model = st.text_input(
                 "Model Name",
-                placeholder="e.g., llama2, neural-chat, mistral",
-                help="Name of the model running on Ollama",
-                key=f"model_select_{provider}"
+                placeholder=catalog_entry.model_input_hint if catalog_entry else "",
+                help=f"Name of the model running on {catalog_entry.display_name if catalog_entry else provider_key}",
+                key=f"model_select_{provider_key}",
             )
             input_cost = 0.0
             output_cost = 0.0
-        else:  # lmstudio
-            model = st.text_input(
-                "Model Name",
-                placeholder="e.g., mistral, neural-chat",
-                help="Name of the model running on LMStudio",
-                key=f"model_select_{provider}"
-            )
-            input_cost = 0.0
-            output_cost = 0.0
-        
+
         # Single API Key field (simplified!)
         st.write("🔑 **API Key** (optional if set in environment)")
-        
-        # Provider-specific placeholder hint
-        placeholder_hints = {
-            "openai": "sk-... (from platform.openai.com)",
-            "anthropic": "sk-ant-... (from console.anthropic.com)",
-            "ollama": "Not required for local Ollama",
-            "lmstudio": "Not required for local LM Studio"
-        }
-        placeholder = placeholder_hints.get(provider, "Paste your API key here")
-        
+
+        placeholder = catalog_entry.api_key_placeholder if catalog_entry else "Paste your API key here"
+
         api_key_input = st.text_input(
             "API Key (paste here or use environment variable)",
             type="password",
             placeholder=placeholder,
             help="Your API key. Not saved to disk. If empty, looks for env variable like OPENAI_API_KEY or ANTHROPIC_API_KEY"
         )
-        
-        # Simple settings
-        col1, col2 = st.columns(2)
-        with col1:
-            temperature = st.slider(
-                "Temperature (how random)",
-                min_value=0.0,
-                max_value=2.0,
-                value=0.7,
-                step=0.1,
-            )
-        with col2:
-            max_tokens = st.number_input(
-                "Max Tokens",
-                min_value=100,
-                max_value=32000,
-                value=2000,
-            )
-        
+
         # Submit button
         submitted = st.form_submit_button("✅ Add & Test Provider", use_container_width=True)
-        
+
         if submitted:
             if not model:
                 st.error("❌ Please select or enter a model name")
                 return
-            
+
             # Use provided key OR fall back to auto-finding environment variable
             api_key = api_key_input if api_key_input else None
-            
-            # For OpenAI/Anthropic, try to auto-detect environment variable if no key provided
+
+            # Try to auto-detect environment variable if no key provided
             api_key_env_var = None
             if not api_key:
-                env_map = {
-                    "openai": "OPENAI_API_KEY",
-                    "anthropic": "ANTHROPIC_API_KEY",
-                    "ollama": None,
-                    "lmstudio": None,
-                }
-                env_var_name = env_map.get(provider)
+                env_var_name = get_env_var(provider_key)
                 if env_var_name and os.getenv(env_var_name):
                     api_key_env_var = env_var_name
-                elif provider in ["openai", "anthropic"]:
+                elif catalog_entry and catalog_entry.requires_api_key:
                     st.error(f"❌ No API key provided and {env_var_name} environment variable not found")
                     return
-            
-            with st.spinner(f"Testing connection to {provider}..."):
+
+            with st.spinner(f"Testing connection to {provider_key}..."):
                 manager = st.session_state.llm_manager
                 success, error_msg = manager.add_provider(
-                    provider=provider,
+                    provider=provider_key,
                     model=model,
                     api_key=api_key,
                     api_key_env_var=api_key_env_var,
                     input_cost_per_1k=input_cost,
                     output_cost_per_1k=output_cost,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
                 )
-            
+
             if success:
-                # Store API key in session state for use by Chat page
-                # (Config is saved to disk WITHOUT the key for security)
-                if 'provider_api_keys' not in st.session_state:
-                    st.session_state.provider_api_keys = {}
-                
-                # Only store if we got an actual key (not env var based)
+                # Persist key via the user's chosen SecretStore
                 if api_key:
-                    st.session_state.provider_api_keys[provider] = api_key
-                    
-                    # Also save to persistent file with restricted permissions
-                    from pathlib import Path
-                    import json
-                    keys_file = Path.home() / ".rlmkit" / "api_keys.json"
-                    keys_file.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    # Load existing keys if any
-                    existing_keys = {}
-                    if keys_file.exists():
-                        try:
-                            with open(keys_file, "r") as f:
-                                existing_keys = json.load(f)
-                        except (json.JSONDecodeError, IOError):
-                            pass
-                    
-                    # Update with new key
-                    existing_keys[provider] = api_key
-                    
-                    # Save with restricted permissions (0o600 = rw-------)
-                    with open(keys_file, "w") as f:
-                        json.dump(existing_keys, f, indent=2)
-                    try:
-                        keys_file.chmod(0o600)
-                    except Exception:
-                        pass  # Windows doesn't support chmod
-                
-                # Save provider selection to .env for auto-loading on next session
-                from pathlib import Path
-                env_file = Path.home() / ".rlmkit" / ".env"
-                env_file.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Read existing .env if it exists
-                env_vars = {}
-                if env_file.exists():
-                    with open(env_file, "r") as f:
-                        for line in f:
-                            line = line.strip()
-                            if line and "=" in line and not line.startswith("#"):
-                                key, value = line.split("=", 1)
-                                env_vars[key.strip()] = value.strip()
-                
-                # Update with selected provider
-                env_vars["SELECTED_PROVIDER"] = provider
-                
-                # Write back to .env
-                with open(env_file, "w") as f:
-                    f.write("# RLMKit Configuration (Auto-generated)\n")
-                    for key, value in env_vars.items():
-                        f.write(f"{key}={value}\n")
-                
-                st.success(f"✅ {provider.upper()} provider added and tested successfully!")
+                    store = get_secret_store(st.session_state)
+                    store.set(provider_key, api_key)
+
+                    # Also keep in session-state cache for current session
+                    if "provider_api_keys" not in st.session_state:
+                        st.session_state.provider_api_keys = {}
+                    st.session_state.provider_api_keys[provider_key] = api_key
+
+                st.success(f"✅ {provider_key.upper()} provider added and tested successfully!")
                 st.balloons()
                 st.rerun()
             else:
@@ -387,63 +239,37 @@ def render_add_provider_form():
 
 
 def render_pricing_info():
-    """Display pricing information for all providers."""
-    st.subheader("💰 Pricing Reference")
-    
-    pricing_data = {
-        "OpenAI": {
-            "gpt-4o": {"input": "$0.005", "output": "$0.015", "per": "1K tokens"},
-            "gpt-4o-mini": {"input": "$0.00015", "output": "$0.0006", "per": "1K tokens"},
-            "gpt-4-turbo": {"input": "$0.01", "output": "$0.03", "per": "1K tokens"},
-            "gpt-4": {"input": "$0.03", "output": "$0.06", "per": "1K tokens"},
-            "gpt-3.5-turbo": {"input": "$0.0005", "output": "$0.0015", "per": "1K tokens"},
-            "o1": {"input": "$0.015", "output": "$0.06", "per": "1K tokens"},
-            "o1-mini": {"input": "$0.003", "output": "$0.012", "per": "1K tokens"},
-        },
-        "Anthropic": {
-            "claude-opus-4-5": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-sonnet-4-5": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-haiku-4-5": {"input": "$0.008", "output": "$0.024", "per": "1K tokens"},
-            "claude-opus-4": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-sonnet-4": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-3-7-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-3-5-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-3-5-haiku": {"input": "$0.0008", "output": "$0.0024", "per": "1K tokens"},
-            "claude-3-opus": {"input": "$0.015", "output": "$0.075", "per": "1K tokens"},
-            "claude-3-sonnet": {"input": "$0.003", "output": "$0.015", "per": "1K tokens"},
-            "claude-3-haiku": {"input": "$0.00025", "output": "$0.00125", "per": "1K tokens"},
-        },
-        "Local (Ollama/LMStudio)": {
-            "Any Model": {"input": "Free", "output": "Free", "per": "Local execution"},
-        }
-    }
-    
-    tabs = st.tabs(list(pricing_data.keys()))
-    
-    for tab, provider in zip(tabs, pricing_data.keys()):
-        with tab:
-            cols = st.columns([2, 1, 1, 1])
-            with cols[0]:
-                st.write("**Model**")
-            with cols[1]:
-                st.write("**Input**")
-            with cols[2]:
-                st.write("**Output**")
-            with cols[3]:
-                st.write("**Unit**")
-            
-            st.divider()
-            
-            for model, costs in pricing_data[provider].items():
+    """Display pricing information inside a collapsible expander."""
+    with st.expander("Pricing reference (optional)", expanded=False):
+        st.caption("Prices may drift; update in code/data if needed.")
+        pricing_data = build_pricing_table()
+
+        tabs = st.tabs(list(pricing_data.keys()))
+
+        for tab, provider_display in zip(tabs, pricing_data.keys()):
+            with tab:
                 cols = st.columns([2, 1, 1, 1])
                 with cols[0]:
-                    st.write(f"`{model}`")
+                    st.write("**Model**")
                 with cols[1]:
-                    st.write(costs["input"])
+                    st.write("**Input**")
                 with cols[2]:
-                    st.write(costs["output"])
+                    st.write("**Output**")
                 with cols[3]:
-                    st.write(f"_{costs['per']}_")
+                    st.write("**Unit**")
+
+                st.divider()
+
+                for model, costs in pricing_data[provider_display].items():
+                    cols = st.columns([2, 1, 1, 1])
+                    with cols[0]:
+                        st.write(f"`{model}`")
+                    with cols[1]:
+                        st.write(costs["input"])
+                    with cols[2]:
+                        st.write(costs["output"])
+                    with cols[3]:
+                        st.write(f"_{costs['per']}_")
 
 
 def render_config_sidebar():
@@ -452,44 +278,456 @@ def render_config_sidebar():
     pass
 
 
+def _apply_profile(profile: RunProfile) -> None:
+    """Apply a RunProfile's values to session state."""
+    st.session_state.default_temperature = profile.temperature
+    st.session_state.default_top_p = profile.top_p
+    st.session_state.default_max_tokens = profile.max_output_tokens
+    st.session_state.max_steps = profile.max_steps
+    st.session_state.rlm_timeout = profile.rlm_timeout_seconds
+    # Set selected_strategies from profile.strategy
+    st.session_state.selected_strategies = [profile.strategy]
+    if profile.default_provider:
+        st.session_state.selected_provider = profile.default_provider
+    st.session_state.rag_config = RAGConfig(
+        chunk_size=profile.rag_chunk_size,
+        chunk_overlap=profile.rag_chunk_overlap,
+        top_k=profile.rag_top_k,
+        embedding_model=profile.rag_embedding_model,
+    )
+    # System prompt
+    st.session_state.system_prompt_mode = profile.system_prompt_mode
+    st.session_state.system_prompt_template = profile.system_prompt_template
+    st.session_state.system_prompt_custom = profile.system_prompt_custom
+
+
+def _build_profile_from_session(name: str) -> RunProfile:
+    """Capture current session settings into a RunProfile."""
+    rc = st.session_state.get("rag_config") or RAGConfig()
+    # Get primary strategy from selected_strategies (first one)
+    strategies = st.session_state.get("selected_strategies", ["direct"])
+    primary_strategy = strategies[0] if strategies else "direct"
+    return RunProfile(
+        name=name,
+        run_mode="compare" if len(strategies) > 1 else "single",
+        strategy=primary_strategy,
+        default_provider=st.session_state.get("selected_provider"),
+        temperature=st.session_state.get("default_temperature", 0.7),
+        top_p=st.session_state.get("default_top_p", 1.0),
+        max_output_tokens=st.session_state.get("default_max_tokens", 2000),
+        max_steps=st.session_state.get("max_steps", 16),
+        rlm_timeout_seconds=st.session_state.get("rlm_timeout", 60),
+        rag_top_k=rc.top_k,
+        rag_chunk_size=rc.chunk_size,
+        rag_chunk_overlap=rc.chunk_overlap,
+        rag_embedding_model=rc.embedding_model,
+        system_prompt_mode=st.session_state.get("system_prompt_mode", "default"),
+        system_prompt_template=st.session_state.get("system_prompt_template", "Default"),
+        system_prompt_custom=st.session_state.get("system_prompt_custom"),
+        key_policy=st.session_state.get("key_policy"),
+    )
+
+
 def render_execution_settings():
     """Render execution mode and budget limits in main content area."""
-    st.subheader("⚡ Execution Settings")
-    
+    st.subheader("Run Settings")
+
+    manager = st.session_state.llm_manager
+    providers = manager.list_providers()
+
+    # --- Profile selector ---
+    profile_store = RunProfileStore()
+    all_profiles = profile_store.list_profiles()
+    profile_names = ["(Custom)"] + [p.name for p in all_profiles]
+
+    col_profile, col_save = st.columns([3, 1])
+    with col_profile:
+        active_name = st.session_state.get("active_profile", "(Custom)")
+        if active_name not in profile_names:
+            active_name = "(Custom)"
+        chosen = st.selectbox(
+            "Active Profile",
+            profile_names,
+            index=profile_names.index(active_name),
+            key="profile_selector",
+        )
+        if chosen != st.session_state.get("active_profile"):
+            st.session_state.active_profile = chosen
+            profile = profile_store.get_profile(chosen)
+            if profile:
+                _apply_profile(profile)
+                st.rerun()
+
+    with col_save:
+        st.write("")  # spacer
+        with st.popover("Save current as profile"):
+            new_name = st.text_input("Profile name", key="save_profile_name")
+            if st.button("Save", key="save_profile_btn") and new_name:
+                p = _build_profile_from_session(new_name)
+                profile_store.save_profile(p)
+                st.session_state.active_profile = new_name
+                st.success(f"Saved '{new_name}'")
+                st.rerun()
+
+    st.divider()
+
+    # --- Mode Selection: Simple checklist ---
+    # Initialize selected strategies from session state
+    if "selected_strategies" not in st.session_state:
+        # Default based on existing execution_mode
+        mode = st.session_state.get("execution_mode", "Direct Only")
+        if mode == "RLM Only":
+            st.session_state.selected_strategies = ["rlm"]
+        elif mode == "RAG Only":
+            st.session_state.selected_strategies = ["rag"]
+        elif mode == "Compare Both":
+            st.session_state.selected_strategies = ["rlm", "direct"]
+        else:
+            st.session_state.selected_strategies = ["direct"]
+
+    # Check if OpenAI provider is configured (required for RAG embeddings)
+    openai_configured = any(
+        manager.get_provider_config(p).provider == "openai"
+        for p in providers
+        if manager.get_provider_config(p)
+    )
+
+    col_strategies, col_provider = st.columns(2)
+
+    with col_strategies:
+        st.write("**Strategies**")
+        rlm_checked = st.checkbox("RLM", value="rlm" in st.session_state.selected_strategies, key="strat_rlm")
+        direct_checked = st.checkbox("Direct", value="direct" in st.session_state.selected_strategies, key="strat_direct")
+
+        # RAG requires OpenAI for embeddings
+        if openai_configured:
+            rag_checked = st.checkbox("RAG", value="rag" in st.session_state.selected_strategies, key="strat_rag")
+        else:
+            rag_checked = st.checkbox("RAG", value=False, disabled=True, key="strat_rag")
+            st.caption("⚠️ To enable RAG, configure OpenAI first")
+
+        # Build selected list
+        selected_strategies = []
+        if rlm_checked:
+            selected_strategies.append("rlm")
+        if direct_checked:
+            selected_strategies.append("direct")
+        if rag_checked and openai_configured:
+            selected_strategies.append("rag")
+
+        # Require at least one selection
+        if not selected_strategies:
+            st.warning("Select at least one strategy.")
+            selected_strategies = ["direct"]  # fallback
+
+        st.session_state.selected_strategies = selected_strategies
+
+        # Show mode indicator
+        if len(selected_strategies) == 1:
+            st.caption("Single Mode")
+        else:
+            st.caption(f"Multi Mode ({len(selected_strategies)} strategies)")
+
+    with col_provider:
+        if providers:
+            selected = st.selectbox(
+                "Provider",
+                providers,
+                index=providers.index(st.session_state.selected_provider) if st.session_state.get("selected_provider") in providers else 0,
+                format_func=lambda p: f"{p.upper()} ({manager.get_provider_config(p).model})" if manager.get_provider_config(p) else p,
+                key="mode_provider",
+            )
+            st.session_state.selected_provider = selected
+        else:
+            st.warning("No providers configured. Add one in the Connections tab.")
+
+    # Build ExecutionPlan from selected strategies
+    rag_cfg = st.session_state.get("rag_config") or RAGConfig()
+    provider_name = st.session_state.get("selected_provider", "")
+    cfg = manager.get_provider_config(provider_name) if provider_name else None
+    model_name = cfg.model if cfg else provider_name or "?"
+
+    if len(selected_strategies) == 1:
+        # Single mode - no ExecutionPlan needed (legacy behavior)
+        st.session_state.execution_plan = None
+        mode_map = {"rlm": "RLM Only", "direct": "Direct Only", "rag": "RAG Only"}
+        st.session_state.execution_mode = mode_map.get(selected_strategies[0], "Direct Only")
+    else:
+        # Multi mode - build ExecutionPlan
+        plan_slots = []
+        for mode in selected_strategies:
+            mode_label = {"rlm": "RLM", "direct": "Direct", "rag": "RAG"}[mode]
+            plan_slots.append(ExecutionSlot(
+                mode=mode,
+                provider_name=provider_name,
+                label=f"{mode_label} ({model_name})",
+                rag_config=rag_cfg if mode == "rag" else None,
+            ))
+        st.session_state.execution_plan = ExecutionPlan(slots=plan_slots)
+
+    # --- Part B: Strategy-specific settings ---
+    st.divider()
+
+    # Active strategies for showing relevant settings
+    active_strategies = set(selected_strategies)
+
+    # -- Direct settings (sampling) --
+    if "direct" in active_strategies or "rlm" in active_strategies:
+        with st.container(border=True):
+            st.write("**Sampling Settings**")
+            st.caption("Applies to Direct calls and each RLM step.")
+            col1, col2 = st.columns(2)
+            with col1:
+                temperature = st.slider(
+                    "Temperature",
+                    min_value=0.0, max_value=2.0,
+                    value=st.session_state.get("default_temperature", 0.7),
+                    step=0.1,
+                    key="run_temperature",
+                )
+                st.session_state.default_temperature = temperature
+            with col2:
+                max_output_tokens = st.number_input(
+                    "Max Output Tokens",
+                    min_value=100, max_value=32000,
+                    value=st.session_state.get("default_max_tokens", 2000),
+                    key="run_max_tokens",
+                )
+                st.session_state.default_max_tokens = max_output_tokens
+
+            with st.expander("Advanced sampling", expanded=False):
+                top_p = st.slider(
+                    "Top-p",
+                    min_value=0.0, max_value=1.0,
+                    value=st.session_state.get("default_top_p", 1.0),
+                    step=0.05,
+                    key="run_top_p",
+                )
+                st.session_state.default_top_p = top_p
+
+                timeout_direct = st.slider(
+                    "Timeout (seconds)",
+                    min_value=1, max_value=120,
+                    value=st.session_state.get("timeout", 30),
+                    key="run_timeout",
+                )
+                st.session_state.timeout = timeout_direct
+
+    # -- RLM settings --
+    if "rlm" in active_strategies:
+        with st.container(border=True):
+            st.write("**RLM Settings**")
+            col1, col2 = st.columns(2)
+            with col1:
+                max_steps = st.slider(
+                    "Max Steps",
+                    min_value=1, max_value=32,
+                    value=st.session_state.get("max_steps", 16),
+                    help="Maximum exploration steps for RLM",
+                    key="run_max_steps",
+                )
+                st.session_state.max_steps = max_steps
+            with col2:
+                rlm_timeout = st.slider(
+                    "RLM Timeout (seconds)",
+                    min_value=5, max_value=300,
+                    value=st.session_state.get("rlm_timeout", 60),
+                    help="Total time budget for the RLM run",
+                    key="run_rlm_timeout",
+                )
+                st.session_state.rlm_timeout = rlm_timeout
+
+    # -- RAG settings --
+    if "rag" in active_strategies:
+        with st.container(border=True):
+            st.write("**RAG Settings**")
+            _render_rag_settings_inline()
+
+    # -- System Prompt Settings --
+    with st.expander("System Prompt Settings", expanded=False):
+        _render_system_prompt_settings()
+
+
+def _render_system_prompt_settings():
+    """Render system prompt configuration controls."""
+    # Fix text area resize handle clipping
+    st.markdown("""
+        <style>
+        .stTextArea textarea {
+            resize: none !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.write("**System Prompt**")
+
+    # Build options: template names + "Custom"
+    options = SYSTEM_PROMPT_TEMPLATE_NAMES + ["Custom"]
+
+    # Determine current selection
+    if st.session_state.get("system_prompt_mode") == "custom":
+        current_selection = "Custom"
+    else:
+        current_selection = st.session_state.get("system_prompt_template", "Default")
+        if current_selection not in SYSTEM_PROMPT_TEMPLATE_NAMES:
+            current_selection = "Default"
+
+    idx = options.index(current_selection) if current_selection in options else 0
+
+    selected = st.selectbox(
+        "Template",
+        options,
+        index=idx,
+        key="run_prompt_template_select",
+    )
+
+    # Update session state based on selection
+    if selected == "Custom":
+        st.session_state.system_prompt_mode = "custom"
+
+        # Load current custom prompts (from session state or file)
+        current_custom = st.session_state.get("system_prompt_custom")
+        if current_custom is None or not isinstance(current_custom, dict):
+            current_custom = load_custom_prompts()
+            st.session_state.system_prompt_custom = current_custom
+
+        st.caption("Provide custom system prompts for each execution mode.")
+
+        # Three editable text areas with prominent titles
+        st.markdown("**Direct**")
+        direct_prompt = st.text_area(
+            "Direct prompt",
+            value=current_custom.get("direct", ""),
+            height=100,
+            key="run_prompt_custom_direct",
+            placeholder="System prompt for Direct mode…",
+            label_visibility="collapsed",
+        )
+
+        st.markdown("**RAG**")
+        rag_prompt = st.text_area(
+            "RAG prompt",
+            value=current_custom.get("rag", ""),
+            height=100,
+            key="run_prompt_custom_rag",
+            placeholder="System prompt for RAG mode…",
+            label_visibility="collapsed",
+        )
+
+        st.markdown("**RLM**")
+        rlm_prompt = st.text_area(
+            "RLM prompt",
+            value=current_custom.get("rlm", ""),
+            height=100,
+            key="run_prompt_custom_rlm",
+            placeholder="System prompt for RLM mode…",
+            label_visibility="collapsed",
+        )
+
+        # Update session state with current values
+        st.session_state.system_prompt_custom = {
+            "direct": direct_prompt,
+            "rag": rag_prompt,
+            "rlm": rlm_prompt,
+        }
+
+        # Save button
+        if st.button("Save Custom Prompts", key="run_prompt_save", type="primary"):
+            save_custom_prompts(st.session_state.system_prompt_custom)
+            st.success("Custom prompts saved to ~/.rlmkit/system_prompt_custom.json")
+
+    else:
+        # Template mode
+        st.session_state.system_prompt_mode = "default"
+        st.session_state.system_prompt_template = selected
+
+        tpl_info = SYSTEM_PROMPT_TEMPLATES.get(selected, {})
+        if tpl_info.get("description"):
+            st.caption(tpl_info["description"])
+
+        # Three read-only text areas with prominent titles
+        st.markdown("**Direct**")
+        st.text_area(
+            "Direct prompt",
+            value=tpl_info.get("direct", "(built-in default)"),
+            height=100,
+            disabled=True,
+            key=f"run_prompt_tpl_direct_{selected}",
+            label_visibility="collapsed",
+        )
+
+        st.markdown("**RAG**")
+        st.text_area(
+            "RAG prompt",
+            value=tpl_info.get("rag", "(built-in default)"),
+            height=100,
+            disabled=True,
+            key=f"run_prompt_tpl_rag_{selected}",
+            label_visibility="collapsed",
+        )
+
+        st.markdown("**RLM**")
+        st.text_area(
+            "RLM prompt",
+            value=tpl_info.get("rlm", "(built-in default)"),
+            height=100,
+            disabled=True,
+            key=f"run_prompt_tpl_rlm_{selected}",
+            label_visibility="collapsed",
+        )
+
+
+def _render_rag_settings_inline():
+    """Render RAG settings inline within Run Settings (no subheader)."""
+    if "rag_config" not in st.session_state or st.session_state.rag_config is None:
+        st.session_state.rag_config = RAGConfig()
+
+    rc = st.session_state.rag_config
+
+    embedding_models = get_embedding_model_names()
+    if not embedding_models:
+        embedding_models = ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"]
+
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.write("**Execution Mode**")
-        mode = st.radio(
-            "Select mode:",
-            ["RLM Only", "Direct Only", "Compare Both"],
-            index=["RLM Only", "Direct Only", "Compare Both"].index(st.session_state.get('execution_mode', 'Compare Both')),
-            help="Choose whether to run RLM mode, Direct mode, or compare both",
-            label_visibility="collapsed"
+        chunk_size = st.slider(
+            "Chunk Size (characters)",
+            min_value=200,
+            max_value=4000,
+            value=rc.chunk_size,
+            step=100,
+            help="Number of characters per document chunk",
         )
-        st.session_state.execution_mode = mode
-    
+        chunk_overlap = st.slider(
+            "Chunk Overlap (characters)",
+            min_value=0,
+            max_value=1000,
+            value=rc.chunk_overlap,
+            step=50,
+            help="Overlap between consecutive chunks",
+        )
+
     with col2:
-        st.write("**Budget Limits**")
-        max_steps = st.slider(
-            "Max Steps (RLM)",
+        top_k = st.slider(
+            "Top-K Chunks",
             min_value=1,
-            max_value=32,
-            value=st.session_state.get('max_steps', 16),
-            help="Maximum execution steps for RLM mode",
-            label_visibility="collapsed"
+            max_value=20,
+            value=rc.top_k,
+            help="Number of most relevant chunks to retrieve",
         )
-        st.session_state.max_steps = max_steps
-        
-        timeout = st.slider(
-            "Timeout (seconds)",
-            min_value=1,
-            max_value=30,
-            value=st.session_state.get('timeout', 5),
-            help="Maximum execution time per step",
-            label_visibility="collapsed"
+        embedding_model = st.selectbox(
+            "Embedding Model",
+            embedding_models,
+            index=embedding_models.index(rc.embedding_model) if rc.embedding_model in embedding_models else 0,
+            help="OpenAI embedding model for chunk similarity",
         )
-        st.session_state.timeout = timeout
+
+    st.session_state.rag_config = RAGConfig(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        top_k=top_k,
+        embedding_model=embedding_model,
+    )
 
 
 def main():
@@ -506,10 +744,10 @@ def main():
 
     # Load global CSS (includes navigation hiding and sidebar toggle fixes)
     _inject_rlmkit_desktop_css()
-    
+
     # Initialize session state
     init_config_session_state()
-    
+
     # Render custom navigation in sidebar
     render_custom_navigation()
 
@@ -518,29 +756,24 @@ def main():
         render_session_summary()
 
     # Header
-    st.title("⚙️ Configuration Management")
-    st.markdown("""
-    Configure execution settings, manage LLM providers, and view pricing information.
-    """)
+    st.title("Configuration")
+    st.caption("Manage provider connections and configure how runs execute.")
     st.divider()
-    
-    # Execution settings in main content
-    render_execution_settings()
-    st.divider()
-    
+
     # Initialize provider selection (hidden)
     render_provider_selection()
-    
-    # Providers list with integrated selection
-    render_provider_list()
-    st.divider()
-    
-    # Add provider form
-    render_add_provider_form()
-    st.divider()
-    
-    # Pricing info
-    render_pricing_info()
+
+    # Two tabs per plan: Connections + Run Settings
+    tab_connections, tab_run = st.tabs(["Connections", "Run Settings"])
+
+    with tab_connections:
+        render_provider_list()
+        st.divider()
+        render_add_provider_form()
+        render_pricing_info()
+
+    with tab_run:
+        render_execution_settings()
 
 
 if __name__ == "__main__":

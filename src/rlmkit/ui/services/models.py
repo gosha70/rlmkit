@@ -3,6 +3,8 @@
 """
 Data models for RLMKit UI - Chat messages, metrics, responses.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal
@@ -190,7 +192,17 @@ class ChatMessage:
     # Comparison
     comparison_metrics: Optional[ComparisonMetrics] = None
     """Metrics comparing RLM and Direct (if both were run)."""
-    
+
+    # Multi-provider execution (new)
+    execution_results: Optional[List[ExecutionResult]] = None
+    """Results from multi-provider execution plan."""
+
+    generalized_comparison: Optional[GeneralizedComparison] = None
+    """Generalized comparison across N execution results."""
+
+    execution_plan: Optional[ExecutionPlan] = None
+    """The execution plan that produced these results."""
+
     # Status
     in_progress: bool = False
     """Whether this message is still being processed."""
@@ -225,6 +237,95 @@ class ChatMessage:
         elif self.mode == "compare":
             return self.has_rlm_response() and self.has_direct_response() and not self.in_progress
         return False
+
+
+@dataclass
+class RAGConfig:
+    """Configuration for RAG execution parameters."""
+
+    chunk_size: int = 1000
+    """Number of characters per chunk."""
+
+    chunk_overlap: int = 200
+    """Overlap between consecutive chunks."""
+
+    top_k: int = 5
+    """Number of top chunks to retrieve."""
+
+    embedding_model: str = "text-embedding-3-small"
+    """OpenAI embedding model name."""
+
+
+@dataclass
+class ExecutionSlot:
+    """A single execution to perform: one mode + one provider."""
+
+    mode: Literal["rlm", "direct", "rag"]
+    """Execution mode for this slot."""
+
+    provider_name: str
+    """Key into LLMConfigManager."""
+
+    label: str = ""
+    """Display label, e.g. 'RLM (GPT-4o)'. Auto-generated if empty."""
+
+    rag_config: Optional['RAGConfig'] = None
+    """RAG-specific config (only used when mode='rag')."""
+
+
+@dataclass
+class ExecutionPlan:
+    """Describes all executions to perform for a single user message."""
+
+    slots: List[ExecutionSlot] = field(default_factory=list)
+
+    @property
+    def is_comparison(self) -> bool:
+        """True when multiple slots will produce a comparison."""
+        return len(self.slots) > 1
+
+
+@dataclass
+class ExecutionResult:
+    """Result from a single execution slot."""
+
+    slot: ExecutionSlot
+    """Which slot produced this result."""
+
+    response: 'Response'
+    """The LLM response."""
+
+    metrics: 'ExecutionMetrics'
+    """Execution metrics."""
+
+    trace: Optional[List[Dict[str, Any]]] = None
+    """Step-by-step trace (RLM/RAG)."""
+
+
+@dataclass
+class GeneralizedComparison:
+    """Comparison across N execution results."""
+
+    results: List[ExecutionResult] = field(default_factory=list)
+    """All execution results being compared."""
+
+    cheapest_label: str = ""
+    """Label of the cheapest execution."""
+
+    fastest_label: str = ""
+    """Label of the fastest execution."""
+
+    recommendation: str = ""
+    """Summary recommendation."""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "cheapest_label": self.cheapest_label,
+            "fastest_label": self.fastest_label,
+            "recommendation": self.recommendation,
+            "result_count": len(self.results),
+        }
 
 
 @dataclass

@@ -48,7 +48,16 @@ def init_session_state() -> Dict[str, Any]:
         # Configuration
         st.session_state.active_provider = None
         st.session_state.active_model = None
-        
+        st.session_state.rag_config = None  # Uses RAGConfig defaults when None
+        st.session_state.execution_plan = None  # None = legacy single-provider mode
+        st.session_state.selected_strategies = ["direct"]  # List of active strategies: "rlm", "direct", "rag"
+        st.session_state.key_policy = "file"  # SecretStore policy: "env", "file", or "keyring"
+
+        # System prompt
+        st.session_state.system_prompt_mode = "default"
+        st.session_state.system_prompt_template = "Default"
+        st.session_state.system_prompt_custom = None
+
         # Session metrics
         st.session_state.session_metrics = SessionMetrics()
     
