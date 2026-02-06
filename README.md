@@ -40,29 +40,83 @@ pip install -e ".[ui]"
 pip install -e ".[all]"
 ```
 
-### Basic Usage
+### Basic Usage (NEW Unified API! 🎉)
+
+```python
+from rlmkit import interact
+
+# Set your API key (or use environment variable OPENAI_API_KEY)
+result = interact(
+    content="Your document text here...",
+    query="What is this about?",
+    provider="openai",
+    model="gpt-4o-mini"
+)
+
+print(result.answer)
+# The document discusses...
+
+print(f"Tokens used: {result.metrics['total_tokens']:,}")
+print(f"Cost: ${result.metrics['total_cost']:.4f}")
+```
+
+**Three interaction modes:**
+
+```python
+# Mode 1: Direct - Full context in one LLM call (best for small content)
+result = interact(content, query, mode="direct")
+
+# Mode 2: RAG - Retrieval-augmented generation (best for medium content)
+result = interact(content, query, mode="rag")
+
+# Mode 3: RLM - Recursive exploration with code (best for large content)
+result = interact(content, query, mode="rlm")
+
+# Mode 4: Auto - Let RLMKit choose the best mode (recommended)
+result = interact(content, query, mode="auto")  # Default
+```
+
+**See it in action:**
+```python
+# Example with auto mode and verbose output
+result = interact(
+    content=large_document,
+    query="Summarize the key findings",
+    mode="auto",
+    verbose=True  # See what's happening
+)
+# Output:
+# [Auto Mode] Selected 'rlm' based on content size (125,000 tokens)
+# [Setup] Configuring openai provider...
+# [Execution] Running in 'rlm' mode...
+# [Complete] Generated 500 character response
+#   Tokens: 3,245 | Cost: $0.0162
+```
+
+### Advanced Usage (Lower-Level API)
+
+For more control, use the lower-level API:
 
 ```python
 from rlmkit import RLM, RLMConfig
-from rlmkit.llm import MockLLMClient
+from rlmkit.llm import get_llm_client
 
-# Create LLM client (use OpenAI, Anthropic, etc. in production)
-client = MockLLMClient([
-    "```python\nprint(len(P))\n```",
-    "FINAL: The document is about..."
-])
+# Create LLM client
+client = get_llm_client(provider="openai", model="gpt-4o")
 
-# Create RLM instance
-rlm = RLM(client=client, config=RLMConfig())
+# Create RLM instance with custom config
+config = RLMConfig()
+config.execution.max_iterations = 10
 
-# Run on large content
+rlm = RLM(client=client, config=config)
+
+# Run with full control
 result = rlm.run(
     prompt="Your large document content here...",
     query="What is this document about?"
 )
 
 print(result.answer)
-# Output: The document is about...
 ```
 
 ### 🆕 NEW: RLM vs Direct Mode Comparison
