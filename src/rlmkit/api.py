@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, Literal
 from .core.rlm import RLM, RLMConfig
 from .core.budget import BudgetTracker, estimate_tokens
 from .llm.base import BaseLLMProvider
-from .llm import get_llm_client
+from .llm import get_llm_client, auto_detect_provider, ConfigurationError
 from .strategies import DirectStrategy, RAGStrategy, RLMStrategy, StrategyResult
 
 
@@ -158,12 +158,25 @@ def interact(
     if actual_mode not in ("direct", "rag", "rlm"):
         raise ValueError(f"Invalid mode: {actual_mode}. Must be 'direct', 'rag', 'rlm', or 'auto'")
     
-    # Get LLM client
+    # Get LLM client - auto-detect if not specified
+    if provider is None:
+        provider = auto_detect_provider()
+        if provider is None:
+            raise ConfigurationError(
+                "No LLM provider configured. Please set one of:\n"
+                "  • OPENAI_API_KEY=sk-...\n"
+                "  • ANTHROPIC_API_KEY=sk-ant-...\n"
+                "  • OLLAMA_BASE_URL=http://localhost:11434\n\n"
+                "Or explicitly pass provider='openai' and api_key='...' to interact()"
+            )
+        if verbose:
+            print(f"[Auto-Detect] Using '{provider}' provider from environment")
+    
     if verbose:
-        print(f"[Setup] Configuring {provider or 'auto-detected'} provider...")
+        print(f"[Setup] Configuring {provider} provider...")
     
     client: BaseLLMProvider = get_llm_client(
-        provider=provider or "openai",  # Default to openai for now
+        provider=provider,
         model=model,
         api_key=api_key,
         **kwargs

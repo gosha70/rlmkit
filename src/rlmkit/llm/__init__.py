@@ -5,12 +5,26 @@
 
 from .mock_client import MockLLMClient
 from .base import BaseLLMProvider, LLMResponse
+from .auto import (
+    auto_detect_provider,
+    list_available_providers,
+    get_provider_info,
+    get_default_client,
+    get_default_client_config,
+    ConfigurationError
+)
 
 # Optional external providers (lazy import to avoid requiring dependencies)
 __all__ = [
     "MockLLMClient",
     "BaseLLMProvider",
     "LLMResponse",
+    "auto_detect_provider",
+    "list_available_providers",
+    "get_provider_info",
+    "get_default_client",
+    "get_default_client_config",
+    "ConfigurationError",
 ]
 
 # Try to import OpenAI client
