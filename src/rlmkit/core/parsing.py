@@ -78,16 +78,17 @@ def extract_python_code(text: str) -> Optional[str]:
 def extract_final_answer(text: str) -> Optional[str]:
     """
     Extract final answer from FINAL: prefix.
-    
-    Looks for lines starting with "FINAL:" and returns everything after.
+
+    Looks for lines starting with "FINAL:" and returns everything after,
+    including subsequent lines (for multi-line answers).
     Can be case-insensitive.
-    
+
     Args:
         text: Text potentially containing final answer
-        
+
     Returns:
         Final answer or None if not found
-        
+
     Examples:
         >>> extract_final_answer("After analysis...\\nFINAL: The answer is 42")
         'The answer is 42'
@@ -95,14 +96,17 @@ def extract_final_answer(text: str) -> Optional[str]:
         'Done'
         >>> extract_final_answer("No answer here")
         None
+        >>> extract_final_answer("FINAL: Line 1\\nLine 2\\nLine 3")
+        'Line 1\\nLine 2\\nLine 3'
     """
-    # Match FINAL: with optional whitespace, case-insensitive
-    pattern = r'^FINAL:\s*(.+)$'
-    match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
-    
+    # Match FINAL: at start of line and capture everything after to end of text
+    # Uses DOTALL so .* matches newlines for multi-line answers
+    pattern = r'^FINAL:\s*(.*)'
+    match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE | re.DOTALL)
+
     if match:
         return match.group(1).strip()
-    
+
     return None
 
 

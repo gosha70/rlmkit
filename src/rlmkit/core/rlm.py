@@ -119,7 +119,7 @@ class RLM:
         """
         Run RLM on a prompt to answer a query.
         
-        This is the main entry point for RLM execution. It:
+        This is the main entry point for RLM execution:
         1. Initializes a REPL environment with the prompt as variable 'P'
         2. Sends query to LLM with instructions about available tools
         3. Parses LLM response for code or final answer
@@ -378,8 +378,33 @@ class RLM:
                     raw_text=response
                 )
             elif action_type == "subcall":
-                # Subcalls not yet implemented in this version
-                return ParsedResponse(raw_text=response)
+                # Execute subcall via the bound function
+                subcall_func = self.env.env_globals.get('subcall') if self.env else None
+                if subcall_func and hasattr(action_obj, 'query') and hasattr(action_obj, 'prompt'):
+                    # Generate code representation for tracing
+                    # Note: SubcallAction uses 'prompt' but subcall() function uses 'content'
+                    code = f"subcall(content={repr(action_obj.prompt)}, query={repr(action_obj.query)})"
+
+                    # Actually execute the subcall
+                    try:
+                        # Map action_obj.prompt to content parameter
+                        sub_answer = subcall_func(content=action_obj.prompt, query=action_obj.query)
+                        # Return as if it was code execution with result
+                        return ParsedResponse(
+                            code=code,
+                            result=str(sub_answer),
+                            raw_text=response
+                        )
+                    except Exception as e:
+                        # Return error as execution result
+                        return ParsedResponse(
+                            code=code,
+                            result=f"Error in subcall: {str(e)}",
+                            raw_text=response
+                        )
+                else:
+                    # Subcall function not available or malformed action
+                    return ParsedResponse(raw_text=response)
 
         except (ParseError, Exception):
             # JSON parsing failed, fall back to markdown format (v1.0)

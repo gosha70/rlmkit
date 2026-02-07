@@ -97,10 +97,10 @@ class TestExtractFinalAnswer:
         assert answer is None
     
     def test_extracts_multiline_answer(self):
-        """Test only extracts first line after FINAL."""
+        """Test extracts all lines after FINAL (for multi-line answers)."""
         text = "FINAL: First line\nSecond line"
         answer = extract_final_answer(text)
-        assert answer == "First line"
+        assert answer == "First line\nSecond line"
     
     def test_strips_whitespace(self):
         """Test strips whitespace from answer."""
@@ -109,10 +109,11 @@ class TestExtractFinalAnswer:
         assert answer == "Answer with spaces"
     
     def test_final_in_middle_of_text(self):
-        """Test FINAL can appear in middle of text."""
+        """Test FINAL captures everything after it (multi-line answers)."""
         text = "First paragraph\n\nFINAL: The answer\n\nLast paragraph"
         answer = extract_final_answer(text)
-        assert answer == "The answer"
+        # FINAL captures everything to end of text for complete multi-line answers
+        assert answer == "The answer\n\nLast paragraph"
 
 
 class TestExtractFinalVar:
@@ -196,14 +197,15 @@ class TestParseResponse:
         assert resp.final_var == "result"
     
     def test_parses_code_and_final(self):
-        """Test parsing response with both code and final."""
+        """Test parsing response with both code and final - FINAL wins."""
         text = "```python\nx = 1\n```\nFINAL: Done"
         resp = parse_response(text)
-        
-        assert resp.has_code
+
+        # When FINAL is present, code is ignored (FINAL is terminal state)
+        assert not resp.has_code
         assert resp.has_final
-        assert not resp.is_complete  # Has both, not final
-        assert resp.code == "x = 1"
+        assert resp.is_complete  # FINAL makes it complete
+        assert resp.code is None
         assert resp.final_answer == "Done"
     
     def test_parses_empty_response(self):

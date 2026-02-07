@@ -360,36 +360,51 @@ def render_assistant_message(message: dict, index: int):
             st.info("Export not yet implemented")
 
 
+def _sync_rating_to_message(message_index: int, mode: str):
+    """Callback to sync slider rating to message dict immediately."""
+    rating_key = f"{mode}_rating_{message_index}"
+    new_rating = st.session_state.get(rating_key)
+    if new_rating is not None:
+        messages = st.session_state.get('chat_messages', [])
+        if message_index < len(messages):
+            messages[message_index][f'{mode}_user_rating'] = new_rating
+
+
 def render_rlm_response(message: dict, message_index: int = None):
     """Render RLM response with metrics and user rating."""
     with st.chat_message("assistant", avatar="⚙️"):
         # Rating UI at the top
         if message_index is not None:
             rating_key = f"rlm_rating_{message_index}"
+            # Get current rating from message dict (persistent storage)
             current_rating = message.get('rlm_user_rating', 5)
+
+            # Initialize widget key if not present (sync from message dict)
+            if rating_key not in st.session_state:
+                st.session_state[rating_key] = current_rating
 
             col_rating, col_label = st.columns([3, 1])
             with col_rating:
-                new_rating = st.slider(
+                st.slider(
                     "Rate this response (0 = worst, 10 = best)",
                     min_value=0,
                     max_value=10,
-                    value=current_rating,
                     key=rating_key,
+                    on_change=_sync_rating_to_message,
+                    args=(message_index, "rlm"),
                     help="How helpful/accurate was this RLM response?"
                 )
+
+            # Get current value for display
+            display_rating = st.session_state.get(rating_key, current_rating)
             with col_label:
                 # Show rating as colored indicator
-                if new_rating >= 8:
-                    st.success(f"⭐ {new_rating}/10")
-                elif new_rating >= 5:
-                    st.info(f"⭐ {new_rating}/10")
+                if display_rating >= 8:
+                    st.success(f"⭐ {display_rating}/10")
+                elif display_rating >= 5:
+                    st.info(f"⭐ {display_rating}/10")
                 else:
-                    st.warning(f"⭐ {new_rating}/10")
-
-            # Store rating in message if changed
-            if new_rating != current_rating:
-                message['rlm_user_rating'] = new_rating
+                    st.warning(f"⭐ {display_rating}/10")
 
             st.divider()
 
@@ -462,30 +477,35 @@ def render_direct_response(message: dict, message_index: int = None):
         # Rating UI at the top
         if message_index is not None:
             rating_key = f"direct_rating_{message_index}"
+            # Get current rating from message dict (persistent storage)
             current_rating = message.get('direct_user_rating', 5)
+
+            # Initialize widget key if not present (sync from message dict)
+            if rating_key not in st.session_state:
+                st.session_state[rating_key] = current_rating
 
             col_rating, col_label = st.columns([3, 1])
             with col_rating:
-                new_rating = st.slider(
+                st.slider(
                     "Rate this response (0 = worst, 10 = best)",
                     min_value=0,
                     max_value=10,
-                    value=current_rating,
                     key=rating_key,
+                    on_change=_sync_rating_to_message,
+                    args=(message_index, "direct"),
                     help="How helpful/accurate was this Direct response?"
                 )
+
+            # Get current value for display
+            display_rating = st.session_state.get(rating_key, current_rating)
             with col_label:
                 # Show rating as colored indicator
-                if new_rating >= 8:
-                    st.success(f"⭐ {new_rating}/10")
-                elif new_rating >= 5:
-                    st.info(f"⭐ {new_rating}/10")
+                if display_rating >= 8:
+                    st.success(f"⭐ {display_rating}/10")
+                elif display_rating >= 5:
+                    st.info(f"⭐ {display_rating}/10")
                 else:
-                    st.warning(f"⭐ {new_rating}/10")
-
-            # Store rating in message if changed
-            if new_rating != current_rating:
-                message['direct_user_rating'] = new_rating
+                    st.warning(f"⭐ {display_rating}/10")
 
             st.divider()
 
@@ -523,28 +543,34 @@ def render_rag_response(message: dict, message_index: int = None):
         # Rating UI at the top
         if message_index is not None:
             rating_key = f"rag_rating_{message_index}"
+            # Get current rating from message dict (persistent storage)
             current_rating = message.get('rag_user_rating', 5)
+
+            # Initialize widget key if not present (sync from message dict)
+            if rating_key not in st.session_state:
+                st.session_state[rating_key] = current_rating
 
             col_rating, col_label = st.columns([3, 1])
             with col_rating:
-                new_rating = st.slider(
+                st.slider(
                     "Rate this response (0 = worst, 10 = best)",
                     min_value=0,
                     max_value=10,
-                    value=current_rating,
                     key=rating_key,
+                    on_change=_sync_rating_to_message,
+                    args=(message_index, "rag"),
                     help="How helpful/accurate was this RAG response?"
                 )
-            with col_label:
-                if new_rating >= 8:
-                    st.success(f"⭐ {new_rating}/10")
-                elif new_rating >= 5:
-                    st.info(f"⭐ {new_rating}/10")
-                else:
-                    st.warning(f"⭐ {new_rating}/10")
 
-            if new_rating != current_rating:
-                message['rag_user_rating'] = new_rating
+            # Get current value for display
+            display_rating = st.session_state.get(rating_key, current_rating)
+            with col_label:
+                if display_rating >= 8:
+                    st.success(f"⭐ {display_rating}/10")
+                elif display_rating >= 5:
+                    st.info(f"⭐ {display_rating}/10")
+                else:
+                    st.warning(f"⭐ {display_rating}/10")
 
             st.divider()
 

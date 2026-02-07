@@ -172,6 +172,10 @@ def render_metrics_comparison():
     direct_rating = latest_message._data.get('direct_user_rating')
 
     # Build comparison dataframe
+    # All values are strings to avoid Arrow serialization issues with mixed types
+    rlm_steps = rlm_metrics.steps_taken if rlm_metrics else 0
+    direct_steps = direct_metrics.steps_taken if direct_metrics else 0
+
     data = {
         'Metric': [
             'Steps',
@@ -185,7 +189,7 @@ def render_metrics_comparison():
             'User Rating (0-10)'
         ],
         'RLM': [
-            rlm_metrics.steps_taken if rlm_metrics else 0,
+            str(rlm_steps),
             f"{rlm_metrics.total_tokens if rlm_metrics else 0:,}",
             f"{rlm_metrics.input_tokens if rlm_metrics else 0:,}",
             f"{rlm_metrics.output_tokens if rlm_metrics else 0:,}",
@@ -196,7 +200,7 @@ def render_metrics_comparison():
             f"⭐ {rlm_rating}/10" if rlm_rating is not None else "Not rated"
         ],
         'Direct': [
-            direct_metrics.steps_taken if direct_metrics else 0,
+            str(direct_steps),
             f"{direct_metrics.total_tokens if direct_metrics else 0:,}",
             f"{direct_metrics.input_tokens if direct_metrics else 0:,}",
             f"{direct_metrics.output_tokens if direct_metrics else 0:,}",
@@ -207,18 +211,18 @@ def render_metrics_comparison():
             f"⭐ {direct_rating}/10" if direct_rating is not None else "Not rated"
         ],
         'Delta': [
-            (rlm_metrics.steps_taken if rlm_metrics else 0) - (direct_metrics.steps_taken if direct_metrics else 0),
-            f"{comparison.token_delta if comparison else 0:,}",
-            f"{(rlm_metrics.input_tokens if rlm_metrics else 0) - (direct_metrics.input_tokens if direct_metrics else 0):,}",
-            f"{(rlm_metrics.output_tokens if rlm_metrics else 0) - (direct_metrics.output_tokens if direct_metrics else 0):,}",
-            f"{comparison.time_delta_seconds if comparison else 0:.3f}",
+            f"{rlm_steps - direct_steps:+d}",
+            f"{comparison.token_delta if comparison else 0:+,}",
+            f"{(rlm_metrics.input_tokens if rlm_metrics else 0) - (direct_metrics.input_tokens if direct_metrics else 0):+,}",
+            f"{(rlm_metrics.output_tokens if rlm_metrics else 0) - (direct_metrics.output_tokens if direct_metrics else 0):+,}",
+            f"{comparison.time_delta_seconds if comparison else 0:+.3f}",
             f"${comparison.cost_delta_usd if comparison else 0:+.6f}",
             format_memory(abs((rlm_metrics.memory_used_mb if rlm_metrics else 0) - (direct_metrics.memory_used_mb if direct_metrics else 0))),
             "-",
             f"{(rlm_rating if rlm_rating is not None else 0) - (direct_rating if direct_rating is not None else 0):+}" if (rlm_rating is not None and direct_rating is not None) else "-"
         ]
     }
-    
+
     df = pd.DataFrame(data)
     st.dataframe(df, use_container_width=True, hide_index=True)
 

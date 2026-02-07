@@ -247,14 +247,19 @@ class ChatManager:
             # Prepare content (use file_context if provided)
             content = file_context or "No content provided"
 
-            # Resolve system prompt for RLM mode
-            sys_prompt = resolve_system_prompt("rlm", self.session_state)
+            # For RLM mode, use the built-in comprehensive system prompt that includes
+            # tool documentation (grep, peek, select, chunk). The UI templates are
+            # designed for Direct/RAG modes and don't include RLM tool documentation.
+            # Passing None lets RLM use its full system prompt with {prompt_length} formatting.
+            #
+            # Note: If custom RLM prompts are needed in the future, they should be
+            # combined with format_system_prompt() to include tool documentation.
 
             # Run RLM
             mem = MemoryMonitor()
             mem.reset()
             start_time = time.time()
-            rlm_result = rlm.run(prompt=content, query=user_query, system_prompt=sys_prompt)
+            rlm_result = rlm.run(prompt=content, query=user_query, system_prompt=None)
             elapsed_time = time.time() - start_time
             mem.capture()
             
@@ -281,6 +286,9 @@ class ChatManager:
             )
             
             # Create metrics
+            # Use peak_mb() for memory_used_mb since current_mb() takes a fresh reading
+            # which may show 0 if Python's GC has already freed temporary objects
+            peak_memory = mem.peak_mb()
             metrics = ExecutionMetrics(
                 input_tokens=int(total_input_tokens),
                 output_tokens=int(total_output_tokens),
@@ -292,8 +300,8 @@ class ChatManager:
                 },
                 execution_time_seconds=elapsed_time,
                 steps_taken=rlm_result.steps,
-                memory_used_mb=mem.current_mb(),
-                memory_peak_mb=mem.peak_mb(),
+                memory_used_mb=peak_memory,
+                memory_peak_mb=peak_memory,
                 success=rlm_result.success,
                 execution_type="rlm"
             )
@@ -419,6 +427,8 @@ class ChatManager:
             )
             
             # Create metrics for direct execution
+            # Use peak_mb() for consistent memory tracking
+            peak_memory = mem.peak_mb()
             metrics = ExecutionMetrics(
                 input_tokens=int(input_tokens),
                 output_tokens=int(output_tokens),
@@ -430,8 +440,8 @@ class ChatManager:
                 },
                 execution_time_seconds=elapsed_time,
                 steps_taken=1,  # Single LLM call (not 0 - that's confusing)
-                memory_used_mb=mem.current_mb(),
-                memory_peak_mb=mem.peak_mb(),
+                memory_used_mb=peak_memory,
+                memory_peak_mb=peak_memory,
                 success=True,
                 execution_type="direct"
             )
@@ -560,6 +570,8 @@ class ChatManager:
                 raw_response=None,
             )
 
+            # Use peak_mb() for consistent memory tracking
+            peak_memory = mem.peak_mb()
             metrics = ExecutionMetrics(
                 input_tokens=result.tokens.input_tokens,
                 output_tokens=result.tokens.output_tokens,
@@ -568,8 +580,8 @@ class ChatManager:
                 cost_breakdown={"input": input_cost, "output": output_cost},
                 execution_time_seconds=elapsed_time,
                 steps_taken=result.steps,
-                memory_used_mb=mem.current_mb(),
-                memory_peak_mb=mem.peak_mb(),
+                memory_used_mb=peak_memory,
+                memory_peak_mb=peak_memory,
                 success=result.success,
                 error=result.error,
                 execution_type="rag",
