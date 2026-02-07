@@ -109,6 +109,9 @@ def interact(
                   If None, will auto-detect from environment variables
         model: Model name (e.g., "gpt-4o", "claude-3-opus")
                If None, uses provider default
+        models: ModelConfig for multi-model RLM (Bet 4 - cost optimization)
+                Use different models for root reasoning vs. sub-agent exploration
+                Example: ModelConfig.cost_optimized("openai")
         api_key: API key for the provider (if not in environment)
         config: RLMConfig for advanced configuration
         verbose: If True, print execution progress (useful for RLM mode)
