@@ -32,6 +32,10 @@ from .trace import (
     load_trace_from_jsonl,
     load_trace_from_json,
 )
+from .model_config import (
+    ModelConfig,
+    ModelMetrics,
+)
 
 __all__ = [
     # RLM controller
@@ -66,4 +70,7 @@ __all__ = [
     "ActionType",
     "load_trace_from_jsonl",
     "load_trace_from_json",
+    # Multi-model
+    "ModelConfig",
+    "ModelMetrics",
 ]
