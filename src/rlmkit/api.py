@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any, Literal
 
 from .core.rlm import RLM, RLMConfig
 from .core.budget import BudgetTracker, estimate_tokens
+from .core.trace import ExecutionTrace
 from .llm.base import BaseLLMProvider
 from .llm import get_llm_client, auto_detect_provider, ConfigurationError
 from .strategies import DirectStrategy, RAGStrategy, RLMStrategy, StrategyResult

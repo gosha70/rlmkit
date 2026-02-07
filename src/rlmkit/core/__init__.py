@@ -25,6 +25,13 @@ from .parsing import (
     format_code_for_display,
     format_result_for_llm,
 )
+from .trace import (
+    TraceStep,
+    ExecutionTrace,
+    ActionType,
+    load_trace_from_jsonl,
+    load_trace_from_json,
+)
 
 __all__ = [
     # RLM controller
@@ -53,4 +60,10 @@ __all__ = [
     "extract_final_var",
     "format_code_for_display",
     "format_result_for_llm",
+    # Tracing
+    "TraceStep",
+    "ExecutionTrace",
+    "ActionType",
+    "load_trace_from_jsonl",
+    "load_trace_from_json",
 ]
