@@ -388,3 +388,181 @@ def create_token_breakdown_chart(result: ComparisonResult) -> Optional[go.Figure
     )
     
     return fig
+
+
+# ============================================================================
+# Bet 6: Enhanced Trace Visualization Functions
+# ============================================================================
+
+def create_trace_timeline_visualization(trace_steps: list) -> Optional[go.Figure]:
+    """
+    Create enhanced timeline visualization for RLM execution trace (Bet 6).
+    
+    Shows step sequence with color-coded action types and metrics.
+    
+    Args:
+        trace_steps: List of trace step dicts with keys:
+                    - role: 'assistant', 'execution', 'user'
+                    - content: Step description
+                    - input_tokens, output_tokens: Token counts
+                    - cost: Step cost
+                    - duration_ms: Step duration
+                    
+    Returns:
+        Interactive Plotly timeline figure
+    """
+    if not PLOTLY_AVAILABLE or not trace_steps:
+        return None
+    
+    # Extract data
+    step_numbers = list(range(1, len(trace_steps) + 1))
+    durations = [step.get('duration_ms', 0) / 1000 for step in trace_steps]  # Convert to seconds
+    costs = [step.get('cost', 0) for step in trace_steps]
+    tokens = [step.get('input_tokens', 0) + step.get('output_tokens', 0) for step in trace_steps]
+    
+    # Color by role
+    color_map = {
+        'assistant': '#3498db',  # Blue for LLM reasoning
+        'execution': '#2ecc71',  # Green for code execution
+        'user': '#95a5a6',       # Gray for user input
+        'error': '#e74c3c',      # Red for errors
+    }
+    
+    colors = [color_map.get(step.get('role', 'unknown'), '#95a5a6') for step in trace_steps]
+    
+    # Create hover text
+    hover_texts = []
+    for i, step in enumerate(trace_steps):
+        role = step.get('role', 'unknown').capitalize()
+        content_preview = step.get('content', '')[:80]
+        tokens_used = step.get('input_tokens', 0) + step.get('output_tokens', 0)
+        hover_texts.append(
+            f"<b>Step {i+1}: {role}</b><br>"
+            f"{content_preview}...<br>"
+            f"Tokens: {tokens_used:,}<br>"
+            f"Cost: ${step.get('cost', 0):.4f}<br>"
+            f"Duration: {step.get('duration_ms', 0)}ms"
+        )
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add duration bars
+    fig.add_trace(go.Bar(
+        x=step_numbers,
+        y=durations,
+        marker_color=colors,
+        hovertext=hover_texts,
+        hoverinfo='text',
+        name='Duration',
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        title='Execution Timeline (Step Duration)',
+        xaxis_title='Step Number',
+        yaxis_title='Duration (seconds)',
+        hovermode='closest',
+        height=400,
+        showlegend=False,
+    )
+    
+    return fig
+
+
+def create_trace_cost_breakdown(trace_steps: list) -> Optional[go.Figure]:
+    """
+    Create stacked bar chart showing cost breakdown by step (Bet 6).
+    
+    Args:
+        trace_steps: List of trace step dicts
+        
+    Returns:
+        Plotly figure showing cost per step
+    """
+    if not PLOTLY_AVAILABLE or not trace_steps:
+        return None
+    
+    step_numbers = list(range(1, len(trace_steps) + 1))
+    costs = [step.get('cost', 0) for step in trace_steps]
+    
+    # Cumulative cost
+    cumulative_cost = []
+    total = 0
+    for cost in costs:
+        total += cost
+        cumulative_cost.append(total)
+    
+    fig = go.Figure()
+    
+    # Individual step costs
+    fig.add_trace(go.Bar(
+        x=step_numbers,
+        y=costs,
+        name='Step Cost',
+        marker_color='#3498db',
+        text=[f'${c:.4f}' for c in costs],
+        textposition='auto',
+    ))
+    
+    # Cumulative line
+    fig.add_trace(go.Scatter(
+        x=step_numbers,
+        y=cumulative_cost,
+        name='Cumulative Cost',
+        line=dict(color='#e74c3c', width=2),
+        mode='lines+markers',
+    ))
+    
+    fig.update_layout(
+        title='Cost Breakdown by Step',
+        xaxis_title='Step Number',
+        yaxis_title='Cost (USD)',
+        hovermode='x unified',
+        height=400,
+    )
+    
+    return fig
+
+
+def create_recursion_depth_visualization(trace_steps: list) -> Optional[go.Figure]:
+    """
+    Create visualization showing recursion depth over execution (Bet 6).
+    
+    Args:
+        trace_steps: List of trace step dicts with 'recursion_depth' key
+        
+    Returns:
+        Plotly figure showing recursion tree structure
+    """
+    if not PLOTLY_AVAILABLE or not trace_steps:
+        return None
+    
+    step_numbers = list(range(1, len(trace_steps) + 1))
+    depths = [step.get('recursion_depth', 0) for step in trace_steps]
+    
+    # Color by depth
+    max_depth = max(depths) if depths else 1
+    colors = [f'rgba(52, 152, 219, {0.3 + 0.7 * (d / max(max_depth, 1))})' for d in depths]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=step_numbers,
+        y=depths,
+        mode='lines+markers',
+        fill='tozeroy',
+        marker=dict(size=10, color=colors),
+        line=dict(color='#3498db', width=2),
+        hovertemplate='<b>Step %{x}</b><br>Depth: %{y}<extra></extra>',
+    ))
+    
+    fig.update_layout(
+        title='Recursion Depth Over Execution',
+        xaxis_title='Step Number',
+        yaxis_title='Recursion Depth',
+        hovermode='closest',
+        height=400,
+    )
+    
+    return fig
