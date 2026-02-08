@@ -4,7 +4,12 @@
 """Sandbox restrictions for safe code execution."""
 
 from typing import Any, Dict, Optional
-from rlmkit.core.errors import SecurityError
+import subprocess
+import tempfile
+import os
+from pathlib import Path
+
+from rlmkit.core.errors import SecurityError, ExecutionError
 from rlmkit.config import SecurityConfig
 
 
@@ -178,3 +183,198 @@ def validate_code_safety(code: str) -> None:
             # Note: This is a basic check. Real safety comes from restricted builtins.
             # We just warn here, actual blocking happens at execution.
             pass  # Could add warnings here if desired
+
+
+class DockerExecutor:
+    """
+    Execute Python code in isolated Docker container (Bet 5 - Enterprise Security).
+    
+    This provides the strongest isolation level by running code in a disposable
+    Docker container with resource limits and network restrictions.
+    
+    Features:
+    - Process isolation via containers
+    - Resource limits (CPU, memory, timeout)
+    - Network isolation (no external access)
+    - Ephemeral containers (destroyed after execution)
+    - Non-root user execution
+    
+    Attributes:
+        image_name: Docker image to use (default: rlmkit-sandbox)
+        memory_limit: Memory limit (e.g., "512m", "1g")
+        cpu_limit: CPU limit (e.g., "1" for 1 core)
+        timeout: Execution timeout in seconds
+        network_mode: Docker network mode (default: "none" for isolation)
+    """
+    
+    def __init__(
+        self,
+        image_name: str = "rlmkit-sandbox",
+        memory_limit: str = "512m",
+        cpu_limit: str = "1",
+        timeout: int = 30,
+        network_mode: str = "none",
+        auto_build: bool = True
+    ):
+        """
+        Initialize Docker executor.
+        
+        Args:
+            image_name: Name of Docker image to use
+            memory_limit: Memory limit for container
+            cpu_limit: CPU limit for container
+            timeout: Maximum execution time in seconds
+            network_mode: Docker network mode ("none" for isolation)
+            auto_build: If True, build image if it doesn't exist
+        """
+        self.image_name = image_name
+        self.memory_limit = memory_limit
+        self.cpu_limit = cpu_limit
+        self.timeout = timeout
+        self.network_mode = network_mode
+        
+        if auto_build:
+            self._ensure_image_exists()
+    
+    def _ensure_image_exists(self) -> None:
+        """Check if Docker image exists, build if not."""
+        try:
+            # Check if image exists
+            result = subprocess.run(
+                ["docker", "images", "-q", self.image_name],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if not result.stdout.strip():
+                # Image doesn't exist, try to build it
+                self._build_image()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # Docker not available or timeout
+            pass
+    
+    def _build_image(self) -> None:
+        """Build the Docker image from Dockerfile."""
+        # Find Dockerfile path
+        dockerfile_path = Path(__file__).parent.parent.parent.parent / "docker" / "Dockerfile.sandbox"
+        
+        if not dockerfile_path.exists():
+            raise ExecutionError(
+                f"Dockerfile not found at {dockerfile_path}. "
+                "Cannot build sandbox image."
+            )
+        
+        try:
+            subprocess.run(
+                ["docker", "build", "-t", self.image_name, "-f", str(dockerfile_path), "."],
+                cwd=dockerfile_path.parent,
+                check=True,
+                capture_output=True,
+                timeout=120
+            )
+        except subprocess.CalledProcessError as e:
+            raise ExecutionError(f"Failed to build Docker image: {e.stderr.decode()}")
+        except subprocess.TimeoutExpired:
+            raise ExecutionError("Docker image build timed out")
+    
+    def execute(self, code: str, globals_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Execute code in Docker container.
+        
+        Args:
+            code: Python code to execute
+            globals_dict: Global variables to pass to code
+            
+        Returns:
+            Dictionary with 'result', 'output', 'error' keys
+            
+        Raises:
+            ExecutionError: If execution fails
+            SecurityError: If Docker is not available
+        """
+        # Check if Docker is available
+        if not self._is_docker_available():
+            raise SecurityError(
+                "Docker is not available. Docker execution requires Docker to be installed and running."
+            )
+        
+        # Create temporary file with code
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            # Serialize globals if provided
+            if globals_dict:
+                f.write("import json\n")
+                f.write(f"_globals = {repr(globals_dict)}\n")
+                f.write("globals().update(_globals)\n\n")
+            
+            f.write(code)
+            temp_file = f.name
+        
+        try:
+            # Run code in Docker container
+            docker_cmd = [
+                "docker", "run",
+                "--rm",  # Remove container after execution
+                f"--memory={self.memory_limit}",
+                f"--cpus={self.cpu_limit}",
+                f"--network={self.network_mode}",
+                "--security-opt=no-new-privileges",  # Additional security
+                "-v", f"{temp_file}:/sandbox/script.py:ro",  # Mount script read-only
+                self.image_name,
+                "python3", "/sandbox/script.py"
+            ]
+            
+            result = subprocess.run(
+                docker_cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout
+            )
+            
+            return {
+                "result": result.returncode == 0,
+                "output": result.stdout,
+                "error": result.stderr if result.returncode != 0 else None
+            }
+            
+        except subprocess.TimeoutExpired:
+            return {
+                "result": False,
+                "output": "",
+                "error": f"Execution timed out after {self.timeout} seconds"
+            }
+        except Exception as e:
+            return {
+                "result": False,
+                "output": "",
+                "error": f"Docker execution failed: {str(e)}"
+            }
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+    
+    @staticmethod
+    def _is_docker_available() -> bool:
+        """Check if Docker is available on the system."""
+        try:
+            result = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    
+    @staticmethod
+    def is_available() -> bool:
+        """
+        Check if Docker execution is available.
+        
+        Returns:
+            True if Docker is installed and running
+        """
+        return DockerExecutor._is_docker_available()

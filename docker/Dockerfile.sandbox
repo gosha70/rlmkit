@@ -1,0 +1,27 @@
+# RLMKit Sandbox Dockerfile
+# Provides isolated execution environment for RLM code execution
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /sandbox
+
+# Install only essential packages
+RUN pip install --no-cache-dir \
+    numpy==1.24.3 \
+    pandas==2.0.3 \
+    scipy==1.11.1
+
+# Create non-root user for security
+RUN useradd -m -u 1000 sandbox && \
+    chown -R sandbox:sandbox /sandbox
+
+# Switch to non-root user
+USER sandbox
+
+# Set resource limits via environment
+ENV MEMORY_LIMIT=512m
+ENV CPU_LIMIT=1
+
+# Default command (will be overridden)
+CMD ["python3"]
