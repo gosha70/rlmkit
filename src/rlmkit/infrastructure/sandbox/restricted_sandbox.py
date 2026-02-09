@@ -23,7 +23,7 @@ from RestrictedPython.Guards import (
 from RestrictedPython.PrintCollector import PrintCollector
 
 from rlmkit.application.dto import ExecutionResultDTO
-from rlmkit.core.errors import SecurityError
+from rlmkit.domain.exceptions import SecurityViolationError
 
 
 # Modules considered safe for LLM-generated code (subset of rlmkit defaults)
@@ -44,7 +44,7 @@ def _make_safe_import(allowed_modules: frozenset[str]):
     def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
         base = name.split(".")[0]
         if base not in allowed_modules:
-            raise SecurityError(
+            raise SecurityViolationError(
                 f"Import of module '{name}' is not allowed. "
                 f"Allowed modules: {', '.join(sorted(allowed_modules)[:10])}..."
             )
@@ -106,8 +106,8 @@ class RestrictedSandboxAdapter:
         try:
             with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
                 exec(byte_code, self._globals, self._namespace)  # noqa: S102
-        except SecurityError as exc:
-            exception_msg = f"SecurityError: {exc}"
+        except SecurityViolationError as exc:
+            exception_msg = f"SecurityViolationError: {exc}"
         except Exception as exc:
             exception_msg = f"{type(exc).__name__}: {exc}"
 
