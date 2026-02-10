@@ -52,9 +52,10 @@ def create_sandbox(
             raise ValueError(
                 "Docker sandbox requires Docker to be installed and running."
             )
-        raise ValueError(
-            "Docker sandbox adapter not yet wrapped for SandboxPort. "
-            "Use sandbox_type='restricted' for safe execution."
+        from .docker_sandbox_adapter import DockerSandboxAdapter
+
+        return DockerSandboxAdapter(
+            timeout=int(max_exec_time_s),
         )
     else:
         raise ValueError(

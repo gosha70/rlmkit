@@ -75,6 +75,10 @@ class RunRLMUseCase:
         cumulative_input = 0
         cumulative_output = 0
 
+        # Use root model for the initial reasoning call
+        if hasattr(self._llm, "use_root_model"):
+            self._llm.use_root_model()
+
         try:
             while budget_state.steps < (budget_config.max_steps or 16):
                 budget_state.steps += 1
@@ -84,6 +88,10 @@ class RunRLMUseCase:
                     raise BudgetExceededError(
                         f"Budget exceeded at step {budget_state.steps}"
                     )
+
+                # Switch to recursive model for exploration subcalls (step > 1)
+                if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
+                    self._llm.use_recursive_model()
 
                 # Call LLM
                 response: LLMResponseDTO = self._llm.complete(messages)
@@ -105,6 +113,9 @@ class RunRLMUseCase:
                 # Check for FINAL answer
                 final = self._extract_final(text)
                 if final is not None:
+                    # Restore root model for any subsequent use of the adapter
+                    if hasattr(self._llm, "use_root_model"):
+                        self._llm.use_root_model()
                     elapsed = time.time() - start
                     return RunResultDTO(
                         answer=final,
@@ -153,6 +164,8 @@ class RunRLMUseCase:
             )
 
         except BudgetExceededError as exc:
+            if hasattr(self._llm, "use_root_model"):
+                self._llm.use_root_model()
             elapsed = time.time() - start
             return RunResultDTO(
                 answer="",
@@ -166,6 +179,8 @@ class RunRLMUseCase:
                 trace=trace,
             )
         except Exception as exc:
+            if hasattr(self._llm, "use_root_model"):
+                self._llm.use_root_model()
             elapsed = time.time() - start
             return RunResultDTO(
                 answer="",

@@ -6,7 +6,7 @@ this Protocol to be usable by the application use cases.
 
 from __future__ import annotations
 
-from typing import Dict, Iterator, List, Optional, Protocol, runtime_checkable
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Protocol, runtime_checkable
 
 from rlmkit.application.dto import LLMResponseDTO
 
@@ -62,3 +62,36 @@ class LLMPort(Protocol):
             values in USD per 1 million tokens.
         """
         ...
+
+    # -- Async counterparts for WebSocket streaming (Cycle 2) --
+
+    async def complete_async(
+        self, messages: List[Dict[str, str]]
+    ) -> LLMResponseDTO:
+        """Async version of :meth:`complete`.
+
+        Default implementations may wrap the sync method with
+        ``asyncio.to_thread``.
+
+        Args:
+            messages: Ordered chat messages.
+
+        Returns:
+            LLMResponseDTO with generated text and token counts.
+        """
+        ...
+
+    async def complete_stream_async(
+        self, messages: List[Dict[str, str]]
+    ) -> AsyncIterator[str]:
+        """Async streaming completion, yielding text chunks.
+
+        Args:
+            messages: Ordered chat messages.
+
+        Yields:
+            Text chunks as they are produced.
+        """
+        ...
+        # Yield required to make the type checker recognise this as AsyncIterator
+        yield ""  # type: ignore[misc]  # pragma: no cover

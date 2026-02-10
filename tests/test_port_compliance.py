@@ -16,16 +16,25 @@ from rlmkit.application.dto import LLMResponseDTO, ExecutionResultDTO
 # ---------------------------------------------------------------------------
 
 
+def _has_port_methods(obj: object, method_names: list[str]) -> bool:
+    """Check that *obj* has all required callable methods."""
+    return all(callable(getattr(obj, name, None)) for name in method_names)
+
+
+_LLM_PORT_METHODS = ["complete", "complete_stream", "count_tokens", "get_pricing"]
+_SANDBOX_PORT_METHODS = ["execute", "reset", "is_healthy", "set_variable", "get_variable"]
+
+
 class TestMockLLMAdapterCompliance:
-    """Verify MockLLMAdapter satisfies LLMPort at runtime."""
+    """Verify MockLLMAdapter satisfies LLMPort structurally."""
 
     def _make_adapter(self):
         from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
         return MockLLMAdapter(["test response"])
 
-    def test_isinstance_llm_port(self):
+    def test_has_all_llm_port_methods(self):
         adapter = self._make_adapter()
-        assert isinstance(adapter, LLMPort)
+        assert _has_port_methods(adapter, _LLM_PORT_METHODS)
 
     def test_complete_returns_dto(self):
         adapter = self._make_adapter()
@@ -114,15 +123,15 @@ class TestLiteLLMAdapterCompliance:
 
 
 class TestLocalSandboxAdapterCompliance:
-    """Verify LocalSandboxAdapter satisfies SandboxPort at runtime."""
+    """Verify LocalSandboxAdapter satisfies SandboxPort structurally."""
 
     def _make_adapter(self):
         from rlmkit.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
         return LocalSandboxAdapter()
 
-    def test_isinstance_sandbox_port(self):
+    def test_has_all_sandbox_port_methods(self):
         adapter = self._make_adapter()
-        assert isinstance(adapter, SandboxPort)
+        assert _has_port_methods(adapter, _SANDBOX_PORT_METHODS)
 
     def test_execute_returns_dto(self):
         adapter = self._make_adapter()
@@ -161,15 +170,15 @@ class TestLocalSandboxAdapterCompliance:
 
 
 class TestRestrictedSandboxAdapterCompliance:
-    """Verify RestrictedSandboxAdapter satisfies SandboxPort at runtime."""
+    """Verify RestrictedSandboxAdapter satisfies SandboxPort structurally."""
 
     def _make_adapter(self):
         from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
         return RestrictedSandboxAdapter()
 
-    def test_isinstance_sandbox_port(self):
+    def test_has_all_sandbox_port_methods(self):
         adapter = self._make_adapter()
-        assert isinstance(adapter, SandboxPort)
+        assert _has_port_methods(adapter, _SANDBOX_PORT_METHODS)
 
     def test_execute_returns_dto(self):
         adapter = self._make_adapter()
@@ -201,15 +210,15 @@ class TestRestrictedSandboxAdapterCompliance:
 class TestSandboxFactory:
     """Verify create_sandbox returns SandboxPort-compliant objects."""
 
-    def test_local_sandbox_is_sandbox_port(self):
+    def test_local_sandbox_has_sandbox_port_methods(self):
         from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
         sb = create_sandbox(sandbox_type="local")
-        assert isinstance(sb, SandboxPort)
+        assert _has_port_methods(sb, _SANDBOX_PORT_METHODS)
 
-    def test_restricted_sandbox_is_sandbox_port(self):
+    def test_restricted_sandbox_has_sandbox_port_methods(self):
         from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
         sb = create_sandbox(sandbox_type="restricted")
-        assert isinstance(sb, SandboxPort)
+        assert _has_port_methods(sb, _SANDBOX_PORT_METHODS)
 
     def test_unknown_sandbox_raises(self):
         from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox

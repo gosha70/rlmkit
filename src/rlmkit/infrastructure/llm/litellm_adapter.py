@@ -11,7 +11,7 @@ primary reasoning and a cheaper recursive_model for exploration subcalls.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
 
 from rlmkit.application.dto import LLMResponseDTO
 from rlmkit.application.ports.llm_port import LLMPort
@@ -161,6 +161,67 @@ class LiteLLMAdapter:
             }
         except Exception:
             return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
+
+    # -- Async LLMPort methods --
+
+    async def complete_async(
+        self, messages: List[Dict[str, str]]
+    ) -> LLMResponseDTO:
+        """Async completion using ``litellm.acompletion``.
+
+        Args:
+            messages: Chat messages with 'role' and 'content' keys.
+
+        Returns:
+            LLMResponseDTO with generated text and token counts.
+
+        Raises:
+            RuntimeError: If the LiteLLM call fails.
+        """
+        import litellm
+
+        params = self._build_params(messages)
+
+        try:
+            response = await litellm.acompletion(**params)
+        except Exception as exc:
+            raise RuntimeError(f"LiteLLM async completion failed: {exc}") from exc
+
+        choice = response.choices[0]
+        usage = response.usage
+
+        return LLMResponseDTO(
+            content=choice.message.content or "",
+            model=response.model or self._active_model,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+            finish_reason=choice.finish_reason,
+        )
+
+    async def complete_stream_async(
+        self, messages: List[Dict[str, str]]
+    ) -> AsyncIterator[str]:
+        """Async streaming completion, yielding text chunks.
+
+        Args:
+            messages: Chat messages.
+
+        Yields:
+            Text chunks as they are produced by the LLM.
+        """
+        import litellm
+
+        params = self._build_params(messages)
+        params["stream"] = True
+
+        try:
+            response = await litellm.acompletion(**params)
+            async for chunk in response:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
+        except Exception as exc:
+            raise RuntimeError(f"LiteLLM async streaming failed: {exc}") from exc
 
     # -- Two-model support --
 

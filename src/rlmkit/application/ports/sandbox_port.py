@@ -61,3 +61,19 @@ class SandboxPort(Protocol):
             The variable's value, or None if not found.
         """
         ...
+
+    # -- Async counterpart for WebSocket streaming (Cycle 2) --
+
+    async def execute_async(self, code: str) -> ExecutionResultDTO:
+        """Async version of :meth:`execute`.
+
+        Default implementations may wrap the sync method with
+        ``asyncio.to_thread``.
+
+        Args:
+            code: Python source code to execute.
+
+        Returns:
+            ExecutionResultDTO with stdout, stderr, exceptions, etc.
+        """
+        ...

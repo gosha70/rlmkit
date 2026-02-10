@@ -41,6 +41,12 @@ dev = [
     "mypy>=1.10.0",
 ]
 
+server = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.0",
+    "python-multipart>=0.0.6",
+]
+
 ui = [
     "streamlit>=1.29.0",
     "plotly>=5.18.0",
@@ -59,7 +65,7 @@ eval = [
 ]
 
 all = [
-    "rlmkit[dev,ui,eval]",
+    "rlmkit[dev,server,ui,eval]",
 ]
 
 [project.urls]
