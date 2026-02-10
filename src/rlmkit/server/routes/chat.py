@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
@@ -16,8 +15,6 @@ from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     ChatRequest,
     ChatResponse,
-    ErrorDetail,
-    ErrorResponse,
 )
 
 router = APIRouter()
@@ -27,16 +24,18 @@ router = APIRouter()
 async def submit_chat(
     req: ChatRequest,
     state: AppState = Depends(get_state),
-) -> ChatResponse | ErrorResponse:
+) -> ChatResponse:
     """Submit a chat query for execution."""
+    # Validate that either content or file_id is provided
+    if req.content is None and req.file_id is None:
+        raise HTTPException(status_code=400, detail="Either content or file_id must be provided")
+
     # Resolve content
     content = req.content
     if content is None and req.file_id:
         file_rec = state.files.get(req.file_id)
         if file_rec is None:
-            return ErrorResponse(
-                error=ErrorDetail(code="NOT_FOUND", message="File not found")
-            )
+            raise HTTPException(status_code=404, detail="File not found")
         content = file_rec.text_content
     if content is None:
         content = ""
@@ -91,15 +90,29 @@ async def _run_execution(
         llm = state.create_llm_adapter()
         config = state.create_run_config(mode)
 
-        if mode in ("rlm", "auto"):
+        if mode == "compare":
+            # Run both RLM and Direct, store two assistant messages
+            sandbox = state.create_sandbox()
+            uc_rlm = RunRLMUseCase(llm, sandbox)
+            uc_direct = RunDirectUseCase(llm)
+            result_rlm = await asyncio.to_thread(uc_rlm.execute, content, query, config)
+            result_direct = await asyncio.to_thread(uc_direct.execute, content, query, config)
+            results = [result_rlm, result_direct]
+        elif mode == "rag":
+            # TODO: Run RAG use case when available; fall back to direct for now
+            uc_direct = RunDirectUseCase(llm)
+            results = [await asyncio.to_thread(uc_direct.execute, content, query, config)]
+        elif mode in ("rlm", "auto"):
             sandbox = state.create_sandbox()
             uc = RunRLMUseCase(llm, sandbox)
-            result = await asyncio.to_thread(uc.execute, content, query, config)
+            results = [await asyncio.to_thread(uc.execute, content, query, config)]
         else:
             uc_direct = RunDirectUseCase(llm)
-            result = await asyncio.to_thread(uc_direct.execute, content, query, config)
+            results = [await asyncio.to_thread(uc_direct.execute, content, query, config)]
 
         now = datetime.now(timezone.utc)
+        # Use the first result for execution record status
+        result = results[0]
         execution.status = "complete" if result.success else "error"
         execution.completed_at = now
         execution.result = {
@@ -109,31 +122,39 @@ async def _run_execution(
         }
         execution.steps = result.trace
 
-        # Add assistant message to session
+        # Add assistant message(s) to session
         session = state.sessions.get(execution.session_id)
         if session:
-            session.messages.append({
-                "id": str(uuid.uuid4()),
-                "role": "assistant",
-                "content": result.answer,
-                "mode_used": result.mode_used,
-                "execution_id": execution.execution_id,
-                "metrics": {
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
-                    "total_tokens": result.total_tokens,
-                    "cost_usd": result.total_cost,
-                    "elapsed_seconds": result.elapsed_time,
-                    "steps": result.steps,
-                },
-                "timestamp": now.isoformat(),
-            })
+            for res in results:
+                session.messages.append({
+                    "id": str(uuid.uuid4()),
+                    "role": "assistant",
+                    "content": res.answer,
+                    "mode_used": res.mode_used,
+                    "execution_id": execution.execution_id,
+                    "metrics": {
+                        "input_tokens": res.input_tokens,
+                        "output_tokens": res.output_tokens,
+                        "total_tokens": res.total_tokens,
+                        "cost_usd": res.total_cost,
+                        "elapsed_seconds": res.elapsed_time,
+                        "steps": res.steps,
+                    },
+                    "timestamp": now.isoformat(),
+                })
             session.updated_at = now
 
     except Exception as exc:
         execution.status = "error"
         execution.completed_at = datetime.now(timezone.utc)
         execution.result = {"answer": "", "success": False, "error": str(exc)}
+
+
+async def _ping_loop(ws: WebSocket) -> None:
+    """Send periodic ping messages to detect stale connections."""
+    while True:
+        await asyncio.sleep(30)
+        await ws.send_json({"type": "ping"})
 
 
 @router.websocket("/ws/chat/{session_id}")
@@ -148,13 +169,38 @@ async def websocket_chat(
     # Send connected message
     await websocket.send_json({"type": "connected", "session_id": session_id})
 
+    # Track active query tasks for cancellation
+    active_tasks: dict[str, asyncio.Task] = {}
+
+    # Start heartbeat ping loop
+    ping_task = asyncio.create_task(_ping_loop(websocket))
     try:
         while True:
             raw = await websocket.receive_text()
-            data = json.loads(raw)
+
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({
+                    "type": "error",
+                    "id": "",
+                    "data": {
+                        "code": "INVALID_JSON",
+                        "message": "Malformed JSON message",
+                        "recoverable": True,
+                    },
+                })
+                continue
+
             msg_type = data.get("type")
 
             if msg_type == "pong":
+                continue
+
+            if msg_type == "cancel":
+                task = active_tasks.pop(data.get("id", ""), None)
+                if task:
+                    task.cancel()
                 continue
 
             if msg_type == "query":
@@ -169,51 +215,72 @@ async def websocket_chat(
                     if file_rec:
                         content = file_rec.text_content
 
-                try:
-                    llm = state.create_llm_adapter()
-                    config = state.create_run_config(mode)
+                async def _ws_execute(ws: WebSocket, mid: str, cnt: str, q: str, m: str) -> None:
+                    try:
+                        llm = state.create_llm_adapter()
+                        cfg = state.create_run_config(m)
 
-                    if mode in ("rlm", "auto"):
-                        sandbox = state.create_sandbox()
-                        uc = RunRLMUseCase(llm, sandbox)
-                        result = await asyncio.to_thread(
-                            uc.execute, content, query, config
-                        )
-                    else:
-                        uc_direct = RunDirectUseCase(llm)
-                        result = await asyncio.to_thread(
-                            uc_direct.execute, content, query, config
-                        )
+                        if m == "compare":
+                            sandbox = state.create_sandbox()
+                            uc_rlm = RunRLMUseCase(llm, sandbox)
+                            uc_direct = RunDirectUseCase(llm)
+                            result_rlm = await asyncio.to_thread(uc_rlm.execute, cnt, q, cfg)
+                            result_direct = await asyncio.to_thread(uc_direct.execute, cnt, q, cfg)
+                            results = [result_rlm, result_direct]
+                        elif m == "rag":
+                            # TODO: Run RAG use case when available; fall back to direct
+                            uc_d = RunDirectUseCase(llm)
+                            results = [await asyncio.to_thread(uc_d.execute, cnt, q, cfg)]
+                        elif m in ("rlm", "auto"):
+                            sandbox = state.create_sandbox()
+                            uc = RunRLMUseCase(llm, sandbox)
+                            results = [await asyncio.to_thread(uc.execute, cnt, q, cfg)]
+                        else:
+                            uc_d = RunDirectUseCase(llm)
+                            results = [await asyncio.to_thread(uc_d.execute, cnt, q, cfg)]
 
-                    await websocket.send_json({
-                        "type": "complete",
-                        "id": msg_id,
-                        "data": {
-                            "execution_id": str(uuid.uuid4()),
-                            "mode": result.mode_used,
-                            "answer": result.answer,
-                            "success": result.success,
-                            "metrics": {
-                                "input_tokens": result.input_tokens,
-                                "output_tokens": result.output_tokens,
-                                "total_tokens": result.total_tokens,
-                                "cost_usd": result.total_cost,
-                                "elapsed_seconds": result.elapsed_time,
-                                "steps": result.steps,
+                        for result in results:
+                            await ws.send_json({
+                                "type": "complete",
+                                "id": mid,
+                                "data": {
+                                    "execution_id": str(uuid.uuid4()),
+                                    "mode": result.mode_used,
+                                    "answer": result.answer,
+                                    "success": result.success,
+                                    "metrics": {
+                                        "input_tokens": result.input_tokens,
+                                        "output_tokens": result.output_tokens,
+                                        "total_tokens": result.total_tokens,
+                                        "cost_usd": result.total_cost,
+                                        "elapsed_seconds": result.elapsed_time,
+                                        "steps": result.steps,
+                                    },
+                                },
+                            })
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as exc:
+                        await ws.send_json({
+                            "type": "error",
+                            "id": mid,
+                            "data": {
+                                "code": "INTERNAL_ERROR",
+                                "message": str(exc),
+                                "recoverable": False,
                             },
-                        },
-                    })
+                        })
+                    finally:
+                        active_tasks.pop(mid, None)
 
-                except Exception as exc:
-                    await websocket.send_json({
-                        "type": "error",
-                        "id": msg_id,
-                        "data": {
-                            "code": "INTERNAL_ERROR",
-                            "message": str(exc),
-                            "recoverable": False,
-                        },
-                    })
+                task = asyncio.create_task(
+                    _ws_execute(websocket, msg_id, content, query, mode)
+                )
+                active_tasks[msg_id] = task
 
     except WebSocketDisconnect:
         pass
+    finally:
+        ping_task.cancel()
+        for task in active_tasks.values():
+            task.cancel()

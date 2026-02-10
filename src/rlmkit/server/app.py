@@ -6,6 +6,8 @@ import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import HealthResponse
@@ -28,6 +30,28 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Custom exception handler to match ErrorResponse format from spec
+    code_map = {
+        400: "VALIDATION_ERROR",
+        401: "UNAUTHORIZED",
+        404: "NOT_FOUND",
+        413: "FILE_TOO_LARGE",
+        500: "INTERNAL_ERROR",
+    }
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request, exc):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "code": code_map.get(exc.status_code, "ERROR"),
+                    "message": str(exc.detail),
+                    "details": {},
+                }
+            },
+        )
 
     # Include route modules
     app.include_router(chat.router)

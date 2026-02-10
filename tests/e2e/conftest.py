@@ -1,10 +1,35 @@
 """Shared fixtures for E2E tests.
 
-These fixtures provide test data and client helpers for end-to-end testing
-of the FastAPI backend and WebSocket streaming once they are built.
+Provides TestClient, state reset, and test data helpers for end-to-end
+testing of the FastAPI backend.
 """
 
+from __future__ import annotations
+
 import pytest
+from fastapi.testclient import TestClient
+
+from rlmkit.server.app import app
+from rlmkit.server.dependencies import get_state, reset_state
+
+
+# ---------------------------------------------------------------------------
+# Client and state management
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clean_state():
+    """Reset in-memory state before and after every test."""
+    reset_state()
+    yield
+    reset_state()
+
+
+@pytest.fixture()
+def client():
+    """FastAPI TestClient backed by the real application."""
+    return TestClient(app)
 
 
 # ---------------------------------------------------------------------------
@@ -47,34 +72,16 @@ def large_document():
 
 
 # ---------------------------------------------------------------------------
-# API configuration fixtures
+# Helper to upload a text file via the API
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
-def api_base_url():
-    """Base URL for the FastAPI server under test."""
-    return "http://localhost:8000"
-
-
-@pytest.fixture()
-def ws_base_url():
-    """WebSocket URL for the streaming endpoint under test."""
-    return "ws://localhost:8000/ws"
-
-
-# ---------------------------------------------------------------------------
-# Session management helpers
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def session_id():
-    """A deterministic session ID for test isolation."""
-    return "test-session-e2e-001"
-
-
-@pytest.fixture()
-def auth_headers():
-    """Default authentication headers (placeholder for future auth)."""
-    return {"Authorization": "Bearer test-token", "Content-Type": "application/json"}
+def uploaded_file_id(client):
+    """Upload a small text file and return its file ID."""
+    resp = client.post(
+        "/api/files/upload",
+        files={"file": ("test.txt", b"Hello world content for testing.", "text/plain")},
+    )
+    assert resp.status_code == 201
+    return resp.json()["id"]

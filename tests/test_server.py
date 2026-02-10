@@ -358,3 +358,149 @@ class TestChat:
             json={"query": "Summarize", "file_id": "f1"},
         )
         assert resp.status_code == 202
+
+    def test_chat_missing_file_id_returns_404(self, client):
+        resp = client.post(
+            "/api/chat",
+            json={"query": "Summarize", "file_id": "nonexistent"},
+        )
+        assert resp.status_code == 404
+        data = resp.json()
+        assert data["error"]["code"] == "NOT_FOUND"
+        assert "File not found" in data["error"]["message"]
+
+    def test_chat_missing_content_and_file_id_returns_400(self, client):
+        resp = client.post(
+            "/api/chat",
+            json={"query": "What?"},
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+        assert "content or file_id" in data["error"]["message"]
+
+    def test_chat_rejects_invalid_mode(self, client):
+        resp = client.post(
+            "/api/chat",
+            json={"query": "What?", "content": "text", "mode": "invalid_mode"},
+        )
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Error Response Format (CRITICAL-1)
+# ---------------------------------------------------------------------------
+
+
+class TestErrorResponseFormat:
+    def test_404_error_format(self, client):
+        resp = client.get("/api/sessions/nonexistent")
+        assert resp.status_code == 404
+        data = resp.json()
+        assert "error" in data
+        assert data["error"]["code"] == "NOT_FOUND"
+        assert isinstance(data["error"]["message"], str)
+        assert "details" in data["error"]
+
+    def test_400_error_format(self, client):
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("image.png", io.BytesIO(b"fake"), "image/png")},
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+        assert "error" in data
+        assert data["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_404_file_error_format(self, client):
+        resp = client.get("/api/files/nonexistent")
+        assert resp.status_code == 404
+        data = resp.json()
+        assert "error" in data
+        assert data["error"]["code"] == "NOT_FOUND"
+        assert "File not found" in data["error"]["message"]
+
+    def test_404_trace_error_format(self, client):
+        resp = client.get("/api/traces/nonexistent")
+        assert resp.status_code == 404
+        data = resp.json()
+        assert "error" in data
+        assert data["error"]["code"] == "NOT_FOUND"
+
+    def test_404_metrics_error_format(self, client):
+        resp = client.get("/api/metrics/nonexistent")
+        assert resp.status_code == 404
+        data = resp.json()
+        assert "error" in data
+        assert data["error"]["code"] == "NOT_FOUND"
+
+
+# ---------------------------------------------------------------------------
+# Config Merge (MAJOR-5)
+# ---------------------------------------------------------------------------
+
+
+class TestConfigMerge:
+    def test_budget_merge_preserves_unset_fields(self, client):
+        # Set initial budget to known values
+        client.put(
+            "/api/config",
+            json={"budget": {"max_steps": 32, "max_tokens": 100000, "max_cost_usd": 5.0, "max_time_seconds": 60, "max_recursion_depth": 10}},
+        )
+
+        # Update only max_steps
+        resp = client.put(
+            "/api/config",
+            json={"budget": {"max_steps": 64}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["budget"]["max_steps"] == 64
+        # Other budget fields should remain from previous update
+        assert data["budget"]["max_tokens"] == 100000
+        assert data["budget"]["max_cost_usd"] == 5.0
+        assert data["budget"]["max_time_seconds"] == 60
+        assert data["budget"]["max_recursion_depth"] == 10
+
+    def test_appearance_merge_preserves_unset_fields(self, client):
+        # Set initial appearance
+        client.put(
+            "/api/config",
+            json={"appearance": {"theme": "dark", "sidebar_collapsed": True}},
+        )
+
+        # Update only theme
+        resp = client.put(
+            "/api/config",
+            json={"appearance": {"theme": "light"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["appearance"]["theme"] == "light"
+        assert data["appearance"]["sidebar_collapsed"] is True
+
+
+# ---------------------------------------------------------------------------
+# WebSocket (JSON validation - MINOR-3)
+# ---------------------------------------------------------------------------
+
+
+class TestWebSocket:
+    def test_websocket_malformed_json(self, client):
+        with client.websocket_connect("/ws/chat/test-session") as ws:
+            # Read the connected message
+            connected = ws.receive_json()
+            assert connected["type"] == "connected"
+
+            # Send malformed JSON
+            ws.send_text("not valid json{{{")
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["data"]["code"] == "INVALID_JSON"
+            assert error["data"]["recoverable"] is True
+
+    def test_websocket_connected_message(self, client):
+        with client.websocket_connect("/ws/chat/my-session") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "connected"
+            assert msg["session_id"] == "my-session"

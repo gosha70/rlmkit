@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -43,7 +43,7 @@ class ChatRequest(BaseModel):
     content: Optional[str] = None
     file_id: Optional[str] = None
     query: str
-    mode: str = "auto"
+    mode: Literal["auto", "rlm", "direct", "rag", "compare"] = "auto"
     provider: Optional[str] = None
     model: Optional[str] = None
     session_id: Optional[str] = None
