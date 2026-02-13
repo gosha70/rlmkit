@@ -12,9 +12,9 @@ interface MetricCardProps {
 
 export function MetricCard({ label, value, unit, icon: Icon, className }: MetricCardProps) {
   return (
-    <Card className={cn("", className)}>
+    <Card className={cn("", className)} aria-label={`${label}: ${value}${unit ? ` ${unit}` : ""}`}>
       <CardContent className="flex items-center gap-4 p-6">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10" aria-hidden="true">
           <Icon className="h-6 w-6 text-primary" />
         </div>
         <div>

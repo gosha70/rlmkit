@@ -222,6 +222,19 @@ class ProviderTestRequest(BaseModel):
     model: Optional[str] = None
 
 
+class ProviderSaveRequest(BaseModel):
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    endpoint: Optional[str] = None
+
+
+class ProviderSaveResponse(BaseModel):
+    saved: bool
+    provider: str
+    env_var: Optional[str] = None
+    message: str = ""
+
+
 class ProviderTestResponse(BaseModel):
     connected: bool
     latency_ms: Optional[int] = None

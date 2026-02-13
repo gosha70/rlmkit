@@ -7,6 +7,7 @@ until a final answer or budget exhaustion.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,7 @@ from rlmkit.application.dto import (
 )
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.sandbox_port import SandboxPort
+from rlmkit.application.ports.event_port import ExecutionEventEmitter
 
 
 class RunRLMUseCase:
@@ -158,6 +160,188 @@ class RunRLMUseCase:
                     })
 
             # Max steps exhausted
+            raise BudgetExceededError(
+                f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
+                "without finding final answer"
+            )
+
+        except BudgetExceededError as exc:
+            if hasattr(self._llm, "use_root_model"):
+                self._llm.use_root_model()
+            elapsed = time.time() - start
+            return RunResultDTO(
+                answer="",
+                mode_used="rlm",
+                success=False,
+                error=str(exc),
+                steps=budget_state.steps,
+                input_tokens=cumulative_input,
+                output_tokens=cumulative_output,
+                elapsed_time=elapsed,
+                trace=trace,
+            )
+        except Exception as exc:
+            if hasattr(self._llm, "use_root_model"):
+                self._llm.use_root_model()
+            elapsed = time.time() - start
+            return RunResultDTO(
+                answer="",
+                mode_used="rlm",
+                success=False,
+                error=str(exc),
+                steps=budget_state.steps,
+                input_tokens=cumulative_input,
+                output_tokens=cumulative_output,
+                elapsed_time=elapsed,
+                trace=trace,
+            )
+
+    async def execute_async(
+        self,
+        content: str,
+        query: str,
+        config: Optional[RunConfigDTO] = None,
+        event_emitter: Optional[ExecutionEventEmitter] = None,
+    ) -> RunResultDTO:
+        """Async RLM loop with real-time event streaming.
+
+        If *event_emitter* is provided, emits ``on_token``, ``on_step``,
+        and ``on_metrics`` events as execution progresses.  Falls back to
+        the sync ``complete`` path when the LLM adapter lacks async methods.
+        """
+        config = config or RunConfigDTO(mode="rlm")
+        start = time.time()
+
+        budget_config = BudgetConfig(
+            max_steps=config.max_steps,
+            max_tokens=config.max_tokens,
+            max_cost=config.max_cost,
+            max_time_seconds=config.max_time_seconds,
+            max_recursion_depth=config.max_recursion_depth,
+        )
+        budget_state = BudgetState()
+
+        self._sandbox.set_variable("P", content)
+
+        system_prompt = self._build_system_prompt(len(content))
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query},
+        ]
+
+        trace: List[Dict[str, Any]] = []
+        cumulative_input = 0
+        cumulative_output = 0
+
+        if hasattr(self._llm, "use_root_model"):
+            self._llm.use_root_model()
+
+        try:
+            while budget_state.steps < (budget_config.max_steps or 16):
+                budget_state.steps += 1
+                budget_state.elapsed_seconds = time.time() - start
+
+                if not budget_state.is_within(budget_config):
+                    raise BudgetExceededError(
+                        f"Budget exceeded at step {budget_state.steps}"
+                    )
+
+                if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
+                    self._llm.use_recursive_model()
+
+                # Stream tokens if emitter and async streaming are available
+                if event_emitter and hasattr(self._llm, "complete_stream_async"):
+                    collected: list[str] = []
+                    async for token in self._llm.complete_stream_async(messages):
+                        collected.append(token)
+                        await event_emitter.on_token(token)
+                    text = "".join(collected)
+                    # Approximate token counts for streamed responses
+                    approx_input = max(1, sum(len(m["content"]) for m in messages) // 4)
+                    approx_output = max(1, len(text) // 4)
+                    response = LLMResponseDTO(
+                        content=text,
+                        model=getattr(self._llm, "active_model", ""),
+                        input_tokens=approx_input,
+                        output_tokens=approx_output,
+                    )
+                elif hasattr(self._llm, "complete_async"):
+                    response = await self._llm.complete_async(messages)
+                else:
+                    response = await asyncio.to_thread(self._llm.complete, messages)
+
+                cumulative_input += response.input_tokens
+                cumulative_output += response.output_tokens
+                budget_state.input_tokens = cumulative_input
+                budget_state.output_tokens = cumulative_output
+
+                step_entry: Dict[str, Any] = {
+                    "step": budget_state.steps,
+                    "role": "assistant",
+                    "content": response.content,
+                    "input_tokens": response.input_tokens,
+                    "output_tokens": response.output_tokens,
+                }
+                trace.append(step_entry)
+
+                text = response.content
+
+                # Emit step event
+                if event_emitter:
+                    await event_emitter.on_step(step_entry)
+                    await event_emitter.on_metrics({
+                        "input_tokens": cumulative_input,
+                        "output_tokens": cumulative_output,
+                        "total_tokens": cumulative_input + cumulative_output,
+                        "steps": budget_state.steps,
+                        "elapsed_seconds": time.time() - start,
+                    })
+
+                # Check for FINAL answer
+                final = self._extract_final(text)
+                if final is not None:
+                    if hasattr(self._llm, "use_root_model"):
+                        self._llm.use_root_model()
+                    elapsed = time.time() - start
+                    return RunResultDTO(
+                        answer=final,
+                        mode_used="rlm",
+                        success=True,
+                        steps=budget_state.steps,
+                        input_tokens=cumulative_input,
+                        output_tokens=cumulative_output,
+                        elapsed_time=elapsed,
+                        trace=trace,
+                    )
+
+                # Check for code to execute
+                code = self._extract_code(text)
+                if code:
+                    exec_result = await asyncio.to_thread(self._sandbox.execute, code)
+                    formatted = self._format_execution(exec_result)
+
+                    trace.append({
+                        "step": budget_state.steps,
+                        "role": "execution",
+                        "content": formatted,
+                    })
+
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({
+                        "role": "user",
+                        "content": f"Execution result:\n{formatted}",
+                    })
+                else:
+                    messages.append({"role": "assistant", "content": text})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "Please provide either:\n"
+                            "1. Python code to execute (in a ```python code block), OR\n"
+                            "2. A FINAL answer (using FINAL: prefix)"
+                        ),
+                    })
+
             raise BudgetExceededError(
                 f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
                 "without finding final answer"

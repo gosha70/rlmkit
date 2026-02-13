@@ -62,12 +62,13 @@ export function ChatInput({ onSend, onFileUpload, disabled }: ChatInputProps) {
             disabled={disabled}
             aria-label="Upload file"
           >
-            <Upload className="h-4 w-4" />
+            <Upload className="h-4 w-4" aria-hidden="true" />
           </Button>
           <input
             ref={fileInputRef}
             type="file"
             className="hidden"
+            aria-label="Upload file"
             accept=".pdf,.docx,.txt,.md,.py,.json,.csv"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -84,6 +85,7 @@ export function ChatInput({ onSend, onFileUpload, disabled }: ChatInputProps) {
         onChange={handleInput}
         onKeyDown={handleKeyDown}
         placeholder="Ask a question about your document..."
+        aria-label="Message input"
         disabled={disabled}
         rows={1}
         className={cn(
@@ -99,7 +101,7 @@ export function ChatInput({ onSend, onFileUpload, disabled }: ChatInputProps) {
         size="icon"
         aria-label="Send message"
       >
-        <Send className="h-4 w-4" />
+        <Send className="h-4 w-4" aria-hidden="true" />
       </Button>
     </div>
   );

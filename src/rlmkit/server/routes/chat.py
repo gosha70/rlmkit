@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
@@ -16,6 +18,8 @@ from rlmkit.server.models import (
     ChatRequest,
     ChatResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -150,6 +154,23 @@ async def _run_execution(
         execution.result = {"answer": "", "success": False, "error": str(exc)}
 
 
+class WebSocketEventEmitter:
+    """Emits execution events to a WebSocket client."""
+
+    def __init__(self, ws: WebSocket, msg_id: str) -> None:
+        self._ws = ws
+        self._id = msg_id
+
+    async def on_token(self, token: str) -> None:
+        await self._ws.send_json({"type": "token", "id": self._id, "data": token})
+
+    async def on_step(self, step_data: Dict[str, Any]) -> None:
+        await self._ws.send_json({"type": "step", "id": self._id, "data": step_data})
+
+    async def on_metrics(self, metrics: Dict[str, Any]) -> None:
+        await self._ws.send_json({"type": "metrics", "id": self._id, "data": metrics})
+
+
 async def _ping_loop(ws: WebSocket) -> None:
     """Send periodic ping messages to detect stale connections."""
     while True:
@@ -216,6 +237,7 @@ async def websocket_chat(
                         content = file_rec.text_content
 
                 async def _ws_execute(ws: WebSocket, mid: str, cnt: str, q: str, m: str) -> None:
+                    emitter = WebSocketEventEmitter(ws, mid)
                     try:
                         llm = state.create_llm_adapter()
                         cfg = state.create_run_config(m)
@@ -224,20 +246,19 @@ async def websocket_chat(
                             sandbox = state.create_sandbox()
                             uc_rlm = RunRLMUseCase(llm, sandbox)
                             uc_direct = RunDirectUseCase(llm)
-                            result_rlm = await asyncio.to_thread(uc_rlm.execute, cnt, q, cfg)
-                            result_direct = await asyncio.to_thread(uc_direct.execute, cnt, q, cfg)
+                            result_rlm = await uc_rlm.execute_async(cnt, q, cfg, event_emitter=emitter)
+                            result_direct = await uc_direct.execute_async(cnt, q, cfg, event_emitter=emitter)
                             results = [result_rlm, result_direct]
                         elif m == "rag":
-                            # TODO: Run RAG use case when available; fall back to direct
                             uc_d = RunDirectUseCase(llm)
-                            results = [await asyncio.to_thread(uc_d.execute, cnt, q, cfg)]
+                            results = [await uc_d.execute_async(cnt, q, cfg, event_emitter=emitter)]
                         elif m in ("rlm", "auto"):
                             sandbox = state.create_sandbox()
                             uc = RunRLMUseCase(llm, sandbox)
-                            results = [await asyncio.to_thread(uc.execute, cnt, q, cfg)]
+                            results = [await uc.execute_async(cnt, q, cfg, event_emitter=emitter)]
                         else:
                             uc_d = RunDirectUseCase(llm)
-                            results = [await asyncio.to_thread(uc_d.execute, cnt, q, cfg)]
+                            results = [await uc_d.execute_async(cnt, q, cfg, event_emitter=emitter)]
 
                         for result in results:
                             await ws.send_json({
@@ -261,6 +282,7 @@ async def websocket_chat(
                     except asyncio.CancelledError:
                         pass
                     except Exception as exc:
+                        logger.exception("WebSocket execution error for %s", mid)
                         await ws.send_json({
                             "type": "error",
                             "id": mid,

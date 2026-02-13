@@ -47,6 +47,8 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
           step={1}
           value={[local.max_steps]}
           onValueChange={([v]) => update("max_steps", v)}
+          aria-label="Max steps"
+          aria-valuetext={`${local.max_steps} steps`}
         />
       </div>
 
@@ -84,6 +86,8 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
           step={5}
           value={[local.max_time_seconds]}
           onValueChange={([v]) => update("max_time_seconds", v)}
+          aria-label="Max time in seconds"
+          aria-valuetext={`${local.max_time_seconds} seconds`}
         />
       </div>
 
@@ -96,6 +100,8 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
           step={1}
           value={[local.max_recursion_depth]}
           onValueChange={([v]) => update("max_recursion_depth", v)}
+          aria-label="Max recursion depth"
+          aria-valuetext={`${local.max_recursion_depth} levels`}
         />
       </div>
 

@@ -26,7 +26,7 @@ export function TraceInline({ steps, expanded: initialExpanded = false, classNam
         aria-expanded={expanded}
         aria-label={`Trace: ${steps.length} steps. Click to ${expanded ? "collapse" : "expand"}`}
       >
-        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {expanded ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : <ChevronRight className="h-3 w-3" aria-hidden="true" />}
         <span>{steps.length} steps</span>
       </button>
 

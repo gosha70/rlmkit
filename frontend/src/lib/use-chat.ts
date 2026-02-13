@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { connectChatWS, type WSMessage, type ChatMode } from "./api";
 
+export interface StepData {
+  step: number;
+  role: string;
+  content: string;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -17,6 +25,7 @@ export interface ChatMessage {
     elapsed_seconds: number;
     steps: number;
   };
+  steps?: StepData[];
   isStreaming?: boolean;
 }
 
@@ -96,6 +105,32 @@ export function useChat(sessionId: string | null): UseChatReturn {
               );
             }
             break;
+
+          case "step": {
+            const stepData = msg.data as StepData;
+            if (msg.id) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msg.id
+                    ? { ...m, steps: [...(m.steps ?? []), stepData] }
+                    : m,
+                ),
+              );
+            }
+            break;
+          }
+
+          case "metrics": {
+            const metricsData = msg.data as ChatMessage["metrics"];
+            if (msg.id && metricsData) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msg.id ? { ...m, metrics: metricsData } : m,
+                ),
+              );
+            }
+            break;
+          }
 
           case "complete": {
             setIsStreaming(false);

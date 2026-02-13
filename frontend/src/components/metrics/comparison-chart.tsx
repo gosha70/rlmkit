@@ -29,7 +29,7 @@ export function ComparisonChart({ rlmData, directData }: ComparisonChartProps) {
         <CardTitle className="text-base">RLM vs Direct</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
+        <div className="h-64" role="img" aria-label="Bar chart comparing RLM and Direct mode token usage and cost">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />

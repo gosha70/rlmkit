@@ -58,7 +58,7 @@ export default function TracesPage() {
           </Button>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
         {trace && (
           <>

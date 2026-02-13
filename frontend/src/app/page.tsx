@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
-import { ModeSelector } from "@/components/chat/mode-selector";
-import { ProviderBadge } from "@/components/chat/provider-badge";
+import { ModeSelector, type Strategy } from "@/components/chat/mode-selector";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { ChatInput } from "@/components/chat/chat-input";
 import { FileAttachment } from "@/components/chat/file-attachment";
@@ -14,23 +13,34 @@ import { useChat, type ChatMessage } from "@/lib/use-chat";
 import {
   getSession,
   getProviders,
+  getTrace,
   submitChat,
   uploadFile,
-  type ChatMode,
   type ProviderInfo,
   type FileUploadResponse,
 } from "@/lib/api";
 
 export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [mode, setMode] = useState<ChatMode>("auto");
+  const [modes, setModes] = useState<Strategy[]>(["direct"]);
+  const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
+  const [isPolling, setIsPolling] = useState(false);
   const { messages, isConnected, isStreaming, sendQuery, setMessages } = useChat(sessionId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data: providers } = useSWR<ProviderInfo[]>("providers", getProviders);
-  const activeProvider = providers?.find((p) => p.status === "connected");
+  const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
+
+  // Auto-select first connected provider
+  useEffect(() => {
+    if (selectedProvider) return;
+    const connected = providers.find((p) => p.status === "connected");
+    const configured = providers.find((p) => p.status === "configured");
+    const pick = connected || configured;
+    if (pick) setSelectedProvider(pick.name);
+  }, [providers, selectedProvider]);
 
   // Load session messages when sessionId changes
   useEffect(() => {
@@ -58,38 +68,119 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
+
+  const pollForResult = useCallback(
+    (executionId: string) => {
+      setIsPolling(true);
+      pollingRef.current = setInterval(async () => {
+        try {
+          const trace = await getTrace(executionId);
+          if (trace.status === "complete") {
+            clearInterval(pollingRef.current!);
+            pollingRef.current = null;
+            setIsPolling(false);
+            setMessages((prev: ChatMessage[]) =>
+              prev.map((msg) =>
+                msg.id === executionId
+                  ? {
+                      ...msg,
+                      content: trace.result.answer,
+                      isStreaming: false,
+                      mode_used: trace.mode,
+                      metrics: trace.steps.length > 0
+                        ? {
+                            input_tokens: trace.budget.tokens_used,
+                            output_tokens: 0,
+                            total_tokens: trace.budget.tokens_used,
+                            cost_usd: trace.budget.cost_used,
+                            elapsed_seconds:
+                              trace.completed_at && trace.started_at
+                                ? (new Date(trace.completed_at).getTime() -
+                                    new Date(trace.started_at).getTime()) /
+                                  1000
+                                : 0,
+                            steps: trace.budget.steps_used,
+                          }
+                        : undefined,
+                    }
+                  : msg,
+              ),
+            );
+          } else if (trace.status === "error") {
+            clearInterval(pollingRef.current!);
+            pollingRef.current = null;
+            setIsPolling(false);
+            setMessages((prev: ChatMessage[]) =>
+              prev.map((msg) =>
+                msg.id === executionId
+                  ? {
+                      ...msg,
+                      content: `Error: ${trace.result?.answer || "Execution failed"}`,
+                      isStreaming: false,
+                    }
+                  : msg,
+              ),
+            );
+          }
+        } catch (err) {
+          console.error("Polling error:", err);
+        }
+      }, 1000);
+    },
+    [setMessages],
+  );
+
   const handleSend = useCallback(
     async (text: string) => {
-      if (isConnected && sessionId) {
-        sendQuery(text, fileContent || "", mode);
-      } else {
-        try {
-          const resp = await submitChat({
-            query: text,
-            content: fileContent || null,
-            file_id: uploadedFile?.id || null,
-            mode,
-            session_id: sessionId,
-          });
-          if (!sessionId) setSessionId(resp.session_id);
+      const providerInfo = providers.find((p) => p.name === selectedProvider);
+      const model = providerInfo?.default_model || undefined;
 
-          setMessages((prev: ChatMessage[]) => [
-            ...prev,
-            { id: crypto.randomUUID(), role: "user", content: text },
-            {
-              id: resp.execution_id,
-              role: "assistant",
-              content: "Processing...",
-              mode,
-              isStreaming: true,
-            },
-          ]);
-        } catch (err) {
-          console.error("Failed to submit chat:", err);
+      // Submit one request per selected mode
+      for (const currentMode of modes) {
+        if (isConnected && sessionId) {
+          sendQuery(text, fileContent || "", currentMode);
+        } else {
+          try {
+            const resp = await submitChat({
+              query: text,
+              content: fileContent || null,
+              file_id: uploadedFile?.id || null,
+              mode: currentMode,
+              provider: selectedProvider || undefined,
+              model: model || undefined,
+              session_id: sessionId,
+            });
+            if (!sessionId) setSessionId(resp.session_id);
+
+            setMessages((prev: ChatMessage[]) => [
+              ...prev,
+              ...(prev.some((m) => m.role === "user" && m.content === text)
+                ? []
+                : [{ id: crypto.randomUUID(), role: "user" as const, content: text }]),
+              {
+                id: resp.execution_id,
+                role: "assistant" as const,
+                content: "Processing...",
+                mode: currentMode,
+                isStreaming: true,
+              },
+            ]);
+
+            // Start polling for the result
+            pollForResult(resp.execution_id);
+          } catch (err) {
+            console.error("Failed to submit chat:", err);
+          }
         }
       }
     },
-    [isConnected, sessionId, fileContent, uploadedFile, mode, sendQuery, setMessages],
+    [isConnected, sessionId, fileContent, uploadedFile, modes, selectedProvider, providers, sendQuery, setMessages, pollForResult],
   );
 
   const handleFileUpload = useCallback(async (file: File) => {
@@ -108,26 +199,31 @@ export default function ChatPage() {
     setMessages([]);
     setUploadedFile(null);
     setFileContent("");
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setIsPolling(false);
   }, [setMessages]);
+
+  const showTyping = isStreaming || isPolling;
 
   return (
     <AppShell
       activeSessionId={sessionId}
       onSelectSession={setSessionId}
       onNewSession={handleNewSession}
-      isConnected={isConnected}
     >
-      <div className="flex h-full flex-col">
+      <div className="flex h-full flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 border-b px-4 py-2">
-          <ModeSelector value={mode} onChange={setMode} />
-          {activeProvider && (
-            <ProviderBadge
-              provider={activeProvider.display_name}
-              model={activeProvider.default_model}
-              status="connected"
-            />
-          )}
+        <div className="flex items-center gap-3 border-b px-4 py-2" role="toolbar" aria-label="Chat options">
+          <ModeSelector
+            modes={modes}
+            onModesChange={setModes}
+            providers={providers}
+            selectedProvider={selectedProvider}
+            onProviderChange={setSelectedProvider}
+          />
         </div>
 
         {/* File attachment bar */}
@@ -145,28 +241,35 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Message thread */}
-        <ScrollArea className="flex-1">
-          <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-4 py-20 text-center text-muted-foreground">
-                <p className="text-lg font-medium">Welcome to RLM Studio</p>
-                <p className="text-sm">
-                  Upload a document and ask questions. The RLM engine will recursively
-                  explore the content using code generation to find answers efficiently.
-                </p>
-              </div>
-            )}
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-            {isStreaming && <TypingIndicator mode={mode} />}
-            <div ref={messagesEndRef} />
+        {messages.length === 0 ? (
+          /* Empty state: centered welcome + input like ChatGPT / Claude */
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4">
+            <div className="mb-8 text-center text-muted-foreground">
+              <p className="text-lg font-medium">Welcome to RLM Studio</p>
+              <p className="mt-2 text-sm">
+                Upload a document and ask questions. The RLM engine will recursively
+                explore the content using code generation to find answers efficiently.
+              </p>
+            </div>
+            <div className="w-full max-w-3xl">
+              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={showTyping} />
+            </div>
           </div>
-        </ScrollArea>
-
-        {/* Input area */}
-        <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isStreaming} />
+        ) : (
+          /* Active conversation: messages scroll, input pinned at bottom */
+          <>
+            <ScrollArea className="min-h-0 flex-1" aria-label="Message history">
+              <div className="mx-auto max-w-3xl space-y-6 px-4 py-6" role="log" aria-live="polite">
+                {messages.map((msg) => (
+                  <MessageBubble key={msg.id} message={msg} />
+                ))}
+                {showTyping && <TypingIndicator mode={modes[0]} />}
+                <div ref={messagesEndRef} />
+              </div>
+            </ScrollArea>
+            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={showTyping} />
+          </>
+        )}
       </div>
     </AppShell>
   );

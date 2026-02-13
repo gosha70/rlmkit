@@ -245,6 +245,25 @@ export const testProvider = (req: ProviderTestRequest) =>
     body: JSON.stringify(req),
   });
 
+export interface ProviderSaveRequest {
+  api_key?: string | null;
+  model?: string | null;
+  endpoint?: string | null;
+}
+
+export interface ProviderSaveResponse {
+  saved: boolean;
+  provider: string;
+  env_var?: string | null;
+  message: string;
+}
+
+export const saveProvider = (providerName: string, req: ProviderSaveRequest) =>
+  fetchJSON<ProviderSaveResponse>(`/api/providers/${providerName}`, {
+    method: "PUT",
+    body: JSON.stringify(req),
+  });
+
 // Config
 export const getConfig = () => fetchJSON<AppConfig>("/api/config");
 

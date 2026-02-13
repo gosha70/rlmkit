@@ -19,21 +19,21 @@ function formatBytes(bytes: number): string {
 export function FileAttachment({ name, sizeBytes, tokenCount, onRemove }: FileAttachmentProps) {
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-muted/50 px-4 py-2">
-      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <File className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <div className="flex flex-1 flex-col">
         <span className="text-sm font-medium">{name}</span>
         <span className="text-xs text-muted-foreground">
           {formatBytes(sizeBytes)}
           {tokenCount > 0 && (
             <span className="ml-2 inline-flex items-center gap-0.5">
-              <Hash className="h-3 w-3" />
+              <Hash className="h-3 w-3" aria-hidden="true" />
               ~{tokenCount.toLocaleString()} tokens
             </span>
           )}
         </span>
       </div>
-      <Button variant="ghost" size="icon" onClick={onRemove} aria-label="Remove file" className="h-6 w-6">
-        <X className="h-3 w-3" />
+      <Button variant="ghost" size="icon" onClick={onRemove} aria-label={`Remove file ${name}`} className="h-6 w-6">
+        <X className="h-3 w-3" aria-hidden="true" />
       </Button>
     </div>
   );

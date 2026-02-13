@@ -18,7 +18,7 @@ const statusDotColor: Record<string, string> = {
 
 export function ProviderBadge({ provider, model, status = "connected", className }: ProviderBadgeProps) {
   return (
-    <Badge variant="outline" className={cn("gap-1.5 font-normal", className)}>
+    <Badge variant="outline" className={cn("gap-1.5 font-normal", className)} aria-label={`${model ? `${model} via ${provider}` : provider} - ${status}`}>
       <span
         className={cn("inline-block h-2 w-2 rounded-full", statusDotColor[status])}
         aria-hidden="true"

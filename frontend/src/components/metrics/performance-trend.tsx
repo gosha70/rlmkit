@@ -23,7 +23,7 @@ export function PerformanceTrend({ timeline }: PerformanceTrendProps) {
         <CardTitle className="text-base">Performance Over Time</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
+        <div className="h-64" role="img" aria-label="Line chart showing tokens, cost, and latency trends over time">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />

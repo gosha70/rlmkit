@@ -21,7 +21,7 @@ export function CostBreakdown({ data }: CostBreakdownProps) {
         <CardTitle className="text-base">Cost by Provider</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64">
+        <div className="h-64" role="img" aria-label="Pie chart showing cost breakdown by provider">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie

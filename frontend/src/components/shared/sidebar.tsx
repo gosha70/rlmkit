@@ -62,11 +62,11 @@ export function Sidebar({
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className="ml-auto"
         >
-          {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {collapsed ? <PanelLeft className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
         </Button>
       </div>
 
-      <nav className="flex flex-col gap-1 px-2 pt-2">
+      <nav aria-label="Main navigation" className="flex flex-col gap-1 px-2 pt-2">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
           return (
@@ -82,7 +82,7 @@ export function Sidebar({
               )}
               aria-current={isActive ? "page" : undefined}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               {!collapsed && <span>{label}</span>}
             </Link>
           );
@@ -101,7 +101,7 @@ export function Sidebar({
               onClick={onNewSession}
               aria-label="New session"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
           </div>
           <ScrollArea className="flex-1 px-2 py-1">
@@ -124,14 +124,14 @@ export function Sidebar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation();
                       onDeleteSession?.(s.id);
                     }}
                     aria-label={`Delete session ${s.name}`}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3 w-3" aria-hidden="true" />
                   </Button>
                 </div>
               ))}

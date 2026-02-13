@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import useSWR from "swr";
-import { getSessions, deleteSession as apiDeleteSession, type SessionSummary } from "@/lib/api";
+import { getSessions, getHealth, deleteSession as apiDeleteSession, type SessionSummary } from "@/lib/api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
 import { StatusIndicator } from "./status-indicator";
@@ -12,7 +12,6 @@ interface AppShellProps {
   activeSessionId?: string | null;
   onSelectSession?: (id: string) => void;
   onNewSession?: () => void;
-  isConnected?: boolean;
 }
 
 export function AppShell({
@@ -20,8 +19,12 @@ export function AppShell({
   activeSessionId = null,
   onSelectSession,
   onNewSession,
-  isConnected = false,
 }: AppShellProps) {
+  const { data: health } = useSWR("health", getHealth, {
+    refreshInterval: 30_000,
+    errorRetryCount: 2,
+  });
+  const isConnected = health?.status === "ok";
   const [collapsed, setCollapsed] = useState(false);
 
   const { data: sessions = [], mutate: mutateSessions } = useSWR<SessionSummary[]>(
@@ -58,7 +61,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="h-0 flex-1 overflow-auto">{children}</main>
       </div>
     </div>
   );

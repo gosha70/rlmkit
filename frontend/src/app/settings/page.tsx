@@ -23,7 +23,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const { data: config, mutate: mutateConfig } = useSWR<AppConfig>("config", getConfig);
-  const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
+  const { data: providers = [], mutate: mutateProviders } = useSWR<ProviderInfo[]>("providers", getProviders);
 
   const handleSaveBudget = async (budget: AppConfig["budget"]) => {
     if (!config) return;
@@ -78,6 +78,7 @@ export default function SettingsPage() {
                 key={p.name}
                 provider={p}
                 onSave={handleProviderModelChange}
+                onProviderSaved={() => mutateProviders()}
               />
             ))}
             {providers.length === 0 && (
@@ -121,6 +122,7 @@ export default function SettingsPage() {
                   value={theme ?? "system"}
                   onValueChange={handleThemeChange}
                   className="flex gap-4"
+                  aria-label="Theme selection"
                 >
                   {(["system", "light", "dark"] as const).map((t) => (
                     <div key={t} className="flex items-center gap-2">

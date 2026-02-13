@@ -32,7 +32,7 @@ export function ConnectionTester({ provider, apiKey, endpoint, model, onResult }
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3" aria-live="polite">
       <Button variant="outline" size="sm" onClick={handleTest} disabled={testing}>
         {testing ? "Testing..." : "Test Connection"}
       </Button>

@@ -19,7 +19,7 @@ export function ComparisonBanner({ rlmMetrics, directMetrics }: ComparisonBanner
 
   return (
     <Alert variant="success">
-      <TrendingDown className="h-4 w-4" />
+      <TrendingDown className="h-4 w-4" aria-hidden="true" />
       <AlertTitle>Comparison Result</AlertTitle>
       <AlertDescription>
         RLM saves {tokenSavings}% tokens, {costSavings}% cost compared to Direct mode.

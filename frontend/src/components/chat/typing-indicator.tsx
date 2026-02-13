@@ -11,8 +11,8 @@ interface TypingIndicatorProps {
 
 export function TypingIndicator({ mode, step, className }: TypingIndicatorProps) {
   return (
-    <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)} role="status" aria-label="Generating response">
-      <div className="flex gap-1">
+    <div className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)} role="status" aria-live="polite" aria-label="Generating response">
+      <div className="flex gap-1" aria-hidden="true">
         <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
         <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
         <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
