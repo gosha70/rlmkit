@@ -12,3 +12,4 @@ doc_internal/
 DOC_INTERNAL/
 .clinerules
 .coverage
+.rlmkit_config.json

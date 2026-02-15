@@ -33,7 +33,7 @@ interface UseChatReturn {
   messages: ChatMessage[];
   isConnected: boolean;
   isStreaming: boolean;
-  sendQuery: (query: string, content: string, mode?: ChatMode) => void;
+  sendQuery: (query: string, content: string, mode?: ChatMode, fileId?: string) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
 }
 
@@ -84,8 +84,9 @@ export function useChat(sessionId: string | null): UseChatReturn {
         }
       };
 
-      ws.onerror = (event) => {
-        console.error("WebSocket error:", event);
+      ws.onerror = () => {
+        // WS connection errors are expected when the backend is restarting
+        // or during initial connection attempts. Reconnect logic handles recovery.
       };
 
       ws.onmessage = (event) => {
@@ -198,7 +199,7 @@ export function useChat(sessionId: string | null): UseChatReturn {
   }, [sessionId]);
 
   const sendQuery = useCallback(
-    (query: string, content: string, mode: ChatMode = "auto") => {
+    (query: string, content: string, mode: ChatMode = "auto", fileId?: string) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
       const msgId = crypto.randomUUID();
@@ -219,15 +220,16 @@ export function useChat(sessionId: string | null): UseChatReturn {
 
       setIsStreaming(true);
 
-      wsRef.current.send(
-        JSON.stringify({
-          type: "query",
-          id: msgId,
-          query,
-          content,
-          mode,
-        }),
-      );
+      const msg: Record<string, unknown> = {
+        type: "query",
+        id: msgId,
+        query,
+        content,
+        mode,
+      };
+      if (fileId) msg.file_id = fileId;
+
+      wsRef.current.send(JSON.stringify(msg));
     },
     [],
   );

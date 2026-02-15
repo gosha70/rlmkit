@@ -25,6 +25,16 @@ class RunDirectUseCase:
     def __init__(self, llm: LLMPort) -> None:
         self._llm = llm
 
+    def _compute_cost(self, input_tokens: int, output_tokens: int) -> float:
+        """Compute cost from adapter pricing."""
+        try:
+            pricing = self._llm.get_pricing()
+            input_cost = input_tokens * pricing.get("input_cost_per_1m", 0) / 1_000_000
+            output_cost = output_tokens * pricing.get("output_cost_per_1m", 0) / 1_000_000
+            return input_cost + output_cost
+        except Exception:
+            return 0.0
+
     def execute(
         self,
         content: str,
@@ -57,6 +67,8 @@ class RunDirectUseCase:
             response: LLMResponseDTO = self._llm.complete(messages)
             elapsed = time.time() - start
 
+            total_cost = self._compute_cost(response.input_tokens, response.output_tokens)
+
             return RunResultDTO(
                 answer=response.content,
                 mode_used="direct",
@@ -64,6 +76,7 @@ class RunDirectUseCase:
                 steps=0,
                 input_tokens=response.input_tokens,
                 output_tokens=response.output_tokens,
+                total_cost=total_cost,
                 elapsed_time=elapsed,
                 trace=[{
                     "step": 0,
@@ -141,12 +154,15 @@ class RunDirectUseCase:
                 "output_tokens": output_tokens,
             }
 
+            total_cost = self._compute_cost(input_tokens, output_tokens)
+
             if event_emitter:
                 await event_emitter.on_step(step_entry)
                 await event_emitter.on_metrics({
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "total_tokens": input_tokens + output_tokens,
+                    "cost_usd": total_cost,
                     "steps": 0,
                     "elapsed_seconds": elapsed,
                 })
@@ -158,6 +174,7 @@ class RunDirectUseCase:
                 steps=0,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                total_cost=total_cost,
                 elapsed_time=elapsed,
                 trace=[step_entry],
             )

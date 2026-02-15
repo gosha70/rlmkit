@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { Hash, DollarSign, Clock, Activity } from "lucide-react";
 import { AppShell } from "@/components/shared/app-shell";
@@ -23,6 +23,13 @@ export default function DashboardPage() {
     selectedSession ? `metrics-${selectedSession}` : null,
     () => getMetrics(selectedSession),
   );
+
+  // Auto-select the most recent session
+  useEffect(() => {
+    if (!selectedSession && sessions.length > 0) {
+      setSelectedSession(sessions[0].id);
+    }
+  }, [sessions, selectedSession]);
 
   const summary = metrics?.summary;
 

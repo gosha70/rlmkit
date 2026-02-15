@@ -92,6 +92,8 @@ async def _run_execution(
     """Run the use case in the background and store results."""
     try:
         llm = state.create_llm_adapter()
+        logger.info("Executing query [mode=%s, provider=%s, model=%s]: %.100s",
+                     mode, state.config.active_provider, state.config.active_model, query)
         config = state.create_run_config(mode)
 
         if mode == "compare":
@@ -117,12 +119,22 @@ async def _run_execution(
         now = datetime.now(timezone.utc)
         # Use the first result for execution record status
         result = results[0]
+        if result.success:
+            logger.info("Execution complete [exec=%s, tokens=%d]", execution.execution_id[:8], result.total_tokens)
+        else:
+            logger.error("Execution failed [exec=%s]: %s", execution.execution_id[:8], result.error)
         execution.status = "complete" if result.success else "error"
         execution.completed_at = now
         execution.result = {
             "answer": result.answer,
             "success": result.success,
             "error": result.error,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "total_tokens": result.total_tokens,
+            "total_cost": result.total_cost,
+            "elapsed_time": result.elapsed_time,
+            "steps_count": result.steps,
         }
         execution.steps = result.trace
 
@@ -130,10 +142,15 @@ async def _run_execution(
         session = state.sessions.get(execution.session_id)
         if session:
             for res in results:
+                # Surface errors so the user can see what went wrong
+                content = res.answer
+                if not res.success and not content:
+                    content = f"Error: {res.error or 'Execution failed'}"
+
                 session.messages.append({
                     "id": str(uuid.uuid4()),
                     "role": "assistant",
-                    "content": res.answer,
+                    "content": content,
                     "mode_used": res.mode_used,
                     "execution_id": execution.execution_id,
                     "metrics": {
@@ -149,9 +166,24 @@ async def _run_execution(
             session.updated_at = now
 
     except Exception as exc:
+        logger.exception("Execution crashed [exec=%s]", execution.execution_id[:8])
+        now = datetime.now(timezone.utc)
         execution.status = "error"
-        execution.completed_at = datetime.now(timezone.utc)
+        execution.completed_at = now
         execution.result = {"answer": "", "success": False, "error": str(exc)}
+
+        # Add error message to session so the user can see what went wrong
+        session = state.sessions.get(execution.session_id)
+        if session:
+            session.messages.append({
+                "id": str(uuid.uuid4()),
+                "role": "assistant",
+                "content": f"Error: {exc}",
+                "mode_used": execution.mode,
+                "execution_id": execution.execution_id,
+                "timestamp": now.isoformat(),
+            })
+            session.updated_at = now
 
 
 class WebSocketEventEmitter:
@@ -236,10 +268,39 @@ async def websocket_chat(
                     if file_rec:
                         content = file_rec.text_content
 
-                async def _ws_execute(ws: WebSocket, mid: str, cnt: str, q: str, m: str) -> None:
+                # Create execution record (mirrors REST path) so traces/dashboard work
+                exec_id = str(uuid.uuid4())
+                now = datetime.now(timezone.utc)
+                session = state.get_or_create_session(session_id)
+                execution = ExecutionRecord(
+                    execution_id=exec_id,
+                    session_id=session.id,
+                    query=query,
+                    mode=mode,
+                    started_at=now,
+                )
+                state.executions[exec_id] = execution
+
+                # Add user message to session
+                session.messages.append({
+                    "id": str(uuid.uuid4()),
+                    "role": "user",
+                    "content": query,
+                    "file_id": file_id,
+                    "mode": mode,
+                    "timestamp": now.isoformat(),
+                })
+                session.updated_at = now
+
+                async def _ws_execute(
+                    ws: WebSocket, mid: str, cnt: str, q: str, m: str,
+                    exec_rec: ExecutionRecord, sess: Any,
+                ) -> None:
                     emitter = WebSocketEventEmitter(ws, mid)
                     try:
                         llm = state.create_llm_adapter()
+                        logger.info("WS executing [mode=%s, provider=%s, model=%s]: %.100s",
+                                     m, state.config.active_provider, state.config.active_model, q)
                         cfg = state.create_run_config(m)
 
                         if m == "compare":
@@ -260,29 +321,85 @@ async def websocket_chat(
                             uc_d = RunDirectUseCase(llm)
                             results = [await uc_d.execute_async(cnt, q, cfg, event_emitter=emitter)]
 
-                        for result in results:
-                            await ws.send_json({
-                                "type": "complete",
-                                "id": mid,
-                                "data": {
-                                    "execution_id": str(uuid.uuid4()),
-                                    "mode": result.mode_used,
-                                    "answer": result.answer,
-                                    "success": result.success,
-                                    "metrics": {
-                                        "input_tokens": result.input_tokens,
-                                        "output_tokens": result.output_tokens,
-                                        "total_tokens": result.total_tokens,
-                                        "cost_usd": result.total_cost,
-                                        "elapsed_seconds": result.elapsed_time,
-                                        "steps": result.steps,
-                                    },
+                        finish = datetime.now(timezone.utc)
+                        result = results[0]
+                        exec_rec.status = "complete" if result.success else "error"
+                        exec_rec.completed_at = finish
+                        exec_rec.result = {
+                            "answer": result.answer,
+                            "success": result.success,
+                            "error": result.error,
+                            "input_tokens": result.input_tokens,
+                            "output_tokens": result.output_tokens,
+                            "total_tokens": result.total_tokens,
+                            "total_cost": result.total_cost,
+                            "elapsed_time": result.elapsed_time,
+                            "steps_count": result.steps,
+                        }
+                        exec_rec.steps = result.trace
+
+                        for res in results:
+                            answer = res.answer
+                            if not res.success and not answer:
+                                answer = f"Error: {res.error or 'Execution failed'}"
+
+                            # Store in session for dashboard metrics
+                            sess.messages.append({
+                                "id": str(uuid.uuid4()),
+                                "role": "assistant",
+                                "content": answer,
+                                "mode_used": res.mode_used,
+                                "execution_id": exec_rec.execution_id,
+                                "metrics": {
+                                    "input_tokens": res.input_tokens,
+                                    "output_tokens": res.output_tokens,
+                                    "total_tokens": res.total_tokens,
+                                    "cost_usd": res.total_cost,
+                                    "elapsed_seconds": res.elapsed_time,
+                                    "steps": res.steps,
                                 },
+                                "timestamp": finish.isoformat(),
                             })
+                            sess.updated_at = finish
+
+                            if not res.success:
+                                await ws.send_json({
+                                    "type": "error",
+                                    "id": mid,
+                                    "data": {
+                                        "code": "EXECUTION_ERROR",
+                                        "message": res.error or "Execution failed",
+                                        "mode": res.mode_used,
+                                        "recoverable": True,
+                                    },
+                                })
+                            else:
+                                await ws.send_json({
+                                    "type": "complete",
+                                    "id": mid,
+                                    "data": {
+                                        "execution_id": exec_rec.execution_id,
+                                        "mode": res.mode_used,
+                                        "answer": res.answer,
+                                        "success": res.success,
+                                        "metrics": {
+                                            "input_tokens": res.input_tokens,
+                                            "output_tokens": res.output_tokens,
+                                            "total_tokens": res.total_tokens,
+                                            "cost_usd": res.total_cost,
+                                            "elapsed_seconds": res.elapsed_time,
+                                            "steps": res.steps,
+                                        },
+                                    },
+                                })
                     except asyncio.CancelledError:
                         pass
                     except Exception as exc:
                         logger.exception("WebSocket execution error for %s", mid)
+                        finish = datetime.now(timezone.utc)
+                        exec_rec.status = "error"
+                        exec_rec.completed_at = finish
+                        exec_rec.result = {"answer": "", "success": False, "error": str(exc)}
                         await ws.send_json({
                             "type": "error",
                             "id": mid,
@@ -296,7 +413,7 @@ async def websocket_chat(
                         active_tasks.pop(mid, None)
 
                 task = asyncio.create_task(
-                    _ws_execute(websocket, msg_id, content, query, mode)
+                    _ws_execute(websocket, msg_id, content, query, mode, execution, session)
                 )
                 active_tasks[msg_id] = task
 

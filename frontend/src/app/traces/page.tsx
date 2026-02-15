@@ -1,34 +1,43 @@
 "use client";
 
 import { useState } from "react";
+import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
 import { Timeline } from "@/components/trace/timeline";
 import { TraceTree } from "@/components/trace/trace-tree";
 import { StepDetail } from "@/components/trace/step-detail";
 import { CodeBlock } from "@/components/trace/code-block";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getTrace, type TraceResponse, type TraceStep } from "@/lib/api";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  getExecutions,
+  getTrace,
+  type ExecutionSummary,
+  type TraceResponse,
+  type TraceStep,
+} from "@/lib/api";
 
 export default function TracesPage() {
-  const [executionId, setExecutionId] = useState("");
   const [trace, setTrace] = useState<TraceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedStep, setSelectedStep] = useState<TraceStep | null>(null);
 
-  const handleLoad = async () => {
-    const id = executionId.trim();
-    if (!id) return;
+  const { data: executions = [] } = useSWR<ExecutionSummary[]>(
+    "executions",
+    () => getExecutions(),
+    { refreshInterval: 5000 },
+  );
+
+  const handleSelectExecution = async (executionId: string) => {
     setError(null);
     setLoading(true);
     setSelectedStep(null);
     try {
-      const data = await getTrace(id);
+      const data = await getTrace(executionId);
       setTrace(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load trace");
@@ -41,24 +50,80 @@ export default function TracesPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-[1200px] space-y-6 p-6">
-        <h2 className="text-2xl font-semibold">Trace Viewer</h2>
+        <h2 className="text-2xl font-semibold">Traces</h2>
 
-        {/* Execution ID input */}
-        <div className="flex items-center gap-2">
-          <Input
-            value={executionId}
-            onChange={(e) => setExecutionId(e.target.value)}
-            placeholder="Enter execution ID..."
-            className="flex-1"
-            onKeyDown={(e) => e.key === "Enter" && handleLoad()}
-            aria-label="Execution ID"
-          />
-          <Button onClick={handleLoad} disabled={loading || !executionId.trim()}>
-            {loading ? "Loading..." : "Load Trace"}
-          </Button>
-        </div>
+        {/* Execution list */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Recent Executions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {executions.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No executions yet. Send a message in Chat to see traces here.
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Query</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Tokens</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {executions.map((exec) => (
+                    <TableRow
+                      key={exec.execution_id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleSelectExecution(exec.execution_id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelectExecution(exec.execution_id);
+                        }
+                      }}
+                      aria-label={`View trace for: ${exec.query}`}
+                    >
+                      <TableCell className="max-w-[300px] truncate font-medium">
+                        {exec.query}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{exec.mode.toUpperCase()}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            exec.status === "complete"
+                              ? "success"
+                              : exec.status === "running"
+                                ? "default"
+                                : "destructive"
+                          }
+                        >
+                          {exec.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {exec.total_tokens.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        ${exec.total_cost.toFixed(4)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
 
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        {loading && <p className="text-sm text-muted-foreground">Loading trace...</p>}
 
         {trace && (
           <>
@@ -141,12 +206,6 @@ export default function TracesPage() {
               </div>
             )}
           </>
-        )}
-
-        {!trace && !error && !loading && (
-          <div className="py-20 text-center text-muted-foreground">
-            <p>Enter an execution ID to view its trace.</p>
-          </div>
         )}
       </div>
     </AppShell>

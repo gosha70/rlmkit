@@ -202,17 +202,51 @@ class TraceResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Runtime Settings
+# ---------------------------------------------------------------------------
+
+
+class RuntimeSettings(BaseModel):
+    temperature: float = 0.7
+    top_p: float = 1.0
+    max_output_tokens: int = 4096
+    timeout_seconds: int = 30
+
+
+# ---------------------------------------------------------------------------
 # Providers
 # ---------------------------------------------------------------------------
+
+
+class ModelPricing(BaseModel):
+    input_cost_per_1k: float = 0.0
+    output_cost_per_1k: float = 0.0
+
+
+class ModelInfo(BaseModel):
+    name: str
+    input_cost_per_1k: float = 0.0
+    output_cost_per_1k: float = 0.0
 
 
 class ProviderInfo(BaseModel):
     name: str
     display_name: str
     status: str = "not_configured"
-    models: List[str] = Field(default_factory=list)
+    models: List[ModelInfo] = Field(default_factory=list)
     default_model: Optional[str] = None
     configured: bool = False
+    requires_api_key: bool = True
+    default_endpoint: Optional[str] = None
+    model_input_hint: str = ""
+
+
+class ProviderConfig(BaseModel):
+    """Per-provider configuration: which provider/model to use with what settings."""
+    provider: str
+    model: str
+    runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    enabled: bool = False
 
 
 class ProviderTestRequest(BaseModel):
@@ -226,6 +260,8 @@ class ProviderSaveRequest(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
     endpoint: Optional[str] = None
+    runtime_settings: Optional[RuntimeSettings] = None
+    enabled: Optional[bool] = None
 
 
 class ProviderSaveResponse(BaseModel):
@@ -265,12 +301,32 @@ class AppearanceConfig(BaseModel):
     sidebar_collapsed: bool = False
 
 
+class RAGConfig(BaseModel):
+    """RAG-specific execution settings."""
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+    top_k: int = 5
+    embedding_model: str = "text-embedding-3-small"
+
+
+class ModeConfig(BaseModel):
+    """Mode selection and per-mode settings."""
+    enabled_modes: List[str] = Field(default_factory=lambda: ["direct", "rlm"])
+    default_mode: str = "auto"
+    rag_config: RAGConfig = Field(default_factory=RAGConfig)
+    rlm_max_steps: int = 16
+    rlm_timeout_seconds: int = 60
+
+
 class ConfigResponse(BaseModel):
     active_provider: str = "openai"
     active_model: str = "gpt-4o"
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
+    provider_configs: List[ProviderConfig] = Field(default_factory=list)
+    default_runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    mode_config: ModeConfig = Field(default_factory=ModeConfig)
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -279,6 +335,71 @@ class ConfigUpdateRequest(BaseModel):
     budget: Optional[BudgetConfig] = None
     sandbox: Optional[SandboxConfig] = None
     appearance: Optional[AppearanceConfig] = None
+    provider_configs: Optional[List[ProviderConfig]] = None
+    default_runtime_settings: Optional[RuntimeSettings] = None
+    mode_config: Optional[ModeConfig] = None
+
+
+# ---------------------------------------------------------------------------
+# Run Profiles
+# ---------------------------------------------------------------------------
+
+
+class RunProfile(BaseModel):
+    """A named experiment configuration preset."""
+    id: str
+    name: str
+    description: str = ""
+    strategy: str = "direct"
+    default_provider: Optional[str] = None
+    providers_enabled: List[str] = Field(default_factory=list)
+    runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    system_prompts: Dict[str, str] = Field(default_factory=dict)
+    is_builtin: bool = False
+
+
+class RunProfileCreate(BaseModel):
+    """Request to create a new profile."""
+    name: str
+    description: str = ""
+    strategy: str = "direct"
+    default_provider: Optional[str] = None
+    providers_enabled: List[str] = Field(default_factory=list)
+    runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    system_prompts: Dict[str, str] = Field(default_factory=dict)
+
+
+class RunProfileUpdate(BaseModel):
+    """Request to update an existing profile (all fields optional)."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    strategy: Optional[str] = None
+    default_provider: Optional[str] = None
+    providers_enabled: Optional[List[str]] = None
+    runtime_settings: Optional[RuntimeSettings] = None
+    budget: Optional[BudgetConfig] = None
+    system_prompts: Optional[Dict[str, str]] = None
+
+
+# ---------------------------------------------------------------------------
+# System Prompts
+# ---------------------------------------------------------------------------
+
+
+class SystemPrompts(BaseModel):
+    """Per-mode system prompts."""
+    direct: str = ""
+    rlm: str = ""
+    rag: str = ""
+
+
+class SystemPromptTemplate(BaseModel):
+    """A named system prompt template."""
+    name: str
+    description: str = ""
+    prompts: Dict[str, str] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

@@ -354,15 +354,13 @@ class TestWSErrorHandling:
                 "mode": "direct",
             })
 
-            # Should get either an error event or a complete with success=False
+            # Should get an error event (use case catches exceptions → EXECUTION_ERROR,
+            # or exception bubbles to WS handler → INTERNAL_ERROR)
             msg = ws.receive_json()
-            # The use case catches exceptions and returns RunResultDTO with success=False
-            if msg["type"] == "complete":
-                assert msg["data"]["success"] is False
-            elif msg["type"] == "error":
-                assert msg["data"]["code"] == "INTERNAL_ERROR"
+            # Drain any intermediate events
+            while msg["type"] not in ("complete", "error"):
+                msg = ws.receive_json()
+            if msg["type"] == "error":
+                assert msg["data"]["code"] in ("EXECUTION_ERROR", "INTERNAL_ERROR")
             else:
-                # Might get token events before error, drain them
-                while msg["type"] not in ("complete", "error"):
-                    msg = ws.receive_json()
-                assert msg["type"] in ("complete", "error")
+                assert msg["data"]["success"] is False

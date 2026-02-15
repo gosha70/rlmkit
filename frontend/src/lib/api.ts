@@ -139,13 +139,36 @@ export interface TraceResponse {
   steps: TraceStep[];
 }
 
+export interface ModelInfo {
+  name: string;
+  input_cost_per_1k: number;
+  output_cost_per_1k: number;
+}
+
+export interface RuntimeSettings {
+  temperature: number;
+  top_p: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+}
+
+export interface ProviderConfigEntry {
+  provider: string;
+  model: string;
+  runtime_settings: RuntimeSettings;
+  enabled: boolean;
+}
+
 export interface ProviderInfo {
   name: string;
   display_name: string;
   status: string;
-  models: string[];
+  models: ModelInfo[];
   default_model: string | null;
   configured: boolean;
+  requires_api_key: boolean;
+  default_endpoint: string | null;
+  model_input_hint: string;
 }
 
 export interface ProviderTestRequest {
@@ -170,12 +193,30 @@ export interface BudgetConfig {
   max_recursion_depth: number;
 }
 
+export interface RAGConfig {
+  chunk_size: number;
+  chunk_overlap: number;
+  top_k: number;
+  embedding_model: string;
+}
+
+export interface ModeConfig {
+  enabled_modes: string[];
+  default_mode: string;
+  rag_config: RAGConfig;
+  rlm_max_steps: number;
+  rlm_timeout_seconds: number;
+}
+
 export interface AppConfig {
   active_provider: string;
   active_model: string;
   budget: BudgetConfig;
   sandbox: { type: string; docker_image: string | null };
   appearance: { theme: string; sidebar_collapsed: boolean };
+  provider_configs: ProviderConfigEntry[];
+  default_runtime_settings: RuntimeSettings;
+  mode_config: ModeConfig;
 }
 
 export interface HealthResponse {
@@ -232,7 +273,22 @@ export const deleteSession = (id: string) =>
 export const getMetrics = (sessionId: string) =>
   fetchJSON<MetricsResponse>(`/api/metrics/${sessionId}`);
 
-// Traces
+// Executions & Traces
+export interface ExecutionSummary {
+  execution_id: string;
+  session_id: string;
+  query: string;
+  mode: ChatMode;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  total_tokens: number;
+  total_cost: number;
+}
+
+export const getExecutions = (limit = 20) =>
+  fetchJSON<ExecutionSummary[]>(`/api/executions?limit=${limit}`);
+
 export const getTrace = (executionId: string) =>
   fetchJSON<TraceResponse>(`/api/traces/${executionId}`);
 
@@ -249,6 +305,8 @@ export interface ProviderSaveRequest {
   api_key?: string | null;
   model?: string | null;
   endpoint?: string | null;
+  runtime_settings?: RuntimeSettings | null;
+  enabled?: boolean | null;
 }
 
 export interface ProviderSaveResponse {
@@ -269,6 +327,66 @@ export const getConfig = () => fetchJSON<AppConfig>("/api/config");
 
 export const updateConfig = (update: Partial<AppConfig>) =>
   fetchJSON<AppConfig>("/api/config", { method: "PUT", body: JSON.stringify(update) });
+
+// Profiles
+export interface RunProfile {
+  id: string;
+  name: string;
+  description: string;
+  strategy: string;
+  default_provider: string | null;
+  providers_enabled: string[];
+  runtime_settings: RuntimeSettings;
+  budget: BudgetConfig;
+  system_prompts: Record<string, string>;
+  is_builtin: boolean;
+}
+
+export interface RunProfileCreate {
+  name: string;
+  description?: string;
+  strategy?: string;
+  default_provider?: string | null;
+  providers_enabled?: string[];
+  runtime_settings?: RuntimeSettings;
+  budget?: BudgetConfig;
+  system_prompts?: Record<string, string>;
+}
+
+export const getProfiles = () => fetchJSON<RunProfile[]>("/api/profiles");
+
+export const createProfile = (req: RunProfileCreate) =>
+  fetchJSON<RunProfile>("/api/profiles", { method: "POST", body: JSON.stringify(req) });
+
+export const updateProfile = (id: string, req: Partial<RunProfileCreate>) =>
+  fetchJSON<RunProfile>(`/api/profiles/${id}`, { method: "PUT", body: JSON.stringify(req) });
+
+export const deleteProfile = (id: string) =>
+  fetchJSON<void>(`/api/profiles/${id}`, { method: "DELETE" });
+
+export const activateProfile = (id: string) =>
+  fetchJSON<RunProfile>(`/api/profiles/${id}/activate`, { method: "POST" });
+
+// System Prompts
+export interface SystemPrompts {
+  direct: string;
+  rlm: string;
+  rag: string;
+}
+
+export interface SystemPromptTemplate {
+  name: string;
+  description: string;
+  prompts: Record<string, string>;
+}
+
+export const getSystemPrompts = () => fetchJSON<SystemPrompts>("/api/system-prompts");
+
+export const updateSystemPrompts = (prompts: SystemPrompts) =>
+  fetchJSON<SystemPrompts>("/api/system-prompts", { method: "PUT", body: JSON.stringify(prompts) });
+
+export const getPromptTemplates = () =>
+  fetchJSON<SystemPromptTemplate[]>("/api/system-prompts/templates");
 
 // ---------------------------------------------------------------------------
 // WebSocket

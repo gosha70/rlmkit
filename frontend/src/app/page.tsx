@@ -21,17 +21,32 @@ import {
 } from "@/lib/api";
 
 export default function ChatPage() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("rlmkit_active_session") || null;
+    }
+    return null;
+  });
   const [modes, setModes] = useState<Strategy[]>(["direct"]);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [isPolling, setIsPolling] = useState(false);
+  const skipSessionLoadRef = useRef(false);
   const { messages, isConnected, isStreaming, sendQuery, setMessages } = useChat(sessionId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
+
+  // Persist active session to localStorage
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem("rlmkit_active_session", sessionId);
+    } else {
+      localStorage.removeItem("rlmkit_active_session");
+    }
+  }, [sessionId]);
 
   // Auto-select first connected provider
   useEffect(() => {
@@ -42,9 +57,14 @@ export default function ChatPage() {
     if (pick) setSelectedProvider(pick.name);
   }, [providers, selectedProvider]);
 
-  // Load session messages when sessionId changes
+  // Load session messages when sessionId changes (e.g., clicking a session in sidebar).
+  // Skip if we just created this session via submitChat — messages are already set correctly.
   useEffect(() => {
     if (!sessionId) return;
+    if (skipSessionLoadRef.current) {
+      skipSessionLoadRef.current = false;
+      return;
+    }
     getSession(sessionId)
       .then((session) => {
         setMessages(
@@ -59,7 +79,11 @@ export default function ChatPage() {
         );
       })
       .catch((err) => {
-        console.error("Failed to load session:", err);
+        // Session no longer exists (e.g., backend restarted) — clear stale ID
+        if (String(err).includes("404")) {
+          setSessionId(null);
+          setMessages([]);
+        }
       });
   }, [sessionId, setMessages]);
 
@@ -144,19 +168,25 @@ export default function ChatPage() {
       // Submit one request per selected mode
       for (const currentMode of modes) {
         if (isConnected && sessionId) {
-          sendQuery(text, fileContent || "", currentMode);
+          sendQuery(text, fileContent || "", currentMode, uploadedFile?.id);
         } else {
           try {
             const resp = await submitChat({
               query: text,
-              content: fileContent || null,
+              // When a file is uploaded, use file_id so backend uses its extracted text.
+              // Only send raw content for plain text typed/pasted without file upload.
+              content: uploadedFile ? null : (text || null),
               file_id: uploadedFile?.id || null,
               mode: currentMode,
               provider: selectedProvider || undefined,
               model: model || undefined,
               session_id: sessionId,
             });
-            if (!sessionId) setSessionId(resp.session_id);
+            if (!sessionId) {
+              // Prevent the session-load useEffect from overwriting our messages
+              skipSessionLoadRef.current = true;
+              setSessionId(resp.session_id);
+            }
 
             setMessages((prev: ChatMessage[]) => [
               ...prev,
@@ -187,8 +217,15 @@ export default function ChatPage() {
     try {
       const resp = await uploadFile(file);
       setUploadedFile(resp);
-      const text = await file.text();
-      setFileContent(text);
+      // For text files, read content directly; for binary files (PDF etc.),
+      // rely on the backend's extracted text via file_id.
+      if (file.type === "text/plain" || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+        const text = await file.text();
+        setFileContent(text);
+      } else {
+        // Backend already extracted text during upload — use file_id to reference it
+        setFileContent("");
+      }
     } catch (err) {
       console.error("Failed to upload file:", err);
     }

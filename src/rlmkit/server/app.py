@@ -2,20 +2,47 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
+
+# Load .env file so API keys persist across restarts
+_env_path = Path(".env")
+_loaded = load_dotenv(_env_path)
+print(f">>> DOTENV: load_dotenv({_env_path.resolve()}) returned {_loaded}, file exists={_env_path.exists()}")
+# Show which API key env vars are set (without revealing values)
+for _var in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
+    _val = os.environ.get(_var, "")
+    print(f">>>   {_var}={'set (' + str(len(_val)) + ' chars)' if _val else 'NOT SET'}")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import HealthResponse
-from rlmkit.server.routes import chat, config, files, metrics, providers, sessions, traces
+from rlmkit.server.routes import chat, config, files, metrics, profiles, prompts, providers, sessions, traces
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+
+    # Configure logging so all rlmkit messages appear in the terminal
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    # Set rlmkit loggers to DEBUG so detailed traces are visible
+    logging.getLogger("rlmkit").setLevel(logging.DEBUG)
+
     app = FastAPI(
         title="RLMKit API",
         version="0.1.0",
@@ -60,6 +87,8 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(traces.router)
     app.include_router(providers.router)
+    app.include_router(profiles.router)
+    app.include_router(prompts.router)
     app.include_router(config.router)
 
     @app.get("/health")
