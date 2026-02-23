@@ -17,7 +17,7 @@ from rlmkit.tools import peek, grep, chunk, select
 
 class PyReplEnv:
     """
-    Python REPL-like execution environment for RLM.
+    Python REPL(Read-Eval-Print Loop)-like execution environment for RLM.
     
     Executes Python code in a controlled environment with:
     - Persistent globals (state across executions)

@@ -3,32 +3,33 @@
 """
 LLMConfigManager - Secure management of LLM provider configurations.
 """
-from typing import Optional, Dict, List, Any
-from pathlib import Path
+
 import json
 import os
-from datetime import datetime
+from pathlib import Path
 
 from .models import LLMProviderConfig
 
-def load_env_file(env_path: Optional[Path] = None):
+
+def load_env_file(env_path: Path | None = None):
     """
     Load environment variables from .env file.
     """
     if env_path is None:
         env_path = Path(".env")
-    
+
     if not env_path.exists():
         return
-    
-    with open(env_path, "r") as f:
+
+    with open(env_path) as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 key, value = line.split("=", 1)
                 os.environ[key] = value
 
-def update_env_file(key: str, value: str, env_path: Optional[Path] = None):
+
+def update_env_file(key: str, value: str, env_path: Path | None = None):
     """
     Add or update a key-value pair in the .env file.
     """
@@ -36,7 +37,7 @@ def update_env_file(key: str, value: str, env_path: Optional[Path] = None):
         env_path = Path(".env")
     lines = []
     if env_path.exists():
-        with open(env_path, "r") as f:
+        with open(env_path) as f:
             lines = f.readlines()
     found = False
     for i, line in enumerate(lines):
@@ -49,31 +50,33 @@ def update_env_file(key: str, value: str, env_path: Optional[Path] = None):
     with open(env_path, "w") as f:
         f.writelines(lines)
 
+
 class LLMConfigManager:
     """
     Manage LLM provider configurations securely.
     ...
-    """    
-    def __init__(self, config_dir: Optional[Path] = None):
+    """
+
+    def __init__(self, config_dir: Path | None = None):
         if config_dir is None:
             config_dir = Path.home() / ".rlmkit"
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True, mode=0o700)
-        self._configs: Dict[str, LLMProviderConfig] = {}
-        self._active_provider: Optional[str] = None
+        self._configs: dict[str, LLMProviderConfig] = {}
+        self._active_provider: str | None = None
         self._load_all_configs()
-    
+
     def _load_config(self, provider: str) -> None:
         """
         Load configuration from disk and load .env file to ensure API keys are available.
         """
         # Load .env file to ensure environment variables are available
         load_env_file()
-        
+
         config_file = self.config_dir / f"{provider}.json"
         if not config_file.exists():
             return
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             config_dict = json.load(f)
         api_key_env_var = config_dict.get("api_key_env_var")
         if api_key_env_var:
@@ -109,7 +112,7 @@ class LLMConfigManager:
         """Get list of configured providers."""
         return list(self._configs.keys())
 
-    def get_provider_config(self, provider: str) -> Optional[LLMProviderConfig]:
+    def get_provider_config(self, provider: str) -> LLMProviderConfig | None:
         """
         Get configuration for a provider.
         """
@@ -117,7 +120,7 @@ class LLMConfigManager:
             self._load_config(provider)
         return self._configs.get(provider)
 
-    def get_active_provider(self) -> Optional[LLMProviderConfig]:
+    def get_active_provider(self) -> LLMProviderConfig | None:
         """
         Get currently active provider configuration.
         """
@@ -125,33 +128,76 @@ class LLMConfigManager:
             return self.get_provider_config(self._active_provider)
         return None
 
+    # Known valid models per provider (for offline validation)
+    VALID_MODELS = {
+        "openai": {"gpt-4", "gpt-4-turbo", "gpt-4o", "gpt-3.5-turbo", "gpt-4o-mini"},
+        "anthropic": {
+            "claude-3-opus",
+            "claude-3-sonnet",
+            "claude-3-haiku",
+            "claude-3-5-sonnet",
+            "claude-3-5-haiku",
+        },
+    }
+
     def test_connection(
         self,
         provider: str,
         model: str,
-        api_key: Optional[str] = None,
-        api_key_env_var: Optional[str] = None,
-    ) -> tuple:
+        api_key: str | None = None,
+        api_key_env_var: str | None = None,
+    ) -> bool:
         """
         Test connection to a provider.
+
+        Returns:
+            bool: True if connection parameters are valid, False otherwise.
         """
-        # For now, just simulate a successful connection for all providers
-        # In production, this should actually test the API key and endpoint
+        # Basic validation
         if not provider or not model:
-            return False, "Provider and model are required"
-        if not api_key and not api_key_env_var and provider not in ("ollama", "lmstudio"):
-            return False, "API key is required for this provider"
-        return True, ""
+            return False
+
+        # Resolve API key from env var if provided
+        resolved_key = api_key
+        if not resolved_key and api_key_env_var:
+            resolved_key = os.getenv(api_key_env_var)
+
+        # Provider-specific validation
+        if provider == "openai":
+            # OpenAI keys must start with sk-
+            if not resolved_key or not resolved_key.startswith("sk-"):
+                return False
+            # Validate model name
+            if model not in self.VALID_MODELS.get("openai", set()):
+                return False
+            return True
+
+        elif provider == "anthropic":
+            # Anthropic keys must start with sk-ant-
+            if not resolved_key or not resolved_key.startswith("sk-ant-"):
+                return False
+            # Validate model name
+            if model not in self.VALID_MODELS.get("anthropic", set()):
+                return False
+            return True
+
+        elif provider in ("ollama", "lmstudio"):
+            # Local providers don't need API key, just a model name
+            return True
+
+        else:
+            # Unknown provider
+            return False
 
     def add_provider(
         self,
         provider: str,
         model: str,
-        api_key: Optional[str] = None,
-        api_key_env_var: Optional[str] = None,
+        api_key: str | None = None,
+        api_key_env_var: str | None = None,
         input_cost_per_1k: float = 0.0,
         output_cost_per_1k: float = 0.0,
-        **kwargs
+        **kwargs,
     ) -> tuple:
         """
         Add or update a provider configuration.
@@ -159,7 +205,7 @@ class LLMConfigManager:
         """
         if not api_key and not api_key_env_var:
             return False, "Must provide either api_key or api_key_env_var"
-        
+
         config = LLMProviderConfig(
             provider=provider,
             model=model,
@@ -167,63 +213,65 @@ class LLMConfigManager:
             api_key_env_var=api_key_env_var,
             input_cost_per_1k_tokens=input_cost_per_1k,
             output_cost_per_1k_tokens=output_cost_per_1k,
-            **kwargs
+            **kwargs,
         )
-        
+
         # Test connection before saving
-        success, error_msg = self.test_connection(provider, model, api_key, api_key_env_var)
-        if not success:
-            print(f"DEBUG: test_connection returned False: {error_msg}")
-            return False, error_msg
-        
+        if not self.test_connection(provider, model, api_key, api_key_env_var):
+            print(f"DEBUG: test_connection returned False for {provider}")
+            return False, "Connection test failed"
+
         # Mark test as successful
         config.test_successful = True
         print(f"DEBUG: Set test_successful=True for {provider}")
-        
+
         # Record the env var name so config knows where to look on reload
         if api_key:
             from rlmkit.ui.data.providers_catalog import get_env_var
+
             env_var = get_env_var(provider) or f"{provider.upper()}_API_KEY"
             config.api_key_env_var = env_var
             config.api_key = None  # Do not keep in memory
-        
+
         # Save configuration
         self._save_config(config)
         self._configs[provider] = config
-        print(f"DEBUG: Saved config. is_ready={config.is_ready}, test_successful={config.test_successful}")
-        
+        print(
+            f"DEBUG: Saved config. is_ready={config.is_ready}, test_successful={config.test_successful}"
+        )
+
         # Set as active provider (auto-select first provider added)
         if not self._active_provider:
             self._active_provider = provider
-        
+
         return True, ""
 
     def delete_provider(self, provider: str) -> bool:
         """
         Delete a provider configuration file.
-        
+
         Args:
             provider: Provider name to delete
-            
+
         Returns:
             True if deletion was successful, False otherwise
         """
         try:
             # Path to provider config file
             config_file = self.config_dir / f"{provider}.json"
-            
+
             # Delete the file if it exists
             if config_file.exists():
                 config_file.unlink()
-            
+
             # Remove from loaded configs
             if provider in self._configs:
                 del self._configs[provider]
-            
+
             # If this was the active provider, clear it
             if self._active_provider == provider:
                 self._active_provider = None
-            
+
             return True
         except Exception as e:
             print(f"DEBUG: Failed to delete provider {provider}: {e}")
