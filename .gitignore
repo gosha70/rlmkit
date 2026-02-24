@@ -14,6 +14,6 @@ DOC_INTERNAL/
 .coverage
 .rlmkit_config.json
 CLAUDE.md
-/.claude
+.claude/
 .mcp.json
-.claude/settings.json
+.coverage

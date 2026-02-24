@@ -3,30 +3,41 @@
 from __future__ import annotations
 
 import logging
-import time
-
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
-
-# Load .env file so API keys persist across restarts
-_env_path = Path(".env")
-_loaded = load_dotenv(_env_path)
-print(f">>> DOTENV: load_dotenv({_env_path.resolve()}) returned {_loaded}, file exists={_env_path.exists()}")
-# Show which API key env vars are set (without revealing values)
-for _var in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
-    _val = os.environ.get(_var, "")
-    print(f">>>   {_var}={'set (' + str(len(_val)) + ' chars)' if _val else 'NOT SET'}")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import HealthResponse
-from rlmkit.server.routes import chat, config, files, metrics, profiles, prompts, providers, sessions, traces
+from rlmkit.server.routes import (
+    chat,
+    config,
+    files,
+    metrics,
+    profiles,
+    prompts,
+    providers,
+    sessions,
+    traces,
+)
 
+# Load .env file so API keys persist across restarts
+_env_path = Path(".env")
+_loaded = load_dotenv(_env_path)
+print(
+    f">>> DOTENV: load_dotenv({_env_path.resolve()}) returned {_loaded}, "
+    f"file exists={_env_path.exists()}"
+)
+# Show which API key env vars are set (without revealing values)
+for _var in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
+    _val = os.environ.get(_var, "")
+    print(f">>>   {_var}={'set (' + str(len(_val)) + ' chars)' if _val else 'NOT SET'}")
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +63,12 @@ def create_app() -> FastAPI:
     # CORS middleware for frontend dev server
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
