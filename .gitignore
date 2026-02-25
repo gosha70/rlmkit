@@ -13,6 +13,7 @@ DOC_INTERNAL/
 .clinerules
 .coverage
 .rlmkit_config.json
+.rlmkit_sessions.json
 CLAUDE.md
 .claude/
 .mcp.json

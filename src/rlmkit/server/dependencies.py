@@ -24,6 +24,8 @@ from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 logger = logging.getLogger(__name__)
 
 _CONFIG_FILE = Path(".rlmkit_config.json")
+_SESSIONS_FILE = Path(".rlmkit_sessions.json")
+_MAX_PERSISTED_SESSIONS = 50
 
 # ---------------------------------------------------------------------------
 # In-memory stores (replaced by real persistence in production)
@@ -76,6 +78,7 @@ class AppState:
         self.system_prompts = SystemPrompts()
         if load_from_disk:
             self._load_config()
+            self._load_sessions()
 
     # ------------------------------------------------------------------
     # Config persistence
@@ -177,6 +180,52 @@ class AppState:
             )
         except Exception as exc:
             logger.warning("Failed to save config: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Session persistence
+    # ------------------------------------------------------------------
+
+    def _load_sessions(self) -> None:
+        """Load persisted sessions from disk if available."""
+        if not _SESSIONS_FILE.exists():
+            return
+        try:
+            raw = json.loads(_SESSIONS_FILE.read_text())
+            for s in raw:
+                rec = SessionRecord(
+                    id=s["id"],
+                    name=s["name"],
+                    created_at=datetime.fromisoformat(s["created_at"]),
+                    updated_at=datetime.fromisoformat(s["updated_at"]),
+                    messages=s.get("messages", []),
+                )
+                self.sessions[rec.id] = rec
+            logger.info("Loaded %d sessions from disk", len(self.sessions))
+        except Exception as exc:
+            logger.warning("Failed to load sessions: %s", exc)
+
+    def save_sessions(self) -> None:
+        """Persist sessions to disk (most recent N only)."""
+        try:
+            # Sort by updated_at descending and cap
+            sorted_sessions = sorted(
+                self.sessions.values(),
+                key=lambda s: s.updated_at,
+                reverse=True,
+            )[:_MAX_PERSISTED_SESSIONS]
+            data = [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "created_at": s.created_at.isoformat(),
+                    "updated_at": s.updated_at.isoformat(),
+                    "messages": s.messages,
+                }
+                for s in sorted_sessions
+            ]
+            _SESSIONS_FILE.write_text(json.dumps(data, indent=2, default=str))
+        except Exception as exc:
+            logger.warning("Failed to save sessions: %s", exc)
 
     def get_or_create_session(self, session_id: str | None = None) -> SessionRecord:
         if session_id and session_id in self.sessions:
@@ -282,3 +331,4 @@ def reset_state() -> None:
     global _state
     _state = AppState(load_from_disk=False)
     _state.save_config = lambda: None  # type: ignore[assignment]
+    _state.save_sessions = lambda: None  # type: ignore[assignment]

@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/api/metrics/{session_id}")
 async def get_metrics(
     session_id: str,
-    state: AppState = Depends(get_state),
+    state: AppState = Depends(get_state),  # noqa: B008
 ) -> MetricsResponse:
     """Get aggregated metrics for a session."""
     session = state.sessions.get(session_id)
@@ -33,6 +33,7 @@ async def get_metrics(
     total_latency = 0.0
     query_count = 0
     by_mode: dict[str, dict] = {}
+    by_provider: dict[str, dict] = {}
     timeline = []
 
     for msg in session.messages:
@@ -47,17 +48,29 @@ async def get_metrics(
         cost = m.get("cost_usd", 0.0)
         latency = m.get("elapsed_seconds", 0.0)
         mode = msg.get("mode_used", "unknown")
+        provider = msg.get("provider", "unknown")
 
         total_tokens += tokens
         total_cost += cost
         total_latency += latency
 
         if mode not in by_mode:
-            by_mode[mode] = {"queries": 0, "total_tokens": 0, "total_cost_usd": 0.0, "latencies": []}
+            by_mode[mode] = {
+                "queries": 0,
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+                "latencies": [],
+            }
         by_mode[mode]["queries"] += 1
         by_mode[mode]["total_tokens"] += tokens
         by_mode[mode]["total_cost_usd"] += cost
         by_mode[mode]["latencies"].append(latency)
+
+        if provider not in by_provider:
+            by_provider[provider] = {"queries": 0, "total_tokens": 0, "total_cost_usd": 0.0}
+        by_provider[provider]["queries"] += 1
+        by_provider[provider]["total_tokens"] += tokens
+        by_provider[provider]["total_cost_usd"] += cost
 
         timeline.append(
             TimelineEntry(
@@ -82,6 +95,8 @@ async def get_metrics(
             avg_latency_seconds=round(avg_lat, 2),
         )
 
+    provider_summaries = {p: ProviderSummary(**d) for p, d in by_provider.items()}
+
     return MetricsResponse(
         session_id=session_id,
         summary=MetricsSummary(
@@ -91,5 +106,6 @@ async def get_metrics(
             avg_latency_seconds=round(avg_latency, 2),
         ),
         by_mode=mode_summaries,
+        by_provider=provider_summaries,
         timeline=timeline,
     )
