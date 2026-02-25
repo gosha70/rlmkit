@@ -169,6 +169,7 @@ export interface ProviderInfo {
   requires_api_key: boolean;
   default_endpoint: string | null;
   model_input_hint: string;
+  masked_api_key: string | null;
 }
 
 export interface ProviderTestRequest {

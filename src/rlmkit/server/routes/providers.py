@@ -73,23 +73,47 @@ async def list_providers(
     - "configured": API key present but not yet verified
     - "not_configured": no API key set
     """
+    # Build a lookup of persisted provider configs for status + masked key
+    persisted: dict[str, ProviderConfig] = {pc.provider: pc for pc in state.config.provider_configs}
+
     result = []
     for p in PROVIDERS:
         configured = False
+        raw_key: str | None = None
         if p.env_var:
-            configured = bool(os.environ.get(p.env_var))
+            raw_key = os.environ.get(p.env_var)
+            configured = bool(raw_key)
         elif not p.requires_api_key:
             # Local providers (Ollama, LM Studio) are always "configured"
             configured = True
 
-        # Use cached status from successful test, otherwise just "configured"
+        # Determine status:
+        # - "connected" if test passed (in-memory or persisted) or key present + enabled
+        # - "configured" if key present but not enabled and never tested
+        # - "not_configured" if no key
         cached = _provider_status_cache.get(p.key)
-        if cached == "connected":
+        pc = persisted.get(p.key)
+        if cached == "offline":
+            status = "offline"
+        elif cached == "connected":
+            status = "connected"
+        elif pc and pc.last_tested_status == "connected" and configured:
+            status = "connected"
+            _provider_status_cache[p.key] = "connected"
+        elif configured and pc and pc.enabled:
+            # Active provider with API key — treat as connected
             status = "connected"
         elif configured:
             status = "configured"
         else:
             status = "not_configured"
+
+        # Mask the API key: show first 6 and last 4 chars
+        masked: str | None = None
+        if raw_key and len(raw_key) > 12:
+            masked = f"{raw_key[:6]}...{raw_key[-4:]}"
+        elif raw_key:
+            masked = "****"
 
         default_model = p.models[0].name if p.models else None
 
@@ -104,6 +128,7 @@ async def list_providers(
                 requires_api_key=p.requires_api_key,
                 default_endpoint=p.default_endpoint,
                 model_input_hint=p.model_input_hint,
+                masked_api_key=masked,
             )
         )
     return result
@@ -111,6 +136,15 @@ async def list_providers(
 
 # Cache of verified provider statuses (populated by test_provider endpoint)
 _provider_status_cache: dict[str, str] = {}
+
+
+def _persist_test_status(state: AppState, provider_name: str, status: str) -> None:
+    """Save last_tested_status to the provider config on disk."""
+    for pc in state.config.provider_configs:
+        if pc.provider == provider_name:
+            pc.last_tested_status = status
+            state.save_config()
+            return
 
 
 @router.post("/api/providers/test")
@@ -161,6 +195,7 @@ async def test_provider(
         if response.choices:
             logger.info("Provider %s connected OK (%dms)", req.provider, latency_ms)
             _provider_status_cache[req.provider] = "connected"
+            _persist_test_status(state, req.provider, "connected")
             return ProviderTestResponse(
                 connected=True,
                 latency_ms=latency_ms,
@@ -168,6 +203,7 @@ async def test_provider(
             )
         logger.warning("Provider %s returned no choices", req.provider)
         _provider_status_cache[req.provider] = "offline"
+        _persist_test_status(state, req.provider, "offline")
         return ProviderTestResponse(
             connected=False,
             error="No response from model",

@@ -275,6 +275,10 @@ def get_state() -> AppState:
 
 
 def reset_state() -> None:
-    """Reset state (used in tests). Creates a fresh AppState without loading from disk."""
+    """Reset state (used in tests). Creates a fresh AppState without loading from disk.
+
+    Also disables disk persistence so tests never overwrite the user's config.
+    """
     global _state
     _state = AppState(load_from_disk=False)
+    _state.save_config = lambda: None  # type: ignore[assignment]

@@ -127,8 +127,14 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
             <div className="flex gap-2">
               <Input
                 id={`api-key-${provider.name}`}
-                type="password"
-                placeholder={provider.configured ? "Configured — enter new key to override" : "Enter API key"}
+                type={apiKey ? "password" : "text"}
+                placeholder={
+                  provider.masked_api_key
+                    ? provider.masked_api_key
+                    : provider.configured
+                      ? "Configured — enter new key to override"
+                      : "Enter API key"
+                }
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 aria-label={`API key for ${provider.display_name}`}

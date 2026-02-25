@@ -11,7 +11,7 @@ interface StatusIndicatorProps {
 
 const CONFIG: Record<Status, { icon: typeof CheckCircle2; color: string; dotColor: string; text: string }> = {
   connected: { icon: CheckCircle2, color: "text-emerald-600 dark:text-emerald-400", dotColor: "bg-emerald-500", text: "Connected" },
-  configured: { icon: AlertTriangle, color: "text-amber-600 dark:text-amber-400", dotColor: "bg-amber-500", text: "API key set — click Test" },
+  configured: { icon: AlertTriangle, color: "text-amber-600 dark:text-amber-400", dotColor: "bg-amber-500", text: "API key set — not active" },
   offline: { icon: XCircle, color: "text-red-600 dark:text-red-400", dotColor: "bg-red-500", text: "Offline" },
   warning: { icon: AlertTriangle, color: "text-amber-600 dark:text-amber-400", dotColor: "bg-amber-500", text: "Slow" },
   loading: { icon: Loader2, color: "text-muted-foreground", dotColor: "bg-muted-foreground", text: "Loading..." },

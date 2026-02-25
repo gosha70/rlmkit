@@ -11,11 +11,13 @@ import { TypingIndicator } from "@/components/chat/typing-indicator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChat, type ChatMessage } from "@/lib/use-chat";
 import {
+  getConfig,
   getSession,
   getProviders,
   getTrace,
   submitChat,
   uploadFile,
+  type AppConfig,
   type ProviderInfo,
   type FileUploadResponse,
 } from "@/lib/api";
@@ -38,6 +40,7 @@ export default function ChatPage() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
+  const { data: config } = useSWR<AppConfig>("config", getConfig);
 
   // Persist active session to localStorage
   useEffect(() => {
@@ -48,14 +51,18 @@ export default function ChatPage() {
     }
   }, [sessionId]);
 
-  // Auto-select first connected provider
+  // Select provider from config.active_provider, falling back to first configured
   useEffect(() => {
     if (selectedProvider) return;
+    if (config?.active_provider) {
+      setSelectedProvider(config.active_provider);
+      return;
+    }
     const connected = providers.find((p) => p.status === "connected");
     const configured = providers.find((p) => p.status === "configured");
     const pick = connected || configured;
     if (pick) setSelectedProvider(pick.name);
-  }, [providers, selectedProvider]);
+  }, [providers, config, selectedProvider]);
 
   // Load session messages when sessionId changes (e.g., clicking a session in sidebar).
   // Skip if we just created this session via submitChat — messages are already set correctly.
@@ -117,8 +124,7 @@ export default function ChatPage() {
                       content: trace.result.answer,
                       isStreaming: false,
                       mode_used: trace.mode,
-                      metrics: trace.steps.length > 0
-                        ? {
+                      metrics: {
                             input_tokens: trace.budget.tokens_used,
                             output_tokens: 0,
                             total_tokens: trace.budget.tokens_used,
@@ -130,8 +136,7 @@ export default function ChatPage() {
                                   1000
                                 : 0,
                             steps: trace.budget.steps_used,
-                          }
-                        : undefined,
+                          },
                     }
                   : msg,
               ),
@@ -163,7 +168,11 @@ export default function ChatPage() {
   const handleSend = useCallback(
     async (text: string) => {
       const providerInfo = providers.find((p) => p.name === selectedProvider);
-      const model = providerInfo?.default_model || undefined;
+      // Use config.active_model when the selected provider matches the active one
+      const model =
+        (config?.active_provider === selectedProvider ? config?.active_model : undefined) ||
+        providerInfo?.default_model ||
+        undefined;
 
       // Submit one request per selected mode
       for (const currentMode of modes) {
@@ -210,7 +219,7 @@ export default function ChatPage() {
         }
       }
     },
-    [isConnected, sessionId, fileContent, uploadedFile, modes, selectedProvider, providers, sendQuery, setMessages, pollForResult],
+    [isConnected, sessionId, fileContent, uploadedFile, modes, selectedProvider, providers, config, sendQuery, setMessages, pollForResult],
   );
 
   const handleFileUpload = useCallback(async (file: File) => {

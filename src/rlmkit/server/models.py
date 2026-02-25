@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Error
@@ -16,7 +15,7 @@ from pydantic import BaseModel, Field
 class ErrorDetail(BaseModel):
     code: str
     message: str
-    details: Dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class ErrorResponse(BaseModel):
@@ -40,13 +39,13 @@ class HealthResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    content: Optional[str] = None
-    file_id: Optional[str] = None
+    content: str | None = None
+    file_id: str | None = None
     query: str
     mode: Literal["auto", "rlm", "direct", "rag", "compare"] = "auto"
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    session_id: Optional[str] = None
+    provider: str | None = None
+    model: str | None = None
+    session_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -87,11 +86,11 @@ class SessionMessage(BaseModel):
     id: str
     role: str
     content: str
-    file_id: Optional[str] = None
-    mode: Optional[str] = None
-    mode_used: Optional[str] = None
-    execution_id: Optional[str] = None
-    metrics: Optional[MessageMetrics] = None
+    file_id: str | None = None
+    mode: str | None = None
+    mode_used: str | None = None
+    execution_id: str | None = None
+    metrics: MessageMetrics | None = None
     timestamp: datetime
 
 
@@ -108,7 +107,7 @@ class SessionDetail(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
-    messages: List[SessionMessage] = Field(default_factory=list)
+    messages: list[SessionMessage] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +147,9 @@ class TimelineEntry(BaseModel):
 class MetricsResponse(BaseModel):
     session_id: str
     summary: MetricsSummary = Field(default_factory=MetricsSummary)
-    by_mode: Dict[str, ModeSummary] = Field(default_factory=dict)
-    by_provider: Dict[str, ProviderSummary] = Field(default_factory=dict)
-    timeline: List[TimelineEntry] = Field(default_factory=list)
+    by_mode: dict[str, ModeSummary] = Field(default_factory=dict)
+    by_provider: dict[str, ProviderSummary] = Field(default_factory=dict)
+    timeline: list[TimelineEntry] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -161,15 +160,15 @@ class MetricsResponse(BaseModel):
 class TraceStep(BaseModel):
     index: int
     action_type: str = "inspect"
-    code: Optional[str] = None
-    output: Optional[str] = None
+    code: str | None = None
+    output: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
     duration_seconds: float = 0.0
     recursion_depth: int = 0
-    model: Optional[str] = None
-    timestamp: Optional[datetime] = None
+    model: str | None = None
+    timestamp: datetime | None = None
 
 
 class TraceBudget(BaseModel):
@@ -194,11 +193,11 @@ class TraceResponse(BaseModel):
     query: str
     mode: str
     status: str = "complete"
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     result: TraceResult = Field(default_factory=TraceResult)
     budget: TraceBudget = Field(default_factory=TraceBudget)
-    steps: List[TraceStep] = Field(default_factory=list)
+    steps: list[TraceStep] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -233,49 +232,52 @@ class ProviderInfo(BaseModel):
     name: str
     display_name: str
     status: str = "not_configured"
-    models: List[ModelInfo] = Field(default_factory=list)
-    default_model: Optional[str] = None
+    models: list[ModelInfo] = Field(default_factory=list)
+    default_model: str | None = None
     configured: bool = False
     requires_api_key: bool = True
-    default_endpoint: Optional[str] = None
+    default_endpoint: str | None = None
     model_input_hint: str = ""
+    masked_api_key: str | None = None
 
 
 class ProviderConfig(BaseModel):
     """Per-provider configuration: which provider/model to use with what settings."""
+
     provider: str
     model: str
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     enabled: bool = False
+    last_tested_status: str | None = None
 
 
 class ProviderTestRequest(BaseModel):
     provider: str
-    api_key: Optional[str] = None
-    endpoint: Optional[str] = None
-    model: Optional[str] = None
+    api_key: str | None = None
+    endpoint: str | None = None
+    model: str | None = None
 
 
 class ProviderSaveRequest(BaseModel):
-    api_key: Optional[str] = None
-    model: Optional[str] = None
-    endpoint: Optional[str] = None
-    runtime_settings: Optional[RuntimeSettings] = None
-    enabled: Optional[bool] = None
+    api_key: str | None = None
+    model: str | None = None
+    endpoint: str | None = None
+    runtime_settings: RuntimeSettings | None = None
+    enabled: bool | None = None
 
 
 class ProviderSaveResponse(BaseModel):
     saved: bool
     provider: str
-    env_var: Optional[str] = None
+    env_var: str | None = None
     message: str = ""
 
 
 class ProviderTestResponse(BaseModel):
     connected: bool
-    latency_ms: Optional[int] = None
-    model: Optional[str] = None
-    error: Optional[str] = None
+    latency_ms: int | None = None
+    model: str | None = None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +295,7 @@ class BudgetConfig(BaseModel):
 
 class SandboxConfig(BaseModel):
     type: str = "restricted"
-    docker_image: Optional[str] = None
+    docker_image: str | None = None
 
 
 class AppearanceConfig(BaseModel):
@@ -303,6 +305,7 @@ class AppearanceConfig(BaseModel):
 
 class RAGConfig(BaseModel):
     """RAG-specific execution settings."""
+
     chunk_size: int = 1000
     chunk_overlap: int = 200
     top_k: int = 5
@@ -311,7 +314,8 @@ class RAGConfig(BaseModel):
 
 class ModeConfig(BaseModel):
     """Mode selection and per-mode settings."""
-    enabled_modes: List[str] = Field(default_factory=lambda: ["direct", "rlm"])
+
+    enabled_modes: list[str] = Field(default_factory=lambda: ["direct", "rlm"])
     default_mode: str = "auto"
     rag_config: RAGConfig = Field(default_factory=RAGConfig)
     rlm_max_steps: int = 16
@@ -324,20 +328,20 @@ class ConfigResponse(BaseModel):
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
-    provider_configs: List[ProviderConfig] = Field(default_factory=list)
+    provider_configs: list[ProviderConfig] = Field(default_factory=list)
     default_runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     mode_config: ModeConfig = Field(default_factory=ModeConfig)
 
 
 class ConfigUpdateRequest(BaseModel):
-    active_provider: Optional[str] = None
-    active_model: Optional[str] = None
-    budget: Optional[BudgetConfig] = None
-    sandbox: Optional[SandboxConfig] = None
-    appearance: Optional[AppearanceConfig] = None
-    provider_configs: Optional[List[ProviderConfig]] = None
-    default_runtime_settings: Optional[RuntimeSettings] = None
-    mode_config: Optional[ModeConfig] = None
+    active_provider: str | None = None
+    active_model: str | None = None
+    budget: BudgetConfig | None = None
+    sandbox: SandboxConfig | None = None
+    appearance: AppearanceConfig | None = None
+    provider_configs: list[ProviderConfig] | None = None
+    default_runtime_settings: RuntimeSettings | None = None
+    mode_config: ModeConfig | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -347,40 +351,43 @@ class ConfigUpdateRequest(BaseModel):
 
 class RunProfile(BaseModel):
     """A named experiment configuration preset."""
+
     id: str
     name: str
     description: str = ""
     strategy: str = "direct"
-    default_provider: Optional[str] = None
-    providers_enabled: List[str] = Field(default_factory=list)
+    default_provider: str | None = None
+    providers_enabled: list[str] = Field(default_factory=list)
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
-    system_prompts: Dict[str, str] = Field(default_factory=dict)
+    system_prompts: dict[str, str] = Field(default_factory=dict)
     is_builtin: bool = False
 
 
 class RunProfileCreate(BaseModel):
     """Request to create a new profile."""
+
     name: str
     description: str = ""
     strategy: str = "direct"
-    default_provider: Optional[str] = None
-    providers_enabled: List[str] = Field(default_factory=list)
+    default_provider: str | None = None
+    providers_enabled: list[str] = Field(default_factory=list)
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
-    system_prompts: Dict[str, str] = Field(default_factory=dict)
+    system_prompts: dict[str, str] = Field(default_factory=dict)
 
 
 class RunProfileUpdate(BaseModel):
     """Request to update an existing profile (all fields optional)."""
-    name: Optional[str] = None
-    description: Optional[str] = None
-    strategy: Optional[str] = None
-    default_provider: Optional[str] = None
-    providers_enabled: Optional[List[str]] = None
-    runtime_settings: Optional[RuntimeSettings] = None
-    budget: Optional[BudgetConfig] = None
-    system_prompts: Optional[Dict[str, str]] = None
+
+    name: str | None = None
+    description: str | None = None
+    strategy: str | None = None
+    default_provider: str | None = None
+    providers_enabled: list[str] | None = None
+    runtime_settings: RuntimeSettings | None = None
+    budget: BudgetConfig | None = None
+    system_prompts: dict[str, str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +397,7 @@ class RunProfileUpdate(BaseModel):
 
 class SystemPrompts(BaseModel):
     """Per-mode system prompts."""
+
     direct: str = ""
     rlm: str = ""
     rag: str = ""
@@ -397,9 +405,10 @@ class SystemPrompts(BaseModel):
 
 class SystemPromptTemplate(BaseModel):
     """A named system prompt template."""
+
     name: str
     description: str = ""
-    prompts: Dict[str, str] = Field(default_factory=dict)
+    prompts: dict[str, str] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -423,16 +432,16 @@ class WSStepEvent(BaseModel):
 class WSMetricsEvent(BaseModel):
     type: str = "metrics"
     id: str
-    data: Dict[str, Any]
+    data: dict[str, Any]
 
 
 class WSCompleteEvent(BaseModel):
     type: str = "complete"
     id: str
-    data: Dict[str, Any]
+    data: dict[str, Any]
 
 
 class WSErrorEvent(BaseModel):
     type: str = "error"
     id: str
-    data: Dict[str, Any]
+    data: dict[str, Any]

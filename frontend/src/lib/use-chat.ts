@@ -77,7 +77,7 @@ export function useChat(sessionId: string | null): UseChatReturn {
             MAX_RECONNECT_DELAY_MS,
           );
           reconnectAttemptsRef.current += 1;
-          console.error(
+          console.debug(
             `WebSocket closed unexpectedly. Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`,
           );
           reconnectTimerRef.current = setTimeout(connect, delay);
