@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
 
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
-from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
+from rlmkit.application.ports.llm_port import LLMPort
 
 
 class RunDirectUseCase:
@@ -26,8 +25,10 @@ class RunDirectUseCase:
         self._llm = llm
 
     def _compute_cost(self, input_tokens: int, output_tokens: int) -> float:
-        """Compute cost from adapter pricing."""
+        """Compute cost using LiteLLM's completion_cost (handles prefix stripping)."""
         try:
+            if hasattr(self._llm, "get_completion_cost"):
+                return self._llm.get_completion_cost(input_tokens, output_tokens)
             pricing = self._llm.get_pricing()
             input_cost = input_tokens * pricing.get("input_cost_per_1m", 0) / 1_000_000
             output_cost = output_tokens * pricing.get("output_cost_per_1m", 0) / 1_000_000
@@ -39,7 +40,7 @@ class RunDirectUseCase:
         self,
         content: str,
         query: str,
-        config: Optional[RunConfigDTO] = None,
+        config: RunConfigDTO | None = None,
     ) -> RunResultDTO:
         """Run a direct query against the LLM.
 
@@ -55,8 +56,7 @@ class RunDirectUseCase:
         start = time.time()
 
         system_prompt = (
-            "You are a helpful assistant. Answer the user's question "
-            "based on the provided content."
+            "You are a helpful assistant. Answer the user's question based on the provided content."
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -78,14 +78,16 @@ class RunDirectUseCase:
                 output_tokens=response.output_tokens,
                 total_cost=total_cost,
                 elapsed_time=elapsed,
-                trace=[{
-                    "step": 0,
-                    "role": "assistant",
-                    "content": response.content,
-                    "mode": "direct",
-                    "input_tokens": response.input_tokens,
-                    "output_tokens": response.output_tokens,
-                }],
+                trace=[
+                    {
+                        "step": 0,
+                        "role": "assistant",
+                        "content": response.content,
+                        "mode": "direct",
+                        "input_tokens": response.input_tokens,
+                        "output_tokens": response.output_tokens,
+                    }
+                ],
             )
         except Exception as exc:
             elapsed = time.time() - start
@@ -101,8 +103,8 @@ class RunDirectUseCase:
         self,
         content: str,
         query: str,
-        config: Optional[RunConfigDTO] = None,
-        event_emitter: Optional[ExecutionEventEmitter] = None,
+        config: RunConfigDTO | None = None,
+        event_emitter: ExecutionEventEmitter | None = None,
     ) -> RunResultDTO:
         """Async direct query with optional token streaming.
 
@@ -113,8 +115,7 @@ class RunDirectUseCase:
         start = time.time()
 
         system_prompt = (
-            "You are a helpful assistant. Answer the user's question "
-            "based on the provided content."
+            "You are a helpful assistant. Answer the user's question based on the provided content."
         )
         messages = [
             {"role": "system", "content": system_prompt},
@@ -158,14 +159,16 @@ class RunDirectUseCase:
 
             if event_emitter:
                 await event_emitter.on_step(step_entry)
-                await event_emitter.on_metrics({
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": input_tokens + output_tokens,
-                    "cost_usd": total_cost,
-                    "steps": 0,
-                    "elapsed_seconds": elapsed,
-                })
+                await event_emitter.on_metrics(
+                    {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": input_tokens + output_tokens,
+                        "cost_usd": total_cost,
+                        "steps": 0,
+                        "elapsed_seconds": elapsed,
+                    }
+                )
 
             return RunResultDTO(
                 answer=answer,

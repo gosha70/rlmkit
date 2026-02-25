@@ -6,11 +6,8 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-
-logger = logging.getLogger(__name__)
 
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
@@ -21,14 +18,15 @@ from rlmkit.server.models import (
     ProviderSaveResponse,
     ProviderTestRequest,
     ProviderTestResponse,
-    RuntimeSettings,
 )
 from rlmkit.ui.data.providers_catalog import PROVIDERS, PROVIDERS_BY_KEY
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # LiteLLM provider prefixes: models must be prefixed for non-OpenAI providers
-_LITELLM_PREFIXES: Dict[str, str] = {
+_LITELLM_PREFIXES: dict[str, str] = {
     "anthropic": "anthropic/",
     "ollama": "ollama/",
     "lmstudio": "openai/",  # LM Studio uses OpenAI-compatible API
@@ -49,7 +47,7 @@ def _litellm_model_name(provider_key: str, model: str) -> str:
     return f"{prefix}{model}"
 
 
-def _build_model_infos(provider_key: str) -> List[ModelInfo]:
+def _build_model_infos(provider_key: str) -> list[ModelInfo]:
     """Convert catalog ModelInfo dataclasses to Pydantic ModelInfo."""
     entry = PROVIDERS_BY_KEY.get(provider_key)
     if not entry or not entry.models:
@@ -66,8 +64,8 @@ def _build_model_infos(provider_key: str) -> List[ModelInfo]:
 
 @router.get("/api/providers")
 async def list_providers(
-    state: AppState = Depends(get_state),
-) -> List[ProviderInfo]:
+    state: AppState = Depends(get_state),  # noqa: B008
+) -> list[ProviderInfo]:
     """List configured providers with status.
 
     Status values:
@@ -112,13 +110,13 @@ async def list_providers(
 
 
 # Cache of verified provider statuses (populated by test_provider endpoint)
-_provider_status_cache: Dict[str, str] = {}
+_provider_status_cache: dict[str, str] = {}
 
 
 @router.post("/api/providers/test")
 async def test_provider(
     req: ProviderTestRequest,
-    state: AppState = Depends(get_state),
+    state: AppState = Depends(get_state),  # noqa: B008, PT028
 ) -> ProviderTestResponse:
     """Test a provider connection."""
     model = req.model
@@ -131,7 +129,9 @@ async def test_provider(
 
     # LiteLLM requires provider prefix for non-OpenAI models
     litellm_model = _litellm_model_name(req.provider, model)
-    logger.info("Testing provider=%s model=%s (litellm_model=%s)", req.provider, model, litellm_model)
+    logger.info(
+        "Testing provider=%s model=%s (litellm_model=%s)", req.provider, model, litellm_model
+    )
 
     import litellm
 
@@ -207,7 +207,7 @@ def _update_env_file(key: str, value: str) -> None:
 async def save_provider(
     provider_name: str,
     req: ProviderSaveRequest,
-    state: AppState = Depends(get_state),
+    state: AppState = Depends(get_state),  # noqa: B008
 ) -> ProviderSaveResponse:
     """Save provider configuration. Writes API key to .env and os.environ.
 
@@ -226,36 +226,36 @@ async def save_provider(
         logger.info("Saved API key for %s to .env (%s)", provider_name, env_var)
 
     # Update provider config in AppState
-    logger.info(">>> SAVE PROVIDER: name=%s api_key=%s model=%s enabled=%s endpoint=%s runtime=%s",
-                 provider_name, "***" if req.api_key else None, req.model, req.enabled, req.endpoint, req.runtime_settings)
     _update_provider_config(state, provider_name, req)
 
     # If this provider is being enabled, set it as the active provider
+    # and disable all others (only one active at a time)
     if req.enabled:
         state.config.active_provider = provider_name
         if req.model:
             state.config.active_model = req.model
-        logger.info(">>> SAVE PROVIDER: set active provider=%s model=%s", provider_name, req.model or state.config.active_model)
+        for pc in state.config.provider_configs:
+            if pc.provider != provider_name:
+                pc.enabled = False
 
-    logger.info(">>> SAVE PROVIDER: calling save_config()")
     state.save_config()
 
     return ProviderSaveResponse(
         saved=True,
         provider=provider_name,
         env_var=env_var,
-        message=f"API key saved to .env as {env_var}" if env_var and req.api_key else "Configuration saved",
+        message=f"API key saved to .env as {env_var}"
+        if env_var and req.api_key
+        else "Configuration saved",
     )
 
 
-def _update_provider_config(
-    state: AppState, provider_name: str, req: ProviderSaveRequest
-) -> None:
+def _update_provider_config(state: AppState, provider_name: str, req: ProviderSaveRequest) -> None:
     """Upsert provider config in state.config.provider_configs."""
     configs = state.config.provider_configs
 
     # Find existing or create new
-    existing: Optional[ProviderConfig] = None
+    existing: ProviderConfig | None = None
     for pc in configs:
         if pc.provider == provider_name:
             existing = pc

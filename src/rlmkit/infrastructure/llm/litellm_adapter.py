@@ -11,10 +11,10 @@ primary reasoning and a cheaper recursive_model for exploration subcalls.
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator, Dict, Iterator, List, Optional
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.application.ports.llm_port import LLMPort
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +45,14 @@ class LiteLLMAdapter:
     def __init__(
         self,
         model: str = "gpt-4o",
-        root_model: Optional[str] = None,
-        recursive_model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
+        root_model: str | None = None,
+        recursive_model: str | None = None,
+        api_key: str | None = None,
+        api_base: str | None = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
         timeout: float = 120.0,
-        extra_params: Optional[Dict[str, Any]] = None,
+        extra_params: dict[str, Any] | None = None,
     ) -> None:
         self._model = model
         self._root_model = root_model or model
@@ -69,7 +69,7 @@ class LiteLLMAdapter:
 
     # -- LLMPort protocol methods --
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Generate a completion using LiteLLM.
 
         Args:
@@ -101,9 +101,7 @@ class LiteLLMAdapter:
             finish_reason=choice.finish_reason,
         )
 
-    def complete_stream(
-        self, messages: List[Dict[str, str]]
-    ) -> Iterator[str]:
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Generate a streaming completion, yielding text chunks.
 
         Args:
@@ -143,7 +141,7 @@ class LiteLLMAdapter:
             # Fallback to heuristic if tokenizer unavailable
             return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         """Return pricing info for the active model from LiteLLM's cost DB.
 
         Returns:
@@ -151,22 +149,27 @@ class LiteLLMAdapter:
         """
         import litellm
 
-        try:
-            info = litellm.get_model_info(model=self._active_model)
-            input_per_token = info.get("input_cost_per_token", 0.0)
-            output_per_token = info.get("output_cost_per_token", 0.0)
-            return {
-                "input_cost_per_1m": input_per_token * 1_000_000,
-                "output_cost_per_1m": output_per_token * 1_000_000,
-            }
-        except Exception:
-            return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
+        # Try with the full prefixed name first, then stripped base name
+        models_to_try = [self._active_model]
+        if "/" in self._active_model:
+            models_to_try.append(self._active_model.split("/", 1)[1])
+
+        for model_name in models_to_try:
+            try:
+                info = litellm.get_model_info(model=model_name)
+                input_per_token = info.get("input_cost_per_token", 0.0)
+                output_per_token = info.get("output_cost_per_token", 0.0)
+                return {
+                    "input_cost_per_1m": input_per_token * 1_000_000,
+                    "output_cost_per_1m": output_per_token * 1_000_000,
+                }
+            except Exception:
+                continue
+        return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
 
     # -- Async LLMPort methods --
 
-    async def complete_async(
-        self, messages: List[Dict[str, str]]
-    ) -> LLMResponseDTO:
+    async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Async completion using ``litellm.acompletion``.
 
         Args:
@@ -198,9 +201,7 @@ class LiteLLMAdapter:
             finish_reason=choice.finish_reason,
         )
 
-    async def complete_stream_async(
-        self, messages: List[Dict[str, str]]
-    ) -> AsyncIterator[str]:
+    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """Async streaming completion, yielding text chunks.
 
         Args:
@@ -277,9 +278,7 @@ class LiteLLMAdapter:
             logger.warning("Health check failed for %s: %s", self._active_model, exc)
             return False
 
-    def get_completion_cost(
-        self, input_tokens: int, output_tokens: int
-    ) -> float:
+    def get_completion_cost(self, input_tokens: int, output_tokens: int) -> float:
         """Calculate the cost for a completion using LiteLLM.
 
         Args:
@@ -302,7 +301,7 @@ class LiteLLMAdapter:
 
     # -- Private helpers --
 
-    def _build_params(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    def _build_params(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         """Build the parameter dict for litellm.completion().
 
         Args:
@@ -311,7 +310,7 @@ class LiteLLMAdapter:
         Returns:
             Keyword arguments for litellm.completion().
         """
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "model": self._active_model,
             "messages": messages,
             "temperature": self._temperature,
@@ -332,8 +331,5 @@ class LiteLLMAdapter:
 
     def __repr__(self) -> str:
         if self.is_two_model:
-            return (
-                f"LiteLLMAdapter(root={self._root_model!r}, "
-                f"recursive={self._recursive_model!r})"
-            )
+            return f"LiteLLMAdapter(root={self._root_model!r}, recursive={self._recursive_model!r})"
         return f"LiteLLMAdapter(model={self._model!r})"

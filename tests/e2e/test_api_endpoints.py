@@ -306,19 +306,29 @@ class TestConfigEndpoints:
         assert "appearance" in data
 
     def test_update_config_partial(self, client):
+        """PUT /api/config no longer sets active_provider/model (use providers endpoint)."""
         resp = client.put(
             "/api/config",
             json={"active_provider": "anthropic"},
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["active_provider"] == "anthropic"
+        # active_provider is only set via PUT /api/providers/{name}
+        assert data["active_provider"] == "openai"
         assert data["active_model"] == "gpt-4o"
 
     def test_update_config_budget(self, client):
         resp = client.put(
             "/api/config",
-            json={"budget": {"max_steps": 32, "max_tokens": 100000, "max_cost_usd": 5.0, "max_time_seconds": 60, "max_recursion_depth": 10}},
+            json={
+                "budget": {
+                    "max_steps": 32,
+                    "max_tokens": 100000,
+                    "max_cost_usd": 5.0,
+                    "max_time_seconds": 60,
+                    "max_recursion_depth": 10,
+                }
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["budget"]["max_steps"] == 32
@@ -333,6 +343,7 @@ class TestConfigEndpoints:
         assert resp.json()["appearance"]["sidebar_collapsed"] is True
 
     def test_config_persists_across_requests(self, client):
-        client.put("/api/config", json={"active_model": "claude-sonnet-4-5-20250929"})
+        """Budget changes via PUT /api/config persist across requests."""
+        client.put("/api/config", json={"budget": {"max_steps": 99}})
         resp = client.get("/api/config")
-        assert resp.json()["active_model"] == "claude-sonnet-4-5-20250929"
+        assert resp.json()["budget"]["max_steps"] == 99

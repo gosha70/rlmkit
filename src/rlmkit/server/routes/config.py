@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/api/config")
 async def get_config(
-    state: AppState = Depends(get_state),
+    state: AppState = Depends(get_state),  # noqa: B008
 ) -> ConfigResponse:
     """Get current configuration."""
     return state.config
@@ -25,15 +25,14 @@ async def get_config(
 @router.put("/api/config")
 async def update_config(
     req: ConfigUpdateRequest,
-    state: AppState = Depends(get_state),
+    state: AppState = Depends(get_state),  # noqa: B008
 ) -> ConfigResponse:
-    """Update configuration (partial update -- merges fields, not replaces)."""
-    if req.active_provider is not None:
-        logger.info("Config update: active_provider=%s", req.active_provider)
-        state.config.active_provider = req.active_provider
-    if req.active_model is not None:
-        logger.info("Config update: active_model=%s", req.active_model)
-        state.config.active_model = req.active_model
+    """Update configuration (partial update -- merges fields, not replaces).
+
+    Note: active_provider and active_model are set exclusively via
+    PUT /api/providers/{name} to prevent two disconnected save paths
+    from corrupting each other.
+    """
     if req.budget is not None:
         for key, value in req.budget.model_dump(exclude_unset=True).items():
             setattr(state.config.budget, key, value)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -29,15 +28,7 @@ from rlmkit.server.routes import (
 
 # Load .env file so API keys persist across restarts
 _env_path = Path(".env")
-_loaded = load_dotenv(_env_path)
-print(
-    f">>> DOTENV: load_dotenv({_env_path.resolve()}) returned {_loaded}, "
-    f"file exists={_env_path.exists()}"
-)
-# Show which API key env vars are set (without revealing values)
-for _var in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]:
-    _val = os.environ.get(_var, "")
-    print(f">>>   {_var}={'set (' + str(len(_val)) + ' chars)' if _val else 'NOT SET'}")
+load_dotenv(_env_path)
 
 logger = logging.getLogger(__name__)
 

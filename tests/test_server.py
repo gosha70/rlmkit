@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import io
-import uuid
 from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import AppState, ExecutionRecord, FileRecord, SessionRecord, get_state, reset_state
+from rlmkit.server.dependencies import (
+    ExecutionRecord,
+    FileRecord,
+    SessionRecord,
+    get_state,
+    reset_state,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +26,7 @@ def _clean_state():
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client():
     app = create_app()
     return TestClient(app)
@@ -57,8 +62,13 @@ class TestSessions:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
-            id="s1", name="Session 1", created_at=now, updated_at=now,
-            messages=[{"id": "m1", "role": "user", "content": "hello", "timestamp": now.isoformat()}],
+            id="s1",
+            name="Session 1",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {"id": "m1", "role": "user", "content": "hello", "timestamp": now.isoformat()}
+            ],
         )
         resp = client.get("/api/sessions")
         assert resp.status_code == 200
@@ -71,8 +81,13 @@ class TestSessions:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
-            id="s1", name="Session 1", created_at=now, updated_at=now,
-            messages=[{"id": "m1", "role": "user", "content": "hello", "timestamp": now.isoformat()}],
+            id="s1",
+            name="Session 1",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {"id": "m1", "role": "user", "content": "hello", "timestamp": now.isoformat()}
+            ],
         )
         resp = client.get("/api/sessions/s1")
         assert resp.status_code == 200
@@ -88,7 +103,10 @@ class TestSessions:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
-            id="s1", name="Session 1", created_at=now, updated_at=now,
+            id="s1",
+            name="Session 1",
+            created_at=now,
+            updated_at=now,
         )
         resp = client.delete("/api/sessions/s1")
         assert resp.status_code == 204
@@ -103,7 +121,10 @@ class TestSessions:
         now = datetime.now(timezone.utc)
         for i in range(5):
             state.sessions[f"s{i}"] = SessionRecord(
-                id=f"s{i}", name=f"Session {i}", created_at=now, updated_at=now,
+                id=f"s{i}",
+                name=f"Session {i}",
+                created_at=now,
+                updated_at=now,
             )
         resp = client.get("/api/sessions?limit=2&offset=0")
         assert resp.status_code == 200
@@ -179,7 +200,10 @@ class TestMetrics:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
-            id="s1", name="S1", created_at=now, updated_at=now,
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
         )
         resp = client.get("/api/metrics/s1")
         assert resp.status_code == 200
@@ -190,11 +214,16 @@ class TestMetrics:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
-            id="s1", name="S1", created_at=now, updated_at=now,
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
             messages=[
                 {"id": "m1", "role": "user", "content": "q", "timestamp": now.isoformat()},
                 {
-                    "id": "m2", "role": "assistant", "content": "a",
+                    "id": "m2",
+                    "role": "assistant",
+                    "content": "a",
                     "mode_used": "rlm",
                     "timestamp": now.isoformat(),
                     "metrics": {
@@ -239,7 +268,12 @@ class TestTraces:
             completed_at=now,
             result={"answer": "42", "success": True},
             steps=[
-                {"role": "assistant", "content": "exploring", "input_tokens": 10, "output_tokens": 5},
+                {
+                    "role": "assistant",
+                    "content": "exploring",
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                },
             ],
         )
         resp = client.get("/api/traces/ex1")
@@ -284,19 +318,29 @@ class TestConfig:
         assert "appearance" in data
 
     def test_update_config(self, client):
+        """PUT /api/config updates budget/sandbox/appearance but not active_provider/model."""
         resp = client.put(
             "/api/config",
             json={"active_provider": "anthropic", "active_model": "claude-sonnet-4-5-20250929"},
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["active_provider"] == "anthropic"
-        assert data["active_model"] == "claude-sonnet-4-5-20250929"
+        # active_provider/model are only set via PUT /api/providers/{name}
+        assert data["active_provider"] == "openai"
+        assert data["active_model"] == "gpt-4o"
 
     def test_update_budget(self, client):
         resp = client.put(
             "/api/config",
-            json={"budget": {"max_steps": 32, "max_tokens": 100000, "max_cost_usd": 5.0, "max_time_seconds": 60, "max_recursion_depth": 10}},
+            json={
+                "budget": {
+                    "max_steps": 32,
+                    "max_tokens": 100000,
+                    "max_cost_usd": 5.0,
+                    "max_time_seconds": 60,
+                    "max_recursion_depth": 10,
+                }
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -307,12 +351,11 @@ class TestConfig:
         resp = client.get("/api/config")
         initial = resp.json()
 
-        # Update only provider
-        resp = client.put("/api/config", json={"active_provider": "ollama"})
+        # Update only budget — active_provider should remain unchanged
+        resp = client.put("/api/config", json={"budget": {"max_steps": 64}})
         data = resp.json()
-        assert data["active_provider"] == "ollama"
-        # Budget should be unchanged
-        assert data["budget"]["max_steps"] == initial["budget"]["max_steps"]
+        assert data["active_provider"] == initial["active_provider"]
+        assert data["budget"]["max_steps"] == 64
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +380,10 @@ class TestChat:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
-            id="s1", name="S1", created_at=now, updated_at=now,
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
         )
         resp = client.post(
             "/api/chat",
@@ -350,8 +396,13 @@ class TestChat:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.files["f1"] = FileRecord(
-            id="f1", name="doc.txt", size_bytes=100, content_type="text/plain",
-            text_content="Some document text", token_count=5, created_at=now,
+            id="f1",
+            name="doc.txt",
+            size_bytes=100,
+            content_type="text/plain",
+            text_content="Some document text",
+            token_count=5,
+            created_at=now,
         )
         resp = client.post(
             "/api/chat",
@@ -445,7 +496,15 @@ class TestConfigMerge:
         # Set initial budget to known values
         client.put(
             "/api/config",
-            json={"budget": {"max_steps": 32, "max_tokens": 100000, "max_cost_usd": 5.0, "max_time_seconds": 60, "max_recursion_depth": 10}},
+            json={
+                "budget": {
+                    "max_steps": 32,
+                    "max_tokens": 100000,
+                    "max_cost_usd": 5.0,
+                    "max_time_seconds": 60,
+                    "max_recursion_depth": 10,
+                }
+            },
         )
 
         # Update only max_steps
