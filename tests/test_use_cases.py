@@ -4,8 +4,9 @@ Each use case is tested with mock ports so no real LLM calls or
 sandbox execution is needed. This validates orchestration logic only.
 """
 
-import pytest
-from typing import Any, Dict, Iterator, List, Optional
+import asyncio
+from collections.abc import Iterator
+from typing import Any
 
 from rlmkit.application.dto import (
     ExecutionResultDTO,
@@ -13,14 +14,13 @@ from rlmkit.application.dto import (
     RunConfigDTO,
     RunResultDTO,
 )
-from rlmkit.application.use_cases.run_direct import RunDirectUseCase
-from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
-from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_comparison import (
     ComparisonResultDTO,
     RunComparisonUseCase,
 )
-
+from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 
 # ---------------------------------------------------------------------------
 # Mock adapters for port interfaces
@@ -30,11 +30,11 @@ from rlmkit.application.use_cases.run_comparison import (
 class FakeLLM:
     """Minimal LLMPort-compliant fake for testing use cases."""
 
-    def __init__(self, responses: List[str]) -> None:
+    def __init__(self, responses: list[str]) -> None:
         self._responses = responses
         self._idx = 0
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         idx = min(self._idx, len(self._responses) - 1)
         text = self._responses[idx]
         self._idx += 1
@@ -45,14 +45,14 @@ class FakeLLM:
             output_tokens=5,
         )
 
-    def complete_stream(self, messages: List[Dict[str, str]]) -> Iterator[str]:
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         result = self.complete(messages)
         yield result.content
 
     def count_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
 
 
@@ -60,12 +60,14 @@ class FakeSandbox:
     """Minimal SandboxPort-compliant fake for testing use cases."""
 
     def __init__(self) -> None:
-        self._namespace: Dict[str, Any] = {}
+        self._namespace: dict[str, Any] = {}
 
     def execute(self, code: str) -> ExecutionResultDTO:
         try:
             exec(code, self._namespace)
-            import io, contextlib
+            import contextlib
+            import io
+
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 exec(code, self._namespace)
@@ -82,17 +84,17 @@ class FakeSandbox:
     def set_variable(self, name: str, value: Any) -> None:
         self._namespace[name] = value
 
-    def get_variable(self, name: str) -> Optional[Any]:
+    def get_variable(self, name: str) -> Any | None:
         return self._namespace.get(name)
 
 
 class FakeEmbedder:
     """Minimal EmbeddingPort-compliant fake."""
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         return [float(len(text) % 10)] * 8
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         return [self.embed(t) for t in texts]
 
     @property
@@ -104,44 +106,44 @@ class FakeStorage:
     """Minimal StoragePort-compliant fake with in-memory vector search."""
 
     def __init__(self) -> None:
-        self._chunks: List[tuple] = []
+        self._chunks: list[tuple] = []
 
     def create_conversation(self, **kwargs: Any) -> str:
         return "conv-1"
 
-    def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+    def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         return None
 
-    def list_conversations(self) -> List[Dict[str, Any]]:
+    def list_conversations(self) -> list[dict[str, Any]]:
         return []
 
     def delete_conversation(self, conversation_id: str) -> None:
         pass
 
-    def save_file_context(self, content: str, filename: Optional[str] = None) -> str:
+    def save_file_context(self, content: str, filename: str | None = None) -> str:
         return "hash-1"
 
-    def get_file_context(self, content_hash: str) -> Optional[str]:
+    def get_file_context(self, content_hash: str) -> str | None:
         return None
 
     def add_chunks(
         self,
         collection: str,
-        chunks: List[str],
-        embeddings: List[List[float]],
-        source_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        chunks: list[str],
+        embeddings: list[list[float]],
+        source_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
-        for chunk, emb in zip(chunks, embeddings):
+        for chunk, emb in zip(chunks, embeddings, strict=False):
             self._chunks.append((collection, chunk, emb))
         return len(chunks)
 
     def search_chunks(
         self,
         collection: str,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
-    ) -> List[tuple]:
+    ) -> list[tuple]:
         matching = [(c, txt, emb) for c, txt, emb in self._chunks if c == collection]
         results = [(0.9, f"id-{i}", txt) for i, (_, txt, _) in enumerate(matching[:top_k])]
         return results
@@ -179,10 +181,13 @@ class TestRunDirectUseCase:
         class FailLLM:
             def complete(self, messages):
                 raise RuntimeError("Service down")
+
             def complete_stream(self, messages):
                 yield ""
+
             def count_tokens(self, text):
                 return 0
+
             def get_pricing(self):
                 return {}
 
@@ -226,10 +231,12 @@ class TestRunRLMUseCase:
         assert result.steps == 1
 
     def test_code_then_final(self):
-        llm = FakeLLM([
-            "```python\nprint('exploring')\n```",
-            "FINAL: Found it.",
-        ])
+        llm = FakeLLM(
+            [
+                "```python\nprint('exploring')\n```",
+                "FINAL: Found it.",
+            ]
+        )
         sandbox = FakeSandbox()
         uc = RunRLMUseCase(llm, sandbox)
         result = uc.execute("content", "question")
@@ -259,10 +266,13 @@ class TestRunRLMUseCase:
         class FailLLM:
             def complete(self, messages):
                 raise RuntimeError("API error")
+
             def complete_stream(self, messages):
                 yield ""
+
             def count_tokens(self, text):
                 return 0
+
             def get_pricing(self):
                 return {}
 
@@ -274,10 +284,12 @@ class TestRunRLMUseCase:
 
     def test_nudge_on_no_code_no_final(self):
         """When LLM returns neither code nor FINAL, a nudge message is sent."""
-        llm = FakeLLM([
-            "I'm thinking about this...",  # no code, no FINAL
-            "FINAL: Got it!",
-        ])
+        llm = FakeLLM(
+            [
+                "I'm thinking about this...",  # no code, no FINAL
+                "FINAL: Got it!",
+            ]
+        )
         sandbox = FakeSandbox()
         uc = RunRLMUseCase(llm, sandbox)
         result = uc.execute("content", "question")
@@ -393,8 +405,10 @@ class TestRunRAGUseCase:
         class FailEmbedder:
             def embed(self, text):
                 raise RuntimeError("Embed failed")
+
             def embed_batch(self, texts):
                 raise RuntimeError("Embed failed")
+
             @property
             def dimension(self):
                 return 8
@@ -460,3 +474,95 @@ class TestRunComparisonUseCase:
         assert dto.results == {}
         assert dto.modes_run == []
         assert dto.total_elapsed == 0.0
+
+
+# ---------------------------------------------------------------------------
+# RunRLMUseCase.execute_async tests
+# ---------------------------------------------------------------------------
+
+
+class FakeEventEmitter:
+    """Captures events emitted during execute_async."""
+
+    def __init__(self) -> None:
+        self.tokens: list[str] = []
+        self.steps: list[dict[str, Any]] = []
+        self.metrics: list[dict[str, Any]] = []
+
+    async def on_token(self, token: str) -> None:
+        self.tokens.append(token)
+
+    async def on_step(self, step_data: dict[str, Any]) -> None:
+        self.steps.append(step_data)
+
+    async def on_metrics(self, metrics: dict[str, Any]) -> None:
+        self.metrics.append(metrics)
+
+
+class TestRunRLMAsync:
+    """Tests for execute_async with event emitter."""
+
+    def test_async_immediate_final(self):
+        """execute_async returns correct result with FINAL answer."""
+        llm = FakeLLM(["FINAL: async answer"])
+        sandbox = FakeSandbox()
+        emitter = FakeEventEmitter()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "question", event_emitter=emitter)
+        )
+
+        assert result.success is True
+        assert result.mode_used == "rlm"
+        assert result.answer == "async answer"
+        assert result.steps == 1
+
+    def test_async_emits_step_and_metrics(self):
+        """Event emitter receives on_step and on_metrics calls."""
+        llm = FakeLLM(["FINAL: done"])
+        sandbox = FakeSandbox()
+        emitter = FakeEventEmitter()
+        uc = RunRLMUseCase(llm, sandbox)
+        asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "q", event_emitter=emitter)
+        )
+
+        assert len(emitter.steps) == 1
+        assert emitter.steps[0]["role"] == "assistant"
+        assert len(emitter.metrics) == 1
+        assert "total_tokens" in emitter.metrics[0]
+        assert emitter.metrics[0]["steps"] == 1
+
+    def test_async_code_then_final(self):
+        """execute_async handles code execution + FINAL across steps."""
+        llm = FakeLLM(
+            [
+                "```python\nprint('exploring')\n```",
+                "FINAL: Found it.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        emitter = FakeEventEmitter()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "question", event_emitter=emitter)
+        )
+
+        assert result.success is True
+        assert result.answer == "Found it."
+        assert result.steps >= 2
+        assert len(emitter.steps) >= 2
+        assert emitter.metrics[-1]["steps"] >= 2
+
+    def test_async_budget_exhaustion(self):
+        """execute_async respects budget limits."""
+        llm = FakeLLM(["```python\nprint(1)\n```"])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=2)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "q", config=config)
+        )
+
+        assert result.success is False
+        assert "exceeded" in result.error.lower() or "budget" in result.error.lower()

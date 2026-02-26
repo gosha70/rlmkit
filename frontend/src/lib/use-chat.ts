@@ -51,156 +51,173 @@ export function useChat(sessionId: string | null): UseChatReturn {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const intentionalCloseRef = useRef(false);
+  const sessionIdRef = useRef(sessionId);
 
+  // Keep sessionIdRef in sync so connect() always uses latest value
   useEffect(() => {
-    if (!sessionId) return;
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
-    function connect() {
-      const ws = connectChatWS(sessionId!);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        reconnectAttemptsRef.current = 0;
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        wsRef.current = null;
-
-        if (
-          !intentionalCloseRef.current &&
-          reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
-        ) {
-          const delay = Math.min(
-            BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttemptsRef.current),
-            MAX_RECONNECT_DELAY_MS,
-          );
-          reconnectAttemptsRef.current += 1;
-          console.debug(
-            `WebSocket closed unexpectedly. Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`,
-          );
-          reconnectTimerRef.current = setTimeout(connect, delay);
-        }
-      };
-
-      ws.onerror = () => {
-        // WS connection errors are expected when the backend is restarting
-        // or during initial connection attempts. Reconnect logic handles recovery.
-      };
-
-      ws.onmessage = (event) => {
-        const msg: WSMessage = JSON.parse(event.data);
-
-        switch (msg.type) {
-          case "connected":
-            break;
-
-          case "token":
-            if (msg.id) {
-              streamBufferRef.current += String(msg.data ?? "");
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msg.id ? { ...m, content: streamBufferRef.current } : m,
-                ),
-              );
-            }
-            break;
-
-          case "step": {
-            const stepData = msg.data as StepData;
-            if (msg.id) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msg.id
-                    ? { ...m, steps: [...(m.steps ?? []), stepData] }
-                    : m,
-                ),
-              );
-            }
-            break;
-          }
-
-          case "metrics": {
-            const metricsData = msg.data as ChatMessage["metrics"];
-            if (msg.id && metricsData) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msg.id ? { ...m, metrics: metricsData } : m,
-                ),
-              );
-            }
-            break;
-          }
-
-          case "complete": {
-            setIsStreaming(false);
-            const data = msg.data as Record<string, unknown>;
-            const metrics = data?.metrics as ChatMessage["metrics"];
-            if (msg.id) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msg.id
-                    ? {
-                        ...m,
-                        content: String(data?.answer ?? m.content),
-                        mode_used: (data?.mode as ChatMode) ?? m.mode_used,
-                        metrics,
-                        isStreaming: false,
-                      }
-                    : m,
-                ),
-              );
-            }
-            currentMsgIdRef.current = null;
-            break;
-          }
-
-          case "error": {
-            setIsStreaming(false);
-            const errData = msg.data as Record<string, unknown>;
-            if (msg.id) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === msg.id
-                    ? {
-                        ...m,
-                        content: `Error: ${errData?.message ?? "Unknown error"}`,
-                        isStreaming: false,
-                      }
-                    : m,
-                ),
-              );
-            }
-            currentMsgIdRef.current = null;
-            break;
-          }
-
-          case "ping":
-            ws.send(JSON.stringify({ type: "pong" }));
-            break;
-        }
-      };
-    }
-
-    intentionalCloseRef.current = false;
-    reconnectAttemptsRef.current = 0;
-    connect();
-
+  // Cleanup WS when sessionId changes or component unmounts
+  useEffect(() => {
     return () => {
       intentionalCloseRef.current = true;
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
-      wsRef.current?.close();
-      wsRef.current = null;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setIsConnected(false);
     };
   }, [sessionId]);
 
+  const connect = useCallback(() => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    // Already connected or connecting
+    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+
+    intentionalCloseRef.current = false;
+    reconnectAttemptsRef.current = 0;
+
+    const ws = connectChatWS(sid);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      reconnectAttemptsRef.current = 0;
+    };
+
+    ws.onclose = () => {
+      setIsConnected(false);
+      wsRef.current = null;
+
+      if (
+        !intentionalCloseRef.current &&
+        reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
+      ) {
+        const delay = Math.min(
+          BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttemptsRef.current),
+          MAX_RECONNECT_DELAY_MS,
+        );
+        reconnectAttemptsRef.current += 1;
+        console.debug(
+          `WebSocket closed unexpectedly. Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`,
+        );
+        reconnectTimerRef.current = setTimeout(() => connect(), delay);
+      }
+    };
+
+    ws.onerror = () => {
+      // WS connection errors are expected when the backend is restarting
+      // or during initial connection attempts. Reconnect logic handles recovery.
+    };
+
+    ws.onmessage = (event) => {
+      const msg: WSMessage = JSON.parse(event.data);
+
+      switch (msg.type) {
+        case "connected":
+          break;
+
+        case "token":
+          if (msg.id) {
+            streamBufferRef.current += String(msg.data ?? "");
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id ? { ...m, content: streamBufferRef.current } : m,
+              ),
+            );
+          }
+          break;
+
+        case "step": {
+          const stepData = msg.data as StepData;
+          if (msg.id) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? { ...m, steps: [...(m.steps ?? []), stepData] }
+                  : m,
+              ),
+            );
+          }
+          break;
+        }
+
+        case "metrics": {
+          const metricsData = msg.data as ChatMessage["metrics"];
+          if (msg.id && metricsData) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id ? { ...m, metrics: metricsData } : m,
+              ),
+            );
+          }
+          break;
+        }
+
+        case "complete": {
+          setIsStreaming(false);
+          const data = msg.data as Record<string, unknown>;
+          const metrics = data?.metrics as ChatMessage["metrics"];
+          if (msg.id) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? {
+                      ...m,
+                      content: String(data?.answer ?? m.content),
+                      mode_used: (data?.mode as ChatMode) ?? m.mode_used,
+                      metrics,
+                      isStreaming: false,
+                    }
+                  : m,
+              ),
+            );
+          }
+          currentMsgIdRef.current = null;
+          break;
+        }
+
+        case "error": {
+          setIsStreaming(false);
+          const errData = msg.data as Record<string, unknown>;
+          if (msg.id) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msg.id
+                  ? {
+                      ...m,
+                      content: `Error: ${errData?.message ?? "Unknown error"}`,
+                      isStreaming: false,
+                    }
+                  : m,
+              ),
+            );
+          }
+          currentMsgIdRef.current = null;
+          break;
+        }
+
+        case "ping":
+          ws.send(JSON.stringify({ type: "pong" }));
+          break;
+      }
+    };
+  }, []);
+
   const sendQuery = useCallback(
     (query: string, content: string, mode: ChatMode = "auto", fileId?: string) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      // Lazy connect: ensure WS is open before sending
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        connect();
+        // WS not ready yet — caller should fall back to REST
+        return;
+      }
 
       const msgId = crypto.randomUUID();
       currentMsgIdRef.current = msgId;
@@ -231,7 +248,7 @@ export function useChat(sessionId: string | null): UseChatReturn {
 
       wsRef.current.send(JSON.stringify(msg));
     },
-    [],
+    [connect],
   );
 
   return { messages, isConnected, isStreaming, sendQuery, setMessages };
