@@ -563,3 +563,145 @@ class TestWebSocket:
             msg = ws.receive_json()
             assert msg["type"] == "connected"
             assert msg["session_id"] == "my-session"
+
+
+# ---------------------------------------------------------------------------
+# Session Persistence
+# ---------------------------------------------------------------------------
+
+
+class TestSessionPersistence:
+    def test_save_and_load_sessions(self, tmp_path, monkeypatch):
+        """Sessions saved to disk are loaded back on startup."""
+        import rlmkit.server.dependencies as deps
+
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
+
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="Test Session",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {"id": "m1", "role": "user", "content": "hello", "timestamp": now.isoformat()},
+                {
+                    "id": "m2",
+                    "role": "assistant",
+                    "content": "hi",
+                    "provider": "anthropic",
+                    "mode_used": "direct",
+                    "timestamp": now.isoformat(),
+                    "metrics": {"total_tokens": 100, "cost_usd": 0.01},
+                },
+            ],
+        )
+        # Enable real persistence for this test
+        state.save_sessions = deps.AppState.save_sessions.__get__(state)
+        state.save_sessions()
+
+        assert sessions_file.exists()
+
+        # Load into a fresh state
+        reset_state()
+        state2 = get_state()
+        state2._load_sessions = deps.AppState._load_sessions.__get__(state2)
+        monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
+        state2._load_sessions()
+
+        assert "s1" in state2.sessions
+        assert state2.sessions["s1"].name == "Test Session"
+        assert len(state2.sessions["s1"].messages) == 2
+
+    def test_session_cap(self, tmp_path, monkeypatch):
+        """Only the most recent N sessions are persisted."""
+        import rlmkit.server.dependencies as deps
+
+        sessions_file = tmp_path / "sessions.json"
+        monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
+        monkeypatch.setattr(deps, "_MAX_PERSISTED_SESSIONS", 5)
+
+        state = get_state()
+        state.save_sessions = deps.AppState.save_sessions.__get__(state)
+
+        for i in range(10):
+            now = datetime(2026, 1, 1 + i, tzinfo=timezone.utc)
+            state.sessions[f"s{i}"] = SessionRecord(
+                id=f"s{i}",
+                name=f"Session {i}",
+                created_at=now,
+                updated_at=now,
+            )
+
+        state.save_sessions()
+
+        import json
+
+        saved = json.loads(sessions_file.read_text())
+        assert len(saved) == 5
+        # Most recent sessions should be kept (s9, s8, s7, s6, s5)
+        saved_ids = {s["id"] for s in saved}
+        assert "s9" in saved_ids
+        assert "s0" not in saved_ids
+
+    def test_corrupt_sessions_file(self, tmp_path, monkeypatch):
+        """Corrupt sessions file is handled gracefully."""
+        import rlmkit.server.dependencies as deps
+
+        sessions_file = tmp_path / "sessions.json"
+        sessions_file.write_text("not valid json{{{")
+        monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
+
+        state = get_state()
+        state._load_sessions = deps.AppState._load_sessions.__get__(state)
+        state._load_sessions()
+        # Should not crash, sessions remain empty
+        assert len(state.sessions) == 0
+
+
+# ---------------------------------------------------------------------------
+# Metrics: by_provider
+# ---------------------------------------------------------------------------
+
+
+class TestMetricsByProvider:
+    def test_metrics_include_by_provider(self, client):
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {"id": "m1", "role": "user", "content": "q", "timestamp": now.isoformat()},
+                {
+                    "id": "m2",
+                    "role": "assistant",
+                    "content": "a",
+                    "mode_used": "direct",
+                    "provider": "anthropic",
+                    "timestamp": now.isoformat(),
+                    "metrics": {"total_tokens": 200, "cost_usd": 0.02, "elapsed_seconds": 1.0},
+                },
+                {"id": "m3", "role": "user", "content": "q2", "timestamp": now.isoformat()},
+                {
+                    "id": "m4",
+                    "role": "assistant",
+                    "content": "a2",
+                    "mode_used": "direct",
+                    "provider": "openai",
+                    "timestamp": now.isoformat(),
+                    "metrics": {"total_tokens": 300, "cost_usd": 0.03, "elapsed_seconds": 0.5},
+                },
+            ],
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "anthropic" in data["by_provider"]
+        assert "openai" in data["by_provider"]
+        assert data["by_provider"]["anthropic"]["total_tokens"] == 200
+        assert data["by_provider"]["openai"]["total_cost_usd"] == 0.03
