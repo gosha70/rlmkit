@@ -7,12 +7,10 @@ auto-mode selection logic end-to-end with mock LLM clients.
 import pytest
 
 from rlmkit import MockLLMClient
-from rlmkit.api import _determine_auto_mode
-from rlmkit.core.budget import estimate_tokens
+from rlmkit.api import _determine_auto_mode, _estimate_tokens
 from rlmkit.strategies.direct import DirectStrategy
-from rlmkit.strategies.rlm_strategy import RLMStrategy
 from rlmkit.strategies.evaluator import MultiStrategyEvaluator
-
+from rlmkit.strategies.rlm_strategy import RLMStrategy
 
 pytestmark = pytest.mark.integration
 
@@ -28,10 +26,12 @@ class TestStrategyComparison:
         direct_client = MockLLMClient(["Direct answer about the document"])
         rlm_client = MockLLMClient(["FINAL: RLM answer about the document"])
 
-        evaluator = MultiStrategyEvaluator([
-            DirectStrategy(client=direct_client),
-            RLMStrategy(client=rlm_client),
-        ])
+        evaluator = MultiStrategyEvaluator(
+            [
+                DirectStrategy(client=direct_client),
+                RLMStrategy(client=rlm_client),
+            ]
+        )
 
         result = evaluator.evaluate(sample_document, "Summarize this")
 
@@ -43,15 +43,19 @@ class TestStrategyComparison:
     def test_comparison_metrics_populated(self, sample_document):
         """Each strategy result contains populated token, cost, and time metrics."""
         direct_client = MockLLMClient(["The summary is here."])
-        rlm_client = MockLLMClient([
-            "```python\nprint(peek(0, 100))\n```",
-            "FINAL: Explored and found the answer",
-        ])
+        rlm_client = MockLLMClient(
+            [
+                "```python\nprint(peek(0, 100))\n```",
+                "FINAL: Explored and found the answer",
+            ]
+        )
 
-        evaluator = MultiStrategyEvaluator([
-            DirectStrategy(client=direct_client),
-            RLMStrategy(client=rlm_client),
-        ])
+        evaluator = MultiStrategyEvaluator(
+            [
+                DirectStrategy(client=direct_client),
+                RLMStrategy(client=rlm_client),
+            ]
+        )
 
         result = evaluator.evaluate(sample_document, "What is this about?")
 
@@ -65,10 +69,12 @@ class TestStrategyComparison:
         direct_client = MockLLMClient(["Quick answer"])
         rlm_client = MockLLMClient(["FINAL: Thorough answer"])
 
-        evaluator = MultiStrategyEvaluator([
-            DirectStrategy(client=direct_client),
-            RLMStrategy(client=rlm_client),
-        ])
+        evaluator = MultiStrategyEvaluator(
+            [
+                DirectStrategy(client=direct_client),
+                RLMStrategy(client=rlm_client),
+            ]
+        )
 
         result = evaluator.evaluate(sample_document, "Summarize")
         summary = result.get_summary()
@@ -83,10 +89,12 @@ class TestStrategyComparison:
         direct_client = MockLLMClient(["Answer A"])
         rlm_client = MockLLMClient(["FINAL: Answer B"])
 
-        evaluator = MultiStrategyEvaluator([
-            DirectStrategy(client=direct_client),
-            RLMStrategy(client=rlm_client),
-        ])
+        evaluator = MultiStrategyEvaluator(
+            [
+                DirectStrategy(client=direct_client),
+                RLMStrategy(client=rlm_client),
+            ]
+        )
 
         result = evaluator.evaluate(sample_document, "Compare")
         cmp = result.get_comparison("direct", "rlm")
@@ -105,10 +113,12 @@ class TestStrategyComparison:
             def complete(self, messages):
                 raise RuntimeError("provider down")
 
-        evaluator = MultiStrategyEvaluator([
-            DirectStrategy(client=good_client),
-            DirectStrategy(client=_FailingClient()),
-        ])
+        evaluator = MultiStrategyEvaluator(
+            [
+                DirectStrategy(client=good_client),
+                DirectStrategy(client=_FailingClient()),
+            ]
+        )
 
         # Both strategies have name="direct", so the second overwrites the first
         # in the result dict. Use a custom wrapper instead.
@@ -124,10 +134,12 @@ class TestStrategyComparison:
             def run(self, content, query):
                 return self._inner.run(content, query)
 
-        evaluator = MultiStrategyEvaluator([
-            _NamedDirect(good_client, "good"),
-            _NamedDirect(_FailingClient(), "bad"),
-        ])
+        evaluator = MultiStrategyEvaluator(
+            [
+                _NamedDirect(good_client, "good"),
+                _NamedDirect(_FailingClient(), "bad"),
+            ]
+        )
 
         result = evaluator.evaluate(sample_document, "Test failure handling")
 
@@ -161,13 +173,13 @@ class TestAutoModeSelection:
         """Content exactly at the 8K-token boundary selects rag."""
         # estimate_tokens uses len(text) // 4, so 32000 chars = 8000 tokens
         boundary = "a" * 32000
-        assert estimate_tokens(boundary) == 8000
+        assert _estimate_tokens(boundary) == 8000
         assert _determine_auto_mode(boundary) == "rag"
 
     def test_boundary_at_100k_tokens(self):
         """Content exactly at the 100K-token boundary selects rlm."""
         boundary = "a" * 400000
-        assert estimate_tokens(boundary) == 100000
+        assert _estimate_tokens(boundary) == 100000
         assert _determine_auto_mode(boundary) == "rlm"
 
 

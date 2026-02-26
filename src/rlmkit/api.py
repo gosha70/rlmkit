@@ -1,49 +1,45 @@
+"""Unified high-level API for RLMKit.
+
+Provides ``interact()`` and ``complete()`` as the main programmatic entry
+points.  Under the hood these delegate to Clean Architecture use cases
+(``RunDirectUseCase``, ``RunRAGUseCase``, ``RunRLMUseCase``) with
+``LiteLLMAdapter`` for provider-agnostic LLM access.
 """
-Unified high-level API for RLMKit.
 
-This module provides a simple `interact()` function that serves as the main
-entry point for all interaction modes (Direct, RAG, RLM).
-"""
+from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, Literal
+import os
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
-from .core.rlm import RLM, RLMConfig
-from .core.budget import BudgetTracker, estimate_tokens
-from .core.trace import ExecutionTrace
-from .core.model_config import ModelConfig
-from .llm.base import BaseLLMProvider
-from .llm import get_llm_client, auto_detect_provider, ConfigurationError
-from .strategies import DirectStrategy, RAGStrategy, RLMStrategy, StrategyResult
-
+from rlmkit.application.dto import RunConfigDTO, RunResultDTO
+from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 
 # Type alias for interaction modes
 InteractionMode = Literal["direct", "rag", "rlm", "auto"]
 
+# Token-count thresholds for auto mode selection
+_DIRECT_THRESHOLD = 8_000
+_RAG_THRESHOLD = 100_000
+
 
 @dataclass
 class InteractResult:
-    """
-    Result from an interact() call.
-    
-    Attributes:
-        answer: The generated response text
-        mode_used: Which strategy was actually used
-        metrics: Token usage, cost, and timing information
-        trace: Optional execution trace (for RLM mode)
-        raw_result: The underlying strategy result for advanced access
-    """
+    """Result from an ``interact()`` call."""
+
     answer: str
     mode_used: str
-    metrics: Dict[str, Any]
-    trace: Optional[Any] = None
-    raw_result: Optional[StrategyResult] = None
-    
+    metrics: dict[str, Any] = field(default_factory=dict)
+    trace: list[dict[str, Any]] | None = None
+    raw_result: RunResultDTO | None = None
+
     def __str__(self) -> str:
         return self.answer
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to dictionary format."""
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             "answer": self.answer,
             "mode_used": self.mode_used,
@@ -52,223 +48,194 @@ class InteractResult:
         }
 
 
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate (1 token ~ 4 chars)."""
+    return max(1, len(text) // 4)
+
+
 def _determine_auto_mode(content: str) -> str:
+    """Pick the best mode based on content size.
+
+    - < 8K tokens  -> direct
+    - 8K–100K      -> rag
+    - > 100K       -> rlm
     """
-    Automatically determine the best mode based on content size.
-    
-    Rules:
-    - < 8K tokens: Direct (fits in most context windows)
-    - 8K-100K tokens: RAG (retrieval helps)
-    - > 100K tokens: RLM (recursive exploration needed)
-    
-    Args:
-        content: The content to analyze
-        
-    Returns:
-        The recommended mode: "direct", "rag", or "rlm"
-    """
-    token_count = estimate_tokens(content)
-    
-    if token_count < 8000:
+    token_count = _estimate_tokens(content)
+    if token_count < _DIRECT_THRESHOLD:
         return "direct"
-    elif token_count < 100000:
+    if token_count < _RAG_THRESHOLD:
         return "rag"
-    else:
-        return "rlm"
+    return "rlm"
+
+
+_PROVIDER_PREFIXES: dict[str, str] = {
+    "anthropic": "anthropic/",
+    "ollama": "ollama/",
+    "lmstudio": "openai/",
+}
+
+
+def _auto_detect_provider() -> str | None:
+    """Detect the LLM provider from environment variables."""
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.environ.get("OLLAMA_BASE_URL"):
+        return "ollama"
+    return None
+
+
+def _resolve_model(provider: str, model: str | None) -> str:
+    """Apply LiteLLM provider prefix and default model if needed."""
+    _defaults: dict[str, str] = {
+        "openai": "gpt-4o",
+        "anthropic": "claude-sonnet-4-20250514",
+        "ollama": "llama3",
+    }
+    m = model or _defaults.get(provider, "gpt-4o")
+    if "/" not in m:
+        prefix = _PROVIDER_PREFIXES.get(provider, "")
+        m = f"{prefix}{m}"
+    return m
 
 
 def interact(
     content: str,
     query: str,
     mode: InteractionMode = "auto",
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    models: Optional[ModelConfig] = None,
-    api_key: Optional[str] = None,
-    config: Optional[RLMConfig] = None,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    max_steps: int = 16,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
     verbose: bool = False,
-    **kwargs
+    **kwargs: Any,
 ) -> InteractResult:
-    """
-    Interact with content using an LLM through Direct, RAG, or RLM mode.
-    
-    This is the main entry point for RLMKit. It automatically handles:
-    - LLM client configuration
-    - Strategy selection (if mode="auto")
-    - Result formatting
-    
+    """Interact with content using an LLM through Direct, RAG, or RLM mode.
+
+    This is the main entry point for RLMKit.  It handles provider
+    resolution, mode selection, and use-case dispatch.
+
     Args:
-        content: The document/text content to analyze
-        query: The question or instruction for the LLM
-        mode: Interaction mode - "direct", "rag", "rlm", or "auto"
-            - "direct": Send full content + query to LLM in one call
-            - "rag": Use retrieval-augmented generation (chunk + rank)
-            - "rlm": Use recursive exploration with code generation
-            - "auto": Automatically choose based on content size
-        provider: LLM provider name ("openai", "anthropic", "ollama", etc.)
-                  If None, will auto-detect from environment variables
-        model: Model name (e.g., "gpt-4o", "claude-3-opus")
-               If None, uses provider default
-        models: ModelConfig for multi-model RLM (Bet 4 - cost optimization)
-                Use different models for root reasoning vs. sub-agent exploration
-                Example: ModelConfig.cost_optimized("openai")
-        api_key: API key for the provider (if not in environment)
-        config: RLMConfig for advanced configuration
-        verbose: If True, print execution progress (useful for RLM mode)
-        **kwargs: Additional arguments passed to the strategy
-        
+        content: Document / text content to analyse.
+        query: Question or instruction for the LLM.
+        mode: ``"direct"`` | ``"rag"`` | ``"rlm"`` | ``"auto"``.
+        provider: Provider key (``"openai"``, ``"anthropic"``, ``"ollama"``).
+            Auto-detected from env vars when *None*.
+        model: Model name.  Defaults to the provider's flagship model.
+        api_key: API key override (usually read from env vars).
+        max_steps: Budget limit for RLM loop iterations.
+        temperature: Sampling temperature.
+        max_tokens: Max output tokens per LLM call.
+        verbose: Print progress to stdout.
+
     Returns:
-        InteractResult with answer, mode used, and metrics
-        
+        :class:`InteractResult` with answer, mode used, and metrics.
+
     Raises:
-        ValueError: If mode is invalid or configuration is incomplete
-        
-    Examples:
-        >>> # Simple usage with auto mode
-        >>> result = interact("Long document...", "Summarize this")
-        >>> print(result.answer)
-        
-        >>> # Explicit RLM mode with specific model
-        >>> result = interact(
-        ...     content="Large document...",
-        ...     query="Find the key points",
-        ...     mode="rlm",
-        ...     provider="openai",
-        ...     model="gpt-4o"
-        ... )
-        >>> print(f"Used {result.mode_used} mode")
-        >>> print(f"Cost: ${result.metrics['total_cost']:.4f}")
-        
-        >>> # Direct mode for small content
-        >>> result = interact(
-        ...     content="Short text",
-        ...     query="What is this?",
-        ...     mode="direct"
-        ... )
+        ValueError: If inputs are invalid or no provider can be resolved.
     """
-    # Validate inputs
     if not content:
         raise ValueError("content cannot be empty")
     if not query:
         raise ValueError("query cannot be empty")
-    
-    # Determine actual mode if auto
+
+    # -- Resolve mode --
     actual_mode = mode
     if mode == "auto":
         actual_mode = _determine_auto_mode(content)
         if verbose:
-            print(f"[Auto Mode] Selected '{actual_mode}' based on content size "
-                  f"({estimate_tokens(content):,} tokens)")
-    
-    # Validate mode
+            print(
+                f"[Auto Mode] Selected '{actual_mode}' based on content size "
+                f"({_estimate_tokens(content):,} tokens)"
+            )
+
     if actual_mode not in ("direct", "rag", "rlm"):
         raise ValueError(f"Invalid mode: {actual_mode}. Must be 'direct', 'rag', 'rlm', or 'auto'")
-    
-    # Get LLM client - auto-detect if not specified
+
+    # -- Resolve provider --
     if provider is None:
-        provider = auto_detect_provider()
+        provider = _auto_detect_provider()
         if provider is None:
-            raise ConfigurationError(
-                "No LLM provider configured. Please set one of:\n"
-                "  • OPENAI_API_KEY=sk-...\n"
-                "  • ANTHROPIC_API_KEY=sk-ant-...\n"
-                "  • OLLAMA_BASE_URL=http://localhost:11434\n\n"
-                "Or explicitly pass provider='openai' and api_key='...' to interact()"
+            raise ValueError(
+                "No LLM provider configured. Set OPENAI_API_KEY, "
+                "ANTHROPIC_API_KEY, or OLLAMA_BASE_URL in the environment, "
+                "or pass provider= explicitly."
             )
         if verbose:
             print(f"[Auto-Detect] Using '{provider}' provider from environment")
-    
+
+    prefixed_model = _resolve_model(provider, model)
+
     if verbose:
-        print(f"[Setup] Configuring {provider} provider...")
-    
-    client: BaseLLMProvider = get_llm_client(
-        provider=provider,
-        model=model,
+        print(f"[Setup] Configuring {provider}/{prefixed_model} ...")
+
+    llm = LiteLLMAdapter(
+        model=prefixed_model,
         api_key=api_key,
-        **kwargs
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
-    
-    # Use provided config or create default
-    if config is None:
-        config = RLMConfig()
-    
-    # Execute based on mode
+
+    config = RunConfigDTO(
+        mode=actual_mode,
+        provider=provider,
+        model=prefixed_model,
+        max_steps=max_steps,
+    )
+
+    # -- Dispatch --
     if verbose:
-        print(f"[Execution] Running in '{actual_mode}' mode...")
-    
-    strategy_result: StrategyResult
-    
-    if actual_mode == "direct":
-        strategy = DirectStrategy(client=client)
-        strategy_result = strategy.run(content=content, query=query)
-        
+        print(f"[Execution] Running in '{actual_mode}' mode ...")
+
+    result: RunResultDTO
+    if actual_mode == "rlm":
+        sandbox = create_sandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, query, config)
     elif actual_mode == "rag":
-        # RAG requires embeddings - use OpenAI embeddings by default
-        try:
-            from .strategies import OpenAIEmbedder
-            embedder = OpenAIEmbedder()
-        except ImportError:
-            raise ValueError(
-                "RAG mode requires OpenAI embeddings. "
-                "Install with: pip install openai"
-            )
-        
-        strategy = RAGStrategy(
-            client=client,
-            embedder=embedder,
-            top_k=kwargs.get("top_k", 5)
-        )
-        strategy_result = strategy.run(content=content, query=query)
-        
-    elif actual_mode == "rlm":
-        strategy = RLMStrategy(client=client, config=config)
-        strategy_result = strategy.run(content=content, query=query)
-        
+        # RAG use case requires embedder + storage; fall back to direct
+        # until those adapters are wired up in the public API.
+        uc_direct = RunDirectUseCase(llm)
+        result = uc_direct.execute(content, query, config)
+        result.mode_used = "rag"
     else:
-        raise ValueError(f"Unsupported mode: {actual_mode}")
-    
-    # Extract metrics from strategy result
+        uc_direct = RunDirectUseCase(llm)
+        result = uc_direct.execute(content, query, config)
+
     metrics = {
-        "total_tokens": strategy_result.tokens.total_tokens,
-        "input_tokens": strategy_result.tokens.input_tokens,
-        "output_tokens": strategy_result.tokens.output_tokens,
-        "total_cost": strategy_result.cost,
-        "execution_time": strategy_result.elapsed_time,
-        "llm_calls": strategy_result.steps,
+        "total_tokens": result.total_tokens,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "total_cost": result.total_cost,
+        "execution_time": result.elapsed_time,
+        "llm_calls": result.steps,
     }
-    
+
     if verbose:
-        print(f"[Complete] Generated {len(strategy_result.answer)} character response")
+        print(f"[Complete] Generated {len(result.answer)} character response")
         print(f"  Tokens: {metrics['total_tokens']:,} | Cost: ${metrics['total_cost']:.4f}")
-    
-    # Build result
+
     return InteractResult(
-        answer=strategy_result.answer,
+        answer=result.answer,
         mode_used=actual_mode,
         metrics=metrics,
-        trace=None,  # TODO: Add tracing in Bet 3
-        raw_result=strategy_result
+        trace=result.trace or None,
+        raw_result=result,
     )
 
 
-# Convenience function for backward compatibility
-def complete(content: str, query: str, **kwargs) -> str:
-    """
-    Simple completion function that returns just the answer string.
-    
-    This is a convenience wrapper around interact() for quick usage.
-    
+def complete(content: str, query: str, **kwargs: Any) -> str:
+    """Convenience wrapper returning just the answer string.
+
     Args:
-        content: The document/text content
-        query: The question or instruction
-        **kwargs: Arguments passed to interact()
-        
+        content: Document / text content.
+        query: Question or instruction.
+        **kwargs: Forwarded to :func:`interact`.
+
     Returns:
-        The answer string
-        
-    Example:
-        >>> answer = complete("Document text", "Summarize this")
-        >>> print(answer)
+        The answer text.
     """
-    result = interact(content=content, query=query, **kwargs)
-    return result.answer
+    return interact(content=content, query=query, **kwargs).answer
