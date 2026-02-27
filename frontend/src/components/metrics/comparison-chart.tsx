@@ -30,7 +30,7 @@ export function ComparisonChart({ rlmData, directData }: ComparisonChartProps) {
       </CardHeader>
       <CardContent>
         <div className="h-64" role="img" aria-label="Bar chart comparing RLM and Direct mode token usage and cost">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={data} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis dataKey="name" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />

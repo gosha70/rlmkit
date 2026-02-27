@@ -7,6 +7,7 @@ import { AppShell } from "@/components/shared/app-shell";
 import { MetricCard } from "@/components/metrics/metric-card";
 import { ComparisonChart } from "@/components/metrics/comparison-chart";
 import { CostBreakdown } from "@/components/metrics/cost-breakdown";
+import { ProviderPerformance } from "@/components/metrics/provider-performance";
 import { PerformanceTrend } from "@/components/metrics/performance-trend";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -95,6 +96,11 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Provider performance */}
+        {metrics && Object.keys(metrics.by_provider).length > 0 && (
+          <ProviderPerformance data={metrics.by_provider} />
+        )}
+
         {/* Performance trend */}
         {metrics && metrics.timeline.length > 0 && (
           <PerformanceTrend timeline={metrics.timeline} />
@@ -112,6 +118,7 @@ export default function DashboardPage() {
                   <TableRow>
                     <TableHead>#</TableHead>
                     <TableHead>Mode</TableHead>
+                    <TableHead>Provider</TableHead>
                     <TableHead className="text-right">Tokens</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Latency</TableHead>
@@ -123,6 +130,9 @@ export default function DashboardPage() {
                       <TableCell>{i + 1}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{entry.mode.toUpperCase()}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {entry.provider || "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         {entry.tokens.toLocaleString()}

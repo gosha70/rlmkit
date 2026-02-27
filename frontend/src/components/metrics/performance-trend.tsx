@@ -24,7 +24,7 @@ export function PerformanceTrend({ timeline }: PerformanceTrendProps) {
       </CardHeader>
       <CardContent>
         <div className="h-64" role="img" aria-label="Line chart showing tokens, cost, and latency trends over time">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis dataKey="index" label={{ value: "Query #", position: "insideBottomRight", offset: -5 }} className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />

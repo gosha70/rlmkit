@@ -93,13 +93,14 @@ export interface TimelineEntry {
   cost_usd: number;
   latency_seconds: number;
   mode: ChatMode;
+  provider: string;
 }
 
 export interface MetricsResponse {
   session_id: string;
   summary: MetricsSummary;
   by_mode: Partial<Record<ChatMode, ModeSummary>>;
-  by_provider: Record<string, { queries: number; total_tokens: number; total_cost_usd: number }>;
+  by_provider: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
   timeline: TimelineEntry[];
 }
 

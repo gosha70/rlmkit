@@ -126,6 +126,7 @@ class ProviderSummary(BaseModel):
     queries: int = 0
     total_tokens: int = 0
     total_cost_usd: float = 0.0
+    avg_latency_seconds: float = 0.0
 
 
 class MetricsSummary(BaseModel):
@@ -142,6 +143,7 @@ class TimelineEntry(BaseModel):
     cost_usd: float = 0.0
     latency_seconds: float = 0.0
     mode: str = ""
+    provider: str = ""
 
 
 class MetricsResponse(BaseModel):

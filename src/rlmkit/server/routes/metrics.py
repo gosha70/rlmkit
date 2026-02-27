@@ -67,10 +67,16 @@ async def get_metrics(
         by_mode[mode]["latencies"].append(latency)
 
         if provider not in by_provider:
-            by_provider[provider] = {"queries": 0, "total_tokens": 0, "total_cost_usd": 0.0}
+            by_provider[provider] = {
+                "queries": 0,
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+                "latencies": [],
+            }
         by_provider[provider]["queries"] += 1
         by_provider[provider]["total_tokens"] += tokens
         by_provider[provider]["total_cost_usd"] += cost
+        by_provider[provider]["latencies"].append(latency)
 
         timeline.append(
             TimelineEntry(
@@ -79,6 +85,7 @@ async def get_metrics(
                 cost_usd=cost,
                 latency_seconds=latency,
                 mode=mode,
+                provider=provider,
             )
         )
 
@@ -95,7 +102,24 @@ async def get_metrics(
             avg_latency_seconds=round(avg_lat, 2),
         )
 
-    provider_summaries = {p: ProviderSummary(**d) for p, d in by_provider.items()}
+    provider_summaries = {}
+    for p, d in by_provider.items():
+        lats = d.pop("latencies")
+        avg_lat = sum(lats) / len(lats) if lats else 0.0
+        provider_summaries[p] = ProviderSummary(
+            queries=d["queries"],
+            total_tokens=d["total_tokens"],
+            total_cost_usd=d["total_cost_usd"],
+            avg_latency_seconds=round(avg_lat, 2),
+        )
+
+    # Token savings: compare RLM tokens vs Direct tokens (lower is better)
+    rlm_tokens = mode_summaries.get("rlm", ModeSummary()).total_tokens
+    direct_tokens = mode_summaries.get("direct", ModeSummary()).total_tokens
+    if direct_tokens > 0 and rlm_tokens > 0:
+        savings = round((1 - rlm_tokens / direct_tokens) * 100, 1)
+    else:
+        savings = 0.0
 
     return MetricsResponse(
         session_id=session_id,
@@ -104,6 +128,7 @@ async def get_metrics(
             total_tokens=total_tokens,
             total_cost_usd=round(total_cost, 4),
             avg_latency_seconds=round(avg_latency, 2),
+            avg_token_savings_percent=savings,
         ),
         by_mode=mode_summaries,
         by_provider=provider_summaries,
