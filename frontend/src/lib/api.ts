@@ -18,12 +18,14 @@ export interface ChatRequest {
   provider?: string | null;
   model?: string | null;
   session_id?: string | null;
+  chat_provider_id?: string | null;
 }
 
 export interface ChatResponse {
   execution_id: string;
   session_id: string;
   status: string;
+  chat_provider_id?: string | null;
 }
 
 export interface FileUploadResponse {
@@ -53,6 +55,8 @@ export interface SessionMessage {
   mode_used?: ChatMode | null;
   execution_id?: string | null;
   metrics?: MessageMetrics | null;
+  chat_provider_id?: string | null;
+  chat_provider_name?: string | null;
   timestamp: string;
 }
 
@@ -70,6 +74,7 @@ export interface SessionDetail {
   created_at: string;
   updated_at: string;
   messages: SessionMessage[];
+  conversations?: Record<string, SessionMessage[]>;
 }
 
 export interface MetricsSummary {
@@ -210,6 +215,42 @@ export interface ModeConfig {
   rlm_timeout_seconds: number;
 }
 
+// Chat Providers
+export interface ChatProviderConfig {
+  id: string;
+  name: string;
+  llm_provider: string;
+  llm_model: string;
+  execution_mode: "direct" | "rlm" | "rag";
+  runtime_settings: RuntimeSettings;
+  rag_config?: RAGConfig | null;
+  rlm_max_steps: number;
+  rlm_timeout_seconds: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatProviderCreateRequest {
+  name: string;
+  llm_provider: string;
+  llm_model: string;
+  execution_mode: "direct" | "rlm" | "rag";
+  runtime_settings?: RuntimeSettings | null;
+  rag_config?: RAGConfig | null;
+  rlm_max_steps?: number | null;
+  rlm_timeout_seconds?: number | null;
+}
+
+export interface ChatProviderUpdateRequest {
+  name?: string | null;
+  llm_model?: string | null;
+  execution_mode?: "direct" | "rlm" | "rag" | null;
+  runtime_settings?: RuntimeSettings | null;
+  rag_config?: RAGConfig | null;
+  rlm_max_steps?: number | null;
+  rlm_timeout_seconds?: number | null;
+}
+
 export interface AppConfig {
   active_provider: string;
   active_model: string;
@@ -219,6 +260,7 @@ export interface AppConfig {
   provider_configs: ProviderConfigEntry[];
   default_runtime_settings: RuntimeSettings;
   mode_config: ModeConfig;
+  chat_providers: ChatProviderConfig[];
 }
 
 export interface HealthResponse {
@@ -389,6 +431,27 @@ export const updateSystemPrompts = (prompts: SystemPrompts) =>
 
 export const getPromptTemplates = () =>
   fetchJSON<SystemPromptTemplate[]>("/api/system-prompts/templates");
+
+// Chat Providers CRUD
+export const getChatProviders = () => fetchJSON<ChatProviderConfig[]>("/api/chat-providers");
+
+export const getChatProvider = (id: string) =>
+  fetchJSON<ChatProviderConfig>(`/api/chat-providers/${id}`);
+
+export const createChatProvider = (req: ChatProviderCreateRequest) =>
+  fetchJSON<ChatProviderConfig>("/api/chat-providers", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+
+export const updateChatProvider = (id: string, req: ChatProviderUpdateRequest) =>
+  fetchJSON<ChatProviderConfig>(`/api/chat-providers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(req),
+  });
+
+export const deleteChatProvider = (id: string) =>
+  fetchJSON<void>(`/api/chat-providers/${id}`, { method: "DELETE" });
 
 // ---------------------------------------------------------------------------
 // WebSocket

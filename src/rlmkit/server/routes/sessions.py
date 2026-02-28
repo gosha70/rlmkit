@@ -43,6 +43,26 @@ async def list_sessions(
     ]
 
 
+def _deserialize_message(m: dict) -> SessionMessage:
+    """Convert a raw message dict to a SessionMessage model."""
+    metrics = None
+    if m.get("metrics"):
+        metrics = MessageMetrics(**m["metrics"])
+    return SessionMessage(
+        id=m["id"],
+        role=m["role"],
+        content=m["content"],
+        file_id=m.get("file_id"),
+        mode=m.get("mode"),
+        mode_used=m.get("mode_used"),
+        execution_id=m.get("execution_id"),
+        metrics=metrics,
+        chat_provider_id=m.get("chat_provider_id"),
+        chat_provider_name=m.get("chat_provider_name"),
+        timestamp=datetime.fromisoformat(m["timestamp"]),
+    )
+
+
 @router.get("/api/sessions/{session_id}")
 async def get_session(
     session_id: str,
@@ -53,24 +73,13 @@ async def get_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    messages = []
-    for m in session.messages:
-        metrics = None
-        if m.get("metrics"):
-            metrics = MessageMetrics(**m["metrics"])
-        messages.append(
-            SessionMessage(
-                id=m["id"],
-                role=m["role"],
-                content=m["content"],
-                file_id=m.get("file_id"),
-                mode=m.get("mode"),
-                mode_used=m.get("mode_used"),
-                execution_id=m.get("execution_id"),
-                metrics=metrics,
-                timestamp=datetime.fromisoformat(m["timestamp"]),
-            )
-        )
+    # Legacy flat messages
+    messages = [_deserialize_message(m) for m in session.messages]
+
+    # Per-Chat-Provider conversations
+    conversations: dict[str, list[SessionMessage]] = {}
+    for cp_id, conv_msgs in session.conversations.items():
+        conversations[cp_id] = [_deserialize_message(m) for m in conv_msgs]
 
     return SessionDetail(
         id=session.id,
@@ -78,6 +87,7 @@ async def get_session(
         created_at=session.created_at,
         updated_at=session.updated_at,
         messages=messages,
+        conversations=conversations,
     )
 
 

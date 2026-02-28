@@ -15,8 +15,11 @@ from rlmkit.application.dto import RunConfigDTO
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 from rlmkit.server.models import (
+    ChatProviderConfig,
     ConfigResponse,
+    RAGConfig,
     RunProfile,
+    RuntimeSettings,
     SystemPrompts,
 )
 from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
@@ -50,6 +53,7 @@ class SessionRecord:
     created_at: datetime
     updated_at: datetime
     messages: list[dict[str, Any]] = field(default_factory=list)
+    conversations: dict[str, list[dict[str, Any]]] = field(default_factory=dict)  # keyed by chat_provider_id
 
 
 @dataclass
@@ -79,6 +83,7 @@ class AppState:
         if load_from_disk:
             self._load_config()
             self._load_sessions()
+            self._migrate_chat_providers()
 
     # ------------------------------------------------------------------
     # Config persistence
@@ -163,6 +168,108 @@ class AppState:
             )
             self.save_config()
 
+    def _migrate_chat_providers(self) -> None:
+        """Auto-create Chat Providers from existing provider_configs on first load."""
+        if self.config.chat_providers:
+            return  # Already have Chat Providers
+        now = datetime.now(timezone.utc)
+        for pc in self.config.provider_configs:
+            if not pc.enabled:
+                continue
+            mode_label = "DIRECT"
+            cp = ChatProviderConfig(
+                id=str(uuid.uuid4()),
+                name=f"{mode_label}-{pc.provider.upper()}",
+                llm_provider=pc.provider,
+                llm_model=pc.model,
+                execution_mode="direct",
+                runtime_settings=pc.runtime_settings.model_copy(),
+                created_at=now,
+                updated_at=now,
+            )
+            self.config.chat_providers.append(cp)
+        if self.config.chat_providers:
+            logger.info(
+                "Migrated %d Chat Provider(s) from existing provider configs",
+                len(self.config.chat_providers),
+            )
+            self.save_config()
+
+    # ------------------------------------------------------------------
+    # Chat Provider helpers
+    # ------------------------------------------------------------------
+
+    def get_chat_provider(self, chat_provider_id: str) -> ChatProviderConfig | None:
+        """Look up a Chat Provider by ID."""
+        for cp in self.config.chat_providers:
+            if cp.id == chat_provider_id:
+                return cp
+        return None
+
+    def get_conversation(self, session_id: str, chat_provider_id: str) -> list[dict[str, Any]]:
+        """Get conversation history for a specific Chat Provider in a session."""
+        session = self.sessions.get(session_id)
+        if not session:
+            return []
+        return session.conversations.get(chat_provider_id, [])
+
+    def add_message(
+        self,
+        session_id: str,
+        message: dict[str, Any],
+        chat_provider_id: str | None = None,
+    ) -> None:
+        """Add a message to a session, tracking it per Chat Provider."""
+        session = self.sessions.get(session_id)
+        if not session:
+            return
+        # Always add to legacy flat messages for backward compat
+        session.messages.append(message)
+        # Also add to per-Chat-Provider conversations
+        if chat_provider_id:
+            if chat_provider_id not in session.conversations:
+                session.conversations[chat_provider_id] = []
+            session.conversations[chat_provider_id].append(message)
+
+    def create_llm_adapter_for_chat_provider(self, chat_provider_id: str) -> LiteLLMAdapter:
+        """Create an LLM adapter configured for a specific Chat Provider."""
+        cp = self.get_chat_provider(chat_provider_id)
+        if not cp:
+            raise ValueError(f"Chat Provider {chat_provider_id} not found")
+
+        provider_key = cp.llm_provider
+        model = cp.llm_model
+
+        # Validate model against catalog
+        entry = PROVIDERS_BY_KEY.get(provider_key)
+        if entry and entry.models:
+            catalog_names = {m.name for m in entry.models}
+            if model not in catalog_names:
+                logger.warning(
+                    "Model %s not in provider %s catalog; falling back to %s",
+                    model,
+                    provider_key,
+                    entry.models[0].name,
+                )
+                model = entry.models[0].name
+
+        prefixed_model = self._litellm_model_name(provider_key, model)
+
+        api_base: str | None = None
+        if entry and entry.default_endpoint:
+            api_base = entry.default_endpoint
+
+        runtime = cp.runtime_settings
+
+        return LiteLLMAdapter(
+            model=prefixed_model,
+            api_base=api_base,
+            temperature=runtime.temperature,
+            max_tokens=runtime.max_output_tokens,
+            timeout=float(runtime.timeout_seconds),
+            num_retries=2,
+        )
+
     def save_config(self) -> None:
         """Persist current config, profiles, and prompts to disk."""
         try:
@@ -198,6 +305,7 @@ class AppState:
                     created_at=datetime.fromisoformat(s["created_at"]),
                     updated_at=datetime.fromisoformat(s["updated_at"]),
                     messages=s.get("messages", []),
+                    conversations=s.get("conversations", {}),
                 )
                 self.sessions[rec.id] = rec
             logger.info("Loaded %d sessions from disk", len(self.sessions))
@@ -220,6 +328,7 @@ class AppState:
                     "created_at": s.created_at.isoformat(),
                     "updated_at": s.updated_at.isoformat(),
                     "messages": s.messages,
+                    "conversations": s.conversations,
                 }
                 for s in sorted_sessions
             ]

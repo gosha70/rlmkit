@@ -16,6 +16,7 @@ from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import HealthResponse
 from rlmkit.server.routes import (
     chat,
+    chat_providers,
     config,
     files,
     metrics,
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(profiles.router)
     app.include_router(prompts.router)
     app.include_router(config.router)
+    app.include_router(chat_providers.router)
 
     @app.get("/health")
     async def health_check() -> HealthResponse:

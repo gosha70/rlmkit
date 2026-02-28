@@ -46,12 +46,14 @@ class ChatRequest(BaseModel):
     provider: str | None = None
     model: str | None = None
     session_id: str | None = None
+    chat_provider_id: str | None = None  # NEW: reference a Chat Provider
 
 
 class ChatResponse(BaseModel):
     execution_id: str
     session_id: str
     status: str = "running"
+    chat_provider_id: str | None = None  # NEW: echo back the Chat Provider used
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +93,8 @@ class SessionMessage(BaseModel):
     mode_used: str | None = None
     execution_id: str | None = None
     metrics: MessageMetrics | None = None
+    chat_provider_id: str | None = None  # NEW: which Chat Provider generated this
+    chat_provider_name: str | None = None  # NEW: display name for convenience
     timestamp: datetime
 
 
@@ -108,6 +112,7 @@ class SessionDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[SessionMessage] = Field(default_factory=list)
+    conversations: dict[str, list[SessionMessage]] = Field(default_factory=dict)  # NEW: keyed by chat_provider_id
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +329,48 @@ class ModeConfig(BaseModel):
     rlm_timeout_seconds: int = 60
 
 
+# ---------------------------------------------------------------------------
+# Chat Providers
+# ---------------------------------------------------------------------------
+
+
+class ChatProviderConfig(BaseModel):
+    """A named combination of LLM Provider + Execution Mode + Settings."""
+
+    id: str
+    name: str  # e.g. "DIRECT-CLAUDE", "RLM-OPENAI"
+    llm_provider: str  # e.g. "anthropic", "openai"
+    llm_model: str  # e.g. "claude-sonnet-4-5"
+    execution_mode: Literal["direct", "rlm", "rag"]
+    runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    rag_config: RAGConfig | None = None  # only for RAG mode
+    rlm_max_steps: int = 16  # only for RLM mode
+    rlm_timeout_seconds: int = 60  # only for RLM mode
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ChatProviderCreateRequest(BaseModel):
+    name: str
+    llm_provider: str
+    llm_model: str
+    execution_mode: Literal["direct", "rlm", "rag"]
+    runtime_settings: RuntimeSettings | None = None
+    rag_config: RAGConfig | None = None
+    rlm_max_steps: int | None = None
+    rlm_timeout_seconds: int | None = None
+
+
+class ChatProviderUpdateRequest(BaseModel):
+    name: str | None = None
+    llm_model: str | None = None
+    execution_mode: Literal["direct", "rlm", "rag"] | None = None
+    runtime_settings: RuntimeSettings | None = None
+    rag_config: RAGConfig | None = None
+    rlm_max_steps: int | None = None
+    rlm_timeout_seconds: int | None = None
+
+
 class ConfigResponse(BaseModel):
     active_provider: str = "openai"
     active_model: str = "gpt-4o"
@@ -333,6 +380,7 @@ class ConfigResponse(BaseModel):
     provider_configs: list[ProviderConfig] = Field(default_factory=list)
     default_runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     mode_config: ModeConfig = Field(default_factory=ModeConfig)
+    chat_providers: list[ChatProviderConfig] = Field(default_factory=list)
     trajectory_dir: str | None = None
 
 
@@ -345,6 +393,7 @@ class ConfigUpdateRequest(BaseModel):
     provider_configs: list[ProviderConfig] | None = None
     default_runtime_settings: RuntimeSettings | None = None
     mode_config: ModeConfig | None = None
+    chat_providers: list[ChatProviderConfig] | None = None
 
 
 # ---------------------------------------------------------------------------

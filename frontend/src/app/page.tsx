@@ -2,25 +2,52 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { User, Bot } from "lucide-react";
 import { AppShell } from "@/components/shared/app-shell";
-import { ModeSelector, type Strategy } from "@/components/chat/mode-selector";
-import { MessageBubble } from "@/components/chat/message-bubble";
+import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
 import { ChatInput } from "@/components/chat/chat-input";
 import { FileAttachment } from "@/components/chat/file-attachment";
 import { TypingIndicator } from "@/components/chat/typing-indicator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useChat, type ChatMessage } from "@/lib/use-chat";
 import {
   getConfig,
   getSession,
-  getProviders,
+  getChatProviders,
   getTrace,
   submitChat,
   uploadFile,
+  getProviders,
   type AppConfig,
+  type ChatProviderConfig,
   type ProviderInfo,
   type FileUploadResponse,
+  type MessageMetrics,
 } from "@/lib/api";
+
+interface ChatTurn {
+  id: string;
+  userMessage: {
+    content: string;
+    timestamp: string;
+  };
+  responses: Record<
+    string,
+    {
+      chatProviderId: string;
+      chatProviderName: string;
+      executionId: string;
+      content: string;
+      isStreaming: boolean;
+      metrics?: MessageMetrics;
+    }
+  >;
+}
+
+interface PollingState {
+  [executionId: string]: ReturnType<typeof setInterval>;
+}
 
 export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(() => {
@@ -29,16 +56,24 @@ export default function ChatPage() {
     }
     return null;
   });
-  const [modes, setModes] = useState<Strategy[]>(["direct"]);
-  const [selectedProvider, setSelectedProvider] = useState<string>("");
+
+  const [selectedChatProviderIds, setSelectedChatProviderIds] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rlmkit_selected_chat_providers");
+      return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
-  const [isPolling, setIsPolling] = useState(false);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [isAnyPolling, setIsAnyPolling] = useState(false);
   const skipSessionLoadRef = useRef(false);
-  const { messages, isConnected, isStreaming, sendQuery, setMessages } = useChat(sessionId);
+  const pollingStateRef = useRef<PollingState>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const { data: chatProviders = [] } = useSWR<ChatProviderConfig[]>("chat-providers", getChatProviders);
   const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
   const { data: config } = useSWR<AppConfig>("config", getConfig);
 
@@ -51,21 +86,19 @@ export default function ChatPage() {
     }
   }, [sessionId]);
 
-  // Select provider from config.active_provider, falling back to first configured
+  // Persist selected chat providers to localStorage
   useEffect(() => {
-    if (selectedProvider) return;
-    if (config?.active_provider) {
-      setSelectedProvider(config.active_provider);
-      return;
-    }
-    const connected = providers.find((p) => p.status === "connected");
-    const configured = providers.find((p) => p.status === "configured");
-    const pick = connected || configured;
-    if (pick) setSelectedProvider(pick.name);
-  }, [providers, config, selectedProvider]);
+    localStorage.setItem("rlmkit_selected_chat_providers", JSON.stringify(selectedChatProviderIds));
+  }, [selectedChatProviderIds]);
 
-  // Load session messages when sessionId changes (e.g., clicking a session in sidebar).
-  // Skip if we just created this session via submitChat — messages are already set correctly.
+  // Auto-select first available chat provider if none selected
+  useEffect(() => {
+    if (selectedChatProviderIds.length === 0 && chatProviders.length > 0) {
+      setSelectedChatProviderIds([chatProviders[0].id]);
+    }
+  }, [chatProviders, selectedChatProviderIds.length]);
+
+  // Load session messages and reconstruct turns
   useEffect(() => {
     if (!sessionId) return;
     if (skipSessionLoadRef.current) {
@@ -74,57 +107,138 @@ export default function ChatPage() {
     }
     getSession(sessionId)
       .then((session) => {
-        setMessages(
-          session.messages.map((m) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            mode: m.mode ?? undefined,
-            mode_used: m.mode_used ?? undefined,
-            metrics: m.metrics ?? undefined,
-          })),
-        );
+        // Reconstruct turns from session.conversations dict or flat messages
+        if (session.conversations && Object.keys(session.conversations).length > 0) {
+          // Group by conversation (chat provider)
+          const turnMap = new Map<string, ChatTurn>();
+
+          // Iterate through each chat provider's conversation
+          for (const [cpId, messages] of Object.entries(session.conversations)) {
+            for (const msg of messages) {
+              let turnId: string | undefined;
+
+              if (msg.role === "user") {
+                // Find or create a turn with this user message
+                const existing = Array.from(turnMap.values()).find(
+                  (t) => t.userMessage.content === msg.content
+                );
+                turnId = existing?.id || crypto.randomUUID();
+              } else {
+                // Assistant message — find the corresponding turn
+                const existing = Array.from(turnMap.values()).find(
+                  (t) => !t.responses[cpId]
+                );
+                turnId = existing?.id;
+              }
+
+              if (!turnId) turnId = crypto.randomUUID();
+
+              let turn = turnMap.get(turnId);
+              if (!turn) {
+                turn = {
+                  id: turnId,
+                  userMessage: { content: "", timestamp: "" },
+                  responses: {},
+                };
+                turnMap.set(turnId, turn);
+              }
+
+              if (msg.role === "user") {
+                turn.userMessage = {
+                  content: msg.content,
+                  timestamp: msg.timestamp,
+                };
+              } else {
+                turn.responses[cpId] = {
+                  chatProviderId: cpId,
+                  chatProviderName: msg.chat_provider_name || cpId,
+                  executionId: msg.execution_id || crypto.randomUUID(),
+                  content: msg.content,
+                  isStreaming: false,
+                  metrics: msg.metrics ?? undefined,
+                };
+              }
+            }
+          }
+
+          setTurns(Array.from(turnMap.values()));
+        } else {
+          // Fallback: reconstruct from flat messages list
+          const newTurns: ChatTurn[] = [];
+          let currentTurn: ChatTurn | null = null;
+
+          for (const msg of session.messages) {
+            if (msg.role === "user") {
+              currentTurn = {
+                id: crypto.randomUUID(),
+                userMessage: {
+                  content: msg.content,
+                  timestamp: msg.timestamp,
+                },
+                responses: {},
+              };
+              newTurns.push(currentTurn);
+            } else if (currentTurn && msg.chat_provider_id) {
+              currentTurn.responses[msg.chat_provider_id] = {
+                chatProviderId: msg.chat_provider_id,
+                chatProviderName: msg.chat_provider_name || msg.chat_provider_id,
+                executionId: msg.execution_id || msg.id,
+                content: msg.content,
+                isStreaming: false,
+                metrics: msg.metrics ?? undefined,
+              };
+            }
+          }
+
+          setTurns(newTurns);
+        }
       })
       .catch((err) => {
-        // Session no longer exists (e.g., backend restarted) — clear stale ID
         if (String(err).includes("404")) {
           setSessionId(null);
-          setMessages([]);
+          setTurns([]);
         }
       });
-  }, [sessionId, setMessages]);
+  }, [sessionId]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new turns
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [turns]);
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      Object.values(pollingStateRef.current).forEach((interval) => {
+        clearInterval(interval);
+      });
     };
   }, []);
 
   const pollForResult = useCallback(
-    (executionId: string) => {
-      setIsPolling(true);
-      pollingRef.current = setInterval(async () => {
+    (executionId: string, chatProviderId: string, turnId: string) => {
+      setIsAnyPolling(true);
+
+      const interval = setInterval(async () => {
         try {
           const trace = await getTrace(executionId);
+
           if (trace.status === "complete") {
-            clearInterval(pollingRef.current!);
-            pollingRef.current = null;
-            setIsPolling(false);
-            setMessages((prev: ChatMessage[]) =>
-              prev.map((msg) =>
-                msg.id === executionId
+            clearInterval(interval);
+            delete pollingStateRef.current[executionId];
+
+            setTurns((prev) =>
+              prev.map((turn) =>
+                turn.id === turnId
                   ? {
-                      ...msg,
-                      content: trace.result.answer,
-                      isStreaming: false,
-                      mode_used: trace.mode,
-                      metrics: {
+                      ...turn,
+                      responses: {
+                        ...turn.responses,
+                        [chatProviderId]: {
+                          ...turn.responses[chatProviderId],
+                          content: trace.result.answer,
+                          isStreaming: false,
+                          metrics: {
                             input_tokens: trace.budget.tokens_used,
                             output_tokens: 0,
                             total_tokens: trace.budget.tokens_used,
@@ -137,102 +251,149 @@ export default function ChatPage() {
                                 : 0,
                             steps: trace.budget.steps_used,
                           },
+                        },
+                      },
                     }
-                  : msg,
+                  : turn,
               ),
             );
+
+            // Check if any polling is still active
+            if (Object.keys(pollingStateRef.current).length === 0) {
+              setIsAnyPolling(false);
+            }
           } else if (trace.status === "error") {
-            clearInterval(pollingRef.current!);
-            pollingRef.current = null;
-            setIsPolling(false);
-            setMessages((prev: ChatMessage[]) =>
-              prev.map((msg) =>
-                msg.id === executionId
+            clearInterval(interval);
+            delete pollingStateRef.current[executionId];
+
+            setTurns((prev) =>
+              prev.map((turn) =>
+                turn.id === turnId
                   ? {
-                      ...msg,
-                      content: `Error: ${trace.result?.answer || "Execution failed"}`,
-                      isStreaming: false,
+                      ...turn,
+                      responses: {
+                        ...turn.responses,
+                        [chatProviderId]: {
+                          ...turn.responses[chatProviderId],
+                          content: `Error: ${trace.result?.answer || "Execution failed"}`,
+                          isStreaming: false,
+                        },
+                      },
                     }
-                  : msg,
+                  : turn,
               ),
             );
+
+            if (Object.keys(pollingStateRef.current).length === 0) {
+              setIsAnyPolling(false);
+            }
           }
         } catch (err) {
           console.error("Polling error:", err);
         }
       }, 1000);
+
+      pollingStateRef.current[executionId] = interval;
     },
-    [setMessages],
+    [],
   );
 
   const handleSend = useCallback(
     async (text: string) => {
-      const providerInfo = providers.find((p) => p.name === selectedProvider);
-      // Use config.active_model when the selected provider matches the active one
-      const model =
-        (config?.active_provider === selectedProvider ? config?.active_model : undefined) ||
-        providerInfo?.default_model ||
-        undefined;
+      // Add user message
+      const turnId = crypto.randomUUID();
+      const newTurn: ChatTurn = {
+        id: turnId,
+        userMessage: {
+          content: text,
+          timestamp: new Date().toISOString(),
+        },
+        responses: {},
+      };
 
-      // Submit one request per selected mode
-      for (const currentMode of modes) {
-        if (isConnected && sessionId) {
-          sendQuery(text, fileContent || "", currentMode, uploadedFile?.id);
-        } else {
-          try {
-            const resp = await submitChat({
-              query: text,
-              // When a file is uploaded, use file_id so backend uses its extracted text.
-              // Only send raw content for plain text typed/pasted without file upload.
-              content: uploadedFile ? null : (text || null),
-              file_id: uploadedFile?.id || null,
-              mode: currentMode,
-              provider: selectedProvider || undefined,
-              model: model || undefined,
-              session_id: sessionId,
-            });
-            if (!sessionId) {
-              // Prevent the session-load useEffect from overwriting our messages
-              skipSessionLoadRef.current = true;
-              setSessionId(resp.session_id);
-            }
-
-            setMessages((prev: ChatMessage[]) => [
-              ...prev,
-              ...(prev.some((m) => m.role === "user" && m.content === text)
-                ? []
-                : [{ id: crypto.randomUUID(), role: "user" as const, content: text }]),
-              {
-                id: resp.execution_id,
-                role: "assistant" as const,
-                content: "Processing...",
-                mode: currentMode,
-                isStreaming: true,
-              },
-            ]);
-
-            // Start polling for the result
-            pollForResult(resp.execution_id);
-          } catch (err) {
-            console.error("Failed to submit chat:", err);
-          }
-        }
+      // Initialize empty responses for each selected provider
+      for (const cpId of selectedChatProviderIds) {
+        newTurn.responses[cpId] = {
+          chatProviderId: cpId,
+          chatProviderName: chatProviders.find((cp) => cp.id === cpId)?.name || cpId,
+          executionId: "",
+          content: "",
+          isStreaming: true,
+        };
       }
+
+      setTurns((prev) => [...prev, newTurn]);
+
+      // Submit one request per selected chat provider in parallel
+      const submitPromises = selectedChatProviderIds.map(async (cpId) => {
+        try {
+          const resp = await submitChat({
+            query: text,
+            content: uploadedFile ? null : text || null,
+            file_id: uploadedFile?.id || null,
+            chat_provider_id: cpId,
+            session_id: sessionId,
+          });
+
+          if (!sessionId) {
+            skipSessionLoadRef.current = true;
+            setSessionId(resp.session_id);
+          }
+
+          // Update the turn with the execution ID and start polling
+          setTurns((prev) =>
+            prev.map((turn) =>
+              turn.id === turnId
+                ? {
+                    ...turn,
+                    responses: {
+                      ...turn.responses,
+                      [cpId]: {
+                        ...turn.responses[cpId],
+                        executionId: resp.execution_id,
+                      },
+                    },
+                  }
+                : turn,
+            ),
+          );
+
+          pollForResult(resp.execution_id, cpId, turnId);
+        } catch (err) {
+          console.error(`Failed to submit chat for provider ${cpId}:`, err);
+          setTurns((prev) =>
+            prev.map((turn) =>
+              turn.id === turnId
+                ? {
+                    ...turn,
+                    responses: {
+                      ...turn.responses,
+                      [cpId]: {
+                        ...turn.responses[cpId],
+                        content: `Error: Failed to submit request`,
+                        isStreaming: false,
+                      },
+                    },
+                  }
+                : turn,
+            ),
+          );
+        }
+      });
+
+      await Promise.allSettled(submitPromises);
     },
-    [isConnected, sessionId, fileContent, uploadedFile, modes, selectedProvider, providers, config, sendQuery, setMessages, pollForResult],
+    [sessionId, uploadedFile, selectedChatProviderIds, chatProviders, pollForResult],
   );
 
   const handleFileUpload = useCallback(async (file: File) => {
     try {
       const resp = await uploadFile(file);
       setUploadedFile(resp);
-      // For text files, read content directly; for binary files (PDF etc.),
-      // rely on the backend's extracted text via file_id.
       if (file.type === "text/plain" || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
         const text = await file.text();
         setFileContent(text);
       } else {
-        // Backend already extracted text during upload — use file_id to reference it
         setFileContent("");
       }
     } catch (err) {
@@ -242,17 +403,15 @@ export default function ChatPage() {
 
   const handleNewSession = useCallback(() => {
     setSessionId(null);
-    setMessages([]);
+    setTurns([]);
     setUploadedFile(null);
     setFileContent("");
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-    setIsPolling(false);
-  }, [setMessages]);
-
-  const showTyping = isStreaming || isPolling;
+    Object.values(pollingStateRef.current).forEach((interval) => {
+      clearInterval(interval);
+    });
+    pollingStateRef.current = {};
+    setIsAnyPolling(false);
+  }, []);
 
   return (
     <AppShell
@@ -263,12 +422,11 @@ export default function ChatPage() {
       <div className="flex h-full flex-col overflow-hidden">
         {/* Toolbar */}
         <div className="flex items-center gap-3 border-b px-4 py-2" role="toolbar" aria-label="Chat options">
-          <ModeSelector
-            modes={modes}
-            onModesChange={setModes}
+          <ChatProviderSelector
+            chatProviders={chatProviders}
             providers={providers}
-            selectedProvider={selectedProvider}
-            onProviderChange={setSelectedProvider}
+            selectedIds={selectedChatProviderIds}
+            onSelectionChange={setSelectedChatProviderIds}
           />
         </div>
 
@@ -287,8 +445,8 @@ export default function ChatPage() {
           </div>
         )}
 
-        {messages.length === 0 ? (
-          /* Empty state: centered welcome + input like ChatGPT / Claude */
+        {turns.length === 0 ? (
+          /* Empty state: centered welcome + input */
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4">
             <div className="mb-8 text-center text-muted-foreground">
               <p className="text-lg font-medium">Welcome to RLM Studio</p>
@@ -298,22 +456,84 @@ export default function ChatPage() {
               </p>
             </div>
             <div className="w-full max-w-3xl">
-              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={showTyping} />
+              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyPolling} />
             </div>
           </div>
         ) : (
-          /* Active conversation: messages scroll, input pinned at bottom */
+          /* Active conversation: turns scroll, input pinned at bottom */
           <>
             <ScrollArea className="min-h-0 flex-1" aria-label="Message history">
-              <div className="mx-auto max-w-3xl space-y-6 px-4 py-6" role="log" aria-live="polite">
-                {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
+              <div className="mx-auto w-full max-w-full space-y-8 px-4 py-6" role="log" aria-live="polite">
+                {turns.map((turn) => (
+                  <div key={turn.id} className="space-y-4">
+                    {/* User message - full width */}
+                    <div className="flex gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                        <User className="h-4 w-4" aria-hidden="true" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <div className="rounded-lg bg-primary px-4 py-3 text-sm text-primary-foreground">
+                          <p className="whitespace-pre-wrap">{turn.userMessage.content}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Provider responses - grid layout */}
+                    <div
+                      className="grid gap-4"
+                      style={{
+                        gridTemplateColumns: `repeat(${selectedChatProviderIds.length}, 1fr)`,
+                      }}
+                    >
+                      {selectedChatProviderIds.map((cpId) => {
+                        const resp = turn.responses[cpId];
+                        return (
+                          <div
+                            key={cpId}
+                            className="rounded-lg border bg-muted/30 p-4"
+                          >
+                            {/* Provider name header */}
+                            <div className="mb-2 flex items-center gap-2">
+                              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                                <Bot className="h-3 w-3" aria-hidden="true" />
+                              </div>
+                              <span className="text-xs font-medium text-muted-foreground">
+                                {resp?.chatProviderName}
+                              </span>
+                            </div>
+
+                            {/* Response content or loading indicator */}
+                            {resp && resp.content ? (
+                              <>
+                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {resp.content}
+                                  </ReactMarkdown>
+                                </div>
+                                {resp.metrics && (
+                                  <div className="mt-3 flex flex-col gap-2 border-t pt-2 text-xs text-muted-foreground">
+                                    <div className="flex gap-4">
+                                      <span>{resp.metrics.total_tokens} tokens</span>
+                                      <span>${resp.metrics.cost_usd.toFixed(4)}</span>
+                                      <span>{resp.metrics.elapsed_seconds.toFixed(1)}s</span>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            ) : resp ? (
+                              <TypingIndicator />
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
-                {showTyping && <TypingIndicator mode={modes[0]} />}
+                {isAnyPolling && <TypingIndicator />}
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={showTyping} />
+            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyPolling} />
           </>
         )}
       </div>
