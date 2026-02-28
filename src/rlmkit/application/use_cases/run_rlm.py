@@ -9,18 +9,18 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from rlmkit.domain.entities import BudgetConfig, BudgetState
-from rlmkit.domain.exceptions import BudgetExceededError
 from rlmkit.application.dto import (
     LLMResponseDTO,
     RunConfigDTO,
     RunResultDTO,
 )
+from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.sandbox_port import SandboxPort
-from rlmkit.application.ports.event_port import ExecutionEventEmitter
+from rlmkit.domain.entities import BudgetConfig, BudgetState
+from rlmkit.domain.exceptions import BudgetExceededError
 
 
 class RunRLMUseCase:
@@ -39,7 +39,7 @@ class RunRLMUseCase:
         self,
         content: str,
         query: str,
-        config: Optional[RunConfigDTO] = None,
+        config: RunConfigDTO | None = None,
     ) -> RunResultDTO:
         """Run the RLM exploration loop.
 
@@ -68,14 +68,15 @@ class RunRLMUseCase:
 
         # Build initial messages
         system_prompt = self._build_system_prompt(len(content))
-        messages: List[Dict[str, str]] = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ]
 
-        trace: List[Dict[str, Any]] = []
+        trace: list[dict[str, Any]] = []
         cumulative_input = 0
         cumulative_output = 0
+        step_start = start
 
         # Use root model for the initial reasoning call
         if hasattr(self._llm, "use_root_model"):
@@ -85,11 +86,10 @@ class RunRLMUseCase:
             while budget_state.steps < (budget_config.max_steps or 16):
                 budget_state.steps += 1
                 budget_state.elapsed_seconds = time.time() - start
+                step_start = time.time()
 
                 if not budget_state.is_within(budget_config):
-                    raise BudgetExceededError(
-                        f"Budget exceeded at step {budget_state.steps}"
-                    )
+                    raise BudgetExceededError(f"Budget exceeded at step {budget_state.steps}")
 
                 # Switch to recursive model for exploration subcalls (step > 1)
                 if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
@@ -102,15 +102,23 @@ class RunRLMUseCase:
                 budget_state.input_tokens = cumulative_input
                 budget_state.output_tokens = cumulative_output
 
-                trace.append({
-                    "step": budget_state.steps,
-                    "role": "assistant",
-                    "content": response.content,
-                    "input_tokens": response.input_tokens,
-                    "output_tokens": response.output_tokens,
-                })
-
                 text = response.content
+
+                # Extract code if present
+                code = self._extract_code(text)
+
+                trace.append(
+                    {
+                        "step": budget_state.steps,
+                        "role": "assistant",
+                        "content": response.content,
+                        "input_tokens": response.input_tokens,
+                        "output_tokens": response.output_tokens,
+                        "code": code,
+                        "model": getattr(self._llm, "active_model", None) or response.model,
+                        "elapsed_seconds": time.time() - step_start,
+                    }
+                )
 
                 # Check for FINAL answer
                 final = self._extract_final(text)
@@ -131,33 +139,39 @@ class RunRLMUseCase:
                     )
 
                 # Check for code to execute
-                code = self._extract_code(text)
                 if code:
                     exec_result = self._sandbox.execute(code)
                     formatted = self._format_execution(exec_result)
 
-                    trace.append({
-                        "step": budget_state.steps,
-                        "role": "execution",
-                        "content": formatted,
-                    })
+                    trace.append(
+                        {
+                            "step": budget_state.steps,
+                            "role": "execution",
+                            "content": formatted,
+                            "code": code,
+                        }
+                    )
 
                     messages.append({"role": "assistant", "content": text})
-                    messages.append({
-                        "role": "user",
-                        "content": f"Execution result:\n{formatted}",
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"Execution result:\n{formatted}",
+                        }
+                    )
                 else:
                     # No code and no FINAL -- nudge the LLM
                     messages.append({"role": "assistant", "content": text})
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "Please provide either:\n"
-                            "1. Python code to execute (in a ```python code block), OR\n"
-                            "2. A FINAL answer (using FINAL: prefix)"
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Please provide either:\n"
+                                "1. Python code to execute (in a ```python code block), OR\n"
+                                "2. A FINAL answer (using FINAL: prefix)"
+                            ),
+                        }
+                    )
 
             # Max steps exhausted
             raise BudgetExceededError(
@@ -200,8 +214,8 @@ class RunRLMUseCase:
         self,
         content: str,
         query: str,
-        config: Optional[RunConfigDTO] = None,
-        event_emitter: Optional[ExecutionEventEmitter] = None,
+        config: RunConfigDTO | None = None,
+        event_emitter: ExecutionEventEmitter | None = None,
     ) -> RunResultDTO:
         """Async RLM loop with real-time event streaming.
 
@@ -224,14 +238,15 @@ class RunRLMUseCase:
         self._sandbox.set_variable("P", content)
 
         system_prompt = self._build_system_prompt(len(content))
-        messages: List[Dict[str, str]] = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ]
 
-        trace: List[Dict[str, Any]] = []
+        trace: list[dict[str, Any]] = []
         cumulative_input = 0
         cumulative_output = 0
+        step_start = start
 
         if hasattr(self._llm, "use_root_model"):
             self._llm.use_root_model()
@@ -240,11 +255,10 @@ class RunRLMUseCase:
             while budget_state.steps < (budget_config.max_steps or 16):
                 budget_state.steps += 1
                 budget_state.elapsed_seconds = time.time() - start
+                step_start = time.time()
 
                 if not budget_state.is_within(budget_config):
-                    raise BudgetExceededError(
-                        f"Budget exceeded at step {budget_state.steps}"
-                    )
+                    raise BudgetExceededError(f"Budget exceeded at step {budget_state.steps}")
 
                 if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
                     self._llm.use_recursive_model()
@@ -275,27 +289,33 @@ class RunRLMUseCase:
                 budget_state.input_tokens = cumulative_input
                 budget_state.output_tokens = cumulative_output
 
-                step_entry: Dict[str, Any] = {
+                text = response.content
+                code = self._extract_code(text)
+
+                step_entry: dict[str, Any] = {
                     "step": budget_state.steps,
                     "role": "assistant",
                     "content": response.content,
                     "input_tokens": response.input_tokens,
                     "output_tokens": response.output_tokens,
+                    "code": code,
+                    "model": getattr(self._llm, "active_model", None) or response.model,
+                    "elapsed_seconds": time.time() - step_start,
                 }
                 trace.append(step_entry)
-
-                text = response.content
 
                 # Emit step event
                 if event_emitter:
                     await event_emitter.on_step(step_entry)
-                    await event_emitter.on_metrics({
-                        "input_tokens": cumulative_input,
-                        "output_tokens": cumulative_output,
-                        "total_tokens": cumulative_input + cumulative_output,
-                        "steps": budget_state.steps,
-                        "elapsed_seconds": time.time() - start,
-                    })
+                    await event_emitter.on_metrics(
+                        {
+                            "input_tokens": cumulative_input,
+                            "output_tokens": cumulative_output,
+                            "total_tokens": cumulative_input + cumulative_output,
+                            "steps": budget_state.steps,
+                            "elapsed_seconds": time.time() - start,
+                        }
+                    )
 
                 # Check for FINAL answer
                 final = self._extract_final(text)
@@ -315,32 +335,38 @@ class RunRLMUseCase:
                     )
 
                 # Check for code to execute
-                code = self._extract_code(text)
                 if code:
                     exec_result = await asyncio.to_thread(self._sandbox.execute, code)
                     formatted = self._format_execution(exec_result)
 
-                    trace.append({
-                        "step": budget_state.steps,
-                        "role": "execution",
-                        "content": formatted,
-                    })
+                    trace.append(
+                        {
+                            "step": budget_state.steps,
+                            "role": "execution",
+                            "content": formatted,
+                            "code": code,
+                        }
+                    )
 
                     messages.append({"role": "assistant", "content": text})
-                    messages.append({
-                        "role": "user",
-                        "content": f"Execution result:\n{formatted}",
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"Execution result:\n{formatted}",
+                        }
+                    )
                 else:
                     messages.append({"role": "assistant", "content": text})
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "Please provide either:\n"
-                            "1. Python code to execute (in a ```python code block), OR\n"
-                            "2. A FINAL answer (using FINAL: prefix)"
-                        ),
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Please provide either:\n"
+                                "1. Python code to execute (in a ```python code block), OR\n"
+                                "2. A FINAL answer (using FINAL: prefix)"
+                            ),
+                        }
+                    )
 
             raise BudgetExceededError(
                 f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
@@ -381,18 +407,20 @@ class RunRLMUseCase:
     # -- Private helpers --
 
     @staticmethod
-    def _extract_final(text: str) -> Optional[str]:
+    def _extract_final(text: str) -> str | None:
         """Extract FINAL: answer from LLM response."""
         import re
+
         match = re.search(r"^FINAL:\s*(.*)", text, re.MULTILINE | re.IGNORECASE | re.DOTALL)
         if match:
             return match.group(1).strip()
         return None
 
     @staticmethod
-    def _extract_code(text: str) -> Optional[str]:
+    def _extract_code(text: str) -> str | None:
         """Extract Python code block from LLM response."""
         import re
+
         # Try python-specific block first
         match = re.search(r"```python\s*\n(.*?)\n```", text, re.DOTALL | re.IGNORECASE)
         if match:

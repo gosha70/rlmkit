@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -34,7 +32,7 @@ class ExecutionSummary(BaseModel):
 async def list_executions(
     limit: int = Query(default=20, ge=1, le=100),
     state: AppState = Depends(get_state),
-) -> List[ExecutionSummary]:
+) -> list[ExecutionSummary]:
     """List recent executions (newest first)."""
     execs = sorted(
         state.executions.values(),
@@ -44,17 +42,19 @@ async def list_executions(
     result = []
     for e in execs:
         rd = e.result or {}
-        result.append(ExecutionSummary(
-            execution_id=e.execution_id,
-            session_id=e.session_id,
-            query=e.query,
-            mode=e.mode,
-            status=e.status,
-            started_at=e.started_at.isoformat() if e.started_at else None,
-            completed_at=e.completed_at.isoformat() if e.completed_at else None,
-            total_tokens=rd.get("total_tokens", 0),
-            total_cost=rd.get("total_cost", 0.0),
-        ))
+        result.append(
+            ExecutionSummary(
+                execution_id=e.execution_id,
+                session_id=e.session_id,
+                query=e.query,
+                mode=e.mode,
+                status=e.status,
+                started_at=e.started_at.isoformat() if e.started_at else None,
+                completed_at=e.completed_at.isoformat() if e.completed_at else None,
+                total_tokens=rd.get("total_tokens", 0),
+                total_cost=rd.get("total_cost", 0.0),
+            )
+        )
     return result
 
 
@@ -78,6 +78,8 @@ async def get_trace(
                 output=step_data.get("content", ""),
                 input_tokens=step_data.get("input_tokens", 0),
                 output_tokens=step_data.get("output_tokens", 0),
+                duration_seconds=step_data.get("elapsed_seconds", 0.0),
+                model=step_data.get("model"),
             )
         )
 

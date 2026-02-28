@@ -86,6 +86,8 @@ class RunDirectUseCase:
                         "mode": "direct",
                         "input_tokens": response.input_tokens,
                         "output_tokens": response.output_tokens,
+                        "model": getattr(self._llm, "active_model", None) or response.model,
+                        "elapsed_seconds": elapsed,
                     }
                 ],
             )
@@ -153,6 +155,8 @@ class RunDirectUseCase:
                 "mode": "direct",
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
+                "model": getattr(self._llm, "active_model", None),
+                "elapsed_seconds": elapsed,
             }
 
             total_cost = self._compute_cost(input_tokens, output_tokens)
