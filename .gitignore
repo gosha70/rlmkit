@@ -7,11 +7,25 @@ build/
 .eggs/
 *.egg-info/
 
+# Test / coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
 # Internal documentation - not for public repos
 doc_internal/
 DOC_INTERNAL/
 .clinerules
-.coverage
 .rlmkit_config.json
 .rlmkit_sessions.json
 CLAUDE.md
