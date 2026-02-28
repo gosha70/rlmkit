@@ -34,6 +34,7 @@ async def get_metrics(
     query_count = 0
     by_mode: dict[str, dict] = {}
     by_provider: dict[str, dict] = {}
+    by_chat_provider: dict[str, dict] = {}
     timeline = []
 
     for msg in session.messages:
@@ -78,6 +79,21 @@ async def get_metrics(
         by_provider[provider]["total_cost_usd"] += cost
         by_provider[provider]["latencies"].append(latency)
 
+        # Aggregate by Chat Provider (if present)
+        cp_name = msg.get("chat_provider_name")
+        if cp_name:
+            if cp_name not in by_chat_provider:
+                by_chat_provider[cp_name] = {
+                    "queries": 0,
+                    "total_tokens": 0,
+                    "total_cost_usd": 0.0,
+                    "latencies": [],
+                }
+            by_chat_provider[cp_name]["queries"] += 1
+            by_chat_provider[cp_name]["total_tokens"] += tokens
+            by_chat_provider[cp_name]["total_cost_usd"] += cost
+            by_chat_provider[cp_name]["latencies"].append(latency)
+
         timeline.append(
             TimelineEntry(
                 timestamp=datetime.fromisoformat(msg["timestamp"]),
@@ -113,6 +129,17 @@ async def get_metrics(
             avg_latency_seconds=round(avg_lat, 2),
         )
 
+    chat_provider_summaries = {}
+    for cp_key, cpd in by_chat_provider.items():
+        lats = cpd.pop("latencies")
+        avg_lat = sum(lats) / len(lats) if lats else 0.0
+        chat_provider_summaries[cp_key] = ProviderSummary(
+            queries=cpd["queries"],
+            total_tokens=cpd["total_tokens"],
+            total_cost_usd=cpd["total_cost_usd"],
+            avg_latency_seconds=round(avg_lat, 2),
+        )
+
     # Token savings: compare RLM tokens vs Direct tokens (lower is better)
     rlm_tokens = mode_summaries.get("rlm", ModeSummary()).total_tokens
     direct_tokens = mode_summaries.get("direct", ModeSummary()).total_tokens
@@ -132,5 +159,6 @@ async def get_metrics(
         ),
         by_mode=mode_summaries,
         by_provider=provider_summaries,
+        by_chat_provider=chat_provider_summaries,
         timeline=timeline,
     )

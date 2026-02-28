@@ -5,11 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface ProviderPerformanceProps {
   data: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
+  title?: string;
 }
 
 const COLORS = { tokens: "#2563eb", latency: "#d97706", cost: "#7c3aed" };
 
-export function ProviderPerformance({ data }: ProviderPerformanceProps) {
+export function ProviderPerformance({ data, title = "Provider Performance" }: ProviderPerformanceProps) {
   const chartData = Object.entries(data).map(([name, values]) => ({
     name,
     tokens: values.total_tokens,
@@ -23,7 +24,7 @@ export function ProviderPerformance({ data }: ProviderPerformanceProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Provider Performance</CardTitle>
+        <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-64" role="img" aria-label="Bar chart comparing provider performance by tokens, latency, and cost">

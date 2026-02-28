@@ -101,6 +101,14 @@ export default function DashboardPage() {
           <ProviderPerformance data={metrics.by_provider} />
         )}
 
+        {/* Chat Provider performance */}
+        {metrics && metrics.by_chat_provider && Object.keys(metrics.by_chat_provider).length > 0 && (
+          <>
+            <ProviderPerformance data={metrics.by_chat_provider} title="Chat Provider Performance" />
+            <CostBreakdown data={metrics.by_chat_provider} title="Cost by Chat Provider" />
+          </>
+        )}
+
         {/* Performance trend */}
         {metrics && metrics.timeline.length > 0 && (
           <PerformanceTrend timeline={metrics.timeline} />

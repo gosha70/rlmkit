@@ -67,6 +67,7 @@ export default function TracesPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Query</TableHead>
+                    <TableHead>Chat Provider</TableHead>
                     <TableHead>Mode</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Tokens</TableHead>
@@ -91,6 +92,9 @@ export default function TracesPage() {
                     >
                       <TableCell className="max-w-[300px] truncate font-medium">
                         {exec.query}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {exec.chat_provider_name || "—"}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">{exec.mode.toUpperCase()}</Badge>
@@ -135,6 +139,15 @@ export default function TracesPage() {
                   <p className="truncate font-medium">{trace.query}</p>
                 </div>
                 <Badge variant="outline">{trace.mode.toUpperCase()}</Badge>
+                {trace.chat_provider_name && (
+                  <>
+                    <Separator orientation="vertical" className="h-8" />
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Chat Provider: </span>
+                      <span className="font-medium">{trace.chat_provider_name}</span>
+                    </div>
+                  </>
+                )}
                 <Separator orientation="vertical" className="h-8" />
                 <div className="text-sm">
                   <span className="text-muted-foreground">Steps: </span>

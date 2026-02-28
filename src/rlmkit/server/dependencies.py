@@ -53,7 +53,9 @@ class SessionRecord:
     created_at: datetime
     updated_at: datetime
     messages: list[dict[str, Any]] = field(default_factory=list)
-    conversations: dict[str, list[dict[str, Any]]] = field(default_factory=dict)  # keyed by chat_provider_id
+    conversations: dict[str, list[dict[str, Any]]] = field(
+        default_factory=dict
+    )  # keyed by chat_provider_id
 
 
 @dataclass
@@ -67,6 +69,8 @@ class ExecutionRecord:
     completed_at: datetime | None = None
     result: dict[str, Any] | None = None
     steps: list[dict[str, Any]] = field(default_factory=list)
+    chat_provider_id: str | None = None
+    chat_provider_name: str | None = None
 
 
 class AppState:

@@ -112,7 +112,9 @@ class SessionDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[SessionMessage] = Field(default_factory=list)
-    conversations: dict[str, list[SessionMessage]] = Field(default_factory=dict)  # NEW: keyed by chat_provider_id
+    conversations: dict[str, list[SessionMessage]] = Field(
+        default_factory=dict
+    )  # NEW: keyed by chat_provider_id
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +158,7 @@ class MetricsResponse(BaseModel):
     summary: MetricsSummary = Field(default_factory=MetricsSummary)
     by_mode: dict[str, ModeSummary] = Field(default_factory=dict)
     by_provider: dict[str, ProviderSummary] = Field(default_factory=dict)
+    by_chat_provider: dict[str, ProviderSummary] = Field(default_factory=dict)
     timeline: list[TimelineEntry] = Field(default_factory=list)
 
 
@@ -205,6 +208,8 @@ class TraceResponse(BaseModel):
     result: TraceResult = Field(default_factory=TraceResult)
     budget: TraceBudget = Field(default_factory=TraceBudget)
     steps: list[TraceStep] = Field(default_factory=list)
+    chat_provider_id: str | None = None
+    chat_provider_name: str | None = None
 
 
 # ---------------------------------------------------------------------------

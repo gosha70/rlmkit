@@ -101,18 +101,23 @@ async def submit_chat(
     if chat_provider_id:
         cp = state.get_chat_provider(chat_provider_id)
         if not cp:
-            raise HTTPException(status_code=404, detail=f"Chat Provider {chat_provider_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Chat Provider {chat_provider_id} not found"
+            )
         mode = cp.execution_mode
 
     # Create execution record
     exec_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+    chat_provider_name = cp.name if (chat_provider_id and cp) else None
     execution = ExecutionRecord(
         execution_id=exec_id,
         session_id=session.id,
         query=req.query,
         mode=mode,
         started_at=now,
+        chat_provider_id=chat_provider_id,
+        chat_provider_name=chat_provider_name,
     )
     state.executions[exec_id] = execution
 
@@ -203,7 +208,9 @@ async def _run_execution(
             uc_rlm = RunRLMUseCase(llm, sandbox)
             uc_direct = RunDirectUseCase(llm)
             result_rlm = await asyncio.to_thread(uc_rlm.execute, content, full_query, run_config)
-            result_direct = await asyncio.to_thread(uc_direct.execute, content, full_query, run_config)
+            result_direct = await asyncio.to_thread(
+                uc_direct.execute, content, full_query, run_config
+            )
             results = [result_rlm, result_direct]
         elif mode == "rag":
             # TODO: Run RAG use case when available; fall back to direct for now
@@ -391,21 +398,37 @@ async def websocket_chat(
                         content = file_rec.text_content
 
                 # Resolve mode from Chat Provider if provided
+                ws_cp = None
                 if ws_chat_provider_id:
                     ws_cp = state.get_chat_provider(ws_chat_provider_id)
-                    if ws_cp:
-                        mode = ws_cp.execution_mode
+                    if not ws_cp:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "id": msg_id,
+                                "data": {
+                                    "code": "NOT_FOUND",
+                                    "message": f"Chat Provider {ws_chat_provider_id} not found",
+                                    "recoverable": True,
+                                },
+                            }
+                        )
+                        continue
+                    mode = ws_cp.execution_mode
 
                 # Create execution record (mirrors REST path) so traces/dashboard work
                 exec_id = str(uuid.uuid4())
                 now = datetime.now(timezone.utc)
                 session = state.get_or_create_session(session_id)
+                ws_cp_name = ws_cp.name if (ws_chat_provider_id and ws_cp) else None
                 execution = ExecutionRecord(
                     execution_id=exec_id,
                     session_id=session.id,
                     query=query,
                     mode=mode,
                     started_at=now,
+                    chat_provider_id=ws_chat_provider_id,
+                    chat_provider_name=ws_cp_name,
                 )
                 state.executions[exec_id] = execution
 
@@ -437,11 +460,15 @@ async def websocket_chat(
                         if cp_id:
                             llm = state.create_llm_adapter_for_chat_provider(cp_id)
                             ws_cp = state.get_chat_provider(cp_id)
-                            provider_label = f"{ws_cp.llm_provider}/{ws_cp.llm_model}" if ws_cp else "unknown"
+                            provider_label = (
+                                f"{ws_cp.llm_provider}/{ws_cp.llm_model}" if ws_cp else "unknown"
+                            )
                         else:
                             llm = state.create_llm_adapter()
                             ws_cp = None
-                            provider_label = f"{state.config.active_provider}/{state.config.active_model}"
+                            provider_label = (
+                                f"{state.config.active_provider}/{state.config.active_model}"
+                            )
                         logger.info(
                             "WS executing [mode=%s, provider=%s]: %.100s",
                             m,
@@ -495,7 +522,9 @@ async def websocket_chat(
                                 answer = f"Error: {res.error or 'Execution failed'}"
 
                             cp_name = ws_cp.name if ws_cp else None
-                            provider_name = ws_cp.llm_provider if ws_cp else state.config.active_provider
+                            provider_name = (
+                                ws_cp.llm_provider if ws_cp else state.config.active_provider
+                            )
 
                             # Store in session for dashboard metrics
                             assistant_msg = {
@@ -580,7 +609,16 @@ async def websocket_chat(
                         active_tasks.pop(mid, None)
 
                 task = asyncio.create_task(
-                    _ws_execute(websocket, msg_id, content, query, mode, execution, session, ws_chat_provider_id)
+                    _ws_execute(
+                        websocket,
+                        msg_id,
+                        content,
+                        query,
+                        mode,
+                        execution,
+                        session,
+                        ws_chat_provider_id,
+                    )
                 )
                 active_tasks[msg_id] = task
 

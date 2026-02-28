@@ -106,6 +106,7 @@ export interface MetricsResponse {
   summary: MetricsSummary;
   by_mode: Partial<Record<ChatMode, ModeSummary>>;
   by_provider: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
+  by_chat_provider?: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
   timeline: TimelineEntry[];
 }
 
@@ -143,6 +144,8 @@ export interface TraceResponse {
     depth_limit: number;
   };
   steps: TraceStep[];
+  chat_provider_id?: string | null;
+  chat_provider_name?: string | null;
 }
 
 export interface ModelInfo {
@@ -328,6 +331,8 @@ export interface ExecutionSummary {
   completed_at: string | null;
   total_tokens: number;
   total_cost: number;
+  chat_provider_id?: string | null;
+  chat_provider_name?: string | null;
 }
 
 export const getExecutions = (limit = 20) =>

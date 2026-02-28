@@ -26,6 +26,8 @@ class ExecutionSummary(BaseModel):
     completed_at: str | None = None
     total_tokens: int = 0
     total_cost: float = 0.0
+    chat_provider_id: str | None = None
+    chat_provider_name: str | None = None
 
 
 @router.get("/api/executions")
@@ -53,6 +55,8 @@ async def list_executions(
                 completed_at=e.completed_at.isoformat() if e.completed_at else None,
                 total_tokens=rd.get("total_tokens", 0),
                 total_cost=rd.get("total_cost", 0.0),
+                chat_provider_id=e.chat_provider_id,
+                chat_provider_name=e.chat_provider_name,
             )
         )
     return result
@@ -105,4 +109,6 @@ async def get_trace(
             cost_limit=state.config.budget.max_cost_usd,
         ),
         steps=steps,
+        chat_provider_id=execution.chat_provider_id,
+        chat_provider_name=execution.chat_provider_name,
     )

@@ -952,3 +952,65 @@ class TestSessionDetailConversations:
         flat_contents = {m["content"] for m in data["messages"]}
         assert "From A" in flat_contents
         assert "From B" in flat_contents
+
+
+# ---------------------------------------------------------------------------
+# WS validation: unknown chat_provider_id rejected before creating records
+# ---------------------------------------------------------------------------
+
+
+class TestWebSocketUnknownChatProvider:
+    """WS path must reject unknown chat_provider_id without creating executions."""
+
+    def test_ws_unknown_chat_provider_returns_error_no_execution(self, client: TestClient) -> None:
+        """WS query with missing chat_provider_id should return NOT_FOUND error
+        and leave zero executions (matching REST behavior)."""
+        state = get_state()
+        exec_count_before = len(state.executions)
+
+        with client.websocket_connect("/ws/chat/test-session") as ws:
+            _ = ws.receive_json()  # connected message
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "test-msg",
+                    "query": "Hello",
+                    "content": "Some context",
+                    "chat_provider_id": "non-existent-cp-id",
+                }
+            )
+            resp = ws.receive_json()
+
+        assert resp["type"] == "error"
+        assert resp["id"] == "test-msg"
+        assert resp["data"]["code"] == "NOT_FOUND"
+        assert "non-existent-cp-id" in resp["data"]["message"]
+
+        # No execution record should have been created
+        assert len(state.executions) == exec_count_before
+
+    def test_ws_valid_chat_provider_creates_execution(
+        self, client: TestClient, direct_provider: ChatProviderConfig
+    ) -> None:
+        """WS query with valid chat_provider_id should proceed normally."""
+        state = get_state()
+        state.config.chat_providers.append(direct_provider)
+        exec_count_before = len(state.executions)
+
+        with client.websocket_connect("/ws/chat/test-session") as ws:
+            _ = ws.receive_json()  # connected message
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "test-msg-2",
+                    "query": "Hello valid",
+                    "content": "Some context",
+                    "chat_provider_id": direct_provider.id,
+                }
+            )
+            # Should get a complete or error from execution, not a NOT_FOUND
+            resp = ws.receive_json()
+
+        # Execution record should have been created
+        assert len(state.executions) > exec_count_before
+        assert resp["type"] != "error" or resp["data"]["code"] != "NOT_FOUND"
