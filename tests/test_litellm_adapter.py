@@ -3,17 +3,18 @@
 All litellm calls are mocked -- no actual API calls are made.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+import pytest
+
 from rlmkit.application.dto import LLMResponseDTO
-
+from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock litellm responses
 # ---------------------------------------------------------------------------
+
 
 def _mock_completion_response(
     content: str = "Hello!",
@@ -59,6 +60,7 @@ def _mock_stream_chunks(texts):
 # ---------------------------------------------------------------------------
 # Tests: Construction
 # ---------------------------------------------------------------------------
+
 
 class TestLiteLLMAdapterConstruction:
     """Test adapter initialization and configuration."""
@@ -109,10 +111,24 @@ class TestLiteLLMAdapterConstruction:
         assert "root=" in r
         assert "recursive=" in r
 
+    def test_default_num_retries(self):
+        adapter = LiteLLMAdapter()
+        assert adapter._num_retries == 2
+
+    def test_custom_num_retries(self):
+        adapter = LiteLLMAdapter(num_retries=5)
+        assert adapter._num_retries == 5
+
+    def test_num_retries_in_build_params(self):
+        adapter = LiteLLMAdapter(num_retries=3)
+        params = adapter._build_params([{"role": "user", "content": "hi"}])
+        assert params["num_retries"] == 3
+
 
 # ---------------------------------------------------------------------------
 # Tests: complete()
 # ---------------------------------------------------------------------------
+
 
 class TestLiteLLMAdapterComplete:
     """Test synchronous completion."""
@@ -236,6 +252,7 @@ class TestLiteLLMAdapterComplete:
 # Tests: complete_stream()
 # ---------------------------------------------------------------------------
 
+
 class TestLiteLLMAdapterStream:
     """Test streaming completion."""
 
@@ -267,6 +284,7 @@ class TestLiteLLMAdapterStream:
 # Tests: count_tokens()
 # ---------------------------------------------------------------------------
 
+
 class TestLiteLLMAdapterTokenCount:
     """Test token counting."""
 
@@ -295,13 +313,14 @@ class TestLiteLLMAdapterTokenCount:
 # Tests: get_pricing()
 # ---------------------------------------------------------------------------
 
+
 class TestLiteLLMAdapterPricing:
     """Test pricing information retrieval."""
 
     @patch("litellm.get_model_info")
     def test_get_pricing_from_litellm(self, mock_info):
         mock_info.return_value = {
-            "input_cost_per_token": 0.000005,   # $5 per 1M
+            "input_cost_per_token": 0.000005,  # $5 per 1M
             "output_cost_per_token": 0.000015,  # $15 per 1M
         }
 
@@ -325,6 +344,7 @@ class TestLiteLLMAdapterPricing:
 # ---------------------------------------------------------------------------
 # Tests: get_completion_cost()
 # ---------------------------------------------------------------------------
+
 
 class TestLiteLLMAdapterCost:
     """Test cost estimation."""
@@ -357,6 +377,7 @@ class TestLiteLLMAdapterCost:
 # Tests: Health check
 # ---------------------------------------------------------------------------
 
+
 class TestLiteLLMAdapterHealth:
     """Test health check functionality."""
 
@@ -379,6 +400,7 @@ class TestLiteLLMAdapterHealth:
 # Tests: Two-model integration
 # ---------------------------------------------------------------------------
 
+
 class TestLiteLLMAdapterTwoModel:
     """Test two-model (root + recursive) configuration."""
 
@@ -386,12 +408,16 @@ class TestLiteLLMAdapterTwoModel:
     def test_root_then_recursive_calls(self, mock_completion):
         """Simulate RLM: root call, then recursive call with cheaper model."""
         root_resp = _mock_completion_response(
-            content="Let me explore...", model="gpt-4o",
-            prompt_tokens=100, completion_tokens=50,
+            content="Let me explore...",
+            model="gpt-4o",
+            prompt_tokens=100,
+            completion_tokens=50,
         )
         sub_resp = _mock_completion_response(
-            content="Found the answer.", model="gpt-4o-mini",
-            prompt_tokens=80, completion_tokens=30,
+            content="Found the answer.",
+            model="gpt-4o-mini",
+            prompt_tokens=80,
+            completion_tokens=30,
         )
         mock_completion.side_effect = [root_resp, sub_resp]
 
@@ -435,6 +461,7 @@ class TestLiteLLMAdapterTwoModel:
 # Tests: LLMPort protocol compliance
 # ---------------------------------------------------------------------------
 
+
 class TestLiteLLMAdapterProtocol:
     """Verify the adapter satisfies the LLMPort protocol."""
 
@@ -458,6 +485,7 @@ class TestLiteLLMAdapterProtocol:
 # ---------------------------------------------------------------------------
 # Tests: Public client integration with LiteLLM
 # ---------------------------------------------------------------------------
+
 
 class TestPublicClientLiteLLM:
     """Test that the public client correctly wires up the LiteLLM adapter."""

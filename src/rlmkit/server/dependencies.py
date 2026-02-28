@@ -282,6 +282,7 @@ class AppState:
             temperature=runtime.temperature,
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),
+            num_retries=2,
         )
 
     @staticmethod

@@ -705,3 +705,58 @@ class TestMetricsByProvider:
         assert "openai" in data["by_provider"]
         assert data["by_provider"]["anthropic"]["total_tokens"] == 200
         assert data["by_provider"]["openai"]["total_cost_usd"] == 0.03
+
+
+# ---------------------------------------------------------------------------
+# Tests: Trajectory logging
+# ---------------------------------------------------------------------------
+
+
+class TestTrajectoryLogging:
+    """Test that trajectory JSONL files are saved when configured."""
+
+    def test_save_trajectory_writes_jsonl(self, tmp_path):
+        from rlmkit.application.dto import RunResultDTO
+        from rlmkit.server.routes.chat import _save_trajectory
+
+        execution = ExecutionRecord(
+            execution_id="exec-1",
+            session_id="sess-1",
+            query="What is 2+2?",
+            mode="direct",
+        )
+        result = RunResultDTO(
+            answer="4",
+            mode_used="direct",
+            success=True,
+            steps=1,
+            input_tokens=10,
+            output_tokens=5,
+            elapsed_time=0.5,
+            trace=[
+                {
+                    "step": 0,
+                    "role": "assistant",
+                    "content": "4",
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "model": "gpt-4o",
+                    "elapsed_seconds": 0.5,
+                },
+            ],
+        )
+        trace_dir = str(tmp_path / "trajectories")
+        _save_trajectory(execution, result, trace_dir)
+
+        filepath = tmp_path / "trajectories" / "exec-1.jsonl"
+        assert filepath.exists()
+        lines = filepath.read_text().strip().split("\n")
+        # First line is metadata, second is the step
+        assert len(lines) == 2
+        import json
+
+        meta = json.loads(lines[0])
+        assert meta["metadata"]["execution_id"] == "exec-1"
+        step = json.loads(lines[1])
+        assert step["action_type"] == "final"
+        assert step["tokens_used"] == 15

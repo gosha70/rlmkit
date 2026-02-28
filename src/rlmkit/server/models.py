@@ -333,6 +333,7 @@ class ConfigResponse(BaseModel):
     provider_configs: list[ProviderConfig] = Field(default_factory=list)
     default_runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     mode_config: ModeConfig = Field(default_factory=ModeConfig)
+    trajectory_dir: str | None = None
 
 
 class ConfigUpdateRequest(BaseModel):

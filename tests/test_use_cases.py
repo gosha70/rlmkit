@@ -566,3 +566,70 @@ class TestRunRLMAsync:
 
         assert result.success is False
         assert "exceeded" in result.error.lower() or "budget" in result.error.lower()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Deep multi-step RLM exploration
+# ---------------------------------------------------------------------------
+
+
+class TestRLMDeepExploration:
+    """Tests exercising 3+ code-execute-feedback cycles."""
+
+    def test_three_step_exploration(self):
+        """Three code executions followed by FINAL answer."""
+        llm = FakeLLM(
+            [
+                "```python\nprint(len(P))\n```",
+                "```python\nprint(P[:50])\n```",
+                '```python\nprint(P.count("a"))\n```',
+                "FINAL: The document has 100 characters.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("a" * 100, "How long is the document?")
+
+        assert result.success is True
+        assert result.steps == 4
+        assert "100" in result.answer
+        # 4 assistant entries + 3 execution entries = 7 trace entries
+        assert len(result.trace) == 7
+
+    def test_five_step_with_varying_outputs(self):
+        """Five distinct code steps produce unique trace entries."""
+        llm = FakeLLM(
+            [
+                '```python\nprint("step1")\n```',
+                '```python\nprint("step2")\n```',
+                '```python\nprint("step3")\n```',
+                '```python\nprint("step4")\n```',
+                '```python\nprint("step5")\n```',
+                "FINAL: Done after 5 steps.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        config = RunConfigDTO(mode="rlm", max_steps=10)
+        result = uc.execute("content", "query", config=config)
+
+        assert result.success is True
+        assert result.steps == 6
+        # 6 assistant entries + 5 execution entries = 11
+        assert len(result.trace) == 11
+        # Verify each assistant trace entry has a code field
+        assistant_steps = [t for t in result.trace if t["role"] == "assistant"]
+        for step in assistant_steps[:5]:
+            assert step.get("code") is not None
+
+    def test_deep_steps_with_budget_limit(self):
+        """Budget exhaustion after max_steps with no FINAL."""
+        llm = FakeLLM(['```python\nprint("loop")\n```'])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=4)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query", config=config)
+
+        assert result.success is False
+        assert result.steps == 4
+        assert "exceeded" in result.error.lower() or "steps" in result.error.lower()

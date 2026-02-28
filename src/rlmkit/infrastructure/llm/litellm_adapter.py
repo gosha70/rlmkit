@@ -52,6 +52,7 @@ class LiteLLMAdapter:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         timeout: float = 120.0,
+        num_retries: int = 2,
         extra_params: dict[str, Any] | None = None,
     ) -> None:
         self._model = model
@@ -62,6 +63,7 @@ class LiteLLMAdapter:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._timeout = timeout
+        self._num_retries = num_retries
         self._extra_params = extra_params or {}
 
         # Track which model to use for the next call (can be toggled)
@@ -315,6 +317,7 @@ class LiteLLMAdapter:
             "messages": messages,
             "temperature": self._temperature,
             "timeout": self._timeout,
+            "num_retries": self._num_retries,
         }
 
         if self._max_tokens is not None:

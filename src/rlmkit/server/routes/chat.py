@@ -5,14 +5,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
+from rlmkit.application.dto import RunResultDTO
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.core.trace import ExecutionTrace
+from rlmkit.core.trace import TraceStep as CoreTraceStep
 from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     ChatRequest,
@@ -22,6 +26,50 @@ from rlmkit.server.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _save_trajectory(
+    execution: ExecutionRecord,
+    result: RunResultDTO,
+    trace_dir: str,
+) -> None:
+    """Write execution trajectory to a JSONL file if trace_dir is configured."""
+    try:
+        os.makedirs(trace_dir, exist_ok=True)
+        trace = ExecutionTrace()
+        trace.metadata = {
+            "execution_id": execution.execution_id,
+            "session_id": execution.session_id,
+            "query": execution.query,
+            "mode": execution.mode,
+        }
+        for i, step_data in enumerate(result.trace):
+            role = step_data.get("role", "inspect")
+            action_map = {"assistant": "inspect", "execution": "subcall"}
+            action_type = action_map.get(role, "inspect")
+            if i == len(result.trace) - 1 and result.success:
+                action_type = "final"
+
+            trace.add_step(
+                CoreTraceStep(
+                    index=i,
+                    action_type=action_type,
+                    code=step_data.get("code"),
+                    output=step_data.get("content", ""),
+                    tokens_used=step_data.get("input_tokens", 0)
+                    + step_data.get("output_tokens", 0),
+                    duration=step_data.get("elapsed_seconds", 0.0),
+                    model=step_data.get("model"),
+                )
+            )
+        trace.finalize()
+        filepath = os.path.join(trace_dir, f"{execution.execution_id}.jsonl")
+        trace.to_jsonl(filepath)
+        logger.info("Saved trajectory to %s", filepath)
+    except Exception:
+        logger.warning(
+            "Failed to save trajectory for %s", execution.execution_id[:8], exc_info=True
+        )
 
 
 @router.post("/api/chat", status_code=202)
@@ -146,6 +194,10 @@ async def _run_execution(
             "steps_count": result.steps,
         }
         execution.steps = result.trace
+
+        # Save trajectory if configured
+        if state.config.trajectory_dir:
+            _save_trajectory(execution, result, state.config.trajectory_dir)
 
         # Add assistant message(s) to session
         session = state.sessions.get(execution.session_id)
