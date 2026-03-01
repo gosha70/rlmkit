@@ -1,4 +1,12 @@
-# RLMKit
+
+<h1>
+  <img
+    src="https://github.com/user-attachments/assets/f5aa15f1-f89f-4977-b65b-e3f7b7cc5f78"
+    width="200"
+    alt="RLMKit Logo"
+    style="vertical-align: middle; margin-right: 12px; position: relative; top: -2px;" />
+  RLMKit
+</h1>
 
 **Recursive Language Model toolkit** — a Python library that lets LLMs write code to explore content that exceeds their context window.
 
