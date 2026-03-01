@@ -2,7 +2,7 @@
  * Typed API client for the RLMKit backend.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend Pydantic models
@@ -471,6 +471,10 @@ export interface WSMessage {
 }
 
 export function connectChatWS(sessionId: string): WebSocket {
-  const wsBase = API_BASE.replace(/^http/, "ws");
-  return new WebSocket(`${wsBase}/ws/chat/${sessionId}`);
+  if (API_BASE && API_BASE.startsWith("http")) {
+    const wsBase = API_BASE.replace(/^http/, "ws");
+    return new WebSocket(`${wsBase}/ws/chat/${sessionId}`);
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return new WebSocket(`${proto}//${window.location.host}/ws/chat/${sessionId}`);
 }

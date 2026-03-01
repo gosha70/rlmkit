@@ -60,6 +60,8 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:3000",
             "http://localhost:3001",
             "http://127.0.0.1:3001",
+            "http://host.docker.internal:3000",
+            "http://host.docker.internal:3001",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -76,7 +78,7 @@ def create_app() -> FastAPI:
     }
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(request, exc):
+    async def http_exception_handler(request: object, exc: StarletteHTTPException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={
