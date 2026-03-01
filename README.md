@@ -1,291 +1,166 @@
 # RLMKit
 
-**Recursive Language Model toolkit** for managing large context through code generation.
+**Recursive Language Model toolkit** — a Python library that lets LLMs write code to explore content that exceeds their context window.
 
-[![Tests](https://img.shields.io/badge/tests-15%20passed-brightgreen)]()
-[![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-green)]()
 
-## 🎯 What is RLMKit?
+## What is RLMKit?
 
-RLMKit is an intelligent context middleware that acts as a middleman between users and LLMs. Instead of hitting context window limits, RLMKit enables LLMs to **write Python code** to explore and analyze large content dynamically.
+LLMs have fixed context windows. When your document is too large to fit in a single prompt, you lose information. RLMKit solves this by giving the LLM a Python sandbox where it can write code to navigate and analyze content dynamically — exploring only what's relevant.
 
-### The Problem
-- Traditional RAG: Static retrieval, no refinement
-- Context windows: Fixed limits (4K, 8K, 32K tokens)
-- Large documents: Can't fit everything into a single prompt
+RLMKit provides:
 
-### The RLMKit Solution
-- **Dynamic exploration:** LLM writes code to inspect content
-- **Recursive refinement:** Can drill down into relevant sections
-- **Strategic access:** Only loads what's needed
-- **Never exceeds context:** Smart content windowing
+- **Three execution modes** — Direct (full context), RAG (retrieval), and RLM (recursive code generation)
+- **Auto mode** — selects the best strategy based on content size
+- **100+ LLM providers** — via LiteLLM (OpenAI, Anthropic, Ollama, LM Studio, and more)
+- **Budget controls** — cap tokens, cost, steps, and time
+- **Sandboxed execution** — RestrictedPython prevents file/network/system access
+- **[RLM Studio](#rlm-studio)** — a web app for experimenting, tuning, and comparing execution modes
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
 ```bash
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+# Using uv (recommended)
+uv sync --extra all
 
-# Basic installation
-pip install -e ".[dev]"
-
-# With UI support (Streamlit, charts, file processing)
-pip install -e ".[ui]"
-
-# Everything (recommended for development)
+# Using pip
 pip install -e ".[all]"
 ```
 
-### Basic Usage (NEW Unified API! 🎉)
+### Usage
 
 ```python
 from rlmkit import interact
 
-# Set your API key (or use environment variable OPENAI_API_KEY)
 result = interact(
     content="Your document text here...",
     query="What is this about?",
     provider="openai",
-    model="gpt-4o-mini"
+    model="gpt-4o"
 )
 
 print(result.answer)
-# The document discusses...
-
-print(f"Tokens used: {result.metrics['total_tokens']:,}")
+print(f"Tokens: {result.metrics['total_tokens']:,}")
 print(f"Cost: ${result.metrics['total_cost']:.4f}")
+print(f"Mode used: {result.mode_used}")
 ```
 
-**Three interaction modes:**
+### Execution Modes
 
 ```python
-# Mode 1: Direct - Full context in one LLM call (best for small content)
+# Direct — send full content in one LLM call (small documents)
 result = interact(content, query, mode="direct")
 
-# Mode 2: RAG - Retrieval-augmented generation (best for medium content)
+# RAG — retrieval-augmented generation (medium documents)
 result = interact(content, query, mode="rag")
 
-# Mode 3: RLM - Recursive exploration with code (best for large content)
+# RLM — LLM writes Python to explore content recursively (large documents)
 result = interact(content, query, mode="rlm")
 
-# Mode 4: Auto - Let RLMKit choose the best mode (recommended)
-result = interact(content, query, mode="auto")  # Default
+# Auto — let RLMKit choose based on content size (default)
+result = interact(content, query, mode="auto")
+
+# Compare — run both RLM and Direct, return metrics for each
+result = interact(content, query, mode="compare")
 ```
 
-**See it in action:**
+| Mode | Best For | How It Works |
+|------|----------|--------------|
+| `direct` | < 8K tokens | Full context in single LLM call |
+| `rag` | 8K-100K tokens | Chunk, embed, retrieve relevant pieces |
+| `rlm` | > 100K tokens | LLM writes code to navigate content via `peek()`, `grep()`, `chunk()` |
+| `auto` | Any size | Selects direct/rag/rlm based on token count |
+| `compare` | Benchmarking | Runs both RLM and Direct, compares metrics |
+
+### Configuration
+
 ```python
-# Example with auto mode and verbose output
 result = interact(
     content=large_document,
     query="Summarize the key findings",
     mode="auto",
-    verbose=True  # See what's happening
+    provider="anthropic",
+    model="claude-sonnet-4-5",
+    max_steps=16,          # RLM loop budget
+    temperature=0.7,
+    verbose=True           # Print progress
 )
-# Output:
-# [Auto Mode] Selected 'rlm' based on content size (125,000 tokens)
-# [Setup] Configuring openai provider...
-# [Execution] Running in 'rlm' mode...
-# [Complete] Generated 500 character response
-#   Tokens: 3,245 | Cost: $0.0162
 ```
 
-### Advanced Usage (Lower-Level API)
+### Supported Providers
 
-For more control, use the lower-level API:
+Set the API key as an environment variable, then pass the provider name:
 
-```python
-from rlmkit import RLM, RLMConfig
-from rlmkit.llm import get_llm_client
+| Provider | Env Variable | Example Model |
+|----------|-------------|---------------|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
+| Ollama | (local, no key) | `llama3` |
+| LM Studio | (local, no key) | Any served model |
+| Google | `GOOGLE_API_KEY` | `gemini-pro` |
+| 100+ more | via LiteLLM | See [LiteLLM docs](https://docs.litellm.ai/) |
 
-# Create LLM client
-client = get_llm_client(provider="openai", model="gpt-4o")
+## RLM Studio
 
-# Create RLM instance with custom config
-config = RLMConfig()
-config.execution.max_iterations = 10
+RLM Studio is a web application for experimenting with RLMKit interactively. Use it to demo RLM capabilities, tune runtime parameters, compare execution modes side by side, and monitor cost/performance metrics.
 
-rlm = RLM(client=client, config=config)
-
-# Run with full control
-result = rlm.run(
-    prompt="Your large document content here...",
-    query="What is this document about?"
-)
-
-print(result.answer)
-```
-
-### 🆕 NEW: RLM vs Direct Mode Comparison
-
-```python
-from rlmkit import RLM, RLMConfig
-from rlmkit.llm import get_llm_client
-
-# Create LLM client
-client = get_llm_client(provider="openai", model="gpt-4")
-
-# Create RLM instance
-rlm = RLM(client=client, config=RLMConfig())
-
-# Compare RLM vs Direct mode
-result = rlm.run_comparison(
-    prompt="Large document...",
-    query="Summarize this"
-)
-
-# View comparison metrics
-summary = result.get_summary()
-print(f"Token Savings: {summary['token_savings']['savings_percent']:.1f}%")
-print(f"Recommendation: {summary['recommendation']}")
-```
-
-### 🎨 Interactive UI
-
-Launch the Streamlit web interface for interactive testing:
+### Starting RLM Studio
 
 ```bash
-# Install UI dependencies
-pip install -e ".[ui]"
+# Terminal 1: Backend API server
+uv run uvicorn src.rlmkit.server.app:app --reload
 
-# Launch the app (from project root)
-python3 -m streamlit run src/rlmkit/ui/app.py
-
-# Or if streamlit is in your PATH:
-streamlit run src/rlmkit/ui/app.py
+# Terminal 2: Frontend
+cd frontend && npm run dev
 ```
 
-Features:
-- 📁 Upload PDF, DOCX, TXT, and other files
-- 🔄 Toggle between RLM and Direct modes
-- 📊 Compare performance metrics with interactive charts
-- 💾 Export results as JSON or Markdown
-- 📈 Visualize token usage, costs, and execution time
+Open [http://localhost:3001](http://localhost:3001) in your browser.
 
-## 📦 Current Status: Week 6 - Polish & Release! ✨
+### What You Can Do
 
-### ✅ Completed Features
+- **Chat** — Upload documents and query them using one or more Chat Providers in parallel. Responses appear in a side-by-side column layout with per-response metrics (tokens, cost, latency).
+- **Dashboard** — View aggregated metrics per session: total tokens, cost, average latency, token savings. Charts break down performance by provider and execution mode.
+- **Traces** — Inspect every execution step-by-step. See the code the LLM generated, the output it received, token counts, and timing for each step. Visualize as timeline, tree, or raw code.
+- **Settings** — Configure providers, create Chat Providers, set budgets, manage profiles, customize system prompts, and switch themes.
 
-#### Core Functionality (Weeks 1-5)
-- **PyReplEnv**: Python REPL-like execution environment
-- **Code Execution**: Run Python code with stdout/stderr capture
-- **Exception Handling**: Safe exception capture and reporting
-- **Persistent State**: Variables persist across executions
-- **Content Access**: Large content available via `P` variable
-- **Safety Layer**: Sandbox restrictions for secure execution
-- **Execution Limits**: Timeout mechanism
-- **Content Tools**: peek, grep, chunk, select for navigation
-- **Controller Loop**: LLM-driven exploration
-- **Recursion**: subcall support for nested queries
-- **Provider Integration**: OpenAI, Anthropic, Ollama, LM Studio, vLLM
-- **Budget Tracking**: Token usage, costs, and limits
+For a complete walkthrough of all RLM Studio features, see **[docs/rlm-studio-guide.md](docs/rlm-studio-guide.md)**.
 
-#### New in Week 6: Polish & Release Features
-- **🔄 RLM Toggle**: Easily switch between RLM and Direct mode
-- **📊 Comparison Mode**: Run both modes and compare metrics side-by-side
-- **📈 Performance Metrics**: Track tokens, cost, time, and efficiency
-- **🎨 Interactive UI**: Streamlit web interface for testing
-- **📁 File Processing**: Support for PDF, DOCX, TXT, MD, JSON, and code files
-- **📉 Visualizations**: Interactive charts comparing RLM vs Direct mode
-- **💾 Export Results**: JSON and Markdown report generation
-- **Test Coverage**: 96% with comprehensive test suite
+## Architecture
 
-## 🧪 Running Tests
+```
+src/rlmkit/
+├── domain/            # Entities, ports (zero external deps)
+├── application/       # Use cases (run_rlm, etc.)
+├── infrastructure/    # Adapters (LiteLLM, sandbox, storage)
+│   ├── llm/           # LiteLLMAdapter (100+ providers)
+│   └── sandbox/       # RestrictedPython sandbox
+├── core/              # Legacy RLM controller, PyReplEnv
+├── server/            # FastAPI API + WebSocket server
+│   └── routes/        # chat, providers, sessions, traces, metrics
+└── api.py             # Public interact() / complete() API
+
+frontend/              # Next.js 16 + React 19 + shadcn/ui
+├── src/app/           # Pages: chat, dashboard, traces, settings
+├── src/components/    # Shared UI components
+└── src/lib/           # API client, hooks
+```
+
+## Running Tests
 
 ```bash
-# Run all tests
-pytest tests/ -v
+# All tests
+uv run pytest tests/ -v
 
-# Run with coverage
-pytest tests/ --cov=rlmkit --cov-report=term-missing
+# With coverage
+uv run pytest tests/ --cov=rlmkit --cov-report=term-missing
 
-# Run specific test file
-pytest tests/test_env.py -v
+# Frontend type check
+cd frontend && npx tsc --noEmit
 ```
 
-## 🏗️ Architecture
+## License
 
-```
-┌───────────────────────────────────┐
-│  User Query + Large Content P     │
-└────────────┬──────────────────────┘
-             │
-             ▼
-┌───────────────────────────────────┐
-│  RLM Controller (Coming Week 3)   │
-└────────────┬──────────────────────┘
-             │
-             ▼
-┌───────────────────────────────────┐
-│  LLM Provider (Coming Week 5)     │
-└────────────┬──────────────────────┘
-             │
-             ▼
-┌───────────────────────────────────┐
-│  PyReplEnv ✅ (Current)           │
-│  • Executes Python code           │
-│  • Captures output                │
-│  • Handles exceptions             │
-└───────────────────────────────────┘
-```
-
-## 📚 Documentation
-
-- **[Implementation Plan](IMPLEMENTATION_PLAN.md)**: Complete 6-week development plan
-- **[Architecture](docs/architecture.md)**: System design (Coming Week 6)
-- **[Safety](docs/safety.md)**: Security model (Coming Week 6)
-
-## 🛠️ Development
-
-### Project Structure
-
-```
-rlmkit/
-├── src/rlmkit/
-│   ├── core/           # Core functionality
-│   │   ├── errors.py   # Exception classes ✅
-│   │   └── ...
-│   ├── envs/           # Execution environments
-│   │   └── pyrepl_env.py  # Python REPL ✅
-│   ├── llm/            # LLM providers (Week 5)
-│   └── controller/     # Control loop (Week 3)
-├── tests/              # Test suite
-│   └── test_env.py     # Environment tests ✅
-├── examples/           # Usage examples (Week 6)
-└── docs/               # Documentation (Week 6)
-```
-
-### Coding Standards
-
-- **Python 3.10+** required
-- **Type hints** everywhere
-- **Docstrings** for public APIs
-- **Test coverage** 80%+ target
-- **Ruff** for linting
-- **Black** for formatting
-
-### Contributing
-
-We follow **Shape UP** methodology:
-- 6-week cycles
-- Vertical slices (working features incrementally)
-- Test-driven development
-
-## 📄 License
-
-Copyright (c) 2026 EGOGE - All Rights Reserved.
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-This software may be used and distributed according to the terms of the MIT license.
-
-## 🙏 Acknowledgments
-
-Built following Shape UP principles for incremental delivery.
-
----
-
-**Status**: Week 1 - Day 2 ✅ | **Next**: Safety Layer Implementation
+Copyright (c) 2026 EGOGE. MIT License — see [LICENSE](LICENSE).
