@@ -346,7 +346,8 @@ class ChatProviderConfig(BaseModel):
     name: str  # e.g. "DIRECT-CLAUDE", "RLM-OPENAI"
     llm_provider: str  # e.g. "anthropic", "openai"
     llm_model: str  # e.g. "claude-sonnet-4-5"
-    execution_mode: Literal["direct", "rlm", "rag"]
+    profile_id: str | None = None  # reference to a RunProfile
+    execution_mode: Literal["direct", "rlm", "rag"] = "direct"
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     rag_config: RAGConfig | None = None  # only for RAG mode
     rlm_max_steps: int = 16  # only for RLM mode
@@ -359,7 +360,8 @@ class ChatProviderCreateRequest(BaseModel):
     name: str
     llm_provider: str
     llm_model: str
-    execution_mode: Literal["direct", "rlm", "rag"]
+    profile_id: str | None = None
+    execution_mode: Literal["direct", "rlm", "rag"] = "direct"
     runtime_settings: RuntimeSettings | None = None
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
@@ -369,6 +371,7 @@ class ChatProviderCreateRequest(BaseModel):
 class ChatProviderUpdateRequest(BaseModel):
     name: str | None = None
     llm_model: str | None = None
+    profile_id: str | None = None
     execution_mode: Literal["direct", "rlm", "rag"] | None = None
     runtime_settings: RuntimeSettings | None = None
     rag_config: RAGConfig | None = None

@@ -22,8 +22,8 @@ router = APIRouter()
 async def list_chat_providers(
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> list[ChatProviderConfig]:
-    """List all Chat Providers."""
-    return state.config.chat_providers
+    """List all Chat Providers (with profile settings resolved)."""
+    return [state.resolve_chat_provider(cp) for cp in state.config.chat_providers]
 
 
 @router.get("/api/chat-providers/{chat_provider_id}")
@@ -35,7 +35,7 @@ async def get_chat_provider(
     cp = state.get_chat_provider(chat_provider_id)
     if not cp:
         raise HTTPException(status_code=404, detail="Chat Provider not found")
-    return cp
+    return state.resolve_chat_provider(cp)
 
 
 @router.post("/api/chat-providers", status_code=201)
@@ -60,14 +60,25 @@ async def create_chat_provider(
                 detail=f"Chat Provider with name '{req.name}' already exists",
             )
 
+    # Validate profile_id if provided
+    if req.profile_id:
+        profile = state.find_profile(req.profile_id)
+        if not profile:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Profile not found: {req.profile_id}",
+            )
+
     now = datetime.now(timezone.utc)
     cp = ChatProviderConfig(
         id=str(uuid.uuid4()),
         name=req.name,
         llm_provider=req.llm_provider,
         llm_model=req.llm_model,
+        profile_id=req.profile_id,
         execution_mode=req.execution_mode,
-        runtime_settings=req.runtime_settings or ChatProviderConfig.model_fields["runtime_settings"].default_factory(),
+        runtime_settings=req.runtime_settings
+        or ChatProviderConfig.model_fields["runtime_settings"].default_factory(),
         rag_config=req.rag_config,
         rlm_max_steps=req.rlm_max_steps or 16,
         rlm_timeout_seconds=req.rlm_timeout_seconds or 60,
@@ -76,7 +87,7 @@ async def create_chat_provider(
     )
     state.config.chat_providers.append(cp)
     state.save_config()
-    return cp
+    return state.resolve_chat_provider(cp)
 
 
 @router.put("/api/chat-providers/{chat_provider_id}")
@@ -100,6 +111,17 @@ async def update_chat_provider(
                 )
         cp.name = req.name
 
+    # Validate profile_id if provided
+    if req.profile_id is not None:
+        if req.profile_id:
+            profile = state.find_profile(req.profile_id)
+            if not profile:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Profile not found: {req.profile_id}",
+                )
+        cp.profile_id = req.profile_id
+
     if req.llm_model is not None:
         cp.llm_model = req.llm_model
     if req.execution_mode is not None:
@@ -115,7 +137,7 @@ async def update_chat_provider(
     cp.updated_at = datetime.now(timezone.utc)
 
     state.save_config()
-    return cp
+    return state.resolve_chat_provider(cp)
 
 
 @router.delete("/api/chat-providers/{chat_provider_id}", status_code=204)

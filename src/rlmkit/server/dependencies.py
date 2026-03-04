@@ -15,6 +15,7 @@ from rlmkit.application.dto import RunConfigDTO
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 from rlmkit.server.models import (
+    BudgetConfig,
     ChatProviderConfig,
     ConfigResponse,
     RAGConfig,
@@ -217,6 +218,42 @@ class AppState:
             return []
         return session.conversations.get(chat_provider_id, [])
 
+    def find_profile(self, profile_id: str) -> RunProfile | None:
+        """Look up a profile by ID (builtins + user-created)."""
+        from rlmkit.server.routes.profiles import BUILTIN_PROFILES
+
+        for p in BUILTIN_PROFILES:
+            if p.id == profile_id:
+                return p
+        for p in self.user_profiles:
+            if p.id == profile_id:
+                return p
+        return None
+
+    def resolve_chat_provider(self, cp: ChatProviderConfig) -> ChatProviderConfig:
+        """Return a copy of cp with settings resolved from its profile (if any)."""
+        if not cp.profile_id:
+            return cp
+        profile = self.find_profile(cp.profile_id)
+        if not profile:
+            logger.warning("Profile %s not found for Chat Provider %s", cp.profile_id, cp.id)
+            return cp
+        resolved = cp.model_copy()
+        resolved.execution_mode = profile.strategy  # type: ignore[assignment]
+        resolved.runtime_settings = (
+            profile.runtime_settings.model_copy()
+            if hasattr(profile.runtime_settings, "model_copy")
+            else profile.runtime_settings
+        )
+        budget = (
+            profile.budget
+            if isinstance(profile.budget, BudgetConfig)
+            else BudgetConfig.model_validate(profile.budget)
+        )
+        resolved.rlm_max_steps = budget.max_steps
+        resolved.rlm_timeout_seconds = budget.max_time_seconds
+        return resolved
+
     def add_message(
         self,
         session_id: str,
@@ -241,6 +278,7 @@ class AppState:
         if not cp:
             raise ValueError(f"Chat Provider {chat_provider_id} not found")
 
+        cp = self.resolve_chat_provider(cp)
         provider_key = cp.llm_provider
         model = cp.llm_model
 

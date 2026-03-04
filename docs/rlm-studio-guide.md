@@ -50,16 +50,34 @@ Providers are the raw LLM connections. RLM Studio supports OpenAI, Anthropic, Ol
 
 Providers that detect an environment variable show "API key set" automatically. You only need to configure them manually if you want to override the key or change the default model.
 
+### Chat Providers vs Profiles
+
+Chat Providers and Profiles share some overlapping fields (runtime settings, execution mode, step limits). They serve different purposes:
+
+| | Chat Provider | Profile |
+|---|---|---|
+| **Purpose** | A runnable configuration you select on the Chat page | A preset template that sets global defaults |
+| **Bound to an LLM?** | Yes — specific provider + model (e.g., Anthropic / claude-sonnet-4-5) | No — provider-agnostic |
+| **Used in Chat?** | Yes — select one or more, each executes independently | No — activating a profile changes baseline settings |
+| **Runtime settings** | Per-provider overrides (temperature, top_p, max tokens, timeout) | Global defaults that new Chat Providers inherit |
+| **Execution mode** | Fixed per Chat Provider (Direct, RLM, or RAG) | Sets the default strategy |
+| **Budget limits** | Step limit and RLM timeout only | Full budget: steps, tokens, cost, time, recursion depth |
+| **Extra fields** | RAG config (chunk size, overlap, top_k, embedding model) | System prompts, description, built-in flag |
+
+**In practice:** Activate a Profile to set your baseline (e.g., "RLM deep" sets temperature 0.4, 32 steps, 4096 max tokens). Then create Chat Providers that bind those defaults to specific LLMs. Chat Providers can override any runtime setting — the Profile just provides the starting point.
+
 ### Chat Providers
 
-A **Chat Provider** is a named configuration that bundles:
+A **Chat Provider** is a named, runnable configuration that binds a specific LLM to an execution mode and runtime settings. You select Chat Providers on the Chat page to execute queries.
 
-- An **LLM Provider** (e.g., Anthropic with claude-sonnet-4-5)
-- An **Execution Mode** (Direct, RLM, or RAG)
-- **Runtime settings** (temperature, top_p, max tokens, timeout)
-- **Mode-specific settings** (RLM: max steps, timeout; RAG: chunk size, overlap, top_k, embedding model)
+Each Chat Provider specifies:
 
-Chat Providers are the key abstraction for experiments. You create multiple Chat Providers with different configurations, then select them on the Chat page to compare results side by side.
+- **LLM Provider + Model** — e.g., Anthropic / claude-sonnet-4-5
+- **Execution Mode** — Direct, RLM, or RAG
+- **Runtime settings** — temperature, top_p, max output tokens, timeout
+- **Mode-specific settings** — RLM: max steps, timeout; RAG: chunk size, overlap, top_k, embedding model
+
+Create multiple Chat Providers with different configurations, then select them on the Chat page to compare results side by side.
 
 **Example setup for comparing modes:**
 
@@ -94,23 +112,25 @@ Use budget controls to prevent runaway costs during experimentation. Start with 
 
 ### Profiles
 
-Profiles are saved presets that bundle runtime settings and budget limits into a reusable configuration. Each profile includes:
+Profiles are saved presets of global defaults — runtime settings, budget limits, and system prompts bundled into a reusable template. Profiles are **not bound to any LLM provider**. They set the baseline that Chat Providers and the programmatic API inherit.
+
+Each profile includes:
 
 - **Name** and **description**
-- **Strategy** (the execution mode: Direct, RLM, etc.)
-- **Runtime settings** — temperature, max output tokens
+- **Strategy** (the default execution mode: Direct, RLM, etc.)
+- **Runtime settings** — temperature, top_p, max output tokens, timeout
 - **Budget limits** — max steps, tokens, cost, time, recursion depth
 - **System prompts** — per-mode prompt overrides
 
-RLM Studio ships with **built-in profiles** (marked with a lock icon):
+RLM Studio ships with three **built-in profiles** (marked with a lock icon, cannot be deleted):
 
 | Profile | Mode | Temp | Max Tokens | Steps | Use Case |
 |---------|------|------|------------|-------|----------|
-| **Fast & cheap** | Direct | 0.5 | 1,000 | 8 | Quick, low-cost responses |
-| **Accurate** | Direct | 0.2 | 4,096 | 16 | High-quality, precise answers |
-| **RLM deep** | RLM | 0.4 | 4,096 | 32 | Deep recursive reasoning for complex problems |
+| **Fast & cheap** | Direct | 0.5 | 1,000 | 8 | Quick, low-cost responses with conservative token limits |
+| **Accurate** | Direct | 0.2 | 4,096 | 16 | High-quality, precise answers with low temperature |
+| **RLM deep** | RLM | 0.4 | 4,096 | 32 | Deep recursive reasoning with high step budget |
 
-Built-in profiles cannot be deleted. You can create custom profiles and **activate** any profile to apply its settings globally. The active profile's settings become the defaults for new Chat Providers and direct API usage.
+Click the play button on any profile to **activate** it. The active profile's settings become the new global defaults. You can also create custom profiles for your own experiments.
 
 ### Prompts
 

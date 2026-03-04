@@ -36,7 +36,6 @@ import {
   type RunProfile,
   type ChatProviderConfig,
   type ChatProviderCreateRequest,
-  type RuntimeSettings,
   type RAGConfig,
 } from "@/lib/api";
 import { Plus, Edit2, Trash2 } from "lucide-react";
@@ -54,30 +53,19 @@ export default function SettingsPage() {
     name: string;
     llm_provider: string;
     llm_model: string;
-    execution_mode: "direct" | "rlm" | "rag";
-    runtime_settings: RuntimeSettings;
+    profile_id: string;
     rag_config: RAGConfig;
-    rlm_max_steps: number;
-    rlm_timeout_seconds: number;
   }>({
     name: "",
     llm_provider: "",
     llm_model: "",
-    execution_mode: "direct",
-    runtime_settings: {
-      temperature: 0.7,
-      top_p: 0.9,
-      max_output_tokens: 2048,
-      timeout_seconds: 30,
-    },
+    profile_id: "",
     rag_config: {
       chunk_size: 512,
       chunk_overlap: 64,
       top_k: 5,
       embedding_model: "text-embedding-3-small",
     },
-    rlm_max_steps: 10,
-    rlm_timeout_seconds: 60,
   });
   const [savingProvider, setSavingProvider] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -137,39 +125,34 @@ export default function SettingsPage() {
       name: provider.name,
       llm_provider: provider.llm_provider,
       llm_model: provider.llm_model,
-      execution_mode: provider.execution_mode,
-      runtime_settings: provider.runtime_settings,
+      profile_id: provider.profile_id || "",
       rag_config: provider.rag_config || {
         chunk_size: 512,
         chunk_overlap: 64,
         top_k: 5,
         embedding_model: "text-embedding-3-small",
       },
-      rlm_max_steps: provider.rlm_max_steps,
-      rlm_timeout_seconds: provider.rlm_timeout_seconds,
     });
     setShowCreateForm(true);
   };
 
   const handleSaveChatProvider = async () => {
-    if (!formData.name.trim() || !formData.llm_provider || !formData.llm_model) {
+    if (!formData.name.trim() || !formData.llm_provider || !formData.llm_model || !formData.profile_id) {
       console.error("Missing required fields");
       return;
     }
 
     setSavingProvider(true);
     try {
+      const selectedProfile = profiles.find((p) => p.id === formData.profile_id);
       const payload: ChatProviderCreateRequest = {
         name: formData.name,
         llm_provider: formData.llm_provider,
         llm_model: formData.llm_model,
-        execution_mode: formData.execution_mode,
-        runtime_settings: formData.runtime_settings,
-        rlm_max_steps: formData.rlm_max_steps,
-        rlm_timeout_seconds: formData.rlm_timeout_seconds,
+        profile_id: formData.profile_id,
       };
 
-      if (formData.execution_mode === "rag") {
+      if (selectedProfile?.strategy === "rag") {
         payload.rag_config = formData.rag_config;
       }
 
@@ -204,26 +187,21 @@ export default function SettingsPage() {
     }
   };
 
+  // Resolve the selected profile for the form
+  const selectedProfile = profiles.find((p) => p.id === formData.profile_id);
+
   const resetForm = () => {
     setFormData({
       name: "",
       llm_provider: "",
       llm_model: "",
-      execution_mode: "direct",
-      runtime_settings: {
-        temperature: 0.7,
-        top_p: 0.9,
-        max_output_tokens: 2048,
-        timeout_seconds: 30,
-      },
+      profile_id: "",
       rag_config: {
         chunk_size: 512,
         chunk_overlap: 64,
         top_k: 5,
         embedding_model: "text-embedding-3-small",
       },
-      rlm_max_steps: 10,
-      rlm_timeout_seconds: 60,
     });
   };
 
@@ -340,65 +318,45 @@ export default function SettingsPage() {
                     </Select>
                   </div>
 
-                  <div className="space-y-3">
-                    <Label>Execution Mode</Label>
-                    <RadioGroup
-                      value={formData.execution_mode}
-                      onValueChange={(value) =>
-                        setFormData({
-                          ...formData,
-                          execution_mode: value as "direct" | "rlm" | "rag",
-                        })
-                      }
+                  <div className="space-y-2">
+                    <Label htmlFor="cp-profile">Profile</Label>
+                    <Select
+                      value={formData.profile_id}
+                      onValueChange={(value) => setFormData({ ...formData, profile_id: value })}
                     >
-                      {(["direct", "rlm", "rag"] as const).map((mode) => (
-                        <div key={mode} className="flex items-center gap-2">
-                          <RadioGroupItem value={mode} id={`mode-${mode}`} />
-                          <Label htmlFor={`mode-${mode}`} className="capitalize cursor-pointer">
-                            {mode}
-                          </Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
+                      <SelectTrigger id="cp-profile">
+                        <SelectValue placeholder="Select a profile" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {profiles.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}{p.is_builtin ? " (built-in)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  {formData.execution_mode === "rlm" && (
-                    <div className="space-y-4 rounded-lg border border-muted p-4">
-                      <h4 className="font-medium text-sm">RLM Settings</h4>
-                      <div className="space-y-2">
-                        <Label htmlFor="cp-rlm-steps">Max Steps</Label>
-                        <Input
-                          id="cp-rlm-steps"
-                          type="number"
-                          min="1"
-                          value={formData.rlm_max_steps}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              rlm_max_steps: parseInt(e.target.value) || 10,
-                            })
-                          }
-                        />
+                  {selectedProfile && (
+                    <div className="rounded-lg border border-muted bg-muted/30 p-4 space-y-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground capitalize">
+                          {selectedProfile.strategy}
+                        </span>
+                        {selectedProfile.description && (
+                          <span className="text-xs text-muted-foreground">{selectedProfile.description}</span>
+                        )}
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="cp-rlm-timeout">Timeout (seconds)</Label>
-                        <Input
-                          id="cp-rlm-timeout"
-                          type="number"
-                          min="1"
-                          value={formData.rlm_timeout_seconds}
-                          onChange={(e) =>
-                            setFormData({
-                              ...formData,
-                              rlm_timeout_seconds: parseInt(e.target.value) || 60,
-                            })
-                          }
-                        />
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Temp {selectedProfile.runtime_settings.temperature} · Top P {selectedProfile.runtime_settings.top_p} · Max tokens {selectedProfile.runtime_settings.max_output_tokens} · Timeout {selectedProfile.runtime_settings.timeout_seconds}s
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Steps {selectedProfile.budget.max_steps} · Max cost ${selectedProfile.budget.max_cost_usd} · Time {selectedProfile.budget.max_time_seconds}s
+                      </p>
                     </div>
                   )}
 
-                  {formData.execution_mode === "rag" && (
+                  {selectedProfile?.strategy === "rag" && (
                     <div className="space-y-4 rounded-lg border border-muted p-4">
                       <h4 className="font-medium text-sm">RAG Settings</h4>
                       <div className="space-y-2">
@@ -475,86 +433,6 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  <div className="space-y-4 rounded-lg border border-muted p-4">
-                    <h4 className="font-medium text-sm">Runtime Settings</h4>
-                    <div className="space-y-2">
-                      <Label htmlFor="cp-temperature">Temperature</Label>
-                      <Input
-                        id="cp-temperature"
-                        type="number"
-                        min="0"
-                        max="2"
-                        step="0.1"
-                        value={formData.runtime_settings.temperature}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            runtime_settings: {
-                              ...formData.runtime_settings,
-                              temperature: parseFloat(e.target.value) || 0.7,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cp-top-p">Top P</Label>
-                      <Input
-                        id="cp-top-p"
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={formData.runtime_settings.top_p}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            runtime_settings: {
-                              ...formData.runtime_settings,
-                              top_p: parseFloat(e.target.value) || 0.9,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cp-max-tokens">Max Output Tokens</Label>
-                      <Input
-                        id="cp-max-tokens"
-                        type="number"
-                        min="1"
-                        value={formData.runtime_settings.max_output_tokens}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            runtime_settings: {
-                              ...formData.runtime_settings,
-                              max_output_tokens: parseInt(e.target.value) || 2048,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cp-timeout">Timeout (seconds)</Label>
-                      <Input
-                        id="cp-timeout"
-                        type="number"
-                        min="1"
-                        value={formData.runtime_settings.timeout_seconds}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            runtime_settings: {
-                              ...formData.runtime_settings,
-                              timeout_seconds: parseInt(e.target.value) || 30,
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-
                   <div className="flex gap-2">
                     <Button
                       onClick={handleSaveChatProvider}
@@ -562,7 +440,8 @@ export default function SettingsPage() {
                         savingProvider ||
                         !formData.name.trim() ||
                         !formData.llm_provider ||
-                        !formData.llm_model
+                        !formData.llm_model ||
+                        !formData.profile_id
                       }
                     >
                       {editingId ? "Update" : "Create"}
@@ -583,7 +462,9 @@ export default function SettingsPage() {
               </Card>
             )}
 
-            {chatProviders.map((provider) => (
+            {chatProviders.map((provider) => {
+              const providerProfile = profiles.find((p) => p.id === provider.profile_id);
+              return (
               <Card key={provider.id}>
                 <CardHeader>
                   <div className="flex items-start justify-between">
@@ -591,6 +472,7 @@ export default function SettingsPage() {
                       <CardTitle className="text-base">{provider.name}</CardTitle>
                       <p className="text-sm text-muted-foreground">
                         {provider.llm_provider} · {provider.llm_model}
+                        {providerProfile && ` · ${providerProfile.name}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -619,7 +501,8 @@ export default function SettingsPage() {
                   </div>
                 </CardHeader>
               </Card>
-            ))}
+              );
+            })}
 
             {chatProviders.length === 0 && !showCreateForm && (
               <Card>

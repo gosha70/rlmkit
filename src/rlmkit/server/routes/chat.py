@@ -104,6 +104,7 @@ async def submit_chat(
             raise HTTPException(
                 status_code=404, detail=f"Chat Provider {chat_provider_id} not found"
             )
+        cp = state.resolve_chat_provider(cp)
         mode = cp.execution_mode
 
     # Create execution record
@@ -161,6 +162,8 @@ async def _run_execution(
         if chat_provider_id:
             llm = state.create_llm_adapter_for_chat_provider(chat_provider_id)
             cp = state.get_chat_provider(chat_provider_id)
+            if cp:
+                cp = state.resolve_chat_provider(cp)
             provider_label = f"{cp.llm_provider}/{cp.llm_model}" if cp else "unknown"
         else:
             llm = state.create_llm_adapter()
@@ -401,6 +404,8 @@ async def websocket_chat(
                 ws_cp = None
                 if ws_chat_provider_id:
                     ws_cp = state.get_chat_provider(ws_chat_provider_id)
+                    if ws_cp:
+                        ws_cp = state.resolve_chat_provider(ws_cp)
                     if not ws_cp:
                         await websocket.send_json(
                             {
@@ -460,6 +465,8 @@ async def websocket_chat(
                         if cp_id:
                             llm = state.create_llm_adapter_for_chat_provider(cp_id)
                             ws_cp = state.get_chat_provider(cp_id)
+                            if ws_cp:
+                                ws_cp = state.resolve_chat_provider(ws_cp)
                             provider_label = (
                                 f"{ws_cp.llm_provider}/{ws_cp.llm_model}" if ws_cp else "unknown"
                             )

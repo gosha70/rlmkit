@@ -224,6 +224,7 @@ export interface ChatProviderConfig {
   name: string;
   llm_provider: string;
   llm_model: string;
+  profile_id?: string | null;
   execution_mode: "direct" | "rlm" | "rag";
   runtime_settings: RuntimeSettings;
   rag_config?: RAGConfig | null;
@@ -237,7 +238,8 @@ export interface ChatProviderCreateRequest {
   name: string;
   llm_provider: string;
   llm_model: string;
-  execution_mode: "direct" | "rlm" | "rag";
+  profile_id?: string | null;
+  execution_mode?: "direct" | "rlm" | "rag";
   runtime_settings?: RuntimeSettings | null;
   rag_config?: RAGConfig | null;
   rlm_max_steps?: number | null;
@@ -247,6 +249,7 @@ export interface ChatProviderCreateRequest {
 export interface ChatProviderUpdateRequest {
   name?: string | null;
   llm_model?: string | null;
+  profile_id?: string | null;
   execution_mode?: "direct" | "rlm" | "rag" | null;
   runtime_settings?: RuntimeSettings | null;
   rag_config?: RAGConfig | null;
