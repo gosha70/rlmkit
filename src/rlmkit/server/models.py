@@ -347,6 +347,7 @@ class ChatProviderConfig(BaseModel):
     llm_provider: str  # e.g. "anthropic", "openai"
     llm_model: str  # e.g. "claude-sonnet-4-5"
     profile_id: str | None = None  # reference to a RunProfile
+    profile_name: str | None = None  # resolved profile name (read-only)
     execution_mode: Literal["direct", "rlm", "rag"] = "direct"
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     rag_config: RAGConfig | None = None  # only for RAG mode

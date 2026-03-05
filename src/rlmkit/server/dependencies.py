@@ -262,6 +262,7 @@ class AppState:
             logger.warning("Profile %s not found for Chat Provider %s", cp.profile_id, cp.id)
             return cp
         resolved = cp.model_copy()
+        resolved.profile_name = profile.name
         resolved.execution_mode = profile.strategy  # type: ignore[assignment]
         resolved.runtime_settings = (
             profile.runtime_settings.model_copy()

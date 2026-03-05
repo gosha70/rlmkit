@@ -37,6 +37,7 @@ interface ChatTurn {
     {
       chatProviderId: string;
       chatProviderName: string;
+      profileName?: string | null;
       executionId: string;
       content: string;
       isStreaming: boolean;
@@ -313,9 +314,11 @@ export default function ChatPage() {
 
       // Initialize empty responses for each selected provider
       for (const cpId of selectedChatProviderIds) {
+        const matchedCp = chatProviders.find((cp) => cp.id === cpId);
         newTurn.responses[cpId] = {
           chatProviderId: cpId,
-          chatProviderName: chatProviders.find((cp) => cp.id === cpId)?.name || cpId,
+          chatProviderName: matchedCp?.name || cpId,
+          profileName: matchedCp?.profile_name,
           executionId: "",
           content: "",
           isStreaming: true,
@@ -499,6 +502,11 @@ export default function ChatPage() {
                               </div>
                               <span className="text-xs font-medium text-muted-foreground">
                                 {resp?.chatProviderName}
+                                {resp?.profileName && (
+                                  <span className="ml-1 font-normal opacity-70">
+                                    · {resp.profileName}
+                                  </span>
+                                )}
                               </span>
                             </div>
 

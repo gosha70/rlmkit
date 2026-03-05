@@ -141,7 +141,6 @@ export default function SettingsPage() {
         embedding_model: "text-embedding-3-small",
       },
     });
-    setShowCreateForm(true);
   };
 
   const handleSaveChatProvider = async () => {
@@ -267,12 +266,10 @@ export default function SettingsPage() {
               </Button>
             )}
 
-            {showCreateForm && (
+            {showCreateForm && !editingId && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">
-                    {editingId ? "Edit Chat Provider" : "Create Chat Provider"}
-                  </CardTitle>
+                  <CardTitle className="text-base">Create Chat Provider</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -452,7 +449,7 @@ export default function SettingsPage() {
                         !formData.profile_id
                       }
                     >
-                      {editingId ? "Update" : "Create"}
+                      Create
                     </Button>
                     <Button
                       variant="outline"
@@ -472,6 +469,8 @@ export default function SettingsPage() {
 
             {chatProviders.map((provider) => {
               const providerProfile = profiles.find((p) => p.id === provider.profile_id);
+              const isEditing = editingId === provider.id && !showCreateForm;
+              const editProfile = isEditing ? profiles.find((p) => p.id === formData.profile_id) : null;
               return (
               <Card key={provider.id}>
                 <CardHeader>
@@ -490,11 +489,11 @@ export default function SettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleEditChatProvider(provider)}
+                        onClick={() => isEditing ? setEditingId(null) : handleEditChatProvider(provider)}
                         disabled={showCreateForm}
                       >
                         <Edit2 className="h-4 w-4" aria-hidden="true" />
-                        <span className="sr-only">Edit</span>
+                        <span className="sr-only">{isEditing ? "Cancel edit" : "Edit"}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -508,6 +507,126 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </CardHeader>
+                {isEditing && (
+                  <CardContent className="space-y-4 border-t pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor={`edit-cp-name-${provider.id}`}>Name</Label>
+                      <Input
+                        id={`edit-cp-name-${provider.id}`}
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`edit-cp-provider-${provider.id}`}>LLM Provider</Label>
+                        <Select value={formData.llm_provider} onValueChange={(value) => {
+                          setFormData({ ...formData, llm_provider: value, llm_model: "" });
+                        }}>
+                          <SelectTrigger id={`edit-cp-provider-${provider.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {providers.map((p) => (
+                              <SelectItem key={p.name} value={p.name}>{p.display_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`edit-cp-model-${provider.id}`}>Model</Label>
+                        <Select
+                          value={formData.llm_model}
+                          onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
+                          disabled={!formData.llm_provider}
+                        >
+                          <SelectTrigger id={`edit-cp-model-${provider.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {formData.llm_provider &&
+                              providers
+                                .find((p) => p.name === formData.llm_provider)
+                                ?.models.map((m) => (
+                                  <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
+                                ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`edit-cp-profile-${provider.id}`}>Profile</Label>
+                      <Select
+                        value={formData.profile_id}
+                        onValueChange={(value) => setFormData({ ...formData, profile_id: value })}
+                      >
+                        <SelectTrigger id={`edit-cp-profile-${provider.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profiles.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}{p.is_builtin ? " (built-in)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {editProfile && (
+                      <div className="rounded-lg border border-muted bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                        <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium capitalize">
+                          {editProfile.strategy}
+                        </span>
+                        <p>Temp {editProfile.runtime_settings.temperature} · Max tokens {editProfile.runtime_settings.max_output_tokens} · Steps {editProfile.budget.max_steps}</p>
+                      </div>
+                    )}
+                    {editProfile?.strategy === "rag" && (
+                      <div className="space-y-3 rounded-lg border border-muted p-3">
+                        <h4 className="font-medium text-sm">RAG Settings</h4>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label htmlFor={`edit-cp-chunk-${provider.id}`} className="text-xs">Chunk Size</Label>
+                            <Input id={`edit-cp-chunk-${provider.id}`} type="number" min="1" className="h-8 text-xs"
+                              value={formData.rag_config.chunk_size}
+                              onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, chunk_size: parseInt(e.target.value) || 512 }})}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`edit-cp-overlap-${provider.id}`} className="text-xs">Overlap</Label>
+                            <Input id={`edit-cp-overlap-${provider.id}`} type="number" min="0" className="h-8 text-xs"
+                              value={formData.rag_config.chunk_overlap}
+                              onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, chunk_overlap: parseInt(e.target.value) || 64 }})}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`edit-cp-topk-${provider.id}`} className="text-xs">Top K</Label>
+                            <Input id={`edit-cp-topk-${provider.id}`} type="number" min="1" className="h-8 text-xs"
+                              value={formData.rag_config.top_k}
+                              onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, top_k: parseInt(e.target.value) || 5 }})}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`edit-cp-embed-${provider.id}`} className="text-xs">Embedding Model</Label>
+                            <Input id={`edit-cp-embed-${provider.id}`} className="h-8 text-xs"
+                              value={formData.rag_config.embedding_model}
+                              onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, embedding_model: e.target.value }})}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={handleSaveChatProvider}
+                        disabled={savingProvider || !formData.name.trim() || !formData.llm_provider || !formData.llm_model || !formData.profile_id}
+                      >
+                        {savingProvider ? "Saving..." : "Save"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingId(null)} disabled={savingProvider}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </CardContent>
+                )}
               </Card>
               );
             })}

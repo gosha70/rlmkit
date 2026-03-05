@@ -9,6 +9,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fastapi.testclient import TestClient
 
 from rlmkit.server.dependencies import get_state
 
@@ -23,7 +24,7 @@ pytestmark = [pytest.mark.e2e]
 class TestHealthEndpoint:
     """GET /health -- server liveness check."""
 
-    def test_health_returns_200_with_status_ok(self, client):
+    def test_health_returns_200_with_status_ok(self, client: TestClient) -> None:
         resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
@@ -41,7 +42,7 @@ class TestHealthEndpoint:
 class TestChatEndpoints:
     """POST /api/chat -- submit a query (returns 202, async execution)."""
 
-    def test_chat_submit_returns_202(self, client):
+    def test_chat_submit_returns_202(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={
@@ -57,7 +58,7 @@ class TestChatEndpoints:
         assert "session_id" in data
         assert data["status"] == "running"
 
-    def test_chat_creates_session(self, client):
+    def test_chat_creates_session(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "Hello", "content": "Some content.", "mode": "direct"},
@@ -66,7 +67,7 @@ class TestChatEndpoints:
         state = get_state()
         assert session_id in state.sessions
 
-    def test_chat_uses_provided_session_id(self, client):
+    def test_chat_uses_provided_session_id(self, client: TestClient) -> None:
         sid = str(uuid.uuid4())
         resp = client.post(
             "/api/chat",
@@ -74,21 +75,21 @@ class TestChatEndpoints:
         )
         assert resp.json()["session_id"] == sid
 
-    def test_chat_with_file_id_not_found(self, client):
+    def test_chat_with_file_id_not_found(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "Summarize", "file_id": "nonexistent", "mode": "direct"},
         )
         assert resp.status_code == 404
 
-    def test_chat_requires_content_or_file_id(self, client):
+    def test_chat_requires_content_or_file_id(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "Hello", "mode": "direct"},
         )
         assert resp.status_code == 400
 
-    def test_chat_with_uploaded_file(self, client, uploaded_file_id):
+    def test_chat_with_uploaded_file(self, client: TestClient, uploaded_file_id: str) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "Summarize", "file_id": uploaded_file_id, "mode": "direct"},
@@ -105,7 +106,7 @@ class TestChatEndpoints:
 class TestFileUploadEndpoints:
     """POST /api/files/upload -- upload a document."""
 
-    def test_upload_text_file(self, client):
+    def test_upload_text_file(self, client: TestClient) -> None:
         resp = client.post(
             "/api/files/upload",
             files={"file": ("test.txt", b"Hello world content", "text/plain")},
@@ -117,7 +118,7 @@ class TestFileUploadEndpoints:
         assert data["size_bytes"] == len(b"Hello world content")
         assert data["token_count"] > 0
 
-    def test_upload_markdown_file(self, client):
+    def test_upload_markdown_file(self, client: TestClient) -> None:
         content = b"# Title\n\nSome markdown content.\n"
         resp = client.post(
             "/api/files/upload",
@@ -126,21 +127,21 @@ class TestFileUploadEndpoints:
         assert resp.status_code == 201
         assert resp.json()["name"] == "readme.md"
 
-    def test_upload_unsupported_type_returns_400(self, client):
+    def test_upload_unsupported_type_returns_400(self, client: TestClient) -> None:
         resp = client.post(
             "/api/files/upload",
             files={"file": ("image.png", b"\x89PNG", "image/png")},
         )
         assert resp.status_code == 400
 
-    def test_get_uploaded_file(self, client, uploaded_file_id):
+    def test_get_uploaded_file(self, client: TestClient, uploaded_file_id: str) -> None:
         resp = client.get(f"/api/files/{uploaded_file_id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["id"] == uploaded_file_id
         assert data["name"] == "test.txt"
 
-    def test_get_nonexistent_file_returns_404(self, client):
+    def test_get_nonexistent_file_returns_404(self, client: TestClient) -> None:
         resp = client.get("/api/files/no-such-id")
         assert resp.status_code == 404
 
@@ -153,12 +154,12 @@ class TestFileUploadEndpoints:
 class TestSessionEndpoints:
     """Session management endpoints."""
 
-    def test_list_sessions_initially_empty(self, client):
+    def test_list_sessions_initially_empty(self, client: TestClient) -> None:
         resp = client.get("/api/sessions")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_list_sessions_after_chat(self, client):
+    def test_list_sessions_after_chat(self, client: TestClient) -> None:
         client.post(
             "/api/chat",
             json={"query": "Hello", "content": "Some content.", "mode": "direct"},
@@ -171,7 +172,7 @@ class TestSessionEndpoints:
         assert "name" in sessions[0]
         assert "message_count" in sessions[0]
 
-    def test_get_session_detail(self, client):
+    def test_get_session_detail(self, client: TestClient) -> None:
         chat_resp = client.post(
             "/api/chat",
             json={"query": "Hi", "content": "Content.", "mode": "direct"},
@@ -184,11 +185,11 @@ class TestSessionEndpoints:
         assert "messages" in data
         assert len(data["messages"]) >= 1
 
-    def test_get_nonexistent_session_returns_404(self, client):
+    def test_get_nonexistent_session_returns_404(self, client: TestClient) -> None:
         resp = client.get("/api/sessions/nonexistent")
         assert resp.status_code == 404
 
-    def test_delete_session(self, client):
+    def test_delete_session(self, client: TestClient) -> None:
         chat_resp = client.post(
             "/api/chat",
             json={"query": "Hi", "content": "Content.", "mode": "direct"},
@@ -199,7 +200,7 @@ class TestSessionEndpoints:
         resp = client.get(f"/api/sessions/{sid}")
         assert resp.status_code == 404
 
-    def test_delete_nonexistent_session_returns_404(self, client):
+    def test_delete_nonexistent_session_returns_404(self, client: TestClient) -> None:
         resp = client.delete("/api/sessions/nonexistent")
         assert resp.status_code == 404
 
@@ -212,7 +213,7 @@ class TestSessionEndpoints:
 class TestMetricsEndpoints:
     """Metrics aggregation endpoints."""
 
-    def test_get_metrics_for_session(self, client):
+    def test_get_metrics_for_session(self, client: TestClient) -> None:
         chat_resp = client.post(
             "/api/chat",
             json={"query": "Hi", "content": "Content.", "mode": "direct"},
@@ -226,7 +227,7 @@ class TestMetricsEndpoints:
         assert "by_mode" in data
         assert "timeline" in data
 
-    def test_get_metrics_nonexistent_session_returns_404(self, client):
+    def test_get_metrics_nonexistent_session_returns_404(self, client: TestClient) -> None:
         resp = client.get("/api/metrics/no-such-session")
         assert resp.status_code == 404
 
@@ -239,7 +240,7 @@ class TestMetricsEndpoints:
 class TestTraceEndpoints:
     """Execution trace endpoints."""
 
-    def test_get_trace_for_execution(self, client):
+    def test_get_trace_for_execution(self, client: TestClient) -> None:
         chat_resp = client.post(
             "/api/chat",
             json={"query": "Hello", "content": "Content.", "mode": "direct"},
@@ -256,7 +257,7 @@ class TestTraceEndpoints:
         assert "budget" in data
         assert "result" in data
 
-    def test_get_trace_nonexistent_returns_404(self, client):
+    def test_get_trace_nonexistent_returns_404(self, client: TestClient) -> None:
         resp = client.get("/api/traces/no-such-execution")
         assert resp.status_code == 404
 
@@ -269,7 +270,7 @@ class TestTraceEndpoints:
 class TestProviderEndpoints:
     """Provider listing and test endpoints."""
 
-    def test_list_providers(self, client):
+    def test_list_providers(self, client: TestClient) -> None:
         resp = client.get("/api/providers")
         assert resp.status_code == 200
         providers = resp.json()
@@ -294,7 +295,7 @@ class TestProviderEndpoints:
 class TestConfigEndpoints:
     """Configuration get/update endpoints."""
 
-    def test_get_config_defaults(self, client):
+    def test_get_config_defaults(self, client: TestClient) -> None:
         resp = client.get("/api/config")
         assert resp.status_code == 200
         data = resp.json()
@@ -305,7 +306,7 @@ class TestConfigEndpoints:
         assert "sandbox" in data
         assert "appearance" in data
 
-    def test_update_config_partial(self, client):
+    def test_update_config_partial(self, client: TestClient) -> None:
         """PUT /api/config no longer sets active_provider/model (use providers endpoint)."""
         resp = client.put(
             "/api/config",
@@ -317,7 +318,7 @@ class TestConfigEndpoints:
         assert data["active_provider"] == "openai"
         assert data["active_model"] == "gpt-4o"
 
-    def test_update_config_budget(self, client):
+    def test_update_config_budget(self, client: TestClient) -> None:
         resp = client.put(
             "/api/config",
             json={
@@ -333,7 +334,7 @@ class TestConfigEndpoints:
         assert resp.status_code == 200
         assert resp.json()["budget"]["max_steps"] == 32
 
-    def test_update_config_appearance(self, client):
+    def test_update_config_appearance(self, client: TestClient) -> None:
         resp = client.put(
             "/api/config",
             json={"appearance": {"theme": "dark", "sidebar_collapsed": True}},
@@ -342,8 +343,166 @@ class TestConfigEndpoints:
         assert resp.json()["appearance"]["theme"] == "dark"
         assert resp.json()["appearance"]["sidebar_collapsed"] is True
 
-    def test_config_persists_across_requests(self, client):
+    def test_config_persists_across_requests(self, client: TestClient) -> None:
         """Budget changes via PUT /api/config persist across requests."""
         client.put("/api/config", json={"budget": {"max_steps": 99}})
         resp = client.get("/api/config")
         assert resp.json()["budget"]["max_steps"] == 99
+
+
+# ---------------------------------------------------------------------------
+# Profiles
+# ---------------------------------------------------------------------------
+
+
+class TestProfileEndpoints:
+    """Profile CRUD, clone, and delete protection."""
+
+    def test_list_profiles_includes_builtins(self, client: TestClient) -> None:
+        resp = client.get("/api/profiles")
+        assert resp.status_code == 200
+        profiles = resp.json()
+        ids = [p["id"] for p in profiles]
+        assert "builtin-fast" in ids
+        assert "builtin-accurate" in ids
+        assert "builtin-rlm-deep" in ids
+        assert "builtin-rag" in ids
+
+    def test_builtin_rag_profile_has_correct_strategy(self, client: TestClient) -> None:
+        resp = client.get("/api/profiles")
+        rag = next(p for p in resp.json() if p["id"] == "builtin-rag")
+        assert rag["strategy"] == "rag"
+        assert rag["is_builtin"] is True
+        assert rag["runtime_settings"]["temperature"] == 0.3
+
+    def test_create_profile(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/profiles",
+            json={"name": "Test Profile", "strategy": "rlm", "description": "For testing"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "Test Profile"
+        assert data["strategy"] == "rlm"
+        assert data["is_builtin"] is False
+
+    def test_clone_profile_via_create(self, client: TestClient) -> None:
+        """Clone a built-in profile by creating a new one with the same settings."""
+        # Get the built-in profile settings
+        resp = client.get("/api/profiles")
+        rlm_deep = next(p for p in resp.json() if p["id"] == "builtin-rlm-deep")
+
+        # Create a clone
+        resp = client.post(
+            "/api/profiles",
+            json={
+                "name": f"Copy of {rlm_deep['name']}",
+                "strategy": rlm_deep["strategy"],
+                "description": rlm_deep["description"],
+                "runtime_settings": rlm_deep["runtime_settings"],
+                "budget": rlm_deep["budget"],
+            },
+        )
+        assert resp.status_code == 201
+        clone = resp.json()
+        assert clone["name"] == "Copy of RLM deep"
+        assert clone["strategy"] == "rlm"
+        assert clone["runtime_settings"]["temperature"] == 0.4
+        assert clone["budget"]["max_steps"] == 32
+        assert clone["is_builtin"] is False
+
+    def test_delete_profile_blocked_when_referenced(self, client: TestClient) -> None:
+        """Cannot delete a profile that is referenced by a Chat Provider."""
+        # Create a custom profile
+        resp = client.post("/api/profiles", json={"name": "Referenced"})
+        profile_id = resp.json()["id"]
+
+        # Create a Chat Provider referencing it
+        client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-Ref",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "profile_id": profile_id,
+            },
+        )
+
+        # Try to delete — should fail with 409
+        resp = client.delete(f"/api/profiles/{profile_id}")
+        assert resp.status_code == 409
+        assert "CP-Ref" in resp.json()["error"]["message"]
+
+    def test_delete_profile_succeeds_when_unreferenced(self, client: TestClient) -> None:
+        """Can delete a profile that is not referenced by any Chat Provider."""
+        resp = client.post("/api/profiles", json={"name": "Unreferenced"})
+        profile_id = resp.json()["id"]
+
+        resp = client.delete(f"/api/profiles/{profile_id}")
+        assert resp.status_code == 204
+
+        # Confirm it's gone
+        resp = client.get("/api/profiles")
+        ids = [p["id"] for p in resp.json()]
+        assert profile_id not in ids
+
+    def test_cannot_delete_builtin_profile(self, client: TestClient) -> None:
+        resp = client.delete("/api/profiles/builtin-fast")
+        assert resp.status_code == 400
+        assert "built-in" in resp.json()["error"]["message"]
+
+
+# ---------------------------------------------------------------------------
+# Chat Providers with Profiles
+# ---------------------------------------------------------------------------
+
+
+class TestChatProviderProfileIntegration:
+    """Chat Provider CRUD with profile resolution."""
+
+    def test_create_chat_provider_with_profile(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "Test CP",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "profile_id": "builtin-rlm-deep",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["profile_id"] == "builtin-rlm-deep"
+        # Resolved from profile
+        assert data["execution_mode"] == "rlm"
+        assert data["runtime_settings"]["temperature"] == 0.4
+        assert data["rlm_max_steps"] == 32
+
+    def test_create_chat_provider_with_invalid_profile(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "Bad CP",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "profile_id": "nonexistent",
+            },
+        )
+        assert resp.status_code == 400
+        assert "Profile not found" in resp.json()["error"]["message"]
+
+    def test_list_chat_providers_resolves_profiles(self, client: TestClient) -> None:
+        client.post(
+            "/api/chat-providers",
+            json={
+                "name": "Resolved CP",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "profile_id": "builtin-accurate",
+            },
+        )
+        resp = client.get("/api/chat-providers")
+        assert resp.status_code == 200
+        cp = next(c for c in resp.json() if c["name"] == "Resolved CP")
+        assert cp["execution_mode"] == "direct"
+        assert cp["runtime_settings"]["temperature"] == 0.2

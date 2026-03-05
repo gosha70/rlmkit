@@ -225,6 +225,7 @@ export interface ChatProviderConfig {
   llm_provider: string;
   llm_model: string;
   profile_id?: string | null;
+  profile_name?: string | null;
   execution_mode: "direct" | "rlm" | "rag";
   runtime_settings: RuntimeSettings;
   rag_config?: RAGConfig | null;

@@ -119,15 +119,21 @@ Each profile includes:
 - **Budget limits** — max steps, tokens, cost, time, recursion depth
 - **System prompts** — per-mode prompt overrides
 
-RLM Studio ships with three **built-in profiles** (marked with a lock icon, cannot be deleted):
+RLM Studio ships with four **built-in profiles** (marked with a lock icon, cannot be deleted):
 
 | Profile | Mode | Temp | Max Tokens | Steps | Use Case |
 |---------|------|------|------------|-------|----------|
 | **Fast & cheap** | Direct | 0.5 | 1,000 | 8 | Quick, low-cost responses with conservative token limits |
 | **Accurate** | Direct | 0.2 | 4,096 | 16 | High-quality, precise answers with low temperature |
 | **RLM deep** | RLM | 0.4 | 4,096 | 32 | Deep recursive reasoning with high step budget |
+| **RAG retrieval** | RAG | 0.3 | 4,096 | 8 | Retrieval-augmented generation with moderate token budget |
 
-Click the play button on any profile to **activate** it. The active profile's settings become the new global defaults. You can also create custom profiles for your own experiments.
+**Actions on profiles:**
+
+- **Activate** (play button) — apply the profile's settings as the new global defaults
+- **Clone** (copy button) — create an editable copy of any profile (including built-ins)
+- **Edit** (pencil button) — modify strategy, runtime settings, and budget inline (custom profiles only)
+- **Delete** (trash button) — remove a custom profile. Profiles referenced by Chat Providers cannot be deleted — reassign the Chat Providers first.
 
 ### Prompts
 
