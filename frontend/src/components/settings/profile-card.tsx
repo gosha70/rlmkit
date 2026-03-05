@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/select";
 import {
   activateProfile,
+  createProfile,
   deleteProfile,
   updateProfile,
   type RunProfile,
   type ChatProviderConfig,
 } from "@/lib/api";
-import { Play, Trash2, Lock, Edit2 } from "lucide-react";
+import { Play, Trash2, Lock, Edit2, Copy } from "lucide-react";
 
 interface ProfileCardProps {
   profile: RunProfile;
@@ -28,6 +29,7 @@ interface ProfileCardProps {
   onActivated?: () => void;
   onDeleted?: () => void;
   onUpdated?: () => void;
+  onCloned?: () => void;
 }
 
 export function ProfileCard({
@@ -36,9 +38,11 @@ export function ProfileCard({
   onActivated,
   onDeleted,
   onUpdated,
+  onCloned,
 }: ProfileCardProps) {
   const [activating, setActivating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -73,6 +77,12 @@ export function ProfileCard({
   };
 
   const handleDelete = async () => {
+    if (usedBy.length > 0) {
+      const names = usedBy.map((cp) => cp.name).join(", ");
+      setMessage(`Cannot delete: used by ${names}`);
+      return;
+    }
+    if (!confirm(`Delete profile "${profile.name}"?`)) return;
     setDeleting(true);
     try {
       await deleteProfile(profile.id);
@@ -80,6 +90,26 @@ export function ProfileCard({
     } catch {
       setMessage("Failed to delete profile");
       setDeleting(false);
+    }
+  };
+
+  const handleClone = async () => {
+    setCloning(true);
+    setMessage(null);
+    try {
+      await createProfile({
+        name: `Copy of ${profile.name}`,
+        description: profile.description,
+        strategy: profile.strategy,
+        runtime_settings: { ...profile.runtime_settings },
+        budget: { ...profile.budget },
+      });
+      setMessage("Profile cloned");
+      onCloned?.();
+    } catch {
+      setMessage("Failed to clone profile");
+    } finally {
+      setCloning(false);
     }
   };
 
@@ -160,6 +190,15 @@ export function ProfileCard({
                 <Edit2 className="h-4 w-4" aria-hidden="true" />
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClone}
+              disabled={cloning}
+              aria-label={`Clone ${profile.name} profile`}
+            >
+              <Copy className="h-4 w-4" aria-hidden="true" />
+            </Button>
             <Button
               variant="ghost"
               size="sm"

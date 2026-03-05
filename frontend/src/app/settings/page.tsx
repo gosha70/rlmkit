@@ -600,6 +600,7 @@ export default function SettingsPage() {
                   mutateProfiles();
                   mutateChatProviders();
                 }}
+                onCloned={() => mutateProfiles()}
               />
             ))}
 

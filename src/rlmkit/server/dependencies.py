@@ -211,7 +211,7 @@ class AppState:
             if cp.execution_mode == "rlm":
                 cp.profile_id = "builtin-rlm-deep"
             elif cp.execution_mode == "rag":
-                cp.profile_id = "builtin-accurate"
+                cp.profile_id = "builtin-rag"
             else:
                 cp.profile_id = "builtin-accurate"
             changed = True
