@@ -89,6 +89,7 @@ class AppState:
             self._load_config()
             self._load_sessions()
             self._migrate_chat_providers()
+            self._assign_default_profiles()
 
     # ------------------------------------------------------------------
     # Config persistence
@@ -188,6 +189,7 @@ class AppState:
                 llm_provider=pc.provider,
                 llm_model=pc.model,
                 execution_mode="direct",
+                profile_id="builtin-accurate",
                 runtime_settings=pc.runtime_settings.model_copy(),
                 created_at=now,
                 updated_at=now,
@@ -198,6 +200,27 @@ class AppState:
                 "Migrated %d Chat Provider(s) from existing provider configs",
                 len(self.config.chat_providers),
             )
+            self.save_config()
+
+    def _assign_default_profiles(self) -> None:
+        """Assign a default profile to Chat Providers that don't have one."""
+        changed = False
+        for cp in self.config.chat_providers:
+            if cp.profile_id:
+                continue
+            if cp.execution_mode == "rlm":
+                cp.profile_id = "builtin-rlm-deep"
+            elif cp.execution_mode == "rag":
+                cp.profile_id = "builtin-accurate"
+            else:
+                cp.profile_id = "builtin-accurate"
+            changed = True
+            logger.info(
+                "Assigned profile %s to Chat Provider %s",
+                cp.profile_id,
+                cp.name,
+            )
+        if changed:
             self.save_config()
 
     # ------------------------------------------------------------------

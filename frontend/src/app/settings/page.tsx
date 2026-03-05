@@ -44,6 +44,8 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
+  const [newProfileStrategy, setNewProfileStrategy] = useState("direct");
+  const [newProfileDescription, setNewProfileDescription] = useState("");
   const [creatingProfile, setCreatingProfile] = useState(false);
 
   // Chat Providers state
@@ -109,8 +111,14 @@ export default function SettingsPage() {
     if (!newProfileName.trim()) return;
     setCreatingProfile(true);
     try {
-      await createProfile({ name: newProfileName.trim() });
+      await createProfile({
+        name: newProfileName.trim(),
+        strategy: newProfileStrategy,
+        description: newProfileDescription.trim() || undefined,
+      });
       setNewProfileName("");
+      setNewProfileStrategy("direct");
+      setNewProfileDescription("");
       mutateProfiles();
     } catch (err) {
       console.error("Failed to create profile:", err);
@@ -540,7 +548,7 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle className="text-base">Create Profile</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <div className="flex gap-2">
                   <Input
                     placeholder="Profile name"
@@ -550,6 +558,16 @@ export default function SettingsPage() {
                     aria-label="New profile name"
                     className="flex-1"
                   />
+                  <Select value={newProfileStrategy} onValueChange={setNewProfileStrategy}>
+                    <SelectTrigger className="w-[120px]" aria-label="Strategy">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="direct">Direct</SelectItem>
+                      <SelectItem value="rlm">RLM</SelectItem>
+                      <SelectItem value="rag">RAG</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
                     onClick={handleCreateProfile}
                     disabled={creatingProfile || !newProfileName.trim()}
@@ -559,6 +577,12 @@ export default function SettingsPage() {
                     Create
                   </Button>
                 </div>
+                <Input
+                  placeholder="Description (optional)"
+                  value={newProfileDescription}
+                  onChange={(e) => setNewProfileDescription(e.target.value)}
+                  aria-label="Profile description"
+                />
               </CardContent>
             </Card>
 
@@ -566,11 +590,16 @@ export default function SettingsPage() {
               <ProfileCard
                 key={profile.id}
                 profile={profile}
+                chatProviders={chatProviders}
                 onActivated={() => {
                   mutateConfig();
                   mutateProfiles();
                 }}
                 onDeleted={() => mutateProfiles()}
+                onUpdated={() => {
+                  mutateProfiles();
+                  mutateChatProviders();
+                }}
               />
             ))}
 

@@ -50,51 +50,48 @@ Providers are the raw LLM connections. RLM Studio supports OpenAI, Anthropic, Ol
 
 Providers that detect an environment variable show "API key set" automatically. You only need to configure them manually if you want to override the key or change the default model.
 
-### Chat Providers vs Profiles
+### Chat Providers and Profiles
 
-Chat Providers and Profiles share some overlapping fields (runtime settings, execution mode, step limits). They serve different purposes:
+A **Chat Provider** binds a specific LLM (provider + model) to a **Profile**. The Profile controls execution mode, runtime settings, and budget limits. Editing a Profile immediately affects all Chat Providers that reference it — no caching, no duplication.
 
 | | Chat Provider | Profile |
 |---|---|---|
-| **Purpose** | A runnable configuration you select on the Chat page | A preset template that sets global defaults |
+| **Purpose** | A runnable configuration you select on the Chat page | A reusable settings template referenced by Chat Providers |
 | **Bound to an LLM?** | Yes — specific provider + model (e.g., Anthropic / claude-sonnet-4-5) | No — provider-agnostic |
-| **Used in Chat?** | Yes — select one or more, each executes independently | No — activating a profile changes baseline settings |
-| **Runtime settings** | Per-provider overrides (temperature, top_p, max tokens, timeout) | Global defaults that new Chat Providers inherit |
-| **Execution mode** | Fixed per Chat Provider (Direct, RLM, or RAG) | Sets the default strategy |
-| **Budget limits** | Step limit and RLM timeout only | Full budget: steps, tokens, cost, time, recursion depth |
-| **Extra fields** | RAG config (chunk size, overlap, top_k, embedding model) | System prompts, description, built-in flag |
+| **Used in Chat?** | Yes — select one or more, each executes independently | Indirectly — through the Chat Providers that reference it |
+| **Controls** | LLM selection, RAG-specific config | Execution mode, runtime settings (temp, top_p, max tokens, timeout), budget limits |
+| **Editable fields** | Name, LLM provider, model, profile, RAG config | Strategy, runtime settings, budget, system prompts, description |
 
-**In practice:** Activate a Profile to set your baseline (e.g., "RLM deep" sets temperature 0.4, 32 steps, 4096 max tokens). Then create Chat Providers that bind those defaults to specific LLMs. Chat Providers can override any runtime setting — the Profile just provides the starting point.
+**In practice:** Pick or create a Profile (e.g., "RLM deep" — temperature 0.4, 32 steps, 4096 max tokens). Then create Chat Providers that pair that Profile with specific LLMs. Change the Profile's temperature and every Chat Provider referencing it picks up the new value immediately.
 
 ### Chat Providers
 
-A **Chat Provider** is a named, runnable configuration that binds a specific LLM to an execution mode and runtime settings. You select Chat Providers on the Chat page to execute queries.
+A **Chat Provider** is a named, runnable configuration that pairs a specific LLM with a Profile. You select Chat Providers on the Chat page to execute queries.
 
 Each Chat Provider specifies:
 
 - **LLM Provider + Model** — e.g., Anthropic / claude-sonnet-4-5
-- **Execution Mode** — Direct, RLM, or RAG
-- **Runtime settings** — temperature, top_p, max output tokens, timeout
-- **Mode-specific settings** — RLM: max steps, timeout; RAG: chunk size, overlap, top_k, embedding model
+- **Profile** — controls execution mode (Direct / RLM / RAG), runtime settings, and budget limits
+- **RAG config** (optional) — chunk size, overlap, top_k, embedding model (only shown when the profile's strategy is RAG)
 
-Create multiple Chat Providers with different configurations, then select them on the Chat page to compare results side by side.
+Create multiple Chat Providers with different LLM + Profile combinations, then select them on the Chat page to compare results side by side.
 
 **Example setup for comparing modes:**
 
-| Chat Provider Name | Provider | Mode | Notes |
-|-------------------|----------|------|-------|
-| GPT-4o Direct | OpenAI / gpt-4o | Direct | Baseline — full context |
-| GPT-4o RLM | OpenAI / gpt-4o | RLM | Same model, recursive exploration |
-| Claude Sonnet Direct | Anthropic / claude-sonnet-4-5 | Direct | Cross-provider comparison |
-| Claude Sonnet RLM | Anthropic / claude-sonnet-4-5 | RLM | Cross-provider + cross-mode |
+| Chat Provider Name | Provider | Profile | Notes |
+|-------------------|----------|---------|-------|
+| GPT-4o Direct | OpenAI / gpt-4o | Accurate | Baseline — full context, direct mode |
+| GPT-4o RLM | OpenAI / gpt-4o | RLM deep | Same model, recursive exploration |
+| Claude Sonnet Direct | Anthropic / claude-sonnet-4-5 | Accurate | Cross-provider comparison |
+| Claude Sonnet RLM | Anthropic / claude-sonnet-4-5 | RLM deep | Cross-provider + cross-mode |
 
-**Example setup for tuning RLM parameters:**
+**Example setup for tuning RLM parameters:** Create custom profiles with different step budgets, then assign them to Chat Providers using the same LLM.
 
-| Chat Provider Name | Mode | Max Steps | Temperature | Notes |
-|-------------------|------|-----------|-------------|-------|
-| RLM Conservative | RLM | 8 | 0.3 | Fewer steps, lower randomness |
-| RLM Balanced | RLM | 16 | 0.7 | Default settings |
-| RLM Deep | RLM | 32 | 0.4 | More exploration budget |
+| Chat Provider Name | Profile | Steps | Temperature | Notes |
+|-------------------|---------|-------|-------------|-------|
+| RLM Conservative | Custom: RLM-8 | 8 | 0.3 | Fewer steps, lower randomness |
+| RLM Balanced | RLM deep (built-in) | 32 | 0.4 | Built-in default |
+| RLM Aggressive | Custom: RLM-64 | 64 | 0.7 | More exploration budget |
 
 ### Budget
 
@@ -256,8 +253,8 @@ When you select an execution, the trace detail shows:
 
 1. Go to **Settings > Providers** and configure at least one LLM provider (e.g., Anthropic)
 2. Go to **Settings > Chat Providers** and create two:
-   - "Claude Direct" — Anthropic / claude-sonnet-4-5 / Direct mode
-   - "Claude RLM" — Anthropic / claude-sonnet-4-5 / RLM mode / 16 steps
+   - "Claude Direct" — Anthropic / claude-sonnet-4-5 / Profile: Accurate
+   - "Claude RLM" — Anthropic / claude-sonnet-4-5 / Profile: RLM deep
 3. Go to **Chat**, select both Chat Providers
 4. Upload a large document
 5. Ask a question — both providers respond in parallel
@@ -267,24 +264,26 @@ When you select an execution, the trace detail shows:
 
 ### Tuning RLM Step Budget
 
-1. Create three Chat Providers with the same LLM but different `max_steps`: 8, 16, 32
-2. Run the same query against all three
-3. Check **Traces** for each — does 32 steps find better answers than 8?
-4. Check **Dashboard** — what's the cost/quality trade-off?
+1. Go to **Settings > Profiles** and create three custom profiles with strategy "RLM" and different step budgets: 8, 16, 32
+2. Create three Chat Providers with the same LLM, each referencing a different profile
+3. Run the same query against all three
+4. Check **Traces** for each — does 32 steps find better answers than 8?
+5. Check **Dashboard** — what's the cost/quality trade-off?
 
 ### Cross-Provider Benchmarking
 
-1. Create Chat Providers for OpenAI/gpt-4o (Direct) and Anthropic/claude-sonnet-4-5 (Direct)
+1. Create Chat Providers for OpenAI/gpt-4o and Anthropic/claude-sonnet-4-5, both using the "Accurate" profile
 2. Run identical queries against both
 3. Compare response quality, token usage, and cost in the column layout
 4. Use **Dashboard > Cost by Chat Provider** to see cumulative cost differences
 
 ### Finding the Right Temperature
 
-1. Create Chat Providers with the same LLM/mode but temperatures 0.2, 0.5, and 0.9
-2. Run the same factual question against all three
-3. Lower temperatures produce more consistent, deterministic answers
-4. Higher temperatures produce more creative but potentially less accurate answers
+1. Go to **Settings > Profiles** and create three custom profiles with the same strategy but temperatures 0.2, 0.5, and 0.9
+2. Create Chat Providers with the same LLM, each referencing a different profile
+3. Run the same factual question against all three
+4. Lower temperatures produce more consistent, deterministic answers
+5. Higher temperatures produce more creative but potentially less accurate answers
 
 ---
 
