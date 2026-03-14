@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -21,11 +22,12 @@ import {
   type RunProfile,
   type ChatProviderConfig,
 } from "@/lib/api";
-import { Play, Trash2, Lock, Edit2, Copy } from "lucide-react";
+import { Play, Trash2, Lock, Edit2, Copy, Download } from "lucide-react";
 
 interface ProfileCardProps {
   profile: RunProfile;
   chatProviders?: ChatProviderConfig[];
+  isActive?: boolean;
   onActivated?: () => void;
   onDeleted?: () => void;
   onUpdated?: () => void;
@@ -35,6 +37,7 @@ interface ProfileCardProps {
 export function ProfileCard({
   profile,
   chatProviders = [],
+  isActive = false,
   onActivated,
   onDeleted,
   onUpdated,
@@ -58,6 +61,7 @@ export function ProfileCard({
     max_cost_usd: profile.budget.max_cost_usd,
     max_time_seconds: profile.budget.max_time_seconds,
     max_recursion_depth: profile.budget.max_recursion_depth,
+    system_prompts: { ...profile.system_prompts } as Record<string, string>,
   });
 
   const usedBy = chatProviders.filter((cp) => cp.profile_id === profile.id);
@@ -126,9 +130,28 @@ export function ProfileCard({
       max_cost_usd: profile.budget.max_cost_usd,
       max_time_seconds: profile.budget.max_time_seconds,
       max_recursion_depth: profile.budget.max_recursion_depth,
+      system_prompts: { ...profile.system_prompts } as Record<string, string>,
     });
     setEditing(true);
     setMessage(null);
+  };
+
+  const handleExport = () => {
+    const exportData = {
+      name: profile.name,
+      description: profile.description,
+      strategy: profile.strategy,
+      runtime_settings: profile.runtime_settings,
+      budget: profile.budget,
+      system_prompts: profile.system_prompts,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `profile-${profile.name.toLowerCase().replace(/\s+/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleSaveEdit = async () => {
@@ -151,6 +174,7 @@ export function ProfileCard({
           max_time_seconds: editData.max_time_seconds,
           max_recursion_depth: editData.max_recursion_depth,
         },
+        system_prompts: editData.system_prompts,
       });
       setEditing(false);
       setMessage("Profile updated");
@@ -177,6 +201,11 @@ export function ProfileCard({
             <Badge variant="outline" className="text-xs capitalize">
               {profile.strategy}
             </Badge>
+            {isActive && (
+              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs border-0">
+                Active
+              </Badge>
+            )}
           </div>
           <div className="flex gap-1">
             {!profile.is_builtin && (
@@ -190,6 +219,14 @@ export function ProfileCard({
                 <Edit2 className="h-4 w-4" aria-hidden="true" />
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleExport}
+              aria-label={`Export ${profile.name} profile`}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -342,6 +379,25 @@ export function ProfileCard({
                   onChange={(e) => setEditData({ ...editData, max_cost_usd: parseFloat(e.target.value) || 0 })}
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">System Prompts</Label>
+              <p className="text-xs text-muted-foreground">Leave empty to use global system prompts.</p>
+              {(["direct", "rlm", "rag"] as const).map((mode) => (
+                <div key={mode} className="space-y-1">
+                  <Label htmlFor={`edit-prompt-${mode}-${profile.id}`} className="text-xs capitalize">{mode}</Label>
+                  <Textarea
+                    id={`edit-prompt-${mode}-${profile.id}`}
+                    className="h-16 text-xs"
+                    placeholder={`System prompt for ${mode} mode`}
+                    value={editData.system_prompts[mode] || ""}
+                    onChange={(e) => setEditData({
+                      ...editData,
+                      system_prompts: { ...editData.system_prompts, [mode]: e.target.value },
+                    })}
+                  />
+                </div>
+              ))}
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSaveEdit} disabled={saving}>

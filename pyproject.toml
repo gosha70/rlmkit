@@ -30,6 +30,7 @@ dependencies = [
     "cryptography>=41.0.0",
     "litellm>=1.0.0",
     "RestrictedPython>=7.0",
+    "tenacity>=9.1.2",
 ]
 
 [project.optional-dependencies]

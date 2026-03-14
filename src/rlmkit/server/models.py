@@ -390,6 +390,7 @@ class ConfigResponse(BaseModel):
     default_runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     mode_config: ModeConfig = Field(default_factory=ModeConfig)
     chat_providers: list[ChatProviderConfig] = Field(default_factory=list)
+    active_profile_id: str | None = None
     trajectory_dir: str | None = None
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import useSWR from "swr";
 import { useTheme } from "next-themes";
 import { AppShell } from "@/components/shared/app-shell";
@@ -38,7 +38,7 @@ import {
   type ChatProviderCreateRequest,
   type RAGConfig,
 } from "@/lib/api";
-import { Plus, Edit2, Trash2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Upload } from "lucide-react";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -47,6 +47,8 @@ export default function SettingsPage() {
   const [newProfileStrategy, setNewProfileStrategy] = useState("direct");
   const [newProfileDescription, setNewProfileDescription] = useState("");
   const [creatingProfile, setCreatingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   // Chat Providers state
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -109,6 +111,14 @@ export default function SettingsPage() {
 
   const handleCreateProfile = async () => {
     if (!newProfileName.trim()) return;
+    const duplicate = profiles.some(
+      (p) => p.name.toLowerCase() === newProfileName.trim().toLowerCase(),
+    );
+    if (duplicate) {
+      setProfileError(`Profile "${newProfileName.trim()}" already exists`);
+      return;
+    }
+    setProfileError(null);
     setCreatingProfile(true);
     try {
       await createProfile({
@@ -192,6 +202,39 @@ export default function SettingsPage() {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const handleImportProfile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProfileError(null);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      // Auto-rename if name already exists
+      let name = data.name || "Imported Profile";
+      const nameExists = (n: string) =>
+        profiles.some((p) => p.name.toLowerCase() === n.toLowerCase());
+      if (nameExists(name)) {
+        let i = 2;
+        while (nameExists(`${name} (${i})`)) i++;
+        name = `${name} (${i})`;
+      }
+      await createProfile({
+        name,
+        description: data.description || "",
+        strategy: data.strategy || "direct",
+        runtime_settings: data.runtime_settings,
+        budget: data.budget,
+        system_prompts: data.system_prompts || {},
+      });
+      mutateProfiles();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to import profile";
+      setProfileError(msg);
+    }
+    // Reset file input so same file can be re-imported
+    e.target.value = "";
   };
 
   // Resolve the selected profile for the form
@@ -507,6 +550,18 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </CardHeader>
+                {!isEditing && (
+                  <CardContent className="pt-0 pb-3">
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span>Temp: {provider.runtime_settings.temperature}</span>
+                      <span>Max tokens: {provider.runtime_settings.max_output_tokens}</span>
+                      {provider.execution_mode === "rlm" && <span>Steps: {provider.rlm_max_steps}</span>}
+                      {provider.execution_mode === "rag" && provider.rag_config && (
+                        <span>Top K: {provider.rag_config.top_k}</span>
+                      )}
+                    </div>
+                  </CardContent>
+                )}
                 {isEditing && (
                   <CardContent className="space-y-4 border-t pt-4">
                     <div className="space-y-2">
@@ -672,7 +727,10 @@ export default function SettingsPage() {
                   <Input
                     placeholder="Profile name"
                     value={newProfileName}
-                    onChange={(e) => setNewProfileName(e.target.value)}
+                    onChange={(e) => {
+                      setNewProfileName(e.target.value);
+                      setProfileError(null);
+                    }}
                     onKeyDown={(e) => e.key === "Enter" && handleCreateProfile()}
                     aria-label="New profile name"
                     className="flex-1"
@@ -696,12 +754,33 @@ export default function SettingsPage() {
                     Create
                   </Button>
                 </div>
-                <Input
-                  placeholder="Description (optional)"
-                  value={newProfileDescription}
-                  onChange={(e) => setNewProfileDescription(e.target.value)}
-                  aria-label="Profile description"
-                />
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Description (optional)"
+                    value={newProfileDescription}
+                    onChange={(e) => setNewProfileDescription(e.target.value)}
+                    aria-label="Profile description"
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => importFileRef.current?.click()}
+                  >
+                    <Upload className="mr-1 h-4 w-4" aria-hidden="true" />
+                    Import
+                  </Button>
+                  <input
+                    ref={importFileRef}
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={handleImportProfile}
+                  />
+                </div>
+                {profileError && (
+                  <p className="text-xs text-destructive">{profileError}</p>
+                )}
               </CardContent>
             </Card>
 
@@ -710,6 +789,7 @@ export default function SettingsPage() {
                 key={profile.id}
                 profile={profile}
                 chatProviders={chatProviders}
+                isActive={config?.active_profile_id === profile.id}
                 onActivated={() => {
                   mutateConfig();
                   mutateProfiles();

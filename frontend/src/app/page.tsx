@@ -66,6 +66,14 @@ export default function ChatPage() {
     return [];
   });
 
+  const [chatProviderOrder, setChatProviderOrder] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rlmkit-cp-order");
+      return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
+
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -73,6 +81,15 @@ export default function ChatPage() {
   const skipSessionLoadRef = useRef(false);
   const pollingStateRef = useRef<PollingState>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sort selected IDs by chip order for consistent grid column ordering
+  const orderedSelectedIds = chatProviderOrder.length > 0
+    ? [...selectedChatProviderIds].sort((a, b) => {
+        const ai = chatProviderOrder.indexOf(a);
+        const bi = chatProviderOrder.indexOf(b);
+        return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
+      })
+    : selectedChatProviderIds;
 
   const { data: chatProviders = [] } = useSWR<ChatProviderConfig[]>("chat-providers", getChatProviders);
   const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
@@ -91,6 +108,11 @@ export default function ChatPage() {
   useEffect(() => {
     localStorage.setItem("rlmkit_selected_chat_providers", JSON.stringify(selectedChatProviderIds));
   }, [selectedChatProviderIds]);
+
+  // Persist chip order
+  useEffect(() => {
+    localStorage.setItem("rlmkit-cp-order", JSON.stringify(chatProviderOrder));
+  }, [chatProviderOrder]);
 
   // Auto-select first available chat provider if none selected
   useEffect(() => {
@@ -430,6 +452,8 @@ export default function ChatPage() {
             providers={providers}
             selectedIds={selectedChatProviderIds}
             onSelectionChange={setSelectedChatProviderIds}
+            orderedIds={chatProviderOrder}
+            onOrderChange={setChatProviderOrder}
           />
         </div>
 
@@ -485,10 +509,10 @@ export default function ChatPage() {
                     <div
                       className="grid gap-4"
                       style={{
-                        gridTemplateColumns: `repeat(${selectedChatProviderIds.length}, 1fr)`,
+                        gridTemplateColumns: `repeat(${orderedSelectedIds.length}, 1fr)`,
                       }}
                     >
-                      {selectedChatProviderIds.map((cpId) => {
+                      {orderedSelectedIds.map((cpId) => {
                         const resp = turn.responses[cpId];
                         return (
                           <div
@@ -535,6 +559,46 @@ export default function ChatPage() {
                         );
                       })}
                     </div>
+
+                    {/* Comparison summary for multi-provider turns */}
+                    {(() => {
+                      const completed = Object.entries(turn.responses).filter(
+                        ([, r]) => r?.metrics,
+                      );
+                      if (completed.length < 2) return null;
+                      const cheapest = completed.reduce((a, b) =>
+                        a[1].metrics!.cost_usd <= b[1].metrics!.cost_usd ? a : b,
+                      );
+                      const fastest = completed.reduce((a, b) =>
+                        a[1].metrics!.elapsed_seconds <= b[1].metrics!.elapsed_seconds ? a : b,
+                      );
+                      return (
+                        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+                          <div className="flex gap-6">
+                            {completed.map(([cpId, r]) => (
+                              <div key={cpId} className="space-y-0.5">
+                                <span className="font-medium text-foreground">{r.chatProviderName}</span>
+                                <div>
+                                  {r.metrics!.total_tokens.toLocaleString()} tokens
+                                  {" · "}${r.metrics!.cost_usd.toFixed(4)}
+                                  {" · "}{r.metrics!.elapsed_seconds.toFixed(1)}s
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="mt-1">
+                            Cheapest:{" "}
+                            <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                              {cheapest[1].chatProviderName}
+                            </span>
+                            {" · "}Fastest:{" "}
+                            <span className="font-medium text-blue-600 dark:text-blue-400">
+                              {fastest[1].chatProviderName}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
                 {isAnyPolling && <TypingIndicator />}

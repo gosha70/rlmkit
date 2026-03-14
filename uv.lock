@@ -4802,6 +4802,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pyyaml" },
     { name = "restrictedpython" },
+    { name = "tenacity" },
 ]
 
 [package.optional-dependencies]
@@ -4876,6 +4877,7 @@ requires-dist = [
     { name = "rlmkit", extras = ["dev", "server", "ui", "eval"], marker = "extra == 'all'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
     { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.29.0" },
+    { name = "tenacity", specifier = ">=9.1.2" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.27.0" },
     { name = "vllm", marker = "extra == 'ui'", specifier = ">=0.4.0" },
 ]

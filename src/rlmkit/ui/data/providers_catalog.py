@@ -12,10 +12,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class ModelInfo:
@@ -69,33 +69,25 @@ class ProviderEntry:
 # ---------------------------------------------------------------------------
 
 OPENAI_MODELS: List[ModelInfo] = [
-    ModelInfo("gpt-4o",         0.005,    0.015),
-    ModelInfo("gpt-4o-mini",    0.00015,  0.0006),
-    ModelInfo("gpt-4-turbo",    0.01,     0.03),
-    ModelInfo("gpt-4",          0.03,     0.06),
-    ModelInfo("gpt-3.5-turbo",  0.0005,   0.0015),
-    ModelInfo("o1",             0.015,    0.06),
-    ModelInfo("o1-mini",        0.003,    0.012),
+    ModelInfo("gpt-4o", 0.005, 0.015),
+    ModelInfo("gpt-4o-mini", 0.00015, 0.0006),
+    ModelInfo("gpt-4-turbo", 0.01, 0.03),
+    ModelInfo("gpt-4", 0.03, 0.06),
+    ModelInfo("gpt-3.5-turbo", 0.0005, 0.0015),
+    ModelInfo("o1", 0.015, 0.06),
+    ModelInfo("o1-mini", 0.003, 0.012),
 ]
 
 ANTHROPIC_MODELS: List[ModelInfo] = [
-    ModelInfo("claude-opus-4-5",    0.003,    0.015),
-    ModelInfo("claude-sonnet-4-5",  0.003,    0.015),
-    ModelInfo("claude-haiku-4-5",   0.008,    0.024),
-    ModelInfo("claude-opus-4",      0.003,    0.015),
-    ModelInfo("claude-sonnet-4",    0.003,    0.015),
-    ModelInfo("claude-3-7-sonnet",  0.003,    0.015),
-    ModelInfo("claude-3-5-sonnet",  0.003,    0.015),
-    ModelInfo("claude-3-5-haiku",   0.0008,   0.0024),
-    ModelInfo("claude-3-opus",      0.015,    0.075),
-    ModelInfo("claude-3-sonnet",    0.003,    0.015),
-    ModelInfo("claude-3-haiku",     0.00025,  0.00125),
+    ModelInfo("claude-opus-4-6", 0.003, 0.015),
+    ModelInfo("claude-sonnet-4-6", 0.003, 0.015),
+    ModelInfo("claude-haiku-4-5-20251001", 0.008, 0.024),
 ]
 
 OPENAI_EMBEDDING_MODELS: List[ModelInfo] = [
-    ModelInfo("text-embedding-3-small",  0.00002,  0.0),
-    ModelInfo("text-embedding-3-large",  0.00013,  0.0),
-    ModelInfo("text-embedding-ada-002",  0.0001,   0.0),
+    ModelInfo("text-embedding-3-small", 0.00002, 0.0),
+    ModelInfo("text-embedding-3-large", 0.00013, 0.0),
+    ModelInfo("text-embedding-ada-002", 0.0001, 0.0),
 ]
 
 # ---------------------------------------------------------------------------

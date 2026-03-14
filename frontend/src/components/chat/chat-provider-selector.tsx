@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { type ChatProviderConfig, type ProviderInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +9,8 @@ interface ChatProviderSelectorProps {
   providers: ProviderInfo[];
   selectedIds: string[];
   onSelectionChange: (ids: string[]) => void;
+  orderedIds?: string[];
+  onOrderChange?: (orderedIds: string[]) => void;
   disabled?: boolean;
 }
 
@@ -22,8 +25,12 @@ export function ChatProviderSelector({
   providers,
   selectedIds,
   onSelectionChange,
+  orderedIds,
+  onOrderChange,
   disabled = false,
 }: ChatProviderSelectorProps) {
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
   // Create a map of provider names to their info for quick lookup
   const providerMap = new Map(providers.map((p) => [p.name, p]));
 
@@ -35,6 +42,16 @@ export function ChatProviderSelector({
       (providerInfo.status === "connected" || providerInfo.status === "configured")
     );
   });
+
+  // Sort by orderedIds if provided
+  const sortedProviders = orderedIds
+    ? [...availableChatProviders].sort((a, b) => {
+        const ai = orderedIds.indexOf(a.id);
+        const bi = orderedIds.indexOf(b.id);
+        // Items not in orderedIds go to end
+        return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
+      })
+    : availableChatProviders;
 
   // Get status and badge for a provider
   const getProviderStatus = (llmProviderName: string) => {
@@ -54,6 +71,19 @@ export function ChatProviderSelector({
       onSelectionChange(selectedIds.filter((sid) => sid !== id));
     } else {
       onSelectionChange([...selectedIds, id]);
+    }
+  };
+
+  const handleDrop = (targetId: string, e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const fromId = e.dataTransfer.getData("text/plain");
+    if (fromId && fromId !== targetId && onOrderChange) {
+      const ids = sortedProviders.map((c) => c.id);
+      const filtered = ids.filter((id) => id !== fromId);
+      const targetIdx = filtered.indexOf(targetId);
+      filtered.splice(targetIdx, 0, fromId);
+      onOrderChange(filtered);
     }
   };
 
@@ -79,10 +109,11 @@ export function ChatProviderSelector({
       role="group"
       aria-label="Chat providers"
     >
-      {availableChatProviders.map((cp) => {
+      {sortedProviders.map((cp) => {
         const isSelected = selectedIds.includes(cp.id);
         const { status, color } = getProviderStatus(cp.llm_provider);
         const modeBadge = MODE_BADGES[cp.execution_mode] || "?";
+        const isDragOver = dragOverId === cp.id;
 
         return (
           <button
@@ -92,16 +123,27 @@ export function ChatProviderSelector({
             aria-label={`${cp.name} (${status})`}
             disabled={disabled || (isSelected && selectedIds.length === 1)}
             onClick={() => toggle(cp.id)}
+            draggable={!!onOrderChange && !disabled}
+            onDragStart={(e) => e.dataTransfer.setData("text/plain", cp.id)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverId(cp.id); }}
+            onDragLeave={() => setDragOverId(null)}
+            onDrop={(e) => handleDrop(cp.id, e)}
             className={cn(
               "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
               "disabled:cursor-not-allowed",
               isSelected
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+              isDragOver && "ring-2 ring-primary/50",
             )}
           >
-            {/* Provider name */}
-            <span>{cp.name}</span>
+            {/* Provider name + profile */}
+            <span>
+              {cp.name}
+              {cp.profile_name && (
+                <span className="ml-1 font-normal opacity-60">{cp.profile_name}</span>
+              )}
+            </span>
 
             {/* Mode badge */}
             <span className="rounded bg-muted px-1 py-0.5 text-xs font-semibold text-muted-foreground">

@@ -268,6 +268,7 @@ export interface AppConfig {
   default_runtime_settings: RuntimeSettings;
   mode_config: ModeConfig;
   chat_providers: ChatProviderConfig[];
+  active_profile_id?: string | null;
 }
 
 export interface HealthResponse {

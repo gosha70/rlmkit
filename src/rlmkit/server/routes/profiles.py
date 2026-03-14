@@ -115,6 +115,14 @@ async def create_profile(
     state: AppState = Depends(get_state),
 ) -> RunProfile:
     """Create a new user profile."""
+    all_profiles = list(BUILTIN_PROFILES) + list(state.user_profiles)
+    for existing in all_profiles:
+        if existing.name.lower() == req.name.strip().lower():
+            raise HTTPException(
+                status_code=409,
+                detail=f"Profile with name '{req.name}' already exists",
+            )
+
     profile = RunProfile(
         id=str(uuid.uuid4()),
         name=req.name,
@@ -143,6 +151,16 @@ async def update_profile(
     for bp in BUILTIN_PROFILES:
         if bp.id == profile_id:
             raise HTTPException(status_code=400, detail="Cannot modify built-in profiles")
+
+    # Check name uniqueness if renaming
+    if req.name is not None:
+        all_profiles = list(BUILTIN_PROFILES) + list(state.user_profiles)
+        for existing in all_profiles:
+            if existing.id != profile_id and existing.name.lower() == req.name.strip().lower():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Profile with name '{req.name}' already exists",
+                )
 
     # Find user profile
     for profile in state.user_profiles:
@@ -222,6 +240,7 @@ async def activate_profile(
         if hasattr(profile.runtime_settings, "model_copy")
         else profile.runtime_settings
     )
+    state.config.active_profile_id = profile_id
     state.save_config()
 
     return profile
