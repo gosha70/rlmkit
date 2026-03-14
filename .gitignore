@@ -31,3 +31,6 @@ DOC_INTERNAL/
 CLAUDE.md
 .claude/
 .mcp.json
+/.agents
+AGENTS.md
+/.codex
