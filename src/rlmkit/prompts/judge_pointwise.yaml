@@ -1,0 +1,36 @@
+version: "1.0"
+description: "Pointwise scoring of a single LLM response on 5 quality dimensions"
+template: |
+  You are an expert judge evaluating the quality of an AI assistant's response.
+
+  ## User Query
+  {query}
+
+  ## Assistant Response
+  {response}
+
+  ## Instructions
+  Evaluate the response on these 5 dimensions, scoring each from 1 (worst) to 5 (best):
+
+  1. **Relevance**: Does the response address the user's query directly?
+  2. **Correctness**: Is the information factually accurate?
+  3. **Completeness**: Does the response cover all aspects of the query?
+  4. **Coherence**: Is the response well-structured and logically organized?
+  5. **Conciseness**: Is the response appropriately concise without unnecessary filler?
+
+  First, provide your reasoning step by step. Then output your scores.
+
+  Respond with ONLY a JSON object in this exact format:
+  ```json
+  {{
+    "reasoning": "Your step-by-step evaluation reasoning here",
+    "dimensions": {{
+      "relevance": <1-5>,
+      "correctness": <1-5>,
+      "completeness": <1-5>,
+      "coherence": <1-5>,
+      "conciseness": <1-5>
+    }},
+    "overall_score": <1-5>
+  }}
+  ```

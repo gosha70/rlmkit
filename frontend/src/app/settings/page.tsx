@@ -202,6 +202,11 @@ export default function SettingsPage() {
     try {
       await deleteChatProvider(id);
       mutateChatProviders();
+      // Backend clears judge_chat_provider_id when the deleted provider was
+      // the active judge — revalidate config so the UI reflects this immediately.
+      if (config?.judge_chat_provider_id === id) {
+        mutateConfig();
+      }
     } catch (err) {
       console.error("Failed to delete chat provider:", err);
     } finally {
@@ -318,6 +323,42 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="chat-providers" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Judge Provider</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-2 text-sm text-muted-foreground">
+                  Select a Chat Provider to use as the LLM-as-Judge for auto-scoring responses.
+                </p>
+                <Select
+                  value={config?.judge_chat_provider_id || "__none__"}
+                  onValueChange={async (value) => {
+                    try {
+                      const updated = await updateConfig({
+                        judge_chat_provider_id: value === "__none__" ? "" : value,
+                      } as Partial<AppConfig>);
+                      mutateConfig(updated, false);
+                    } catch (err) {
+                      console.error("Failed to save judge provider:", err);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="None (judging disabled)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None (judging disabled)</SelectItem>
+                    {chatProviders.map((cp) => (
+                      <SelectItem key={cp.id} value={cp.id}>
+                        {cp.name} ({cp.llm_provider}/{cp.llm_model})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+
             {!showCreateForm && (
               <Button
                 onClick={() => {

@@ -397,6 +397,7 @@ class ConfigResponse(BaseModel):
     chat_providers: list[ChatProviderConfig] = Field(default_factory=list)
     active_profile_id: str | None = None
     trajectory_dir: str | None = None
+    judge_chat_provider_id: str | None = None
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -409,6 +410,7 @@ class ConfigUpdateRequest(BaseModel):
     default_runtime_settings: RuntimeSettings | None = None
     mode_config: ModeConfig | None = None
     chat_providers: list[ChatProviderConfig] | None = None
+    judge_chat_provider_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +483,71 @@ class SystemPromptTemplate(BaseModel):
 # ---------------------------------------------------------------------------
 # WebSocket events
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Evaluations
+# ---------------------------------------------------------------------------
+
+
+class ThumbRatingRequest(BaseModel):
+    execution_id: str
+    session_id: str
+    chat_provider_id: str
+    rating: Literal["up", "down"]
+
+
+class BestPickRequest(BaseModel):
+    session_id: str
+    winner_execution_id: str
+
+
+class JudgeRequest(BaseModel):
+    session_id: str
+    execution_ids: list[str]
+    mode: Literal["pointwise", "pairwise", "both"] = "both"
+
+
+class JudgeScore(BaseModel):
+    id: str
+    execution_id: str
+    session_id: str
+    chat_provider_id: str
+    judge_provider_id: str
+    dimensions: dict[str, float]
+    overall_score: float
+    reasoning: str
+    created_at: datetime
+
+
+class JudgePairwise(BaseModel):
+    id: str
+    session_id: str
+    execution_id_a: str
+    execution_id_b: str
+    winner: Literal["a", "b", "tie"]
+    judge_provider_id: str
+    reasoning: str
+    created_at: datetime
+
+
+class ProviderQualityScore(BaseModel):
+    chat_provider_id: str
+    chat_provider_name: str
+    thumb_up: int = 0
+    thumb_down: int = 0
+    thumb_score: float = 0.0
+    best_picks: int = 0
+    pick_rate: float = 0.0
+    judge_avg_score: float | None = None
+    combined_score: float = 0.0
+
+
+class EvaluationSummaryResponse(BaseModel):
+    session_id: str
+    by_chat_provider: dict[str, ProviderQualityScore]
+    recommendation: str | None = None
+    recommendation_reason: str = ""
 
 
 class WSTokenEvent(BaseModel):

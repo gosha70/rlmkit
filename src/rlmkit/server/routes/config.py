@@ -49,5 +49,9 @@ async def update_config(
     if req.mode_config is not None:
         for key, value in req.mode_config.model_dump(exclude_unset=True).items():
             setattr(state.config.mode_config, key, value)
+    if "judge_chat_provider_id" in req.model_fields_set:
+        # Allow clearing by sending null/"" — normalize to None
+        val = req.judge_chat_provider_id
+        state.config.judge_chat_provider_id = val if val else None
     state.save_config()
     return state.config

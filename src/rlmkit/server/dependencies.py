@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 _CONFIG_FILE = Path(".rlmkit_config.json")
 _SESSIONS_FILE = Path(".rlmkit_sessions.json")
+_EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
 _MAX_PERSISTED_SESSIONS = 50
 
 # ---------------------------------------------------------------------------
@@ -85,9 +86,16 @@ class AppState:
         self.executions: dict[str, ExecutionRecord] = {}
         self.user_profiles: list[RunProfile] = []
         self.system_prompts = SystemPrompts()
+        self.evaluations: dict[str, list[dict[str, Any]]] = {
+            "thumb_ratings": [],
+            "best_picks": [],
+            "judge_scores": [],
+            "judge_pairwise": [],
+        }
         if load_from_disk:
             self._load_config()
             self._load_sessions()
+            self._load_evaluations()
             self._migrate_chat_providers()
             self._assign_default_profiles()
 
@@ -281,6 +289,86 @@ class AppState:
         resolved.rlm_timeout_seconds = budget.max_time_seconds
         return resolved
 
+    def resolve_execution_context(self, execution_id: str) -> tuple[str, str, str, str] | None:
+        """Resolve (session_id, query, response_content, chat_provider_id) for an execution.
+
+        First checks in-memory executions (live data), then falls back to
+        persisted session messages (survives restarts).  Returns None if
+        the execution cannot be found anywhere.
+        """
+        rec = self.executions.get(execution_id)
+        if rec:
+            # Live execution record exists — get response from session messages
+            session = self.sessions.get(rec.session_id)
+            response_content = ""
+            if session:
+                for msg in session.messages:
+                    if msg.get("execution_id") == execution_id and msg.get("role") == "assistant":
+                        response_content = msg.get("content", "")
+                        break
+            if not response_content and rec.result:
+                response_content = rec.result.get("answer", "")
+            return rec.session_id, rec.query, response_content, rec.chat_provider_id or ""
+
+        # Fallback: scan persisted session messages
+        for session in self.sessions.values():
+            user_query = ""
+            for msg in session.messages:
+                if msg.get("role") == "user":
+                    user_query = msg.get("content", "")
+                elif msg.get("execution_id") == execution_id and msg.get("role") == "assistant":
+                    return (
+                        session.id,
+                        user_query,
+                        msg.get("content", ""),
+                        msg.get("chat_provider_id", ""),
+                    )
+        return None
+
+    def get_execution_ids_for_turn(self, session_id: str, execution_id: str) -> set[str]:
+        """Find all execution_ids that belong to the same turn as the given execution_id.
+
+        A 'turn' is defined by the user message that immediately precedes
+        the assistant messages.  Works from persisted session messages so it
+        survives restarts.
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            return set()
+
+        # Build a mapping: for each assistant message, record its execution_id
+        # grouped by the preceding user message id.
+        current_user_msg_id: str | None = None
+        turn_groups: dict[str, set[str]] = {}  # user_msg_id -> set of exec_ids
+        exec_to_user: dict[str, str] = {}  # exec_id -> user_msg_id
+
+        for msg in session.messages:
+            if msg.get("role") == "user":
+                current_user_msg_id = msg.get("id", "")
+                if current_user_msg_id not in turn_groups:
+                    turn_groups[current_user_msg_id] = set()
+            elif msg.get("role") == "assistant" and current_user_msg_id:
+                eid = msg.get("execution_id")
+                if eid:
+                    turn_groups[current_user_msg_id].add(eid)
+                    exec_to_user[eid] = current_user_msg_id
+
+        # Find which turn group contains our execution_id
+        user_msg_id = exec_to_user.get(execution_id)
+        if user_msg_id:
+            return turn_groups.get(user_msg_id, set())
+
+        # Fallback for in-memory-only executions: use query matching
+        rec = self.executions.get(execution_id)
+        if rec:
+            return {
+                eid
+                for eid, r in self.executions.items()
+                if r.session_id == session_id and r.query == rec.query
+            }
+
+        return set()
+
     def add_message(
         self,
         session_id: str,
@@ -401,6 +489,34 @@ class AppState:
         except Exception as exc:
             logger.warning("Failed to save sessions: %s", exc)
 
+    # ------------------------------------------------------------------
+    # Evaluation persistence
+    # ------------------------------------------------------------------
+
+    def _load_evaluations(self) -> None:
+        """Load persisted evaluations from disk if available."""
+        if not _EVALUATIONS_FILE.exists():
+            return
+        try:
+            raw = json.loads(_EVALUATIONS_FILE.read_text())
+            self.evaluations = {
+                "thumb_ratings": raw.get("thumb_ratings", []),
+                "best_picks": raw.get("best_picks", []),
+                "judge_scores": raw.get("judge_scores", []),
+                "judge_pairwise": raw.get("judge_pairwise", []),
+            }
+            total = sum(len(v) for v in self.evaluations.values())
+            logger.info("Loaded %d evaluations from disk", total)
+        except Exception as exc:
+            logger.warning("Failed to load evaluations: %s", exc)
+
+    def save_evaluations(self) -> None:
+        """Persist evaluations to disk."""
+        try:
+            _EVALUATIONS_FILE.write_text(json.dumps(self.evaluations, indent=2, default=str))
+        except Exception as exc:
+            logger.warning("Failed to save evaluations: %s", exc)
+
     def get_or_create_session(self, session_id: str | None = None) -> SessionRecord:
         if session_id and session_id in self.sessions:
             return self.sessions[session_id]
@@ -495,3 +611,4 @@ def reset_state() -> None:
     _state = AppState(load_from_disk=False)
     _state.save_config = lambda: None  # type: ignore[assignment]
     _state.save_sessions = lambda: None  # type: ignore[assignment]
+    _state.save_evaluations = lambda: None  # type: ignore[assignment]

@@ -152,4 +152,7 @@ async def delete_chat_provider(
     ]
     if len(state.config.chat_providers) == original_len:
         raise HTTPException(status_code=404, detail="Chat Provider not found")
+    # Clear judge config if the deleted provider was the active judge
+    if state.config.judge_chat_provider_id == chat_provider_id:
+        state.config.judge_chat_provider_id = None
     state.save_config()

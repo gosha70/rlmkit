@@ -4,12 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { User, Bot } from "lucide-react";
+import { User, Bot, Sparkles, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/shared/app-shell";
 import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
 import { ChatInput } from "@/components/chat/chat-input";
 import { FileAttachment } from "@/components/chat/file-attachment";
 import { TypingIndicator } from "@/components/chat/typing-indicator";
+import { ResponseRating } from "@/components/chat/response-rating";
+import { PickWinner } from "@/components/chat/pick-winner";
+import { JudgeScores } from "@/components/chat/judge-scores";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getConfig,
@@ -20,11 +24,17 @@ import {
   uploadFile,
   getProviders,
   connectChatWS,
+  getSessionEvaluations,
+  submitThumbRating,
+  removeThumbRating,
+  submitBestPick,
+  triggerJudge,
   type AppConfig,
   type ChatProviderConfig,
   type ProviderInfo,
   type FileUploadResponse,
   type MessageMetrics,
+  type JudgeScoreData,
 } from "@/lib/api";
 
 interface ChatTurn {
@@ -81,6 +91,10 @@ export default function ChatPage() {
   const [fileContent, setFileContent] = useState<string>("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [isAnyStreaming, setIsAnyStreaming] = useState(false);
+  const [ratings, setRatings] = useState<Record<string, "up" | "down">>({});
+  const [bestPicks, setBestPicks] = useState<Record<string, string>>({});
+  const [judgeScores, setJudgeScores] = useState<Record<string, JudgeScoreData>>({});
+  const [isJudging, setIsJudging] = useState(false);
   const skipSessionLoadRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const execMapRef = useRef<Record<string, ExecMapping>>({});
@@ -231,6 +245,39 @@ export default function ChatPage() {
           setSessionId(null);
           setTurns([]);
         }
+      });
+  }, [sessionId]);
+
+  // Load evaluations when session changes
+  useEffect(() => {
+    if (!sessionId) {
+      setRatings({});
+      setBestPicks({});
+      setJudgeScores({});
+      return;
+    }
+    getSessionEvaluations(sessionId)
+      .then((evals) => {
+        const newRatings: Record<string, "up" | "down"> = {};
+        for (const r of evals.thumb_ratings) {
+          newRatings[r.execution_id] = r.rating;
+        }
+        setRatings(newRatings);
+
+        const newPicks: Record<string, string> = {};
+        for (const p of evals.best_picks) {
+          newPicks[p.winner_execution_id] = p.winner_execution_id;
+        }
+        setBestPicks(newPicks);
+
+        const newScores: Record<string, JudgeScoreData> = {};
+        for (const s of evals.judge_scores) {
+          newScores[s.execution_id] = s;
+        }
+        setJudgeScores(newScores);
+      })
+      .catch(() => {
+        // Evaluations endpoint may not exist yet
       });
   }, [sessionId]);
 
@@ -473,6 +520,81 @@ export default function ChatPage() {
       poll();
     },
     [],
+  );
+
+  const handleRate = useCallback(
+    async (executionId: string, rating: "up" | "down" | null) => {
+      if (!sessionId) return;
+      if (rating === null) {
+        // Toggle off
+        setRatings((prev) => {
+          const next = { ...prev };
+          delete next[executionId];
+          return next;
+        });
+        try { await removeThumbRating(executionId); } catch { /* ignore */ }
+      } else {
+        // Find chat_provider_id from turns
+        let cpId = "";
+        for (const turn of turns) {
+          for (const [id, resp] of Object.entries(turn.responses)) {
+            if (resp.executionId === executionId) {
+              cpId = id;
+              break;
+            }
+          }
+          if (cpId) break;
+        }
+        setRatings((prev) => ({ ...prev, [executionId]: rating }));
+        try {
+          await submitThumbRating({
+            execution_id: executionId,
+            session_id: sessionId,
+            chat_provider_id: cpId,
+            rating,
+          });
+        } catch { /* ignore */ }
+      }
+    },
+    [sessionId, turns],
+  );
+
+  const handlePickWinner = useCallback(
+    async (winnerExecutionId: string) => {
+      if (!sessionId) return;
+      setBestPicks((prev) => ({ ...prev, [winnerExecutionId]: winnerExecutionId }));
+      try {
+        await submitBestPick({
+          session_id: sessionId,
+          winner_execution_id: winnerExecutionId,
+        });
+      } catch { /* ignore */ }
+    },
+    [sessionId],
+  );
+
+  const handleTriggerJudge = useCallback(
+    async (executionIds: string[]) => {
+      if (!sessionId || executionIds.length === 0) return;
+      setIsJudging(true);
+      try {
+        const result = await triggerJudge({
+          session_id: sessionId,
+          execution_ids: executionIds,
+          mode: "both",
+        });
+        const newScores: Record<string, JudgeScoreData> = { ...judgeScores };
+        for (const s of result.pointwise) {
+          newScores[s.execution_id] = s;
+        }
+        setJudgeScores(newScores);
+      } catch (err) {
+        console.error("Judge failed:", err);
+      } finally {
+        setIsJudging(false);
+      }
+    },
+    [sessionId, judgeScores],
   );
 
   const handleSend = useCallback(
@@ -763,11 +885,24 @@ export default function ChatPage() {
                                 </div>
                                 {resp.metrics && (
                                   <div className="mt-3 flex flex-col gap-2 border-t pt-2 text-xs text-muted-foreground">
-                                    <div className="flex gap-4">
+                                    <div className="flex items-center gap-4">
                                       <span>{resp.metrics.total_tokens} tokens</span>
                                       <span>${resp.metrics.cost_usd.toFixed(4)}</span>
                                       <span>{resp.metrics.elapsed_seconds.toFixed(1)}s</span>
+                                      <ResponseRating
+                                        executionId={resp.executionId}
+                                        sessionId={sessionId || ""}
+                                        chatProviderId={cpId}
+                                        currentRating={ratings[resp.executionId]}
+                                        onRate={handleRate}
+                                      />
                                     </div>
+                                    {judgeScores[resp.executionId] && (
+                                      <JudgeScores
+                                        dimensions={judgeScores[resp.executionId].dimensions}
+                                        overallScore={judgeScores[resp.executionId].overall_score}
+                                      />
+                                    )}
                                   </div>
                                 )}
                               </>
@@ -814,7 +949,64 @@ export default function ChatPage() {
                             <span className="font-medium text-blue-600 dark:text-blue-400">
                               {fastest[1].chatProviderName}
                             </span>
+                            {(() => {
+                              // Find best quality from judge scores
+                              const scored = completed
+                                .filter(([, r]) => judgeScores[r.executionId])
+                                .map(([, r]) => ({
+                                  name: r.chatProviderName,
+                                  score: judgeScores[r.executionId].overall_score,
+                                }));
+                              if (scored.length === 0) return null;
+                              const best = scored.reduce((a, b) =>
+                                a.score >= b.score ? a : b
+                              );
+                              return (
+                                <>
+                                  {" · "}Best Quality:{" "}
+                                  <span className="font-medium text-violet-600 dark:text-violet-400">
+                                    {best.name}
+                                  </span>
+                                </>
+                              );
+                            })()}
                           </p>
+                          <div className="mt-2 flex items-center gap-3">
+                            <PickWinner
+                              sessionId={sessionId || ""}
+                              responses={completed.map(([cpId, r]) => ({
+                                executionId: r.executionId,
+                                cpId,
+                                name: r.chatProviderName,
+                              }))}
+                              currentWinnerId={
+                                completed.find(
+                                  ([, r]) => bestPicks[r.executionId]
+                                )?.[1]?.executionId
+                              }
+                              onPick={handlePickWinner}
+                            />
+                            {config?.judge_chat_provider_id && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 gap-1 px-2 text-xs"
+                                disabled={isJudging}
+                                onClick={() =>
+                                  handleTriggerJudge(
+                                    completed.map(([, r]) => r.executionId)
+                                  )
+                                }
+                              >
+                                {isJudging ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Sparkles className="h-3 w-3" />
+                                )}
+                                Auto-Judge
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       );
                     })()}

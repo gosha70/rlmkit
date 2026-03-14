@@ -270,6 +270,85 @@ export interface AppConfig {
   mode_config: ModeConfig;
   chat_providers: ChatProviderConfig[];
   active_profile_id?: string | null;
+  judge_chat_provider_id?: string | null;
+}
+
+// Evaluations
+export interface ThumbRatingRequest {
+  execution_id: string;
+  session_id: string;
+  chat_provider_id: string;
+  rating: "up" | "down";
+}
+
+export interface BestPickRequest {
+  session_id: string;
+  winner_execution_id: string;
+}
+
+export interface JudgeRequest {
+  session_id: string;
+  execution_ids: string[];
+  mode?: "pointwise" | "pairwise" | "both";
+}
+
+export interface JudgeScoreData {
+  id: string;
+  execution_id: string;
+  session_id: string;
+  chat_provider_id: string;
+  judge_provider_id: string;
+  dimensions: Record<string, number>;
+  overall_score: number;
+  reasoning: string;
+  created_at: string;
+}
+
+export interface ProviderQualityScore {
+  chat_provider_id: string;
+  chat_provider_name: string;
+  thumb_up: number;
+  thumb_down: number;
+  thumb_score: number;
+  best_picks: number;
+  pick_rate: number;
+  judge_avg_score: number | null;
+  combined_score: number;
+}
+
+export interface EvaluationSummaryResponse {
+  session_id: string;
+  by_chat_provider: Record<string, ProviderQualityScore>;
+  recommendation: string | null;
+  recommendation_reason: string;
+}
+
+export interface SessionEvaluations {
+  thumb_ratings: Array<{
+    id: string;
+    execution_id: string;
+    session_id: string;
+    chat_provider_id: string;
+    rating: "up" | "down";
+    created_at: string;
+  }>;
+  best_picks: Array<{
+    id: string;
+    session_id: string;
+    winner_execution_id: string;
+    created_at: string;
+  }>;
+  judge_scores: JudgeScoreData[];
+  judge_pairwise: Array<{
+    id: string;
+    session_id: string;
+    execution_id_a: string;
+    execution_id_b: string;
+    winner: "a" | "b" | "tie";
+    judge_provider_id: string;
+    reasoning: string;
+    created_at: string;
+  }>;
 }
 
 export interface HealthResponse {
@@ -486,6 +565,36 @@ export interface WSMessage {
   session_id?: string;
   mode?: ChatMode;
 }
+
+// Evaluations
+export const submitThumbRating = (req: ThumbRatingRequest) =>
+  fetchJSON<{ status: string }>("/api/evaluations/thumb", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+
+export const removeThumbRating = (executionId: string) =>
+  fetchJSON<{ status: string }>(`/api/evaluations/thumb/${executionId}`, {
+    method: "DELETE",
+  });
+
+export const submitBestPick = (req: BestPickRequest) =>
+  fetchJSON<{ status: string }>("/api/evaluations/best-pick", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+
+export const getSessionEvaluations = (sessionId: string) =>
+  fetchJSON<SessionEvaluations>(`/api/evaluations/${sessionId}`);
+
+export const getEvaluationSummary = (sessionId: string) =>
+  fetchJSON<EvaluationSummaryResponse>(`/api/evaluations/${sessionId}/summary`);
+
+export const triggerJudge = (req: JudgeRequest) =>
+  fetchJSON<{ pointwise: JudgeScoreData[]; pairwise: unknown[] }>("/api/evaluations/judge", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 
 export function connectChatWS(sessionId: string): WebSocket {
   if (API_BASE && API_BASE.startsWith("http")) {

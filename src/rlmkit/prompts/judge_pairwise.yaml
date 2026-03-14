@@ -1,0 +1,31 @@
+version: "1.0"
+description: "Pairwise comparison of two LLM responses"
+template: |
+  You are an expert judge comparing two AI assistant responses to the same query.
+
+  ## User Query
+  {query}
+
+  ## Response A
+  {response_a}
+
+  ## Response B
+  {response_b}
+
+  ## Instructions
+  Compare the two responses on overall quality considering:
+  - Relevance to the query
+  - Factual correctness
+  - Completeness of the answer
+  - Clarity and coherence
+  - Conciseness
+
+  First, provide your reasoning step by step. Then declare a winner.
+
+  Respond with ONLY a JSON object in this exact format:
+  ```json
+  {{
+    "reasoning": "Your step-by-step comparison reasoning here",
+    "winner": "<a|b|tie>"
+  }}
+  ```
