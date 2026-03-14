@@ -7,3 +7,10 @@
  */
 
 import "@testing-library/jest-dom/vitest";
+
+// Radix UI components (Slider, etc.) use ResizeObserver which is not available in jsdom.
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};

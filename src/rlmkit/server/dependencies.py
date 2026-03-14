@@ -175,32 +175,35 @@ class AppState:
             self.save_config()
 
     def _migrate_chat_providers(self) -> None:
-        """Auto-create Chat Providers from existing provider_configs on first load."""
-        if self.config.chat_providers:
-            return  # Already have Chat Providers
-        now = datetime.now(timezone.utc)
-        for pc in self.config.provider_configs:
-            if not pc.enabled:
-                continue
-            mode_label = "DIRECT"
-            cp = ChatProviderConfig(
-                id=str(uuid.uuid4()),
-                name=f"{mode_label}-{pc.provider.upper()}",
-                llm_provider=pc.provider,
-                llm_model=pc.model,
-                execution_mode="direct",
-                profile_id="builtin-accurate",
-                runtime_settings=pc.runtime_settings.model_copy(),
-                created_at=now,
-                updated_at=now,
-            )
-            self.config.chat_providers.append(cp)
-        if self.config.chat_providers:
-            logger.info(
-                "Migrated %d Chat Provider(s) from existing provider configs",
-                len(self.config.chat_providers),
-            )
-            self.save_config()
+        """Auto-create Chat Providers from existing provider_configs on first load.
+
+        Also performs a second pass to replace stale model IDs that are no longer
+        present in the hardcoded catalog with the provider's current default model.
+        """
+        if not self.config.chat_providers:
+            now = datetime.now(timezone.utc)
+            for pc in self.config.provider_configs:
+                if not pc.enabled:
+                    continue
+                mode_label = "DIRECT"
+                cp = ChatProviderConfig(
+                    id=str(uuid.uuid4()),
+                    name=f"{mode_label}-{pc.provider.upper()}",
+                    llm_provider=pc.provider,
+                    llm_model=pc.model,
+                    execution_mode="direct",
+                    profile_id="builtin-accurate",
+                    runtime_settings=pc.runtime_settings.model_copy(),
+                    created_at=now,
+                    updated_at=now,
+                )
+                self.config.chat_providers.append(cp)
+            if self.config.chat_providers:
+                logger.info(
+                    "Migrated %d Chat Provider(s) from existing provider configs",
+                    len(self.config.chat_providers),
+                )
+                self.save_config()
 
     def _assign_default_profiles(self) -> None:
         """Assign a default profile to Chat Providers that don't have one."""
@@ -306,23 +309,19 @@ class AppState:
         provider_key = cp.llm_provider
         model = cp.llm_model
 
-        # Validate model against catalog
+        # Trust the user-selected model — it may have been fetched live from
+        # the provider API and won't be in the static catalog.
         entry = PROVIDERS_BY_KEY.get(provider_key)
-        if entry and entry.models:
-            catalog_names = {m.name for m in entry.models}
-            if model not in catalog_names:
-                logger.warning(
-                    "Model %s not in provider %s catalog; falling back to %s",
-                    model,
-                    provider_key,
-                    entry.models[0].name,
-                )
-                model = entry.models[0].name
 
         prefixed_model = self._litellm_model_name(provider_key, model)
 
+        # Prefer persisted endpoint over catalog default
         api_base: str | None = None
-        if entry and entry.default_endpoint:
+        for pc in self.config.provider_configs:
+            if pc.provider == provider_key and pc.endpoint:
+                api_base = pc.endpoint
+                break
+        if not api_base and entry and entry.default_endpoint:
             api_base = entry.default_endpoint
 
         runtime = cp.runtime_settings
@@ -420,36 +419,24 @@ class AppState:
         provider_key = self.config.active_provider
         model = self.config.active_model
 
-        # Validate provider/model consistency: if active_model doesn't belong
-        # to active_provider's catalog, fall back to provider's default model
+        # Trust the user-selected model — it may have been fetched live from
+        # the provider API and won't be in the static catalog.
         entry = PROVIDERS_BY_KEY.get(provider_key)
-        if entry and entry.models:
-            catalog_names = {m.name for m in entry.models}
-            if model not in catalog_names:
-                logger.warning(
-                    "Model %s not in provider %s catalog; falling back to %s",
-                    model,
-                    provider_key,
-                    entry.models[0].name,
-                )
-                model = entry.models[0].name
-                self.config.active_model = model
 
         # Apply LiteLLM provider prefix (e.g. "ollama/" for Ollama models)
         prefixed_model = self._litellm_model_name(provider_key, model)
 
-        # Resolve api_base for local providers (Ollama, LM Studio)
+        # Prefer persisted endpoint over catalog default
         api_base: str | None = None
-        if entry and entry.default_endpoint:
-            api_base = entry.default_endpoint
-
-        # Read runtime settings from active provider's config, falling back
-        # to default_runtime_settings
         runtime = self.config.default_runtime_settings
         for pc in self.config.provider_configs:
             if pc.provider == provider_key and pc.enabled:
+                if pc.endpoint:
+                    api_base = pc.endpoint
                 runtime = pc.runtime_settings
                 break
+        if not api_base and entry and entry.default_endpoint:
+            api_base = entry.default_endpoint
 
         return LiteLLMAdapter(
             model=prefixed_model,

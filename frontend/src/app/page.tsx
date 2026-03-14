@@ -19,6 +19,7 @@ import {
   submitChat,
   uploadFile,
   getProviders,
+  connectChatWS,
   type AppConfig,
   type ChatProviderConfig,
   type ProviderInfo,
@@ -46,8 +47,10 @@ interface ChatTurn {
   >;
 }
 
-interface PollingState {
-  [executionId: string]: ReturnType<typeof setInterval>;
+// Map execution_id -> { turnId, chatProviderId } for WS event matching
+interface ExecMapping {
+  turnId: string;
+  chatProviderId: string;
 }
 
 export default function ChatPage() {
@@ -77,10 +80,17 @@ export default function ChatPage() {
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [isAnyPolling, setIsAnyPolling] = useState(false);
+  const [isAnyStreaming, setIsAnyStreaming] = useState(false);
   const skipSessionLoadRef = useRef(false);
-  const pollingStateRef = useRef<PollingState>({});
+  const wsRef = useRef<WebSocket | null>(null);
+  const execMapRef = useRef<Record<string, ExecMapping>>({});
+  const pendingCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const wsReadyRef = useRef(false);
+  const pollTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  // Monotonic generation counter — incremented on every session change.
+  // Callbacks captured under a stale generation bail out immediately.
+  const sessionGenRef = useRef(0);
 
   // Sort selected IDs by chip order for consistent grid column ordering
   const orderedSelectedIds = chatProviderOrder.length > 0
@@ -229,26 +239,164 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
-  // Cleanup polling on unmount
+  // Connect WebSocket when session exists
   useEffect(() => {
-    return () => {
-      Object.values(pollingStateRef.current).forEach((interval) => {
-        clearInterval(interval);
-      });
-    };
-  }, []);
+    if (!sessionId) {
+      wsReadyRef.current = false;
+      return;
+    }
 
+    // Close previous connection
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+      wsReadyRef.current = false;
+    }
+
+    let ws: WebSocket;
+    try {
+      ws = connectChatWS(sessionId);
+    } catch {
+      console.debug("WebSocket connection failed, will use REST fallback");
+      return;
+    }
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      wsReadyRef.current = true;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        const execId = msg.id as string | undefined;
+        if (!execId) return;
+
+        const mapping = execMapRef.current[execId];
+        if (!mapping) return;
+
+        const { turnId, chatProviderId } = mapping;
+
+        if (msg.type === "token") {
+          setTurns((prev) =>
+            prev.map((turn) =>
+              turn.id === turnId
+                ? {
+                    ...turn,
+                    responses: {
+                      ...turn.responses,
+                      [chatProviderId]: {
+                        ...turn.responses[chatProviderId],
+                        content: turn.responses[chatProviderId].content + (msg.data || ""),
+                      },
+                    },
+                  }
+                : turn,
+            ),
+          );
+        } else if (msg.type === "complete") {
+          const data = msg.data || {};
+          delete execMapRef.current[execId];
+          pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
+
+          setTurns((prev) =>
+            prev.map((turn) =>
+              turn.id === turnId
+                ? {
+                    ...turn,
+                    responses: {
+                      ...turn.responses,
+                      [chatProviderId]: {
+                        ...turn.responses[chatProviderId],
+                        content: data.answer || turn.responses[chatProviderId].content,
+                        isStreaming: false,
+                        metrics: data.metrics || {
+                          input_tokens: data.tokens_used || 0,
+                          output_tokens: 0,
+                          total_tokens: data.tokens_used || 0,
+                          cost_usd: data.cost_used || 0,
+                          elapsed_seconds: data.elapsed_seconds || 0,
+                          steps: data.steps_used || 0,
+                        },
+                      },
+                    },
+                  }
+                : turn,
+            ),
+          );
+
+          if (pendingCountRef.current === 0) {
+            setIsAnyStreaming(false);
+          }
+        } else if (msg.type === "error") {
+          delete execMapRef.current[execId];
+          pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
+
+          const errorMsg = msg.data?.message || "Execution failed";
+          setTurns((prev) =>
+            prev.map((turn) =>
+              turn.id === turnId
+                ? {
+                    ...turn,
+                    responses: {
+                      ...turn.responses,
+                      [chatProviderId]: {
+                        ...turn.responses[chatProviderId],
+                        content: `Error: ${errorMsg}`,
+                        isStreaming: false,
+                      },
+                    },
+                  }
+                : turn,
+            ),
+          );
+
+          if (pendingCountRef.current === 0) {
+            setIsAnyStreaming(false);
+          }
+        }
+      } catch {
+        // Ignore non-JSON messages (pings, etc.)
+      }
+    };
+
+    ws.onclose = () => {
+      wsReadyRef.current = false;
+      console.debug("WebSocket closed for session", sessionId);
+    };
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+      wsReadyRef.current = false;
+    };
+  }, [sessionId]);
+
+  // REST polling fallback — tracks timeouts so they can be cancelled on cleanup
   const pollForResult = useCallback(
     (executionId: string, chatProviderId: string, turnId: string) => {
-      setIsAnyPolling(true);
+      setIsAnyStreaming(true);
+      // cancelled flag lets in-flight fetches bail out after cleanup
+      let cancelled = false;
+      const cancelToken = { cancel: () => { cancelled = true; } };
+      // Store on execMap so handleNewSession can cancel
+      const mapping = execMapRef.current[executionId];
+      if (mapping) (mapping as ExecMapping & { cancelPoll?: () => void }).cancelPoll = cancelToken.cancel;
 
-      const interval = setInterval(async () => {
+      const schedulePoll = (delayMs: number) => {
+        const timer = setTimeout(poll, delayMs);
+        pollTimersRef.current.add(timer);
+      };
+
+      const poll = async () => {
+        if (cancelled) return;
         try {
           const trace = await getTrace(executionId);
+          if (cancelled) return;
 
           if (trace.status === "complete") {
-            clearInterval(interval);
-            delete pollingStateRef.current[executionId];
+            delete execMapRef.current[executionId];
+            pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
 
             setTurns((prev) =>
               prev.map((turn) =>
@@ -281,13 +429,13 @@ export default function ChatPage() {
               ),
             );
 
-            // Check if any polling is still active
-            if (Object.keys(pollingStateRef.current).length === 0) {
-              setIsAnyPolling(false);
+            if (pendingCountRef.current === 0) {
+              setIsAnyStreaming(false);
             }
+            return;
           } else if (trace.status === "error") {
-            clearInterval(interval);
-            delete pollingStateRef.current[executionId];
+            delete execMapRef.current[executionId];
+            pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
 
             setTurns((prev) =>
               prev.map((turn) =>
@@ -307,22 +455,31 @@ export default function ChatPage() {
               ),
             );
 
-            if (Object.keys(pollingStateRef.current).length === 0) {
-              setIsAnyPolling(false);
+            if (pendingCountRef.current === 0) {
+              setIsAnyStreaming(false);
             }
+            return;
           }
-        } catch (err) {
-          console.error("Polling error:", err);
-        }
-      }, 1000);
 
-      pollingStateRef.current[executionId] = interval;
+          // Still running — poll again
+          schedulePoll(1000);
+        } catch (err) {
+          if (cancelled) return;
+          console.error("Polling error:", err);
+          schedulePoll(2000);
+        }
+      };
+
+      poll();
     },
     [],
   );
 
   const handleSend = useCallback(
     async (text: string) => {
+      // Capture generation at send-time so stale callbacks can bail out
+      const sendGen = sessionGenRef.current;
+
       // Add user message
       const turnId = crypto.randomUUID();
       const newTurn: ChatTurn = {
@@ -348,24 +505,38 @@ export default function ChatPage() {
       }
 
       setTurns((prev) => [...prev, newTurn]);
+      pendingCountRef.current += selectedChatProviderIds.length;
+      setIsAnyStreaming(true);
 
-      // Submit one request per selected chat provider in parallel
-      const submitPromises = selectedChatProviderIds.map(async (cpId) => {
+      // Ensure all providers share one session. When sessionId is null,
+      // send the first provider sequentially to establish a session, then
+      // fan out the rest in parallel with that shared id.
+      let effectiveSessionId = sessionId;
+
+      const submitOne = async (cpId: string) => {
         try {
           const resp = await submitChat({
             query: text,
             content: uploadedFile ? null : text || null,
             file_id: uploadedFile?.id || null,
             chat_provider_id: cpId,
-            session_id: sessionId,
+            session_id: effectiveSessionId,
           });
 
-          if (!sessionId) {
+          // If session changed while we were awaiting, discard this result
+          if (sessionGenRef.current !== sendGen) return;
+
+          // Capture session id from the first response
+          if (!effectiveSessionId) {
+            effectiveSessionId = resp.session_id;
             skipSessionLoadRef.current = true;
             setSessionId(resp.session_id);
           }
 
-          // Update the turn with the execution ID and start polling
+          // Register mapping so WS events can find the turn
+          execMapRef.current[resp.execution_id] = { turnId, chatProviderId: cpId };
+
+          // Update the turn with the execution ID
           setTurns((prev) =>
             prev.map((turn) =>
               turn.id === turnId
@@ -383,9 +554,13 @@ export default function ChatPage() {
             ),
           );
 
+          // Always poll: the WS backend only emits events for WS-initiated
+          // queries, not REST-submitted ones. REST polling is the reliable path.
           pollForResult(resp.execution_id, cpId, turnId);
         } catch (err) {
+          if (sessionGenRef.current !== sendGen) return;
           console.error(`Failed to submit chat for provider ${cpId}:`, err);
+          pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
           setTurns((prev) =>
             prev.map((turn) =>
               turn.id === turnId
@@ -403,10 +578,24 @@ export default function ChatPage() {
                 : turn,
             ),
           );
+          if (pendingCountRef.current === 0) {
+            setIsAnyStreaming(false);
+          }
         }
-      });
+      };
 
-      await Promise.allSettled(submitPromises);
+      if (!sessionId && selectedChatProviderIds.length > 1) {
+        // Sequential first request to establish session, then parallel rest
+        await submitOne(selectedChatProviderIds[0]);
+        if (sessionGenRef.current !== sendGen) return;
+        await Promise.allSettled(
+          selectedChatProviderIds.slice(1).map((cpId) => submitOne(cpId)),
+        );
+      } else {
+        await Promise.allSettled(
+          selectedChatProviderIds.map((cpId) => submitOne(cpId)),
+        );
+      }
     },
     [sessionId, uploadedFile, selectedChatProviderIds, chatProviders, pollForResult],
   );
@@ -426,22 +615,52 @@ export default function ChatPage() {
     }
   }, []);
 
+  const cancelAllPollers = useCallback(() => {
+    sessionGenRef.current += 1;
+    for (const mapping of Object.values(execMapRef.current)) {
+      (mapping as ExecMapping & { cancelPoll?: () => void }).cancelPoll?.();
+    }
+    for (const timer of pollTimersRef.current) {
+      clearTimeout(timer);
+    }
+    pollTimersRef.current.clear();
+    execMapRef.current = {};
+    pendingCountRef.current = 0;
+    setIsAnyStreaming(false);
+  }, []);
+
+  // Cleanup poll timers on unmount
+  useEffect(() => {
+    return () => { cancelAllPollers(); };
+  }, [cancelAllPollers]);
+
   const handleNewSession = useCallback(() => {
+    cancelAllPollers();
     setSessionId(null);
     setTurns([]);
     setUploadedFile(null);
     setFileContent("");
-    Object.values(pollingStateRef.current).forEach((interval) => {
-      clearInterval(interval);
-    });
-    pollingStateRef.current = {};
-    setIsAnyPolling(false);
-  }, []);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+      wsReadyRef.current = false;
+    }
+  }, [cancelAllPollers]);
+
+  const handleSelectSession = useCallback(
+    (id: string) => {
+      if (id === sessionId) return;
+      cancelAllPollers();
+      setTurns([]);
+      setSessionId(id);
+    },
+    [sessionId, cancelAllPollers],
+  );
 
   return (
     <AppShell
       activeSessionId={sessionId}
-      onSelectSession={setSessionId}
+      onSelectSession={handleSelectSession}
       onNewSession={handleNewSession}
     >
       <div className="flex h-full flex-col overflow-hidden">
@@ -483,7 +702,7 @@ export default function ChatPage() {
               </p>
             </div>
             <div className="w-full max-w-3xl">
-              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyPolling} />
+              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming} />
             </div>
           </div>
         ) : (
@@ -601,11 +820,11 @@ export default function ChatPage() {
                     })()}
                   </div>
                 ))}
-                {isAnyPolling && <TypingIndicator />}
+                {isAnyStreaming && <TypingIndicator />}
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyPolling} />
+            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming} />
           </>
         )}
       </div>

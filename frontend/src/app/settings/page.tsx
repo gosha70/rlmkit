@@ -31,14 +31,17 @@ import {
   createChatProvider,
   updateChatProvider,
   deleteChatProvider,
+  getProviderModels,
   type AppConfig,
   type ProviderInfo,
+  type ModelInfo,
   type RunProfile,
   type ChatProviderConfig,
   type ChatProviderCreateRequest,
   type RAGConfig,
 } from "@/lib/api";
-import { Plus, Edit2, Trash2, Upload } from "lucide-react";
+import { Plus, Edit2, Trash2, Upload, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -73,6 +76,8 @@ export default function SettingsPage() {
   });
   const [savingProvider, setSavingProvider] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [dynamicModels, setDynamicModels] = useState<ModelInfo[]>([]);
+  const [refreshingModels, setRefreshingModels] = useState(false);
 
   const { data: config, mutate: mutateConfig } = useSWR<AppConfig>("config", getConfig);
   const { data: providers = [], mutate: mutateProviders } = useSWR<ProviderInfo[]>("providers", getProviders);
@@ -237,6 +242,24 @@ export default function SettingsPage() {
     e.target.value = "";
   };
 
+  const handleRefreshModels = async () => {
+    if (!formData.llm_provider) return;
+    setRefreshingModels(true);
+    try {
+      // Pass the provider's endpoint so local providers on non-default ports work
+      const providerInfo = providers.find((p) => p.name === formData.llm_provider);
+      const models = await getProviderModels(
+        formData.llm_provider,
+        providerInfo?.default_endpoint ?? undefined,
+      );
+      setDynamicModels(models);
+    } catch (err) {
+      console.error("Failed to fetch models:", err);
+    } finally {
+      setRefreshingModels(false);
+    }
+  };
+
   // Resolve the selected profile for the form
   const selectedProfile = profiles.find((p) => p.id === formData.profile_id);
 
@@ -253,6 +276,7 @@ export default function SettingsPage() {
         embedding_model: "text-embedding-3-small",
       },
     });
+    setDynamicModels([]);
   };
 
   return (
@@ -328,7 +352,7 @@ export default function SettingsPage() {
                   <div className="space-y-2">
                     <Label htmlFor="cp-provider">LLM Provider</Label>
                     <Select value={formData.llm_provider} onValueChange={(value) => {
-                      setFormData({ ...formData, llm_provider: value, llm_model: "" });
+                      setFormData({ ...formData, llm_provider: value, llm_model: "" }); setDynamicModels([]);
                     }}>
                       <SelectTrigger id="cp-provider">
                         <SelectValue placeholder="Select a provider" />
@@ -345,25 +369,37 @@ export default function SettingsPage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="cp-model">Model</Label>
-                    <Select
-                      value={formData.llm_model}
-                      onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
-                      disabled={!formData.llm_provider}
-                    >
-                      <SelectTrigger id="cp-model">
-                        <SelectValue placeholder="Select a model" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {formData.llm_provider &&
-                          providers
-                            .find((p) => p.name === formData.llm_provider)
-                            ?.models.map((m) => (
-                              <SelectItem key={m.name} value={m.name}>
-                                {m.name}
-                              </SelectItem>
-                            ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex gap-2">
+                      <Select
+                        value={formData.llm_model}
+                        onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
+                        disabled={!formData.llm_provider}
+                      >
+                        <SelectTrigger id="cp-model" className="flex-1">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(dynamicModels.length > 0
+                            ? dynamicModels
+                            : providers.find((p) => p.name === formData.llm_provider)?.models ?? []
+                          ).map((m) => (
+                            <SelectItem key={m.name} value={m.name}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        disabled={!formData.llm_provider || refreshingModels}
+                        onClick={handleRefreshModels}
+                        aria-label="Refresh models from provider API"
+                      >
+                        <RefreshCw className={cn("h-4 w-4", refreshingModels && "animate-spin")} aria-hidden="true" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -576,7 +612,7 @@ export default function SettingsPage() {
                       <div className="space-y-2">
                         <Label htmlFor={`edit-cp-provider-${provider.id}`}>LLM Provider</Label>
                         <Select value={formData.llm_provider} onValueChange={(value) => {
-                          setFormData({ ...formData, llm_provider: value, llm_model: "" });
+                          setFormData({ ...formData, llm_provider: value, llm_model: "" }); setDynamicModels([]);
                         }}>
                           <SelectTrigger id={`edit-cp-provider-${provider.id}`}>
                             <SelectValue />
@@ -590,23 +626,35 @@ export default function SettingsPage() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor={`edit-cp-model-${provider.id}`}>Model</Label>
-                        <Select
-                          value={formData.llm_model}
-                          onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
-                          disabled={!formData.llm_provider}
-                        >
-                          <SelectTrigger id={`edit-cp-model-${provider.id}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {formData.llm_provider &&
-                              providers
-                                .find((p) => p.name === formData.llm_provider)
-                                ?.models.map((m) => (
-                                  <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
-                                ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex gap-2">
+                          <Select
+                            value={formData.llm_model}
+                            onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
+                            disabled={!formData.llm_provider}
+                          >
+                            <SelectTrigger id={`edit-cp-model-${provider.id}`} className="flex-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(dynamicModels.length > 0
+                                ? dynamicModels
+                                : providers.find((p) => p.name === formData.llm_provider)?.models ?? []
+                              ).map((m) => (
+                                <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={!formData.llm_provider || refreshingModels}
+                            onClick={handleRefreshModels}
+                            aria-label="Refresh models from provider API"
+                          >
+                            <RefreshCw className={cn("h-4 w-4", refreshingModels && "animate-spin")} aria-hidden="true" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-2">

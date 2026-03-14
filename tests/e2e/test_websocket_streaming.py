@@ -1,139 +1,178 @@
-"""E2E tests for WebSocket streaming endpoints.
+"""E2E tests for WebSocket streaming endpoints."""
 
-All tests are skipped until the WebSocket backend (Bet 2.3) is implemented.
-Each test documents the expected streaming protocol so the backend team
-can enable tests as features land.
-"""
+from __future__ import annotations
+
+import time
+from collections.abc import Generator
+from datetime import datetime, timezone
+from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
+from rlmkit.server.app import create_app
+from rlmkit.server.dependencies import SessionRecord, get_state, reset_state
 
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.skip(reason="Waiting for WebSocket streaming (Bet 2.3)"),
-]
+pytestmark = pytest.mark.e2e
 
 
 # ---------------------------------------------------------------------------
-# Connection
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clean_state() -> Generator[None, None, None]:
+    reset_state()
+    yield
+    reset_state()
+
+
+@pytest.fixture
+def client() -> TestClient:
+    return TestClient(create_app())
+
+
+@pytest.fixture
+def session_id() -> str:
+    return "test-session"
+
+
+@pytest.fixture
+def seeded_session(session_id: str) -> str:
+    """Insert a SessionRecord into state so the WS endpoint can resolve it."""
+    state = get_state()
+    now = datetime.now(timezone.utc)
+    state.sessions[session_id] = SessionRecord(
+        id=session_id,
+        name="Test",
+        created_at=now,
+        updated_at=now,
+    )
+    return session_id
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def receive_non_ping(
+    ws: Any,
+    timeout: float = 5.0,
+    skip_types: tuple[str, ...] = ("ping",),
+) -> dict[str, Any]:
+    """Return the next message whose type is not in skip_types."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        msg: dict[str, Any] = ws.receive_json()
+        if msg.get("type") not in skip_types:
+            return msg
+    raise TimeoutError("No matching message received within timeout")
+
+
+# ---------------------------------------------------------------------------
+# TestWebSocketConnection
 # ---------------------------------------------------------------------------
 
 
 class TestWebSocketConnection:
-    """WebSocket connect/disconnect lifecycle."""
+    def test_websocket_connect(self, client: TestClient, seeded_session: str) -> None:
+        """Connecting yields a 'connected' message with the correct session_id."""
+        with client.websocket_connect(f"/ws/chat/{seeded_session}") as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "connected"
+            assert msg["session_id"] == seeded_session
 
-    def test_websocket_connect(self, ws_base_url):
-        """Client can establish a WebSocket connection."""
-        # async with websockets.connect(f"{ws_base_url}/stream") as ws:
-        #     # Server sends an initial ack
-        #     msg = await ws.recv()
-        #     data = json.loads(msg)
-        #     assert data["type"] == "connected"
-        #     assert "session_id" in data
+    def test_websocket_invalid_json(self, client: TestClient, seeded_session: str) -> None:
+        """Sending malformed JSON returns an INVALID_JSON error (without closing)."""
+        with client.websocket_connect(f"/ws/chat/{seeded_session}") as ws:
+            # Consume the connected handshake first
+            connected = ws.receive_json()
+            assert connected["type"] == "connected"
 
-
-# ---------------------------------------------------------------------------
-# Streaming
-# ---------------------------------------------------------------------------
-
-
-class TestStreamingTokens:
-    """Real-time token streaming over WebSocket."""
-
-    def test_streaming_tokens(self, ws_base_url, sample_document):
-        """Submitting a query streams token chunks back in real time."""
-        # async with websockets.connect(f"{ws_base_url}/stream") as ws:
-        #     await ws.send(json.dumps({
-        #         "type": "query",
-        #         "content": sample_document,
-        #         "question": "Summarize this.",
-        #         "mode": "direct",
-        #     }))
-        #
-        #     chunks = []
-        #     async for msg in ws:
-        #         data = json.loads(msg)
-        #         if data["type"] == "token":
-        #             chunks.append(data["text"])
-        #         elif data["type"] == "done":
-        #             break
-        #
-        #     assert len(chunks) > 0
-        #     full_text = "".join(chunks)
-        #     assert len(full_text) > 0
-
-    def test_streaming_steps(self, ws_base_url, large_document):
-        """RLM mode streams step-level progress events."""
-        # async with websockets.connect(f"{ws_base_url}/stream") as ws:
-        #     await ws.send(json.dumps({
-        #         "type": "query",
-        #         "content": large_document,
-        #         "question": "What are the key topics?",
-        #         "mode": "rlm",
-        #     }))
-        #
-        #     step_events = []
-        #     async for msg in ws:
-        #         data = json.loads(msg)
-        #         if data["type"] == "step":
-        #             step_events.append(data)
-        #         elif data["type"] == "done":
-        #             break
-        #
-        #     assert len(step_events) >= 1
-        #     assert all("step_index" in s for s in step_events)
+            ws.send_text("not valid json {{")
+            err = receive_non_ping(ws)
+            assert err["type"] == "error"
+            assert err["id"] == ""
+            assert err["data"]["code"] == "INVALID_JSON"
 
 
 # ---------------------------------------------------------------------------
-# Cancellation
+# TestWebSocketQuery
 # ---------------------------------------------------------------------------
 
 
-class TestCancelExecution:
-    """Client-initiated execution cancellation over WebSocket."""
+class TestWebSocketQuery:
+    def test_query_without_chat_provider(self, client: TestClient, seeded_session: str) -> None:
+        """A query with no chat_provider_id returns either complete or error (no crash)."""
+        with client.websocket_connect(f"/ws/chat/{seeded_session}") as ws:
+            connected = ws.receive_json()
+            assert connected["type"] == "connected"
 
-    def test_cancel_execution(self, ws_base_url, large_document):
-        """Sending a cancel message stops execution mid-stream."""
-        # async with websockets.connect(f"{ws_base_url}/stream") as ws:
-        #     await ws.send(json.dumps({
-        #         "type": "query",
-        #         "content": large_document,
-        #         "question": "Analyze everything.",
-        #         "mode": "rlm",
-        #     }))
-        #
-        #     # Wait for at least one chunk
-        #     msg = await ws.recv()
-        #     assert json.loads(msg)["type"] in ("token", "step")
-        #
-        #     # Send cancel
-        #     await ws.send(json.dumps({"type": "cancel"}))
-        #
-        #     # Server acknowledges cancellation
-        #     final = await ws.recv()
-        #     data = json.loads(final)
-        #     assert data["type"] == "cancelled"
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "q1",
+                    "query": "hello",
+                    "content": "some content",
+                    "mode": "direct",
+                }
+            )
+            resp = receive_non_ping(ws, timeout=10, skip_types=("ping", "token", "step", "metrics"))
+            assert resp["type"] in ("complete", "error")
+            assert resp["id"] == "q1"
+
+    def test_query_with_invalid_chat_provider(
+        self, client: TestClient, seeded_session: str
+    ) -> None:
+        """A query referencing a non-existent chat_provider_id returns NOT_FOUND."""
+        with client.websocket_connect(f"/ws/chat/{seeded_session}") as ws:
+            connected = ws.receive_json()
+            assert connected["type"] == "connected"
+
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "q2",
+                    "query": "hello",
+                    "content": "some content",
+                    "mode": "direct",
+                    "chat_provider_id": "nonexistent",
+                }
+            )
+            err = receive_non_ping(ws)
+            assert err["type"] == "error"
+            assert err["id"] == "q2"
+            assert err["data"]["code"] == "NOT_FOUND"
 
 
 # ---------------------------------------------------------------------------
-# Reconnection
+# TestWebSocketCancel
 # ---------------------------------------------------------------------------
 
 
-class TestReconnect:
-    """WebSocket reconnection after disconnect."""
+class TestWebSocketCancel:
+    def test_cancel_nonexistent(self, client: TestClient, seeded_session: str) -> None:
+        """Cancelling an unknown id is silently ignored — no crash or error frame."""
+        with client.websocket_connect(f"/ws/chat/{seeded_session}") as ws:
+            connected = ws.receive_json()
+            assert connected["type"] == "connected"
 
-    def test_reconnect_on_disconnect(self, ws_base_url):
-        """Client can reconnect and resume after a dropped connection."""
-        # async with websockets.connect(f"{ws_base_url}/stream") as ws:
-        #     msg = await ws.recv()
-        #     session_id = json.loads(msg)["session_id"]
-        #
-        # # Reconnect with the same session
-        # async with websockets.connect(
-        #     f"{ws_base_url}/stream?session_id={session_id}"
-        # ) as ws:
-        #     msg = await ws.recv()
-        #     data = json.loads(msg)
-        #     assert data["type"] == "connected"
-        #     assert data["session_id"] == session_id
+            ws.send_json({"type": "cancel", "id": "fake"})
+            # No response is expected; send a follow-up query and confirm the
+            # connection is still alive.
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "q3",
+                    "query": "ping",
+                    "content": "test",
+                    "mode": "direct",
+                    "chat_provider_id": "nonexistent",
+                }
+            )
+            # We expect a NOT_FOUND error proving the socket is still alive.
+            resp = receive_non_ping(ws)
+            assert resp["type"] == "error"
+            assert resp["data"]["code"] == "NOT_FOUND"

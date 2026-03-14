@@ -40,7 +40,7 @@ const DEFAULT_RUNTIME: RuntimeSettings = {
 
 interface ProviderCardProps {
   provider: ProviderInfo;
-  savedConfig?: { provider: string; model: string; runtime_settings: RuntimeSettings; enabled: boolean } | null;
+  savedConfig?: { provider: string; model: string; endpoint?: string | null; runtime_settings: RuntimeSettings; enabled: boolean } | null;
   onProviderSaved?: () => void;
 }
 
@@ -50,7 +50,9 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [enabled, setEnabled] = useState(savedConfig?.enabled ?? false);
-  const [endpoint, setEndpoint] = useState(provider.default_endpoint || "");
+  const [endpoint, setEndpoint] = useState(
+    savedConfig?.endpoint || provider.default_endpoint || "",
+  );
   const [runtimeOpen, setRuntimeOpen] = useState(false);
   const [runtime, setRuntime] = useState<RuntimeSettings>(savedConfig?.runtime_settings ?? { ...DEFAULT_RUNTIME });
 
@@ -60,6 +62,7 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
       setSelectedModel(savedConfig.model);
       setEnabled(savedConfig.enabled);
       setRuntime(savedConfig.runtime_settings);
+      if (savedConfig.endpoint) setEndpoint(savedConfig.endpoint);
     }
   }, [savedConfig]);
 
@@ -72,6 +75,7 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
       const res = await saveProvider(provider.name, {
         api_key: apiKey || null,
         model: selectedModel,
+        endpoint: endpoint || null,
         runtime_settings: runtime,
         enabled,
       });

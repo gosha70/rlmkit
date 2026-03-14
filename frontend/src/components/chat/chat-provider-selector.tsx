@@ -109,6 +109,28 @@ export function ChatProviderSelector({
       role="group"
       aria-label="Chat providers"
     >
+      {sortedProviders.length > 1 && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (selectedIds.length === sortedProviders.length) {
+              onSelectionChange([sortedProviders[0].id]);
+            } else {
+              onSelectionChange(sortedProviders.map((cp) => cp.id));
+            }
+          }}
+          className={cn(
+            "rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+            "border border-dashed border-muted-foreground/30",
+            "text-muted-foreground hover:text-foreground hover:bg-background/50",
+            "disabled:cursor-not-allowed",
+          )}
+          aria-label={selectedIds.length === sortedProviders.length ? "Select first only" : "Select all providers"}
+        >
+          {selectedIds.length === sortedProviders.length ? "1" : "All"}
+        </button>
+      )}
       {sortedProviders.map((cp) => {
         const isSelected = selectedIds.includes(cp.id);
         const { status, color } = getProviderStatus(cp.llm_provider);

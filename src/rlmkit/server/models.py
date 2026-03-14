@@ -106,6 +106,10 @@ class SessionSummary(BaseModel):
     message_count: int = 0
 
 
+class SessionRenameRequest(BaseModel):
+    name: str
+
+
 class SessionDetail(BaseModel):
     id: str
     name: str
@@ -258,6 +262,7 @@ class ProviderConfig(BaseModel):
 
     provider: str
     model: str
+    endpoint: str | None = None
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     enabled: bool = False
     last_tested_status: str | None = None

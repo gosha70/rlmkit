@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
+from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ from rlmkit.server.dependencies import (
 
 
 @pytest.fixture(autouse=True)
-def _clean_state():
+def _clean_state() -> Generator[None, None, None]:
     """Reset shared state before each test."""
     reset_state()
     yield
@@ -27,7 +28,7 @@ def _clean_state():
 
 
 @pytest.fixture
-def client():
+def client() -> TestClient:
     app = create_app()
     return TestClient(app)
 
@@ -38,7 +39,7 @@ def client():
 
 
 class TestHealthCheck:
-    def test_health(self, client):
+    def test_health(self, client: TestClient) -> None:
         resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
@@ -53,12 +54,12 @@ class TestHealthCheck:
 
 
 class TestSessions:
-    def test_list_empty(self, client):
+    def test_list_empty(self, client: TestClient) -> None:
         resp = client.get("/api/sessions")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_list_sessions(self, client):
+    def test_list_sessions(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -77,7 +78,7 @@ class TestSessions:
         assert data[0]["id"] == "s1"
         assert data[0]["message_count"] == 1
 
-    def test_get_session(self, client):
+    def test_get_session(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -95,11 +96,11 @@ class TestSessions:
         assert data["id"] == "s1"
         assert len(data["messages"]) == 1
 
-    def test_get_session_not_found(self, client):
+    def test_get_session_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/sessions/nonexistent")
         assert resp.status_code == 404
 
-    def test_delete_session(self, client):
+    def test_delete_session(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -112,11 +113,11 @@ class TestSessions:
         assert resp.status_code == 204
         assert "s1" not in state.sessions
 
-    def test_delete_session_not_found(self, client):
+    def test_delete_session_not_found(self, client: TestClient) -> None:
         resp = client.delete("/api/sessions/nonexistent")
         assert resp.status_code == 404
 
-    def test_pagination(self, client):
+    def test_pagination(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         for i in range(5):
@@ -134,6 +135,66 @@ class TestSessions:
         assert resp.status_code == 200
         assert len(resp.json()) == 1
 
+    def test_rename_session(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="Old Name",
+            created_at=now,
+            updated_at=now,
+        )
+        resp = client.put("/api/sessions/s1", json={"name": "New Name"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "s1"
+        assert data["name"] == "New Name"
+        assert state.sessions["s1"].name == "New Name"
+
+    def test_rename_session_not_found(self, client: TestClient) -> None:
+        resp = client.put("/api/sessions/nonexistent", json={"name": "New Name"})
+        assert resp.status_code == 404
+
+    def test_rename_session_empty_name(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="Original Name",
+            created_at=now,
+            updated_at=now,
+        )
+        resp = client.put("/api/sessions/s1", json={"name": "  "})
+        assert resp.status_code == 200
+        data = resp.json()
+        # Blank name strips to "" which is falsy, so the original name is kept
+        assert data["name"] == "Original Name"
+        assert state.sessions["s1"].name == "Original Name"
+
+
+# ---------------------------------------------------------------------------
+# Provider Models
+# ---------------------------------------------------------------------------
+
+
+class TestProviderModels:
+    def test_list_provider_models_fallback(self, client: TestClient) -> None:
+        # No real API key available in tests — endpoint falls back to catalog
+        resp = client.get("/api/providers/openai/models")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+        names = [m["name"] for m in data]
+        assert "gpt-4o" in names
+        assert "gpt-4o-mini" in names
+
+    def test_list_provider_models_unknown_provider(self, client: TestClient) -> None:
+        # Unknown provider — catalog lookup returns nothing, endpoint returns []
+        resp = client.get("/api/providers/nonexistent/models")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
 
 # ---------------------------------------------------------------------------
 # File upload
@@ -141,7 +202,7 @@ class TestSessions:
 
 
 class TestFileUpload:
-    def test_upload_text_file(self, client):
+    def test_upload_text_file(self, client: TestClient) -> None:
         content = b"Hello, this is a test document with some text content."
         resp = client.post(
             "/api/files/upload",
@@ -153,7 +214,7 @@ class TestFileUpload:
         assert data["size_bytes"] == len(content)
         assert data["token_count"] > 0
 
-    def test_upload_md_file(self, client):
+    def test_upload_md_file(self, client: TestClient) -> None:
         content = b"# Hello\n\nThis is markdown."
         resp = client.post(
             "/api/files/upload",
@@ -162,14 +223,14 @@ class TestFileUpload:
         assert resp.status_code == 201
         assert resp.json()["name"] == "readme.md"
 
-    def test_upload_unsupported_type(self, client):
+    def test_upload_unsupported_type(self, client: TestClient) -> None:
         resp = client.post(
             "/api/files/upload",
             files={"file": ("image.png", io.BytesIO(b"fake"), "image/png")},
         )
         assert resp.status_code == 400
 
-    def test_get_file(self, client):
+    def test_get_file(self, client: TestClient) -> None:
         content = b"some text"
         resp = client.post(
             "/api/files/upload",
@@ -181,7 +242,7 @@ class TestFileUpload:
         assert resp.status_code == 200
         assert resp.json()["id"] == file_id
 
-    def test_get_file_not_found(self, client):
+    def test_get_file_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/files/nonexistent")
         assert resp.status_code == 404
 
@@ -192,11 +253,11 @@ class TestFileUpload:
 
 
 class TestMetrics:
-    def test_metrics_not_found(self, client):
+    def test_metrics_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/metrics/nonexistent")
         assert resp.status_code == 404
 
-    def test_metrics_empty_session(self, client):
+    def test_metrics_empty_session(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -210,7 +271,7 @@ class TestMetrics:
         data = resp.json()
         assert data["summary"]["total_queries"] == 0
 
-    def test_metrics_with_messages(self, client):
+    def test_metrics_with_messages(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -251,11 +312,11 @@ class TestMetrics:
 
 
 class TestTraces:
-    def test_trace_not_found(self, client):
+    def test_trace_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/traces/nonexistent")
         assert resp.status_code == 404
 
-    def test_trace_found(self, client):
+    def test_trace_found(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.executions["ex1"] = ExecutionRecord(
@@ -290,7 +351,7 @@ class TestTraces:
 
 
 class TestProviders:
-    def test_list_providers(self, client):
+    def test_list_providers(self, client: TestClient) -> None:
         resp = client.get("/api/providers")
         assert resp.status_code == 200
         data = resp.json()
@@ -308,7 +369,7 @@ class TestProviders:
 
 
 class TestConfig:
-    def test_get_config(self, client):
+    def test_get_config(self, client: TestClient) -> None:
         resp = client.get("/api/config")
         assert resp.status_code == 200
         data = resp.json()
@@ -317,7 +378,7 @@ class TestConfig:
         assert "sandbox" in data
         assert "appearance" in data
 
-    def test_update_config(self, client):
+    def test_update_config(self, client: TestClient) -> None:
         """PUT /api/config updates budget/sandbox/appearance but not active_provider/model."""
         resp = client.put(
             "/api/config",
@@ -329,7 +390,7 @@ class TestConfig:
         assert data["active_provider"] == "openai"
         assert data["active_model"] == "gpt-4o"
 
-    def test_update_budget(self, client):
+    def test_update_budget(self, client: TestClient) -> None:
         resp = client.put(
             "/api/config",
             json={
@@ -346,7 +407,7 @@ class TestConfig:
         data = resp.json()
         assert data["budget"]["max_steps"] == 32
 
-    def test_update_preserves_unset_fields(self, client):
+    def test_update_preserves_unset_fields(self, client: TestClient) -> None:
         # Get initial config
         resp = client.get("/api/config")
         initial = resp.json()
@@ -364,7 +425,7 @@ class TestConfig:
 
 
 class TestChat:
-    def test_chat_creates_session(self, client):
+    def test_chat_creates_session(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "What is this?", "content": "Hello world", "mode": "direct"},
@@ -376,7 +437,7 @@ class TestChat:
         assert "session_id" in data
         assert data["status"] == "running"
 
-    def test_chat_with_existing_session(self, client):
+    def test_chat_with_existing_session(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -392,7 +453,7 @@ class TestChat:
         assert resp.status_code == 202
         assert resp.json()["session_id"] == "s1"
 
-    def test_chat_with_file_id(self, client):
+    def test_chat_with_file_id(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.files["f1"] = FileRecord(
@@ -410,7 +471,7 @@ class TestChat:
         )
         assert resp.status_code == 202
 
-    def test_chat_missing_file_id_returns_404(self, client):
+    def test_chat_missing_file_id_returns_404(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "Summarize", "file_id": "nonexistent"},
@@ -420,7 +481,7 @@ class TestChat:
         assert data["error"]["code"] == "NOT_FOUND"
         assert "File not found" in data["error"]["message"]
 
-    def test_chat_missing_content_and_file_id_returns_400(self, client):
+    def test_chat_missing_content_and_file_id_returns_400(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "What?"},
@@ -430,7 +491,7 @@ class TestChat:
         assert data["error"]["code"] == "VALIDATION_ERROR"
         assert "content or file_id" in data["error"]["message"]
 
-    def test_chat_rejects_invalid_mode(self, client):
+    def test_chat_rejects_invalid_mode(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
             json={"query": "What?", "content": "text", "mode": "invalid_mode"},
@@ -444,7 +505,7 @@ class TestChat:
 
 
 class TestErrorResponseFormat:
-    def test_404_error_format(self, client):
+    def test_404_error_format(self, client: TestClient) -> None:
         resp = client.get("/api/sessions/nonexistent")
         assert resp.status_code == 404
         data = resp.json()
@@ -453,7 +514,7 @@ class TestErrorResponseFormat:
         assert isinstance(data["error"]["message"], str)
         assert "details" in data["error"]
 
-    def test_400_error_format(self, client):
+    def test_400_error_format(self, client: TestClient) -> None:
         resp = client.post(
             "/api/files/upload",
             files={"file": ("image.png", io.BytesIO(b"fake"), "image/png")},
@@ -463,7 +524,7 @@ class TestErrorResponseFormat:
         assert "error" in data
         assert data["error"]["code"] == "VALIDATION_ERROR"
 
-    def test_404_file_error_format(self, client):
+    def test_404_file_error_format(self, client: TestClient) -> None:
         resp = client.get("/api/files/nonexistent")
         assert resp.status_code == 404
         data = resp.json()
@@ -471,14 +532,14 @@ class TestErrorResponseFormat:
         assert data["error"]["code"] == "NOT_FOUND"
         assert "File not found" in data["error"]["message"]
 
-    def test_404_trace_error_format(self, client):
+    def test_404_trace_error_format(self, client: TestClient) -> None:
         resp = client.get("/api/traces/nonexistent")
         assert resp.status_code == 404
         data = resp.json()
         assert "error" in data
         assert data["error"]["code"] == "NOT_FOUND"
 
-    def test_404_metrics_error_format(self, client):
+    def test_404_metrics_error_format(self, client: TestClient) -> None:
         resp = client.get("/api/metrics/nonexistent")
         assert resp.status_code == 404
         data = resp.json()
@@ -492,7 +553,7 @@ class TestErrorResponseFormat:
 
 
 class TestConfigMerge:
-    def test_budget_merge_preserves_unset_fields(self, client):
+    def test_budget_merge_preserves_unset_fields(self, client: TestClient) -> None:
         # Set initial budget to known values
         client.put(
             "/api/config",
@@ -521,7 +582,7 @@ class TestConfigMerge:
         assert data["budget"]["max_time_seconds"] == 60
         assert data["budget"]["max_recursion_depth"] == 10
 
-    def test_appearance_merge_preserves_unset_fields(self, client):
+    def test_appearance_merge_preserves_unset_fields(self, client: TestClient) -> None:
         # Set initial appearance
         client.put(
             "/api/config",
@@ -545,7 +606,7 @@ class TestConfigMerge:
 
 
 class TestWebSocket:
-    def test_websocket_malformed_json(self, client):
+    def test_websocket_malformed_json(self, client: TestClient) -> None:
         with client.websocket_connect("/ws/chat/test-session") as ws:
             # Read the connected message
             connected = ws.receive_json()
@@ -558,7 +619,7 @@ class TestWebSocket:
             assert error["data"]["code"] == "INVALID_JSON"
             assert error["data"]["recoverable"] is True
 
-    def test_websocket_connected_message(self, client):
+    def test_websocket_connected_message(self, client: TestClient) -> None:
         with client.websocket_connect("/ws/chat/my-session") as ws:
             msg = ws.receive_json()
             assert msg["type"] == "connected"
@@ -571,11 +632,13 @@ class TestWebSocket:
 
 
 class TestSessionPersistence:
-    def test_save_and_load_sessions(self, tmp_path, monkeypatch):
+    def test_save_and_load_sessions(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Sessions saved to disk are loaded back on startup."""
         import rlmkit.server.dependencies as deps
 
-        sessions_file = tmp_path / "sessions.json"
+        sessions_file = tmp_path / "sessions.json"  # type: ignore[operator]
         monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
 
         state = get_state()
@@ -615,11 +678,11 @@ class TestSessionPersistence:
         assert state2.sessions["s1"].name == "Test Session"
         assert len(state2.sessions["s1"].messages) == 2
 
-    def test_session_cap(self, tmp_path, monkeypatch):
+    def test_session_cap(self, tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
         """Only the most recent N sessions are persisted."""
         import rlmkit.server.dependencies as deps
 
-        sessions_file = tmp_path / "sessions.json"
+        sessions_file = tmp_path / "sessions.json"  # type: ignore[operator]
         monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
         monkeypatch.setattr(deps, "_MAX_PERSISTED_SESSIONS", 5)
 
@@ -639,19 +702,19 @@ class TestSessionPersistence:
 
         import json
 
-        saved = json.loads(sessions_file.read_text())
+        saved = json.loads(sessions_file.read_text())  # type: ignore[union-attr]
         assert len(saved) == 5
         # Most recent sessions should be kept (s9, s8, s7, s6, s5)
         saved_ids = {s["id"] for s in saved}
         assert "s9" in saved_ids
         assert "s0" not in saved_ids
 
-    def test_corrupt_sessions_file(self, tmp_path, monkeypatch):
+    def test_corrupt_sessions_file(self, tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
         """Corrupt sessions file is handled gracefully."""
         import rlmkit.server.dependencies as deps
 
-        sessions_file = tmp_path / "sessions.json"
-        sessions_file.write_text("not valid json{{{")
+        sessions_file = tmp_path / "sessions.json"  # type: ignore[operator]
+        sessions_file.write_text("not valid json{{{")  # type: ignore[union-attr]
         monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
 
         state = get_state()
@@ -667,7 +730,7 @@ class TestSessionPersistence:
 
 
 class TestMetricsByProvider:
-    def test_metrics_include_by_provider(self, client):
+    def test_metrics_include_by_provider(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -715,7 +778,7 @@ class TestMetricsByProvider:
 class TestTrajectoryLogging:
     """Test that trajectory JSONL files are saved when configured."""
 
-    def test_save_trajectory_writes_jsonl(self, tmp_path):
+    def test_save_trajectory_writes_jsonl(self, tmp_path: object) -> None:
         from rlmkit.application.dto import RunResultDTO
         from rlmkit.server.routes.chat import _save_trajectory
 
@@ -745,12 +808,12 @@ class TestTrajectoryLogging:
                 },
             ],
         )
-        trace_dir = str(tmp_path / "trajectories")
+        trace_dir = str(tmp_path / "trajectories")  # type: ignore[operator]
         _save_trajectory(execution, result, trace_dir)
 
-        filepath = tmp_path / "trajectories" / "exec-1.jsonl"
+        filepath = tmp_path / "trajectories" / "exec-1.jsonl"  # type: ignore[operator]
         assert filepath.exists()
-        lines = filepath.read_text().strip().split("\n")
+        lines = filepath.read_text().strip().split("\n")  # type: ignore[union-attr]
         # First line is metadata, second is the step
         assert len(lines) == 2
         import json

@@ -164,6 +164,7 @@ export interface RuntimeSettings {
 export interface ProviderConfigEntry {
   provider: string;
   model: string;
+  endpoint: string | null;
   runtime_settings: RuntimeSettings;
   enabled: boolean;
 }
@@ -321,6 +322,12 @@ export const getSession = (id: string) => fetchJSON<SessionDetail>(`/api/session
 export const deleteSession = (id: string) =>
   fetchJSON<void>(`/api/sessions/${id}`, { method: "DELETE" });
 
+export const renameSession = (id: string, name: string) =>
+  fetchJSON<SessionSummary>(`/api/sessions/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ name }),
+  });
+
 // Metrics
 export const getMetrics = (sessionId: string) =>
   fetchJSON<MetricsResponse>(`/api/metrics/${sessionId}`);
@@ -375,6 +382,11 @@ export const saveProvider = (providerName: string, req: ProviderSaveRequest) =>
     method: "PUT",
     body: JSON.stringify(req),
   });
+
+export const getProviderModels = (name: string, endpoint?: string) =>
+  fetchJSON<ModelInfo[]>(
+    `/api/providers/${name}/models${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ""}`,
+  );
 
 // Config
 export const getConfig = () => fetchJSON<AppConfig>("/api/config");

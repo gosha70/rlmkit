@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import useSWR from "swr";
-import { getSessions, getHealth, deleteSession as apiDeleteSession, type SessionSummary } from "@/lib/api";
+import { getSessions, getHealth, deleteSession as apiDeleteSession, renameSession as apiRenameSession, type SessionSummary } from "@/lib/api";
 import { Sidebar } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
 import { StatusIndicator } from "./status-indicator";
@@ -40,6 +40,14 @@ export function AppShell({
     [mutateSessions],
   );
 
+  const handleRenameSession = useCallback(
+    async (id: string, name: string) => {
+      await apiRenameSession(id, name);
+      await mutateSessions();
+    },
+    [mutateSessions],
+  );
+
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <Sidebar
@@ -50,6 +58,7 @@ export function AppShell({
         onNewSession={onNewSession}
         onDeleteSession={handleDeleteSession}
         onSelectSession={onSelectSession}
+        onRenameSession={handleRenameSession}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">

@@ -7,6 +7,7 @@ import os
 import time
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from rlmkit.server.dependencies import AppState, get_state
@@ -22,6 +23,10 @@ from rlmkit.server.models import (
 from rlmkit.ui.data.providers_catalog import PROVIDERS, PROVIDERS_BY_KEY
 
 logger = logging.getLogger(__name__)
+
+# Cache for dynamic model lists: provider_key -> (timestamp, models)
+_model_cache: dict[str, tuple[float, list[ModelInfo]]] = {}
+_MODEL_CACHE_TTL = 300  # 5 minutes
 
 router = APIRouter()
 
@@ -117,6 +122,9 @@ async def list_providers(
 
         default_model = p.models[0].name if p.models else None
 
+        # Use persisted endpoint if set, otherwise catalog default
+        effective_endpoint = pc.endpoint if pc and pc.endpoint else p.default_endpoint
+
         result.append(
             ProviderInfo(
                 name=p.key,
@@ -126,7 +134,7 @@ async def list_providers(
                 default_model=default_model,
                 configured=configured,
                 requires_api_key=p.requires_api_key,
-                default_endpoint=p.default_endpoint,
+                default_endpoint=effective_endpoint,
                 model_input_hint=p.model_input_hint,
                 masked_api_key=masked,
             )
@@ -280,9 +288,11 @@ async def save_provider(
         saved=True,
         provider=provider_name,
         env_var=env_var,
-        message=f"API key saved to .env as {env_var}"
-        if env_var and req.api_key
-        else "Configuration saved",
+        message=(
+            f"API key saved to .env as {env_var}"
+            if env_var and req.api_key
+            else "Configuration saved"
+        ),
     )
 
 
@@ -308,7 +318,113 @@ def _update_provider_config(state: AppState, provider_name: str, req: ProviderSa
 
     if req.model is not None:
         existing.model = req.model
+    if req.endpoint is not None:
+        existing.endpoint = req.endpoint
     if req.runtime_settings is not None:
         existing.runtime_settings = req.runtime_settings
     if req.enabled is not None:
         existing.enabled = req.enabled
+
+
+async def _fetch_models_from_api(
+    provider_name: str, endpoint_override: str | None = None
+) -> list[ModelInfo]:
+    """Fetch live model list from a provider's API.
+
+    For local providers (Ollama, LM Studio), *endpoint_override* takes
+    precedence over the catalog default so users on non-standard ports
+    hit the correct server.
+    """
+    entry = PROVIDERS_BY_KEY.get(provider_name)
+    if not entry:
+        return []
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        if provider_name == "anthropic":
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                return []
+            resp = await client.get(
+                "https://api.anthropic.com/v1/models",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            return [
+                ModelInfo(
+                    name=m["id"],
+                    input_cost_per_1k=0.0,
+                    output_cost_per_1k=0.0,
+                )
+                for m in data
+            ]
+
+        elif provider_name == "openai":
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            if not api_key:
+                return []
+            resp = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            chat_prefixes = ("gpt-", "o1", "o3", "o4")
+            return [
+                ModelInfo(
+                    name=m["id"],
+                    input_cost_per_1k=0.0,
+                    output_cost_per_1k=0.0,
+                )
+                for m in data
+                if any(m["id"].startswith(p) for p in chat_prefixes)
+            ]
+
+        elif provider_name == "ollama":
+            endpoint = endpoint_override or entry.default_endpoint or "http://localhost:11434"
+            resp = await client.get(f"{endpoint}/api/tags")
+            resp.raise_for_status()
+            models = resp.json().get("models", [])
+            return [
+                ModelInfo(name=m["name"], input_cost_per_1k=0.0, output_cost_per_1k=0.0)
+                for m in models
+            ]
+
+        elif provider_name == "lmstudio":
+            endpoint = endpoint_override or entry.default_endpoint or "http://localhost:1234/v1"
+            resp = await client.get(f"{endpoint}/models")
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            return [
+                ModelInfo(name=m["id"], input_cost_per_1k=0.0, output_cost_per_1k=0.0) for m in data
+            ]
+
+    return []
+
+
+@router.get("/api/providers/{provider_name}/models")
+async def list_provider_models(
+    provider_name: str,
+    endpoint: str | None = None,
+    state: AppState = Depends(get_state),  # noqa: B008
+) -> list[ModelInfo]:
+    """Fetch models live from a provider API, with 5-minute cache and catalog fallback."""
+    # Cache key includes endpoint so different endpoints don't share stale data
+    cache_key = f"{provider_name}:{endpoint or ''}"
+    cached = _model_cache.get(cache_key)
+    if cached and time.time() - cached[0] < _MODEL_CACHE_TTL:
+        return cached[1]
+
+    try:
+        models = await _fetch_models_from_api(provider_name, endpoint_override=endpoint)
+        if models:
+            _model_cache[cache_key] = (time.time(), models)
+            return models
+    except Exception as exc:
+        logger.warning("Failed to fetch models for %s: %s", provider_name, exc)
+
+    # Fall back to hardcoded catalog
+    return _build_model_infos(provider_name)

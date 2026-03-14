@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,6 +11,7 @@ from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
     SessionDetail,
     SessionMessage,
+    SessionRenameRequest,
     SessionSummary,
     MessageMetrics,
 )
@@ -88,6 +89,28 @@ async def get_session(
         updated_at=session.updated_at,
         messages=messages,
         conversations=conversations,
+    )
+
+
+@router.put("/api/sessions/{session_id}")
+async def rename_session(
+    session_id: str,
+    req: SessionRenameRequest,
+    state: AppState = Depends(get_state),
+) -> SessionSummary:
+    """Rename a session."""
+    session = state.sessions.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.name = req.name.strip() or session.name
+    session.updated_at = datetime.now(timezone.utc)
+    state.save_sessions()
+    return SessionSummary(
+        id=session.id,
+        name=session.name,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        message_count=len(session.messages),
     )
 
 
