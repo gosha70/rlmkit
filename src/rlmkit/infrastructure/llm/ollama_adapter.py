@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterator, List
+from collections.abc import Iterator
 
 from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.application.ports.llm_port import LLMPort
 
 
 class OllamaAdapter:
@@ -19,7 +18,7 @@ class OllamaAdapter:
     def __init__(self, client: object) -> None:
         self._client = client
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Generate completion via the wrapped Ollama client.
 
         Args:
@@ -42,7 +41,7 @@ class OllamaAdapter:
         return LLMResponseDTO(content=text, model=model)
 
     def complete_stream(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
         """Streaming is not yet implemented for the legacy client."""
         result = self.complete(messages)
@@ -52,6 +51,6 @@ class OllamaAdapter:
         """Estimate tokens using a heuristic."""
         return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         """Ollama models are free (local). Return zero pricing."""
         return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}

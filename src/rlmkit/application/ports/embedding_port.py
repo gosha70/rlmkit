@@ -6,14 +6,14 @@ implement this Protocol to be usable by RAG and vector search use cases.
 
 from __future__ import annotations
 
-from typing import List, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
 class EmbeddingPort(Protocol):
     """Protocol for embedding provider adapters."""
 
-    def embed(self, text: str) -> List[float]:
+    def embed(self, text: str) -> list[float]:
         """Produce an embedding vector for a single text.
 
         Args:
@@ -24,7 +24,7 @@ class EmbeddingPort(Protocol):
         """
         ...
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Produce embedding vectors for a batch of texts.
 
         Args:

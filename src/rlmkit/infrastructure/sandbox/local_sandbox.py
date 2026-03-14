@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from rlmkit.application.dto import ExecutionResultDTO
-from rlmkit.application.ports.sandbox_port import SandboxPort
 from rlmkit.envs.pyrepl_env import PyReplEnv
 
 
@@ -25,7 +24,7 @@ class LocalSandboxAdapter:
     def __init__(
         self,
         safe_mode: bool = False,
-        allowed_imports: Optional[list[str]] = None,
+        allowed_imports: list[str] | None = None,
         max_exec_time_s: float = 5.0,
         max_stdout_chars: int = 10000,
     ) -> None:
@@ -74,7 +73,7 @@ class LocalSandboxAdapter:
         if name == "P" and isinstance(value, str):
             self._env.set_content(value)
 
-    def get_variable(self, name: str) -> Optional[Any]:
+    def get_variable(self, name: str) -> Any | None:
         """Retrieve a variable from the REPL namespace.
 
         Args:

@@ -6,7 +6,7 @@ this Protocol to be usable by the application use cases.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -19,9 +19,9 @@ class StoragePort(Protocol):
         self,
         name: str = "Untitled",
         mode: str = "compare",
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        provider: str | None = None,
+        model: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Create a new conversation and return its ID.
 
@@ -37,7 +37,7 @@ class StoragePort(Protocol):
         """
         ...
 
-    def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+    def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         """Retrieve a conversation by ID.
 
         Args:
@@ -48,7 +48,7 @@ class StoragePort(Protocol):
         """
         ...
 
-    def list_conversations(self) -> List[Dict[str, Any]]:
+    def list_conversations(self) -> list[dict[str, Any]]:
         """List all conversations ordered by most recently updated.
 
         Returns:
@@ -67,7 +67,7 @@ class StoragePort(Protocol):
     # -- File context --
 
     def save_file_context(
-        self, content: str, filename: Optional[str] = None
+        self, content: str, filename: str | None = None
     ) -> str:
         """Store file content (deduplicated by hash).
 
@@ -80,7 +80,7 @@ class StoragePort(Protocol):
         """
         ...
 
-    def get_file_context(self, content_hash: str) -> Optional[str]:
+    def get_file_context(self, content_hash: str) -> str | None:
         """Retrieve file content by its hash.
 
         Args:
@@ -96,10 +96,10 @@ class StoragePort(Protocol):
     def add_chunks(
         self,
         collection: str,
-        chunks: List[str],
-        embeddings: List[List[float]],
-        source_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        chunks: list[str],
+        embeddings: list[list[float]],
+        source_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         """Store text chunks with their embeddings.
 
@@ -118,9 +118,9 @@ class StoragePort(Protocol):
     def search_chunks(
         self,
         collection: str,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
-    ) -> List[Tuple[float, str, str]]:
+    ) -> list[tuple[float, str, str]]:
         """Search for similar chunks by cosine similarity.
 
         Args:

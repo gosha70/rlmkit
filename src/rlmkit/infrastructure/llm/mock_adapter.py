@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterator, List
+from collections.abc import Iterator
 
 from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.application.ports.llm_port import LLMPort
 
 
 class MockLLMAdapter:
@@ -18,14 +17,14 @@ class MockLLMAdapter:
             exhausted the last response is repeated.
     """
 
-    def __init__(self, responses: List[str]) -> None:
+    def __init__(self, responses: list[str]) -> None:
         if not responses:
             raise ValueError("MockLLMAdapter requires at least one response")
         self._responses = responses
         self._call_count = 0
-        self.call_history: List[List[Dict[str, str]]] = []
+        self.call_history: list[list[dict[str, str]]] = []
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Return the next canned response.
 
         Args:
@@ -41,7 +40,7 @@ class MockLLMAdapter:
         return LLMResponseDTO(content=text, model="mock")
 
     def complete_stream(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
         """Yield the next canned response as a single chunk."""
         result = self.complete(messages)
@@ -51,7 +50,7 @@ class MockLLMAdapter:
         """Simple heuristic token count."""
         return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         """Mock pricing (free)."""
         return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
 

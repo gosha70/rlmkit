@@ -6,8 +6,7 @@ no external dependencies and can be consumed by any layer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -28,7 +27,7 @@ class StepCompleted:
     duration: float = 0.0
     tokens_used: int = 0
     recursion_depth: int = 0
-    model: Optional[str] = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,7 +58,7 @@ class ExecutionStarted:
 
     query: str
     mode: str
-    model: Optional[str] = None
+    model: str | None = None
     content_length: int = 0
 
 
@@ -81,4 +80,4 @@ class ExecutionCompleted:
     total_tokens: int = 0
     total_cost: float = 0.0
     duration: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None

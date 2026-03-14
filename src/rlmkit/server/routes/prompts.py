@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from fastapi import APIRouter, Depends
 
 from rlmkit.server.dependencies import AppState, get_state
@@ -33,7 +31,7 @@ async def update_system_prompts(
 
 
 @router.get("/api/system-prompts/templates")
-async def list_templates() -> List[SystemPromptTemplate]:
+async def list_templates() -> list[SystemPromptTemplate]:
     """List built-in system prompt templates."""
     result = []
     for name, data in SYSTEM_PROMPT_TEMPLATES.items():

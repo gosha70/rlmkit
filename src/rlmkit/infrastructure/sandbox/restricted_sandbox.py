@@ -11,8 +11,8 @@ blocks dangerous patterns at compile time:
 from __future__ import annotations
 
 import io
-from contextlib import redirect_stdout, redirect_stderr
-from typing import Any, Optional
+from contextlib import redirect_stderr, redirect_stdout
+from typing import Any
 
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals
 from RestrictedPython.Eval import default_guarded_getitem, default_guarded_getiter
@@ -24,7 +24,6 @@ from RestrictedPython.PrintCollector import PrintCollector
 
 from rlmkit.application.dto import ExecutionResultDTO
 from rlmkit.domain.exceptions import SecurityViolationError
-
 
 # Modules considered safe for LLM-generated code (subset of rlmkit defaults)
 _DEFAULT_ALLOWED_MODULES = frozenset({
@@ -67,7 +66,7 @@ class RestrictedSandboxAdapter:
 
     def __init__(
         self,
-        allowed_modules: Optional[frozenset[str]] = None,
+        allowed_modules: frozenset[str] | None = None,
         max_stdout_chars: int = 10_000,
     ) -> None:
         self._allowed_modules = allowed_modules or _DEFAULT_ALLOWED_MODULES
@@ -100,7 +99,7 @@ class RestrictedSandboxAdapter:
         # 2. Execute in the restricted namespace
         stdout_buf = io.StringIO()
         stderr_buf = io.StringIO()
-        exception_msg: Optional[str] = None
+        exception_msg: str | None = None
         truncated = False
 
         try:
@@ -149,7 +148,7 @@ class RestrictedSandboxAdapter:
         """
         self._namespace[name] = value
 
-    def get_variable(self, name: str) -> Optional[Any]:
+    def get_variable(self, name: str) -> Any | None:
         """Retrieve a variable from the sandbox namespace.
 
         Args:

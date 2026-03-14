@@ -7,7 +7,7 @@ disposable Docker containers with resource limits and network isolation.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from rlmkit.application.dto import ExecutionResultDTO
 
@@ -105,7 +105,7 @@ class DockerSandboxAdapter:
         """
         self._namespace[name] = value
 
-    def get_variable(self, name: str) -> Optional[Any]:
+    def get_variable(self, name: str) -> Any | None:
         """Retrieve a variable from the namespace.
 
         Note: Docker containers are ephemeral, so this only returns

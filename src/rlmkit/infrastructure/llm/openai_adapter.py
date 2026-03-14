@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterator, List
+from collections.abc import Iterator
 
 from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.application.ports.llm_port import LLMPort
 
 
 class OpenAIAdapter:
@@ -19,7 +18,7 @@ class OpenAIAdapter:
     def __init__(self, client: object) -> None:
         self._client = client
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Generate completion via the wrapped OpenAI client.
 
         Args:
@@ -42,7 +41,7 @@ class OpenAIAdapter:
         return LLMResponseDTO(content=text, model=model)
 
     def complete_stream(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
         """Streaming is not yet implemented for the legacy client."""
         result = self.complete(messages)
@@ -54,7 +53,7 @@ class OpenAIAdapter:
             return self._client.estimate_tokens(text)
         return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         """Return pricing for the configured model."""
         model = getattr(self._client, "model", "gpt-4")
         pricing_db = {

@@ -7,7 +7,7 @@ creating coupling to domain entities or infrastructure types.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -21,10 +21,10 @@ class LLMRequestDTO:
         max_tokens: Maximum tokens to generate.
     """
 
-    messages: List[Dict[str, str]]
-    model: Optional[str] = None
+    messages: list[dict[str, str]]
+    model: str | None = None
     temperature: float = 0.7
-    max_tokens: Optional[int] = None
+    max_tokens: int | None = None
 
 
 @dataclass
@@ -43,7 +43,7 @@ class LLMResponseDTO:
     model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
 
 @dataclass
@@ -60,7 +60,7 @@ class ExecutionResultDTO:
 
     stdout: str = ""
     stderr: str = ""
-    exception: Optional[str] = None
+    exception: str | None = None
     timeout: bool = False
     truncated: bool = False
 
@@ -89,16 +89,16 @@ class RunConfigDTO:
     """
 
     mode: str = "auto"
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    api_key: Optional[str] = None
+    provider: str | None = None
+    model: str | None = None
+    api_key: str | None = None
     max_steps: int = 16
-    max_tokens: Optional[int] = None
-    max_cost: Optional[float] = None
-    max_time_seconds: Optional[float] = None
+    max_tokens: int | None = None
+    max_cost: float | None = None
+    max_time_seconds: float | None = None
     max_recursion_depth: int = 5
     verbose: bool = False
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -122,14 +122,14 @@ class RunResultDTO:
     answer: str = ""
     mode_used: str = ""
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     steps: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     total_cost: float = 0.0
     elapsed_time: float = 0.0
-    trace: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    trace: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:

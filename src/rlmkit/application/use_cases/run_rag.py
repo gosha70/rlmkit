@@ -7,11 +7,10 @@ for the query, and sends them to the LLM as context.
 from __future__ import annotations
 
 import time
-from typing import List, Optional
 
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
-from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.embedding_port import EmbeddingPort
+from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.storage_port import StoragePort
 
 
@@ -38,7 +37,7 @@ class RunRAGUseCase:
         self,
         content: str,
         query: str,
-        config: Optional[RunConfigDTO] = None,
+        config: RunConfigDTO | None = None,
     ) -> RunResultDTO:
         """Run a RAG query: chunk, embed, retrieve, generate.
 
@@ -134,7 +133,7 @@ class RunRAGUseCase:
             )
 
     @staticmethod
-    def _chunk_text(text: str, chunk_size: int = 1000) -> List[str]:
+    def _chunk_text(text: str, chunk_size: int = 1000) -> list[str]:
         """Split text into chunks of approximately chunk_size characters."""
         chunks = []
         for i in range(0, len(text), chunk_size):

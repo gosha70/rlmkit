@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from rlmkit.application.ports.sandbox_port import SandboxPort
+
 from .local_sandbox import LocalSandboxAdapter
 
 
 def create_sandbox(
     sandbox_type: str = "local",
     safe_mode: bool = False,
-    allowed_imports: Optional[list[str]] = None,
+    allowed_imports: list[str] | None = None,
     max_exec_time_s: float = 5.0,
     max_stdout_chars: int = 10000,
 ) -> SandboxPort:

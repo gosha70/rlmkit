@@ -8,7 +8,7 @@ All are frozen dataclasses for immutability.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ class TokenCount:
             output_tokens=self.output_tokens + other.output_tokens,
         )
 
-    def to_dict(self) -> Dict[str, int]:
+    def to_dict(self) -> dict[str, int]:
         """Serialize to a plain dictionary."""
         return {
             "input_tokens": self.input_tokens,
@@ -68,7 +68,7 @@ class Cost:
             output_cost=self.output_cost + other.output_cost,
         )
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """Serialize to a plain dictionary."""
         return {
             "input_cost": self.input_cost,
@@ -143,7 +143,7 @@ class RecursionDepth:
         """Return a new RecursionDepth one level deeper."""
         return RecursionDepth(current=self.current + 1, maximum=self.maximum)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dictionary."""
         return {
             "current": self.current,

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from rlmkit.server.dependencies import AppState, FileRecord, get_state
-from rlmkit.server.models import ErrorDetail, ErrorResponse, FileUploadResponse
+from rlmkit.server.models import FileUploadResponse
 
 router = APIRouter()
 
@@ -92,8 +92,9 @@ def _extract_text(raw: bytes, ext: str) -> str:
         return raw.decode("utf-8", errors="replace")
     if ext == ".pdf":
         try:
-            from PyPDF2 import PdfReader
             import io
+
+            from PyPDF2 import PdfReader
 
             reader = PdfReader(io.BytesIO(raw))
             return "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -101,8 +102,9 @@ def _extract_text(raw: bytes, ext: str) -> str:
             return raw.decode("utf-8", errors="replace")
     if ext == ".docx":
         try:
-            import docx
             import io
+
+            import docx
 
             doc = docx.Document(io.BytesIO(raw))
             return "\n".join(p.text for p in doc.paragraphs)

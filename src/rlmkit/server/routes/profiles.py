@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -17,7 +16,7 @@ from rlmkit.server.models import (
 router = APIRouter()
 
 # Built-in profiles (read-only, always available)
-BUILTIN_PROFILES: List[RunProfile] = [
+BUILTIN_PROFILES: list[RunProfile] = [
     RunProfile(
         id="builtin-fast",
         name="Fast & cheap",
@@ -104,7 +103,7 @@ BUILTIN_PROFILES: List[RunProfile] = [
 @router.get("/api/profiles")
 async def list_profiles(
     state: AppState = Depends(get_state),
-) -> List[RunProfile]:
+) -> list[RunProfile]:
     """List all profiles (builtins + user-created)."""
     return list(BUILTIN_PROFILES) + list(state.user_profiles)
 

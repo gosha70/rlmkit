@@ -7,7 +7,7 @@ They represent the fundamental concepts of the RLM paradigm.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 
 @dataclass
@@ -24,7 +24,7 @@ class Query:
     content: str
     question: str
     mode: Literal["direct", "rag", "rlm", "auto", "compare"] = "auto"
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -43,9 +43,9 @@ class Response:
     answer: str
     mode_used: str
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     steps: int = 0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -69,18 +69,18 @@ class TraceStep:
 
     index: int
     action_type: Literal["inspect", "subcall", "final", "error"]
-    code: Optional[str] = None
-    output: Optional[str] = None
+    code: str | None = None
+    output: str | None = None
     tokens_used: int = 0
     timestamp: float = 0.0
     recursion_depth: int = 0
     cost: float = 0.0
     duration: float = 0.0
-    model: Optional[str] = None
-    raw_response: Optional[str] = None
-    error: Optional[str] = None
+    model: str | None = None
+    raw_response: str | None = None
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dictionary."""
         return {
             "index": self.index,
@@ -109,10 +109,10 @@ class ExecutionTrace:
         metadata: Additional trace-level metadata.
     """
 
-    steps: List[TraceStep] = field(default_factory=list)
+    steps: list[TraceStep] = field(default_factory=list)
     start_time: float = 0.0
-    end_time: Optional[float] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    end_time: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_step(self, step: TraceStep) -> None:
         """Append a step to the trace."""
@@ -135,7 +135,7 @@ class ExecutionTrace:
             return 0
         return max(s.recursion_depth for s in self.steps)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize the entire trace to a plain dictionary."""
         return {
             "steps": [s.to_dict() for s in self.steps],
@@ -160,11 +160,11 @@ class BudgetConfig:
         max_recursion_depth: Maximum recursion depth (None = unlimited).
     """
 
-    max_steps: Optional[int] = None
-    max_tokens: Optional[int] = None
-    max_cost: Optional[float] = None
-    max_time_seconds: Optional[float] = None
-    max_recursion_depth: Optional[int] = None
+    max_steps: int | None = None
+    max_tokens: int | None = None
+    max_cost: float | None = None
+    max_time_seconds: float | None = None
+    max_recursion_depth: int | None = None
 
 
 @dataclass

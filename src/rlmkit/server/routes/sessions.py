@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
+    MessageMetrics,
     SessionDetail,
     SessionMessage,
     SessionRenameRequest,
     SessionSummary,
-    MessageMetrics,
 )
 
 router = APIRouter()
@@ -24,7 +23,7 @@ async def list_sessions(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     state: AppState = Depends(get_state),
-) -> List[SessionSummary]:
+) -> list[SessionSummary]:
     """List conversation sessions."""
     sessions = sorted(
         state.sessions.values(),

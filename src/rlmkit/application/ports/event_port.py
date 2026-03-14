@@ -6,7 +6,7 @@ to enable WebSocket streaming to clients.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -17,10 +17,10 @@ class ExecutionEventEmitter(Protocol):
         """Emit a single token from LLM streaming output."""
         ...
 
-    async def on_step(self, step_data: Dict[str, Any]) -> None:
+    async def on_step(self, step_data: dict[str, Any]) -> None:
         """Emit step completion data (trace entry)."""
         ...
 
-    async def on_metrics(self, metrics: Dict[str, Any]) -> None:
+    async def on_metrics(self, metrics: dict[str, Any]) -> None:
         """Emit running metric totals."""
         ...

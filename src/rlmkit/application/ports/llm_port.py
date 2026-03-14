@@ -6,7 +6,8 @@ this Protocol to be usable by the application use cases.
 
 from __future__ import annotations
 
-from typing import AsyncIterator, Dict, Iterator, List, Optional, Protocol, runtime_checkable
+from collections.abc import AsyncIterator, Iterator
+from typing import Protocol, runtime_checkable
 
 from rlmkit.application.dto import LLMResponseDTO
 
@@ -19,7 +20,7 @@ class LLMPort(Protocol):
     interface to the application layer.
     """
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Generate a completion from a list of chat messages.
 
         Args:
@@ -31,7 +32,7 @@ class LLMPort(Protocol):
         ...
 
     def complete_stream(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
         """Generate a streaming completion, yielding text chunks.
 
@@ -54,7 +55,7 @@ class LLMPort(Protocol):
         """
         ...
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         """Return pricing information for the current model.
 
         Returns:
@@ -66,7 +67,7 @@ class LLMPort(Protocol):
     # -- Async counterparts for WebSocket streaming (Cycle 2) --
 
     async def complete_async(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> LLMResponseDTO:
         """Async version of :meth:`complete`.
 
@@ -82,7 +83,7 @@ class LLMPort(Protocol):
         ...
 
     async def complete_stream_async(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> AsyncIterator[str]:
         """Async streaming completion, yielding text chunks.
 

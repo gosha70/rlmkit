@@ -6,7 +6,7 @@ implement this Protocol to be usable by the application use cases.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from rlmkit.application.dto import ExecutionResultDTO
 
@@ -51,7 +51,7 @@ class SandboxPort(Protocol):
         """
         ...
 
-    def get_variable(self, name: str) -> Optional[Any]:
+    def get_variable(self, name: str) -> Any | None:
         """Retrieve a variable from the sandbox namespace.
 
         Args:

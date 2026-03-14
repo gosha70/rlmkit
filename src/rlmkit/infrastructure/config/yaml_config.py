@@ -6,13 +6,11 @@ to application-layer DTOs.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from rlmkit.application.dto import RunConfigDTO
 from rlmkit.config import RLMConfig
 
 
-def load_config(config_path: Optional[str] = None) -> RunConfigDTO:
+def load_config(config_path: str | None = None) -> RunConfigDTO:
     """Load configuration from file and convert to a RunConfigDTO.
 
     Args:
