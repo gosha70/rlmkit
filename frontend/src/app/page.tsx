@@ -23,7 +23,6 @@ import {
   submitChat,
   uploadFile,
   getProviders,
-  connectChatWS,
   getSessionEvaluations,
   submitThumbRating,
   removeThumbRating,
@@ -286,137 +285,16 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
-  // Connect WebSocket when session exists
+  // No eager WebSocket connection — all queries use REST + polling.
+  // The WS endpoint exists for future streaming support but connecting
+  // eagerly caused console errors on page load and backend restarts.
+  // Close any stale connection when session changes.
   useEffect(() => {
-    if (!sessionId) {
-      wsReadyRef.current = false;
-      return;
-    }
-
-    // Close previous connection
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
       wsReadyRef.current = false;
     }
-
-    let ws: WebSocket;
-    try {
-      ws = connectChatWS(sessionId);
-    } catch {
-      console.debug("WebSocket connection failed, will use REST fallback");
-      return;
-    }
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      wsReadyRef.current = true;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        const execId = msg.id as string | undefined;
-        if (!execId) return;
-
-        const mapping = execMapRef.current[execId];
-        if (!mapping) return;
-
-        const { turnId, chatProviderId } = mapping;
-
-        if (msg.type === "token") {
-          setTurns((prev) =>
-            prev.map((turn) =>
-              turn.id === turnId
-                ? {
-                    ...turn,
-                    responses: {
-                      ...turn.responses,
-                      [chatProviderId]: {
-                        ...turn.responses[chatProviderId],
-                        content: turn.responses[chatProviderId].content + (msg.data || ""),
-                      },
-                    },
-                  }
-                : turn,
-            ),
-          );
-        } else if (msg.type === "complete") {
-          const data = msg.data || {};
-          delete execMapRef.current[execId];
-          pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
-
-          setTurns((prev) =>
-            prev.map((turn) =>
-              turn.id === turnId
-                ? {
-                    ...turn,
-                    responses: {
-                      ...turn.responses,
-                      [chatProviderId]: {
-                        ...turn.responses[chatProviderId],
-                        content: data.answer || turn.responses[chatProviderId].content,
-                        isStreaming: false,
-                        metrics: data.metrics || {
-                          input_tokens: data.tokens_used || 0,
-                          output_tokens: 0,
-                          total_tokens: data.tokens_used || 0,
-                          cost_usd: data.cost_used || 0,
-                          elapsed_seconds: data.elapsed_seconds || 0,
-                          steps: data.steps_used || 0,
-                        },
-                      },
-                    },
-                  }
-                : turn,
-            ),
-          );
-
-          if (pendingCountRef.current === 0) {
-            setIsAnyStreaming(false);
-          }
-        } else if (msg.type === "error") {
-          delete execMapRef.current[execId];
-          pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
-
-          const errorMsg = msg.data?.message || "Execution failed";
-          setTurns((prev) =>
-            prev.map((turn) =>
-              turn.id === turnId
-                ? {
-                    ...turn,
-                    responses: {
-                      ...turn.responses,
-                      [chatProviderId]: {
-                        ...turn.responses[chatProviderId],
-                        content: `Error: ${errorMsg}`,
-                        isStreaming: false,
-                      },
-                    },
-                  }
-                : turn,
-            ),
-          );
-
-          if (pendingCountRef.current === 0) {
-            setIsAnyStreaming(false);
-          }
-        }
-      } catch {
-        // Ignore non-JSON messages (pings, etc.)
-      }
-    };
-
-    ws.onclose = () => {
-      wsReadyRef.current = false;
-      console.debug("WebSocket closed for session", sessionId);
-    };
-
-    return () => {
-      ws.close();
-      wsRef.current = null;
-      wsReadyRef.current = false;
-    };
   }, [sessionId]);
 
   // REST polling fallback — tracks timeouts so they can be cancelled on cleanup
