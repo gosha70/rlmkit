@@ -401,8 +401,8 @@ class ConfigResponse(BaseModel):
 
 
 class ConfigUpdateRequest(BaseModel):
-    active_provider: str | None = None
-    active_model: str | None = None
+    # Note: active_provider/active_model are set exclusively via
+    # PUT /api/providers/{name} to prevent dual-save-path corruption.
     budget: BudgetConfig | None = None
     sandbox: SandboxConfig | None = None
     appearance: AppearanceConfig | None = None

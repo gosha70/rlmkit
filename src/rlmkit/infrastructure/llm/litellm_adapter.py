@@ -298,7 +298,8 @@ class LiteLLMAdapter:
                 prompt_tokens=input_tokens,
                 completion_tokens=output_tokens,
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug("Cost lookup failed for model=%s: %s", self._active_model, exc)
             return 0.0
 
     # -- Private helpers --

@@ -337,7 +337,7 @@ export default function SettingsPage() {
                     try {
                       const updated = await updateConfig({
                         judge_chat_provider_id: value === "__none__" ? "" : value,
-                      } as Partial<AppConfig>);
+                      });
                       mutateConfig(updated, false);
                     } catch (err) {
                       console.error("Failed to save judge provider:", err);

@@ -468,9 +468,23 @@ export const getProviderModels = (name: string, endpoint?: string) =>
   );
 
 // Config
+
+/** Fields accepted by PUT /api/config. active_provider/active_model are
+ *  intentionally absent — those are set exclusively via PUT /api/providers/{name}. */
+export interface ConfigUpdateRequest {
+  budget?: BudgetConfig;
+  sandbox?: { type: string; docker_image?: string | null };
+  appearance?: { theme: string; sidebar_collapsed: boolean };
+  provider_configs?: ProviderConfigEntry[];
+  default_runtime_settings?: RuntimeSettings;
+  mode_config?: Partial<ModeConfig>;
+  chat_providers?: ChatProviderConfig[];
+  judge_chat_provider_id?: string | null;
+}
+
 export const getConfig = () => fetchJSON<AppConfig>("/api/config");
 
-export const updateConfig = (update: Partial<AppConfig>) =>
+export const updateConfig = (update: ConfigUpdateRequest) =>
   fetchJSON<AppConfig>("/api/config", { method: "PUT", body: JSON.stringify(update) });
 
 // Profiles

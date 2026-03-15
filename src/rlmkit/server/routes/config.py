@@ -44,6 +44,9 @@ async def update_config(
             setattr(state.config.appearance, key, value)
     if req.provider_configs is not None:
         state.config.provider_configs = req.provider_configs
+        # Reconcile active_provider/active_model so they stay consistent
+        # with whatever the caller just wrote into provider_configs.
+        state._reconcile_active_provider()
     if req.default_runtime_settings is not None:
         state.config.default_runtime_settings = req.default_runtime_settings
     if req.mode_config is not None:
