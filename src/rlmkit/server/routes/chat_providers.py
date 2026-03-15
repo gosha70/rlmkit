@@ -12,6 +12,7 @@ from rlmkit.server.models import (
     ChatProviderConfig,
     ChatProviderCreateRequest,
     ChatProviderUpdateRequest,
+    RuntimeSettings,
 )
 from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
@@ -77,8 +78,7 @@ async def create_chat_provider(
         llm_model=req.llm_model,
         profile_id=req.profile_id,
         execution_mode=req.execution_mode,
-        runtime_settings=req.runtime_settings
-        or ChatProviderConfig.model_fields["runtime_settings"].default_factory(),
+        runtime_settings=req.runtime_settings or RuntimeSettings(),
         rag_config=req.rag_config,
         rlm_max_steps=req.rlm_max_steps or 16,
         rlm_timeout_seconds=req.rlm_timeout_seconds or 60,

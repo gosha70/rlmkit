@@ -46,14 +46,14 @@ def _save_trajectory(
         for i, step_data in enumerate(result.trace):
             role = step_data.get("role", "inspect")
             action_map = {"assistant": "inspect", "execution": "subcall"}
-            action_type = action_map.get(role, "inspect")
+            action_type: str = action_map.get(role, "inspect")
             if i == len(result.trace) - 1 and result.success:
                 action_type = "final"
 
             trace.add_step(
                 CoreTraceStep(
                     index=i,
-                    action_type=action_type,
+                    action_type=action_type,  # type: ignore[arg-type]
                     code=step_data.get("code"),
                     output=step_data.get("content", ""),
                     tokens_used=step_data.get("input_tokens", 0)

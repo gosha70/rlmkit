@@ -70,7 +70,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefix frontend
       - name: TypeScript check
-        run: npx --prefix frontend tsc --noEmit
+        run: cd frontend && npx tsc --noEmit
       - name: Lint
         run: npm run lint --prefix frontend
       - name: Test

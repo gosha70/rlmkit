@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
+    BudgetConfig,
     RunProfile,
     RunProfileCreate,
     RunProfileUpdate,
+    RuntimeSettings,
 )
 
 router = APIRouter()
@@ -23,19 +25,16 @@ BUILTIN_PROFILES: list[RunProfile] = [
         description="Low-cost, fast responses using Direct mode with conservative token limits.",
         strategy="direct",
         is_builtin=True,
-        runtime_settings={
-            "temperature": 0.5,
-            "top_p": 1.0,
-            "max_output_tokens": 1000,
-            "timeout_seconds": 15,
-        },
-        budget={
-            "max_steps": 8,
-            "max_tokens": 20000,
-            "max_cost_usd": 0.5,
-            "max_time_seconds": 15,
-            "max_recursion_depth": 3,
-        },
+        runtime_settings=RuntimeSettings(
+            temperature=0.5, top_p=1.0, max_output_tokens=1000, timeout_seconds=15
+        ),
+        budget=BudgetConfig(
+            max_steps=8,
+            max_tokens=20000,
+            max_cost_usd=0.5,
+            max_time_seconds=15,
+            max_recursion_depth=3,
+        ),
     ),
     RunProfile(
         id="builtin-accurate",
@@ -43,19 +42,16 @@ BUILTIN_PROFILES: list[RunProfile] = [
         description="High-quality responses with lower temperature for precision.",
         strategy="direct",
         is_builtin=True,
-        runtime_settings={
-            "temperature": 0.2,
-            "top_p": 0.95,
-            "max_output_tokens": 4096,
-            "timeout_seconds": 30,
-        },
-        budget={
-            "max_steps": 16,
-            "max_tokens": 50000,
-            "max_cost_usd": 2.0,
-            "max_time_seconds": 30,
-            "max_recursion_depth": 5,
-        },
+        runtime_settings=RuntimeSettings(
+            temperature=0.2, top_p=0.95, max_output_tokens=4096, timeout_seconds=30
+        ),
+        budget=BudgetConfig(
+            max_steps=16,
+            max_tokens=50000,
+            max_cost_usd=2.0,
+            max_time_seconds=30,
+            max_recursion_depth=5,
+        ),
     ),
     RunProfile(
         id="builtin-rlm-deep",
@@ -63,19 +59,16 @@ BUILTIN_PROFILES: list[RunProfile] = [
         description="Deep recursive reasoning with high step budget for complex problems.",
         strategy="rlm",
         is_builtin=True,
-        runtime_settings={
-            "temperature": 0.4,
-            "top_p": 1.0,
-            "max_output_tokens": 4096,
-            "timeout_seconds": 120,
-        },
-        budget={
-            "max_steps": 32,
-            "max_tokens": 100000,
-            "max_cost_usd": 5.0,
-            "max_time_seconds": 120,
-            "max_recursion_depth": 8,
-        },
+        runtime_settings=RuntimeSettings(
+            temperature=0.4, top_p=1.0, max_output_tokens=4096, timeout_seconds=120
+        ),
+        budget=BudgetConfig(
+            max_steps=32,
+            max_tokens=100000,
+            max_cost_usd=5.0,
+            max_time_seconds=120,
+            max_recursion_depth=8,
+        ),
     ),
     RunProfile(
         id="builtin-rag",
@@ -83,19 +76,16 @@ BUILTIN_PROFILES: list[RunProfile] = [
         description="Retrieval-augmented generation with moderate token budget for grounded answers.",
         strategy="rag",
         is_builtin=True,
-        runtime_settings={
-            "temperature": 0.3,
-            "top_p": 0.95,
-            "max_output_tokens": 4096,
-            "timeout_seconds": 30,
-        },
-        budget={
-            "max_steps": 8,
-            "max_tokens": 50000,
-            "max_cost_usd": 2.0,
-            "max_time_seconds": 30,
-            "max_recursion_depth": 3,
-        },
+        runtime_settings=RuntimeSettings(
+            temperature=0.3, top_p=0.95, max_output_tokens=4096, timeout_seconds=30
+        ),
+        budget=BudgetConfig(
+            max_steps=8,
+            max_tokens=50000,
+            max_cost_usd=2.0,
+            max_time_seconds=30,
+            max_recursion_depth=3,
+        ),
     ),
 ]
 

@@ -119,4 +119,4 @@ ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests", "poc", "notebooks"]
-skips = ["B101"]  # assert is fine in non-production code
+skips = ["B101", "B102", "B112"]  # B101: assert, B102: exec (sandbox by design), B112: try-except-continue (LiteLLM pricing fallback)
