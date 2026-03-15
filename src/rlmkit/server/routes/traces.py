@@ -99,6 +99,9 @@ async def get_trace(
         result=TraceResult(
             answer=result_data.get("answer", ""),
             success=result_data.get("success", False),
+            input_tokens=result_data.get("input_tokens", 0),
+            output_tokens=result_data.get("output_tokens", 0),
+            total_cost=result_data.get("total_cost", 0.0),
         ),
         budget=TraceBudget(
             steps_used=len(execution.steps),

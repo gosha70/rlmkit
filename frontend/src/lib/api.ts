@@ -132,7 +132,7 @@ export interface TraceResponse {
   status: string;
   started_at?: string | null;
   completed_at?: string | null;
-  result: { answer: string; success: boolean };
+  result: { answer: string; success: boolean; input_tokens?: number; output_tokens?: number; total_cost?: number };
   budget: {
     steps_used: number;
     steps_limit: number;

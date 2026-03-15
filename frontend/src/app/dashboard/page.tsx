@@ -155,7 +155,7 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {!selectedSession && (
+        {!effectiveSession && (
           <div className="py-20 text-center text-muted-foreground">
             <p>Select a session to view metrics.</p>
           </div>

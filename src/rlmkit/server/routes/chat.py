@@ -313,6 +313,7 @@ async def _run_execution(
             }
             state.add_message(execution.session_id, error_msg, chat_provider_id)
             session.updated_at = now
+            state.save_sessions()
 
 
 class WebSocketEventEmitter:
@@ -601,6 +602,20 @@ async def websocket_chat(
                         exec_rec.status = "error"
                         exec_rec.completed_at = finish
                         exec_rec.result = {"answer": "", "success": False, "error": str(exc)}
+                        # Persist error message to session (mirrors REST path)
+                        if sess:
+                            error_msg = {
+                                "id": str(uuid.uuid4()),
+                                "role": "assistant",
+                                "content": f"Error: {exc}",
+                                "mode_used": m,
+                                "execution_id": exec_rec.execution_id,
+                                "chat_provider_id": cp_id,
+                                "timestamp": finish.isoformat(),
+                            }
+                            state.add_message(sess.id, error_msg, cp_id)
+                            sess.updated_at = finish
+                            state.save_sessions()
                         await ws.send_json(
                             {
                                 "type": "error",

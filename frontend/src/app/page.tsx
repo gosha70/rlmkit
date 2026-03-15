@@ -457,10 +457,10 @@ export default function ChatPage() {
                           content: trace.result.answer,
                           isStreaming: false,
                           metrics: {
-                            input_tokens: trace.budget.tokens_used,
-                            output_tokens: 0,
+                            input_tokens: trace.result.input_tokens ?? trace.budget.tokens_used,
+                            output_tokens: trace.result.output_tokens ?? 0,
                             total_tokens: trace.budget.tokens_used,
-                            cost_usd: trace.budget.cost_used,
+                            cost_usd: trace.result.total_cost ?? trace.budget.cost_used,
                             elapsed_seconds:
                               trace.completed_at && trace.started_at
                                 ? (new Date(trace.completed_at).getTime() -
