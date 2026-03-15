@@ -11,10 +11,11 @@ Skipped when nest_asyncio is unavailable (which includes CI and fresh dev
 environments).
 """
 
-import sys
 import asyncio
-import pytest
+import sys
 from pathlib import Path
+
+import pytest
 
 try:
     import nest_asyncio
@@ -31,8 +32,7 @@ except ModuleNotFoundError:
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from rlmkit.ui.services.chat_manager import ChatManager
-from rlmkit.ui.services.models import Response, ExecutionMetrics, ComparisonMetrics
-from rlmkit.ui.services.llm_config_manager import LLMConfigManager
+from rlmkit.ui.services.models import Response
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,7 @@ async def test_chat_integration():
         if providers:
             print(f"       Available: {', '.join(providers)}")
         else:
-            print(f"       ℹ️  No providers configured yet (will use mock in tests)")
+            print("       ℹ️  No providers configured yet (will use mock in tests)")
     except Exception as e:
         print(f"    ❌ Config manager access failed: {e}")
         return False
@@ -107,7 +107,7 @@ async def test_chat_integration():
             file_context="RLM is a framework for reasoning.",
             file_info=None,
         )
-        print(f"    ✅ Message processing completed")
+        print("    ✅ Message processing completed")
         print(f"       RLM Response: {result.rlm_response.content[:50]}...")
         print(f"       Direct Response: {result.direct_response.content[:50]}...")
     except Exception as e:
@@ -118,12 +118,12 @@ async def test_chat_integration():
     print("\n[5/5] Testing component imports...")
     try:
         # These imports should work if files are created correctly
-        from rlmkit.ui.pages.configuration import render_configuration_page
+        from rlmkit.ui.pages.configuration import render_configuration_page  # noqa: F401
 
         print("    ✅ Configuration page imports")
 
         # Chat page doesn't export functions, but file should exist
-        from rlmkit.ui.components import chat_message
+        from rlmkit.ui.components import chat_message  # noqa: F401
 
         print("    ✅ Chat message component imports")
 

@@ -107,7 +107,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT"]
 ignore = ["E501"]  # Line length (formatter handles)
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["N802"]  # Allow lowercase function names in tests
+"tests/*" = ["N802", "N803", "N806", "PT011"]  # Tests: allow naming conventions, broad pytest.raises
 "src/rlmkit/server/routes/*" = ["B008"]  # Depends() in FastAPI route defaults
 
 [tool.mypy]

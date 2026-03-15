@@ -50,19 +50,19 @@ def _clean_state() -> Generator[None, None, None]:
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client() -> TestClient:
     """FastAPI TestClient backed by the real application."""
     return TestClient(app)
 
 
-@pytest.fixture()
+@pytest.fixture
 def valid_provider_key() -> str:
     """Return the first key from the catalog that is recognised by the route."""
     return str(next(iter(PROVIDERS_BY_KEY)))
 
 
-@pytest.fixture()
+@pytest.fixture
 def valid_model(valid_provider_key: str) -> str:
     """Return a valid model name for the chosen provider, or a fallback."""
     entry = PROVIDERS_BY_KEY[valid_provider_key]
@@ -71,7 +71,7 @@ def valid_model(valid_provider_key: str) -> str:
     return "test-model"
 
 
-@pytest.fixture()
+@pytest.fixture
 def created_provider(
     client: TestClient, valid_provider_key: str, valid_model: str
 ) -> dict[str, Any]:

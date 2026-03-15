@@ -1,11 +1,12 @@
 """Tests for RAG strategy."""
 
 import math
+
 import pytest
+
 from rlmkit import MockLLMClient
 from rlmkit.strategies.base import LLMStrategy
 from rlmkit.strategies.rag import RAGStrategy
-
 
 # ---------------------------------------------------------------------------
 # Helpers

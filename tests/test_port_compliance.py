@@ -6,10 +6,8 @@ corresponding port Protocol classes (LLMPort, SandboxPort, etc.).
 
 import pytest
 
+from rlmkit.application.dto import ExecutionResultDTO, LLMResponseDTO
 from rlmkit.application.ports.llm_port import LLMPort
-from rlmkit.application.ports.sandbox_port import SandboxPort
-from rlmkit.application.dto import LLMResponseDTO, ExecutionResultDTO
-
 
 # ---------------------------------------------------------------------------
 # MockLLMAdapter compliance

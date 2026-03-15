@@ -1,27 +1,28 @@
 """Tests for RLM recursion (subcall) functionality."""
 
 import pytest
-from rlmkit import RLM, RLMConfig, MockLLMClient, BudgetExceeded, BudgetTracker, BudgetLimits
+
+from rlmkit import RLM, BudgetExceeded, BudgetLimits, BudgetTracker, MockLLMClient, RLMConfig
 from rlmkit.config import ExecutionConfig
 
 
 class TestSubcallBasics:
     """Test basic subcall functionality."""
-    
+
     def test_subcall_available_in_repl(self):
         """Test that subcall is available in REPL environment."""
         client = MockLLMClient([
             "```python\nprint(type(subcall))\n```",
             "FINAL: subcall is available"
         ])
-        
+
         rlm = RLM(client=client)
         result = rlm.run(prompt="test content", query="check subcall")
-        
+
         assert result.success
         # Should have printed the function type
         assert "function" in result.trace[1]["content"].lower()
-    
+
     def test_simple_subcall(self):
         """Test simple subcall execution."""
         # Main RLM calls subcall, which analyzes subset of content
@@ -33,13 +34,13 @@ class TestSubcallBasics:
             # Main RLM: Return final answer
             "FINAL: subcall returned: Hello"
         ])
-        
+
         rlm = RLM(client=client)
         result = rlm.run(prompt="Large content here", query="Test subcall")
-        
+
         assert result.success
         assert "Hello" in result.answer
-    
+
     def test_subcall_with_peek(self):
         """Test subcall analyzing a section extracted with peek."""
         client = MockLLMClient([
@@ -50,17 +51,17 @@ class TestSubcallBasics:
             # Main: Finish
             "FINAL: Section has 3 words"
         ])
-        
+
         rlm = RLM(client=client)
         result = rlm.run(prompt="This is test content for analysis", query="Analyze first section")
-        
+
         assert result.success
         assert "3 words" in result.answer
 
 
 class TestSubcallWithBudgetTracking:
     """Test subcall with budget tracking."""
-    
+
     def test_subcall_with_shared_budget(self):
         """Test subcall shares budget tracker with parent."""
         client = MockLLMClient([
@@ -71,18 +72,18 @@ class TestSubcallWithBudgetTracking:
             # Main: Finish
             "FINAL: Got sub answer"
         ])
-        
+
         # Create budget tracker
         limits = BudgetLimits(max_steps=10, max_recursion_depth=5)
         tracker = BudgetTracker(limits)
-        
+
         rlm = RLM(client=client, budget_tracker=tracker)
         result = rlm.run(prompt="content", query="test")
-        
+
         assert result.success
         # Tracker is shared between parent and child
         assert tracker is not None
-    
+
     def test_recursion_depth_limit_enforced(self):
         """Test recursion depth limit is enforced."""
         # Client that tries to recurse infinitely
@@ -90,19 +91,19 @@ class TestSubcallWithBudgetTracking:
             # Each call tries to create another subcall
             "```python\nresult = subcall('test', 'recurse')\n```",
         ])
-        
+
         limits = BudgetLimits(max_recursion_depth=2, max_steps=100)  # High step limit
         tracker = BudgetTracker(limits)
-        
+
         rlm = RLM(client=client, budget_tracker=tracker)
-        
+
         with pytest.raises(BudgetExceeded) as exc:
             rlm.run(prompt="content", query="test")
-        
+
         # Should fail due to recursion depth, not steps
-        assert ("recursion depth" in str(exc.value).lower() or 
+        assert ("recursion depth" in str(exc.value).lower() or
                 "maximum steps" in str(exc.value).lower())  # Either is acceptable
-    
+
     def test_recursion_depth_tracks_correctly(self):
         """Test recursion depth increases and decreases correctly."""
         client = MockLLMClient([
@@ -113,14 +114,14 @@ class TestSubcallWithBudgetTracking:
             # Main: Finish after sub returns
             "FINAL: main done"
         ])
-        
+
         limits = BudgetLimits(max_recursion_depth=5)
         tracker = BudgetTracker(limits)
         tracker.start()
-        
+
         rlm = RLM(client=client, budget_tracker=tracker)
         result = rlm.run(prompt="content", query="test")
-        
+
         assert result.success
         # After completion, recursion depth should be back to 0
         assert tracker.recursion_depth == 0
@@ -128,7 +129,7 @@ class TestSubcallWithBudgetTracking:
 
 class TestSubcallStepBudgeting:
     """Test step budget allocation for subcalls."""
-    
+
     def test_subcall_inherits_remaining_steps(self):
         """Test subcall gets parent's remaining steps by default."""
         client = MockLLMClient([
@@ -140,13 +141,13 @@ class TestSubcallStepBudgeting:
             # Main: Finish
             "FINAL: done"
         ])
-        
+
         config = RLMConfig(execution=ExecutionConfig(max_steps=10))
         rlm = RLM(client=client, config=config)
         result = rlm.run(prompt="content", query="test")
-        
+
         assert result.success
-    
+
     def test_subcall_custom_max_steps(self):
         """Test subcall with custom max_steps parameter."""
         client = MockLLMClient([
@@ -159,16 +160,16 @@ class TestSubcallStepBudgeting:
             # Main: Finish
             "FINAL: main done"
         ])
-        
+
         rlm = RLM(client=client)
         result = rlm.run(prompt="content", query="test")
-        
+
         assert result.success
 
 
 class TestNestedSubcalls:
     """Test nested subcall scenarios."""
-    
+
     def test_two_level_nesting(self):
         """Test subcall calling another subcall."""
         client = MockLLMClient([
@@ -183,18 +184,18 @@ class TestNestedSubcalls:
             # Level 0: Final answer
             "FINAL: level 0 got: level 1 got: level 2 answer"
         ])
-        
+
         limits = BudgetLimits(max_recursion_depth=5)
         tracker = BudgetTracker(limits)
-        
+
         rlm = RLM(client=client, budget_tracker=tracker)
         result = rlm.run(prompt="content", query="test nesting")
-        
+
         assert result.success
         assert "level 2 answer" in result.answer
         # After all returns, depth should be 0
         assert tracker.recursion_depth == 0
-    
+
     def test_multiple_sequential_subcalls(self):
         """Test multiple subcalls in sequence (not nested)."""
         client = MockLLMClient([
@@ -204,18 +205,18 @@ class TestNestedSubcalls:
             "FINAL: answer 1",
             # Main: Second subcall
             "```python\nr2 = subcall('test2', 'query2')\nprint(r2)\n```",
-            # Sub2: Answer  
+            # Sub2: Answer
             "FINAL: answer 2",
             # Main: Combine results
             "FINAL: Got answer 1 and answer 2"
         ])
-        
+
         limits = BudgetLimits(max_recursion_depth=3)
         tracker = BudgetTracker(limits)
-        
+
         rlm = RLM(client=client, budget_tracker=tracker)
         result = rlm.run(prompt="content", query="test multiple")
-        
+
         assert result.success
         assert "answer 1" in result.answer
         assert "answer 2" in result.answer
@@ -223,7 +224,7 @@ class TestNestedSubcalls:
 
 class TestSubcallErrorHandling:
     """Test error handling in subcalls."""
-    
+
     def test_subcall_with_execution_error(self):
         """Test subcall that has execution error."""
         client = MockLLMClient([
@@ -236,12 +237,12 @@ class TestSubcallErrorHandling:
             # Main: Finish
             "FINAL: subcall returned: recovered"
         ])
-        
+
         rlm = RLM(client=client)
         result = rlm.run(prompt="content", query="test")
-        
+
         assert result.success
-    
+
     def test_subcall_without_budget_tracker(self):
         """Test subcall works without budget tracker."""
         client = MockLLMClient([
@@ -252,18 +253,18 @@ class TestSubcallErrorHandling:
             # Main: Finish
             "FINAL: main done"
         ])
-        
+
         # No budget tracker
         rlm = RLM(client=client)
         result = rlm.run(prompt="content", query="test")
-        
+
         assert result.success
         assert "sub answer" in result.trace[1]["content"]
 
 
 class TestSubcallIntegration:
     """Integration tests for subcall functionality."""
-    
+
     def test_realistic_decomposition_scenario(self):
         """Test realistic task decomposition with subcalls."""
         # Simulate analyzing a document by chapters
@@ -279,15 +280,15 @@ class TestSubcallIntegration:
             # Main: Combine summaries
             "FINAL: Document covers testing and recursion"
         ])
-        
+
         content = "a" * 200  # Simulate long content
         rlm = RLM(client=client)
         result = rlm.run(prompt=content, query="Summarize the document")
-        
+
         assert result.success
         assert "testing" in result.answer
         assert "recursion" in result.answer
-    
+
     def test_subcall_with_complex_query(self):
         """Test subcall with complex multi-step query."""
         client = MockLLMClient([
@@ -299,8 +300,8 @@ class TestSubcallIntegration:
             # Main: Use result
             "FINAL: The sum is 15"
         ])
-        
+
         rlm = RLM(client=client)
         result = rlm.run(prompt="Test 5 and 10", query="Analyze numbers")
-        
+
         assert result.success

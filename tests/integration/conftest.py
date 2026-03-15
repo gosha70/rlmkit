@@ -1,26 +1,22 @@
 """Shared fixtures for integration tests."""
 
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from rlmkit import RLM, MockLLMClient, RLMConfig, BudgetLimits, BudgetTracker, CostTracker
-from rlmkit.config import ExecutionConfig
-
+from rlmkit import RLM, BudgetLimits, MockLLMClient, RLMConfig
 
 # ---------------------------------------------------------------------------
 # Mock LLM client fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_llm_client():
     """MockLLMClient that returns a single FINAL answer."""
     return MockLLMClient(["FINAL: This is the mock answer"])
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_llm_multistep():
     """MockLLMClient that performs two code steps then returns FINAL."""
     return MockLLMClient([
@@ -30,13 +26,13 @@ def mock_llm_multistep():
     ])
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_llm_never_final():
     """MockLLMClient that always returns code and never FINAL (for budget tests)."""
     return MockLLMClient(["```python\nx = peek(0, 10)\nprint(x)\n```"])
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_llm_failing():
     """LLM client that raises on every call."""
 
@@ -79,13 +75,13 @@ _SAMPLE_DOCUMENT = (
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_document():
     """Multi-paragraph text fixture (~1500 chars) covering RLM concepts."""
     return _SAMPLE_DOCUMENT
 
 
-@pytest.fixture()
+@pytest.fixture
 def large_document():
     """Longer text fixture (~10000 chars) for testing RLM on bigger content."""
     paragraphs = []
@@ -133,7 +129,7 @@ def large_document():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def budget_config():
     """BudgetLimits with conservative defaults for testing."""
     return BudgetLimits(
@@ -145,7 +141,7 @@ def budget_config():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def rlm_config_strict():
     """RLMConfig with a low step limit for fast, bounded tests."""
     cfg = RLMConfig()
@@ -158,13 +154,13 @@ def rlm_config_strict():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def rlm_instance(mock_llm_client):
     """Configured RLM instance with a simple mock LLM."""
     return RLM(client=mock_llm_client)
 
 
-@pytest.fixture()
+@pytest.fixture
 def rlm_multistep_instance(mock_llm_multistep, rlm_config_strict):
     """RLM instance wired to a multi-step mock LLM with strict config."""
     return RLM(client=mock_llm_multistep, config=rlm_config_strict)
@@ -175,7 +171,7 @@ def rlm_multistep_instance(mock_llm_multistep, rlm_config_strict):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def temp_db(tmp_path):
     """Temporary SQLite database path inside pytest's tmp_path."""
     return tmp_path / "test_rlmkit.db"

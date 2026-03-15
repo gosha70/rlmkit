@@ -10,8 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rlmkit.server.app import app
-from rlmkit.server.dependencies import get_state, reset_state
-
+from rlmkit.server.dependencies import reset_state
 
 # ---------------------------------------------------------------------------
 # Client and state management
@@ -26,7 +25,7 @@ def _clean_state():
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client():
     """FastAPI TestClient backed by the real application."""
     return TestClient(app)
@@ -37,7 +36,7 @@ def client():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_document():
     """Small document (~3000 chars) suitable for direct-mode queries."""
     return (
@@ -49,7 +48,7 @@ def sample_document():
     ) * 10
 
 
-@pytest.fixture()
+@pytest.fixture
 def large_document():
     """Large document (~50000 chars) suitable for RLM-mode queries."""
     sections = []
@@ -76,7 +75,7 @@ def large_document():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def uploaded_file_id(client):
     """Upload a small text file and return its file ID."""
     resp = client.post(

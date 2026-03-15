@@ -6,9 +6,9 @@ a FINAL answer based on what it *thinks* the code should produce,
 rather than acknowledging the execution failure.
 """
 
+from rlmkit.config import ExecutionConfig, RLMConfig
 from rlmkit.core.rlm import RLM
 from rlmkit.llm import MockLLMClient
-from rlmkit.config import RLMConfig, ExecutionConfig
 
 
 def test_error_then_final_answer():
@@ -17,31 +17,31 @@ def test_error_then_final_answer():
     1. LLM provides code that will fail
     2. Code execution fails with exception
     3. LLM ignores error and provides FINAL answer anyway
-    
+
     Expected behavior: RLM should detect that the LLM is answering
     without successfully executing its code, and prompt for acknowledgment.
     """
-    
+
     # Mock responses simulating the bug
     responses = [
         # Step 1: LLM writes code to calculate
         "```python\nresult = 7 * 9 + 1\nresult\n```",
-        
+
         # Step 2: After seeing execution error, LLM provides final answer anyway
         # This is wrong because 'result' variable was never set due to error
         "FINAL: Based on my calculation, the answer is 64."
     ]
-    
+
     client = MockLLMClient(responses)
     config = RLMConfig(execution=ExecutionConfig(max_steps=10))
     rlm = RLM(client=client, config=config)
-    
+
     # Simulate a simple math question
     result = rlm.run(
         prompt="Calculate 7 * 9 + 1",
         query="What is 7 * 9 + 1?"
     )
-    
+
     print(f"Result success: {result.success}")
     print(f"Result answer: {result.answer}")
     print(f"Result steps: {result.steps}")
@@ -52,12 +52,12 @@ def test_error_then_final_answer():
         if len(content) > 200:
             content = content[:200] + "..."
         print(content)
-    
+
     # The bug is that result.success is True even though:
     # 1. Code execution failed
     # 2. LLM never successfully computed the result
     # 3. Answer is based on imagination, not execution
-    
+
     return result
 
 

@@ -1,8 +1,8 @@
 """Tests for benchmark dataset format and loader."""
 
-import pytest
-import tempfile
 from pathlib import Path
+
+import pytest
 
 from rlmkit.benchmark.dataset import (
     BenchmarkCase,
@@ -10,7 +10,6 @@ from rlmkit.benchmark.dataset import (
     load_dataset,
     load_dataset_from_dict,
 )
-
 
 # ---------------------------------------------------------------------------
 # BenchmarkCase

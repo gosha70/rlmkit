@@ -14,13 +14,6 @@ from rlmkit.domain.entities import (
     Response,
     TraceStep,
 )
-from rlmkit.domain.value_objects import (
-    Cost,
-    ModelId,
-    ProviderId,
-    RecursionDepth,
-    TokenCount,
-)
 from rlmkit.domain.events import (
     BudgetExceeded,
     ExecutionCompleted,
@@ -35,7 +28,13 @@ from rlmkit.domain.exceptions import (
     ParseFailedError,
     SecurityViolationError,
 )
-
+from rlmkit.domain.value_objects import (
+    Cost,
+    ModelId,
+    ProviderId,
+    RecursionDepth,
+    TokenCount,
+)
 
 # ---------------------------------------------------------------------------
 # Entity tests: Query

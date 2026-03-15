@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Quick test to verify v2.0 JSON parser works"""
 
+from rlmkit.config import ExecutionConfig, RLMConfig
 from rlmkit.core.rlm import RLM
 from rlmkit.llm import MockLLMClient
-from rlmkit.config import RLMConfig, ExecutionConfig
 
 print("Testing v2.0 JSON Parser")
 print("=" * 60)
@@ -28,7 +27,7 @@ result = rlm.run(
 print(f"✓ Success: {result.success}")
 print(f"✓ Answer: {result.answer}")
 print(f"✓ Steps: {result.steps}")
-print(f"\nTrace:")
+print("\nTrace:")
 for i, step in enumerate(result.trace):
     print(f"  Step {i+1} [{step.get('role')}]: {step.get('content', '')[:80]}...")
 

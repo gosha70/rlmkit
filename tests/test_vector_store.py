@@ -1,7 +1,5 @@
 """Tests for SQLite-backed VectorStore."""
 
-import math
-import struct
 import pytest
 
 from rlmkit.storage.database import Database
@@ -23,7 +21,7 @@ class TestEmbeddingSerialization:
         emb = [0.1, 0.2, 0.3, -0.5, 1.0]
         blob = VectorStore._serialize_embedding(emb)
         restored = VectorStore._deserialize_embedding(blob, len(emb))
-        for a, b in zip(emb, restored):
+        for a, b in zip(emb, restored, strict=False):
             assert abs(a - b) < 1e-6
 
     def test_blob_size(self):

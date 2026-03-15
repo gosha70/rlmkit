@@ -1,10 +1,7 @@
 """Tests for SQLite Database connection manager."""
 
-import sqlite3
-import pytest
-from pathlib import Path
 
-from rlmkit.storage.database import Database, get_default_db_path, _SCHEMA_VERSION
+from rlmkit.storage.database import _SCHEMA_VERSION, Database, get_default_db_path
 
 
 class TestGetDefaultDbPath:

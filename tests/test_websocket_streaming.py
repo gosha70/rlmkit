@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, AsyncIterator, Dict, List
+from collections.abc import AsyncIterator
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from rlmkit.application.dto import LLMResponseDTO
 from rlmkit.server.app import create_app
 from rlmkit.server.dependencies import get_state, reset_state
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -26,7 +25,7 @@ def _clean_state():
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client():
     app = create_app()
     return TestClient(app)
@@ -35,23 +34,23 @@ def client():
 class FakeStreamingLLM:
     """Fake LLM adapter that supports async streaming."""
 
-    def __init__(self, responses: List[str]) -> None:
+    def __init__(self, responses: list[str]) -> None:
         self._responses = list(responses)
         self._call_idx = 0
         self.active_model = "fake-model"
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         text = self._get_next_response()
         return LLMResponseDTO(
             content=text, model="fake-model",
             input_tokens=10, output_tokens=5,
         )
 
-    async def complete_async(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         return self.complete(messages)
 
     async def complete_stream_async(
-        self, messages: List[Dict[str, str]]
+        self, messages: list[dict[str, str]]
     ) -> AsyncIterator[str]:
         text = self._get_next_response()
         for char in text:
@@ -60,7 +59,7 @@ class FakeStreamingLLM:
     def count_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
 
     def use_root_model(self) -> None:

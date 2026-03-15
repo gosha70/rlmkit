@@ -2,11 +2,10 @@
 
 import pytest
 
-from rlmkit.strategies.base import LLMStrategy, StrategyResult
-from rlmkit.strategies.indexed_rag import IndexedRAGStrategy
 from rlmkit.storage.database import Database
 from rlmkit.storage.vector_store import VectorStore
-
+from rlmkit.strategies.base import LLMStrategy, StrategyResult
+from rlmkit.strategies.indexed_rag import IndexedRAGStrategy
 
 # ---------------------------------------------------------------------------
 # Mocks
@@ -145,7 +144,6 @@ class TestRun:
         content = "Reusable content " * 20
         # First run indexes
         rag.run(content, "q1")
-        embed_calls_after_first = embedder.embed_calls
 
         # Second run should not re-embed document chunks
         embedder.embed_calls = 0

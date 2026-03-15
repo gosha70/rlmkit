@@ -1,6 +1,5 @@
 """Tests for strategy protocol conformance and base types."""
 
-import pytest
 from rlmkit import MockLLMClient
 from rlmkit.core.budget import TokenUsage
 from rlmkit.strategies.base import LLMStrategy, StrategyResult

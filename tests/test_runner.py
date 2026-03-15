@@ -1,10 +1,10 @@
 """Tests for BenchmarkRunner."""
 
 import pytest
-from rlmkit.strategies.base import StrategyResult
-from rlmkit.benchmark.dataset import BenchmarkCase, BenchmarkDataset
-from rlmkit.benchmark.runner import BenchmarkRunner, BenchmarkRun, CaseResult
 
+from rlmkit.benchmark.dataset import BenchmarkCase, BenchmarkDataset
+from rlmkit.benchmark.runner import BenchmarkRun, BenchmarkRunner, CaseResult
+from rlmkit.strategies.base import StrategyResult
 
 # ---------------------------------------------------------------------------
 # Helpers

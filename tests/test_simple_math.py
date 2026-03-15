@@ -1,8 +1,8 @@
 # Test simple math that shouldn't need code execution
 
+from rlmkit.config import ExecutionConfig, RLMConfig
 from rlmkit.core.rlm import RLM
 from rlmkit.llm import MockLLMClient
-from rlmkit.config import RLMConfig, ExecutionConfig
 
 # Test 1: Simple math, no code needed
 print("Test 1: Simple math - direct answer (no code)")
@@ -43,11 +43,11 @@ try:
     print(f"Success: {result.success}")
     print(f"Answer: {result.answer}")
     print(f"Steps: {result.steps}")
-    
+
     print("\nTrace:")
     for step in result.trace:
         print(f"  {step.get('role')}: {step.get('content', '')[:80]}...")
-        
+
 except Exception as e:
     print(f"FAILED: {e}")
     import traceback

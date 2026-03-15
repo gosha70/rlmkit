@@ -6,8 +6,7 @@ using MockLLMClient so they run without external API keys.
 
 import pytest
 
-from rlmkit import RLM, MockLLMClient, RLMConfig, BudgetExceeded
-
+from rlmkit import RLM, BudgetExceeded, MockLLMClient, RLMConfig
 
 pytestmark = pytest.mark.integration
 

@@ -3,9 +3,9 @@
 """Tests for AnalyticsEngine session-wide metrics aggregation."""
 
 import pytest
-from rlmkit.ui.services.analytics_engine import AnalyticsEngine, SessionAnalytics
-from rlmkit.ui.services.models import ExecutionMetrics
 
+from rlmkit.ui.services.analytics_engine import AnalyticsEngine
+from rlmkit.ui.services.models import ExecutionMetrics
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -1,7 +1,7 @@
 """Tests for embedding provider abstraction."""
 
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
 from rlmkit.strategies.embeddings import EmbeddingProvider, OpenAIEmbedder
 
 

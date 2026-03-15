@@ -1,15 +1,15 @@
 """Tests for BenchmarkReport."""
 
-import json
 import csv
-import pytest
+import json
 from io import StringIO
 
-from rlmkit.strategies.base import StrategyResult
-from rlmkit.benchmark.dataset import BenchmarkCase, BenchmarkDataset
-from rlmkit.benchmark.runner import BenchmarkRunner, BenchmarkRun
-from rlmkit.benchmark.report import BenchmarkReport, _pct_delta
+import pytest
 
+from rlmkit.benchmark.dataset import BenchmarkCase, BenchmarkDataset
+from rlmkit.benchmark.report import BenchmarkReport, _pct_delta
+from rlmkit.benchmark.runner import BenchmarkRun, BenchmarkRunner
+from rlmkit.strategies.base import StrategyResult
 
 # ---------------------------------------------------------------------------
 # Helpers

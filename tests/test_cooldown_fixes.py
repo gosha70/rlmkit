@@ -1,14 +1,13 @@
 """Tests for Cycle 1 cool-down fixes: MAJOR-1, MAJOR-2, MAJOR-3, MINOR-5."""
 
-import asyncio
-from typing import Any, Dict, Iterator, List, Optional
+from collections.abc import Iterator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from rlmkit.application.dto import ExecutionResultDTO, LLMResponseDTO, RunConfigDTO
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
-
 
 # ---------------------------------------------------------------------------
 # MAJOR-1: restricted_sandbox.py imports SecurityViolationError from domain
@@ -31,6 +30,7 @@ class TestMajor1DomainImport:
     def test_restricted_sandbox_does_not_import_core_errors(self):
         """restricted_sandbox should NOT import from rlmkit.core.errors."""
         import inspect
+
         import rlmkit.infrastructure.sandbox.restricted_sandbox as mod
 
         source = inspect.getsource(mod)
@@ -176,6 +176,7 @@ class TestMajor3AsyncPorts:
 
     def test_llm_port_has_complete_async(self):
         import inspect
+
         from rlmkit.application.ports.llm_port import LLMPort
 
         assert hasattr(LLMPort, "complete_async")
@@ -183,6 +184,7 @@ class TestMajor3AsyncPorts:
 
     def test_llm_port_has_complete_stream_async(self):
         import inspect
+
         from rlmkit.application.ports.llm_port import LLMPort
 
         assert hasattr(LLMPort, "complete_stream_async")
@@ -190,6 +192,7 @@ class TestMajor3AsyncPorts:
 
     def test_sandbox_port_has_execute_async(self):
         import inspect
+
         from rlmkit.application.ports.sandbox_port import SandboxPort
 
         assert hasattr(SandboxPort, "execute_async")
@@ -197,6 +200,7 @@ class TestMajor3AsyncPorts:
 
     def test_litellm_adapter_has_complete_async(self):
         import inspect
+
         from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         assert hasattr(LiteLLMAdapter, "complete_async")
@@ -204,6 +208,7 @@ class TestMajor3AsyncPorts:
 
     def test_litellm_adapter_has_complete_stream_async(self):
         import inspect
+
         from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         assert hasattr(LiteLLMAdapter, "complete_stream_async")
@@ -275,13 +280,13 @@ class TestMajor3AsyncPorts:
 class FakeTwoModelLLM:
     """LLM fake that tracks model-switching calls."""
 
-    def __init__(self, responses: List[str]) -> None:
+    def __init__(self, responses: list[str]) -> None:
         self._responses = responses
         self._idx = 0
         self._active_model = "root-model"
-        self.model_history: List[str] = []
+        self.model_history: list[str] = []
 
-    def complete(self, messages: List[Dict[str, str]]) -> LLMResponseDTO:
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         self.model_history.append(self._active_model)
         idx = min(self._idx, len(self._responses) - 1)
         text = self._responses[idx]
@@ -289,13 +294,13 @@ class FakeTwoModelLLM:
         return LLMResponseDTO(content=text, model=self._active_model,
                                input_tokens=10, output_tokens=5)
 
-    def complete_stream(self, messages: List[Dict[str, str]]) -> Iterator[str]:
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         yield self.complete(messages).content
 
     def count_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
 
-    def get_pricing(self) -> Dict[str, float]:
+    def get_pricing(self) -> dict[str, float]:
         return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
 
     def use_root_model(self) -> None:
@@ -309,7 +314,7 @@ class FakeSandbox:
     """Minimal SandboxPort-compliant fake."""
 
     def __init__(self) -> None:
-        self._namespace: Dict[str, Any] = {}
+        self._namespace: dict[str, Any] = {}
 
     def execute(self, code: str) -> ExecutionResultDTO:
         return ExecutionResultDTO(stdout="ok")
@@ -323,7 +328,7 @@ class FakeSandbox:
     def set_variable(self, name: str, value: Any) -> None:
         self._namespace[name] = value
 
-    def get_variable(self, name: str) -> Optional[Any]:
+    def get_variable(self, name: str) -> Any | None:
         return self._namespace.get(name)
 
 

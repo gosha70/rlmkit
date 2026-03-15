@@ -196,7 +196,10 @@ export function useChat(sessionId: string | null): UseChatReturn {
     };
   }, []);
 
-  connectRef.current = connect;
+  // Keep connectRef in sync so reconnect timeout uses latest connect
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Cleanup WS when sessionId changes or component unmounts
   useEffect(() => {

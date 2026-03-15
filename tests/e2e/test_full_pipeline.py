@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from rlmkit.server.dependencies import get_state
-
 pytestmark = [pytest.mark.e2e]
 
 

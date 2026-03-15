@@ -1,12 +1,12 @@
 """Tests for MultiStrategyEvaluator."""
 
 import pytest
+
 from rlmkit import MockLLMClient
 from rlmkit.strategies.base import StrategyResult
 from rlmkit.strategies.direct import DirectStrategy
+from rlmkit.strategies.evaluator import EvaluationResult, MultiStrategyEvaluator
 from rlmkit.strategies.rlm_strategy import RLMStrategy
-from rlmkit.strategies.evaluator import MultiStrategyEvaluator, EvaluationResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -10,16 +10,13 @@ import pytest
 
 from rlmkit import (
     RLM,
+    BudgetExceeded,
+    BudgetLimits,
+    BudgetTracker,
+    CostTracker,
     MockLLMClient,
     RLMConfig,
-    BudgetExceeded,
-    BudgetTracker,
-    BudgetLimits,
-    CostTracker,
-    TokenUsage,
-    estimate_tokens,
 )
-
 
 pytestmark = pytest.mark.integration
 
@@ -207,7 +204,7 @@ class TestBudgetTrackingAcrossSteps:
             tracker.check_limits()
             tracker.add_llm_call(
                 sample_document + f" step {step}",
-                f"```python\nresult = peek(0, 100)\nprint(result)\n```",
+                "```python\nresult = peek(0, 100)\nprint(result)\n```",
             )
             tracker.check_limits()
 

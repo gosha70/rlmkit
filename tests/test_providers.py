@@ -1,7 +1,9 @@
 """Tests for LLM provider implementations."""
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+
 from rlmkit.llm.base import BaseLLMProvider, LLMResponse
 from rlmkit.llm.mock_client import MockLLMClient
 
@@ -240,9 +242,9 @@ class TestOpenAIClientMocked:
 
     def test_requires_api_key(self, mock_openai):
         """Test OpenAI client requires API key."""
-        from rlmkit.llm.openai_client import OpenAIClient
-
         import os
+
+        from rlmkit.llm.openai_client import OpenAIClient
 
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("OPENAI_API_KEY", None)
@@ -318,8 +320,9 @@ class TestOllamaClientMocked:
 
     def test_connection_check_fails_gracefully(self):
         """Test Ollama client handles connection failures."""
-        from rlmkit.llm.ollama_client import OllamaClient
         import requests
+
+        from rlmkit.llm.ollama_client import OllamaClient
 
         with patch("rlmkit.llm.ollama_client.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
@@ -408,8 +411,9 @@ class TestOllamaClientMocked:
 
     def test_timeout_handling(self):
         """Test timeout handling."""
-        from rlmkit.llm.ollama_client import OllamaClient
         import requests
+
+        from rlmkit.llm.ollama_client import OllamaClient
 
         with patch("rlmkit.llm.ollama_client.requests.get"):
             with patch("rlmkit.llm.ollama_client.requests.post") as mock_post:

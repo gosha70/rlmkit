@@ -3,23 +3,18 @@
 """Tests for RunProfile persistence, migration defaults, and system prompt resolution."""
 
 import json
-import tempfile
-from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from rlmkit.ui.services.profile_store import (
+    BUILTIN_PROFILES,
+    SYSTEM_PROMPT_TEMPLATE_NAMES,
+    SYSTEM_PROMPT_TEMPLATES,
     RunProfile,
     RunProfileStore,
-    BUILTIN_PROFILES,
-    SYSTEM_PROMPT_TEMPLATES,
-    SYSTEM_PROMPT_TEMPLATE_NAMES,
-    resolve_system_prompt,
     load_custom_prompts,
+    resolve_system_prompt,
     save_custom_prompts,
 )
-
 
 # ---------------------------------------------------------------------------
 # RunProfile serialization / backward-compat
@@ -153,9 +148,12 @@ class TestResolveSystemPrompt:
         direct = resolve_system_prompt("direct", state)
         rag = resolve_system_prompt("rag", state)
         rlm = resolve_system_prompt("rlm", state)
-        assert direct is not None and "helpful" in direct.lower()
-        assert rag is not None and "context" in rag.lower()
-        assert rlm is not None and "reasoning" in rlm.lower()
+        assert direct is not None
+        assert "helpful" in direct.lower()
+        assert rag is not None
+        assert "context" in rag.lower()
+        assert rlm is not None
+        assert "reasoning" in rlm.lower()
 
     def test_named_template_returns_prompt(self):
         state = SimpleNamespace(
@@ -214,7 +212,8 @@ class TestResolveSystemPrompt:
         )
         # Empty strings are falsy → falls through to Default template lookup
         result = resolve_system_prompt("direct", state)
-        assert result is not None and "helpful" in result.lower()
+        assert result is not None
+        assert "helpful" in result.lower()
 
     def test_custom_mode_partial_prompts(self):
         """Custom mode with some empty prompts falls back for those modes."""
@@ -232,8 +231,10 @@ class TestResolveSystemPrompt:
         """No session state → Default template prompts."""
         result_direct = resolve_system_prompt("direct", None)
         result_rag = resolve_system_prompt("rag", None)
-        assert result_direct is not None and "helpful" in result_direct.lower()
-        assert result_rag is not None and "context" in result_rag.lower()
+        assert result_direct is not None
+        assert "helpful" in result_direct.lower()
+        assert result_rag is not None
+        assert "context" in result_rag.lower()
 
     def test_unknown_template_returns_none(self):
         state = SimpleNamespace(

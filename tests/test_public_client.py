@@ -6,8 +6,14 @@ a stable interface for end users.
 
 import pytest
 
+from rlmkit.domain.exceptions import (
+    BudgetExceededError,
+    ConfigurationError,
+    DomainError,
+    ExecutionFailedError,
+    SecurityViolationError,
+)
 from rlmkit.public.client import RLMKitClient
-from rlmkit.public.types import PublicRunResult, PublicInteractResult
 from rlmkit.public.errors import (
     BudgetError,
     ConfigError,
@@ -16,14 +22,7 @@ from rlmkit.public.errors import (
     SandboxError,
     wrap_domain_error,
 )
-from rlmkit.domain.exceptions import (
-    BudgetExceededError,
-    ConfigurationError,
-    ExecutionFailedError,
-    SecurityViolationError,
-    DomainError,
-)
-
+from rlmkit.public.types import PublicInteractResult, PublicRunResult
 
 # ---------------------------------------------------------------------------
 # Client construction

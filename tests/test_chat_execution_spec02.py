@@ -30,7 +30,6 @@ from rlmkit.server.models import (
     ChatProviderConfig,
     RuntimeSettings,
 )
-from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -45,13 +44,13 @@ def _clean_state() -> Generator[None, None, None]:
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client() -> TestClient:
     """FastAPI TestClient backed by the real application."""
     return TestClient(app)
 
 
-@pytest.fixture()
+@pytest.fixture
 def direct_provider() -> ChatProviderConfig:
     """A minimal ChatProviderConfig with direct execution mode."""
     return ChatProviderConfig(
@@ -71,7 +70,7 @@ def direct_provider() -> ChatProviderConfig:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def rlm_provider() -> ChatProviderConfig:
     """A minimal ChatProviderConfig with rlm execution mode."""
     return ChatProviderConfig(
