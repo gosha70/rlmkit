@@ -14,8 +14,6 @@ interface ResponseRatingProps {
 
 export function ResponseRating({
   executionId,
-  sessionId,
-  chatProviderId,
   currentRating,
   onRate,
 }: ResponseRatingProps) {

@@ -12,7 +12,6 @@ interface PickWinnerProps {
 }
 
 export function PickWinner({
-  sessionId,
   responses,
   currentWinnerId,
   onPick,

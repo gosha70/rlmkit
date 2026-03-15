@@ -58,21 +58,7 @@ export function useChat(sessionId: string | null): UseChatReturn {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
 
-  // Cleanup WS when sessionId changes or component unmounts
-  useEffect(() => {
-    return () => {
-      intentionalCloseRef.current = true;
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      setIsConnected(false);
-    };
-  }, [sessionId]);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     const sid = sessionIdRef.current;
@@ -107,7 +93,7 @@ export function useChat(sessionId: string | null): UseChatReturn {
         console.debug(
           `WebSocket closed unexpectedly. Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`,
         );
-        reconnectTimerRef.current = setTimeout(() => connect(), delay);
+        reconnectTimerRef.current = setTimeout(() => connectRef.current(), delay);
       }
     };
 
@@ -209,6 +195,24 @@ export function useChat(sessionId: string | null): UseChatReturn {
       }
     };
   }, []);
+
+  connectRef.current = connect;
+
+  // Cleanup WS when sessionId changes or component unmounts
+  useEffect(() => {
+    return () => {
+      intentionalCloseRef.current = true;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setIsConnected(false);
+    };
+  }, [sessionId]);
 
   const sendQuery = useCallback(
     (query: string, content: string, mode: ChatMode = "auto", fileId?: string) => {

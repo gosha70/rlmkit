@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { Hash, DollarSign, Clock, Activity } from "lucide-react";
 import { AppShell } from "@/components/shared/app-shell";
@@ -20,17 +20,13 @@ export default function DashboardPage() {
   const [selectedSession, setSelectedSession] = useState<string>("");
 
   const { data: sessions = [] } = useSWR<SessionSummary[]>("sessions", () => getSessions());
-  const { data: metrics, isLoading } = useSWR<MetricsResponse>(
-    selectedSession ? `metrics-${selectedSession}` : null,
-    () => getMetrics(selectedSession),
-  );
+  // Auto-select the most recent session when none is chosen
+  const effectiveSession = selectedSession || (sessions.length > 0 ? sessions[0].id : "");
 
-  // Auto-select the most recent session
-  useEffect(() => {
-    if (!selectedSession && sessions.length > 0) {
-      setSelectedSession(sessions[0].id);
-    }
-  }, [sessions, selectedSession]);
+  const { data: metrics, isLoading } = useSWR<MetricsResponse>(
+    effectiveSession ? `metrics-${effectiveSession}` : null,
+    () => getMetrics(effectiveSession),
+  );
 
   const summary = metrics?.summary;
 
@@ -39,7 +35,7 @@ export default function DashboardPage() {
       <div className="mx-auto max-w-[1200px] space-y-6 p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-semibold">Dashboard</h2>
-          <Select value={selectedSession} onValueChange={setSelectedSession}>
+          <Select value={effectiveSession} onValueChange={setSelectedSession}>
             <SelectTrigger className="w-56" aria-label="Select session">
               <SelectValue placeholder="Select session..." />
             </SelectTrigger>

@@ -88,7 +88,7 @@ export default function ChatPage() {
   });
 
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
-  const [fileContent, setFileContent] = useState<string>("");
+  const [_fileContent, setFileContent] = useState<string>("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [isAnyStreaming, setIsAnyStreaming] = useState(false);
   const [ratings, setRatings] = useState<Record<string, "up" | "down">>({});
