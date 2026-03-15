@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --dev
+      - run: uv sync --extra dev
       - name: Ruff check (server + tests)
         run: uv run ruff check src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ src/rlmkit/prompts/ tests/
       - name: Ruff format check
@@ -33,7 +33,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --dev
+      - run: uv sync --extra dev
       - name: Mypy (server module)
         run: uv run mypy src/rlmkit/server/ --ignore-missing-imports --follow-imports=silent
 
@@ -45,7 +45,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --dev --extra server
+      - run: uv sync --extra dev --extra server
       - name: Run tests with coverage
         # Bootstrap gate: 60% while legacy ui/core modules drag down coverage.
         # Target: 80% per AGENTS.md once legacy code is removed or covered.
@@ -86,7 +86,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --dev
+      - run: uv sync --extra dev
       - name: Bandit security scan
         run: uv run bandit -r src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ -c pyproject.toml
 
