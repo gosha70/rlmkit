@@ -47,7 +47,9 @@ jobs:
           version: "latest"
       - run: uv sync --dev --extra server
       - name: Run tests with coverage
-        run: uv run pytest tests/ --cov=rlmkit --cov-report=term-missing --cov-report=xml -q
+        # Bootstrap gate: 60% while legacy ui/core modules drag down coverage.
+        # Target: 80% per AGENTS.md once legacy code is removed or covered.
+        run: uv run pytest tests/ --cov=rlmkit --cov-report=term-missing --cov-report=xml --cov-fail-under=60 -q
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

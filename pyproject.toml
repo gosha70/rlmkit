@@ -90,9 +90,6 @@ python_functions = ["test_*"]
 addopts = [
     "--verbose",
     "--strict-markers",
-    "--cov=rlmkit",
-    "--cov-report=term-missing",
-    "--cov-report=html",
 ]
 markers = [
     "integration: Integration tests requiring multi-component setup",

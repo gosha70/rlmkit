@@ -831,8 +831,10 @@ class TestCreateLLMAdapterForChatProvider:
 
         adapter = state.create_llm_adapter_for_chat_provider(cp.id)
         assert adapter is not None
-        first_openai = PROVIDERS_BY_KEY["openai"].models[0].name
-        assert first_openai in adapter.active_model
+        # Since Phase 6, the adapter trusts the user-selected model
+        # (it may have been fetched live from the provider API).
+        # No fallback to catalog default occurs.
+        assert adapter.active_model == "gpt-99-not-real"
 
     def test_ollama_adapter_uses_local_endpoint(self) -> None:
         """Ollama provider should have the ollama/ prefix applied to model name."""
