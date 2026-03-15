@@ -23,7 +23,13 @@ class TestUploadThenQuery:
         # 1. Upload a text file
         upload_resp = client.post(
             "/api/files/upload",
-            files={"file": ("doc.txt", b"RLM uses recursive code execution to explore documents.", "text/plain")},
+            files={
+                "file": (
+                    "doc.txt",
+                    b"RLM uses recursive code execution to explore documents.",
+                    "text/plain",
+                )
+            },
         )
         assert upload_resp.status_code == 201
         file_id = upload_resp.json()["id"]
@@ -31,7 +37,11 @@ class TestUploadThenQuery:
         # 2. Submit a chat referencing the file
         chat_resp = client.post(
             "/api/chat",
-            json={"query": "What does this document describe?", "file_id": file_id, "mode": "direct"},
+            json={
+                "query": "What does this document describe?",
+                "file_id": file_id,
+                "mode": "direct",
+            },
         )
         assert chat_resp.status_code == 202
         data = chat_resp.json()
@@ -82,7 +92,12 @@ class TestSessionLifecycle:
 
         r2 = client.post(
             "/api/chat",
-            json={"query": "Second question", "content": "More content.", "mode": "direct", "session_id": sid},
+            json={
+                "query": "Second question",
+                "content": "More content.",
+                "mode": "direct",
+                "session_id": sid,
+            },
         )
         assert r2.json()["session_id"] == sid
 
@@ -128,7 +143,15 @@ class TestConfigIntegration:
         # Change budget config
         client.put(
             "/api/config",
-            json={"budget": {"max_steps": 8, "max_tokens": 25000, "max_cost_usd": 1.0, "max_time_seconds": 15, "max_recursion_depth": 3}},
+            json={
+                "budget": {
+                    "max_steps": 8,
+                    "max_tokens": 25000,
+                    "max_cost_usd": 1.0,
+                    "max_time_seconds": 15,
+                    "max_recursion_depth": 3,
+                }
+            },
         )
 
         # Verify config took effect

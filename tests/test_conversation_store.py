@@ -30,6 +30,7 @@ def store(tmp_path):
 # Conversation CRUD
 # ---------------------------------------------------------------------------
 
+
 class TestConversationCRUD:
     def test_create_and_get(self, store):
         cid = store.create_conversation(name="My Chat", mode="rlm_only")
@@ -98,6 +99,7 @@ class TestConversationCRUD:
 # Message persistence
 # ---------------------------------------------------------------------------
 
+
 class TestMessagePersistence:
     def test_save_and_load_direct_message(self, store):
         cid = store.create_conversation()
@@ -106,11 +108,17 @@ class TestMessagePersistence:
             mode="direct_only",
             direct_response=Response(content="4", stop_reason="stop"),
             direct_metrics=ExecutionMetrics(
-                input_tokens=10, output_tokens=5, total_tokens=15,
-                cost_usd=0.001, cost_breakdown={"input": 0.0005, "output": 0.0005},
-                execution_time_seconds=0.5, steps_taken=0,
-                memory_used_mb=10.0, memory_peak_mb=12.0,
-                success=True, execution_type="direct",
+                input_tokens=10,
+                output_tokens=5,
+                total_tokens=15,
+                cost_usd=0.001,
+                cost_breakdown={"input": 0.0005, "output": 0.0005},
+                execution_time_seconds=0.5,
+                steps_taken=0,
+                memory_used_mb=10.0,
+                memory_peak_mb=12.0,
+                success=True,
+                execution_type="direct",
             ),
         )
         store.save_message(cid, msg)
@@ -130,11 +138,17 @@ class TestMessagePersistence:
             mode="rlm_only",
             rlm_response=Response(content="Gravity is...", stop_reason="stop"),
             rlm_metrics=ExecutionMetrics(
-                input_tokens=100, output_tokens=50, total_tokens=150,
-                cost_usd=0.01, cost_breakdown={"input": 0.005, "output": 0.005},
-                execution_time_seconds=2.0, steps_taken=3,
-                memory_used_mb=20.0, memory_peak_mb=25.0,
-                success=True, execution_type="rlm",
+                input_tokens=100,
+                output_tokens=50,
+                total_tokens=150,
+                cost_usd=0.01,
+                cost_breakdown={"input": 0.005, "output": 0.005},
+                execution_time_seconds=2.0,
+                steps_taken=3,
+                memory_used_mb=20.0,
+                memory_peak_mb=25.0,
+                success=True,
+                execution_type="rlm",
             ),
             rlm_trace=[{"step": 1, "role": "assistant", "content": "thinking..."}],
         )
@@ -152,24 +166,45 @@ class TestMessagePersistence:
             mode="compare",
             rlm_response=Response(content="rlm answer", stop_reason="stop"),
             rlm_metrics=ExecutionMetrics(
-                input_tokens=100, output_tokens=50, total_tokens=150,
-                cost_usd=0.01, cost_breakdown={},
-                execution_time_seconds=2.0, steps_taken=3,
-                memory_used_mb=0, memory_peak_mb=0, success=True,
+                input_tokens=100,
+                output_tokens=50,
+                total_tokens=150,
+                cost_usd=0.01,
+                cost_breakdown={},
+                execution_time_seconds=2.0,
+                steps_taken=3,
+                memory_used_mb=0,
+                memory_peak_mb=0,
+                success=True,
             ),
             direct_response=Response(content="direct answer", stop_reason="stop"),
             direct_metrics=ExecutionMetrics(
-                input_tokens=50, output_tokens=25, total_tokens=75,
-                cost_usd=0.005, cost_breakdown={},
-                execution_time_seconds=1.0, steps_taken=0,
-                memory_used_mb=0, memory_peak_mb=0, success=True,
+                input_tokens=50,
+                output_tokens=25,
+                total_tokens=75,
+                cost_usd=0.005,
+                cost_breakdown={},
+                execution_time_seconds=1.0,
+                steps_taken=0,
+                memory_used_mb=0,
+                memory_peak_mb=0,
+                success=True,
             ),
             comparison_metrics=ComparisonMetrics(
-                rlm_cost_usd=0.01, rlm_time_seconds=2.0, rlm_tokens=150, rlm_steps=3,
-                direct_cost_usd=0.005, direct_time_seconds=1.0, direct_tokens=75, direct_steps=0,
-                cost_delta_usd=0.005, cost_delta_percent=100.0,
-                time_delta_seconds=1.0, time_delta_percent=100.0,
-                token_delta=75, recommendation="Direct is cheaper",
+                rlm_cost_usd=0.01,
+                rlm_time_seconds=2.0,
+                rlm_tokens=150,
+                rlm_steps=3,
+                direct_cost_usd=0.005,
+                direct_time_seconds=1.0,
+                direct_tokens=75,
+                direct_steps=0,
+                cost_delta_usd=0.005,
+                cost_delta_percent=100.0,
+                time_delta_seconds=1.0,
+                time_delta_percent=100.0,
+                token_delta=75,
+                recommendation="Direct is cheaper",
             ),
         )
         store.save_message(cid, msg)
@@ -214,6 +249,7 @@ class TestMessagePersistence:
 # File context dedup
 # ---------------------------------------------------------------------------
 
+
 class TestFileContextDedup:
     def test_save_and_retrieve(self, store):
         h = store.save_file_context("hello world", filename="test.txt")
@@ -251,6 +287,7 @@ class TestFileContextDedup:
 # Serialization round-trip
 # ---------------------------------------------------------------------------
 
+
 class TestSerialization:
     def test_serialize_none(self):
         assert _serialize_optional(None) is None
@@ -274,10 +311,16 @@ class TestSerialization:
 
     def test_metrics_round_trip(self):
         m = ExecutionMetrics(
-            input_tokens=10, output_tokens=5, total_tokens=15,
-            cost_usd=0.001, cost_breakdown={"input": 0.0005},
-            execution_time_seconds=0.5, steps_taken=0,
-            memory_used_mb=1.0, memory_peak_mb=2.0, success=True,
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            cost_usd=0.001,
+            cost_breakdown={"input": 0.0005},
+            execution_time_seconds=0.5,
+            steps_taken=0,
+            memory_used_mb=1.0,
+            memory_peak_mb=2.0,
+            success=True,
         )
         s = _serialize_optional(m)
         m2 = _deserialize_metrics(s)

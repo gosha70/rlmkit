@@ -42,16 +42,16 @@ class FakeStreamingLLM:
     def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         text = self._get_next_response()
         return LLMResponseDTO(
-            content=text, model="fake-model",
-            input_tokens=10, output_tokens=5,
+            content=text,
+            model="fake-model",
+            input_tokens=10,
+            output_tokens=5,
         )
 
     async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         return self.complete(messages)
 
-    async def complete_stream_async(
-        self, messages: list[dict[str, str]]
-    ) -> AsyncIterator[str]:
+    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         text = self._get_next_response()
         for char in text:
             yield char
@@ -129,13 +129,15 @@ class TestDirectStreaming:
         with client.websocket_connect("/ws/chat/s1") as ws:
             ws.receive_json()  # connected
 
-            ws.send_json({
-                "type": "query",
-                "id": "msg-1",
-                "query": "Say hello",
-                "content": "some text",
-                "mode": "direct",
-            })
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-1",
+                    "query": "Say hello",
+                    "content": "some text",
+                    "mode": "direct",
+                }
+            )
 
             events: list[dict] = []
             while True:
@@ -169,13 +171,15 @@ class TestDirectStreaming:
         with client.websocket_connect("/ws/chat/s1") as ws:
             ws.receive_json()  # connected
 
-            ws.send_json({
-                "type": "query",
-                "id": "msg-2",
-                "query": "What is the answer?",
-                "content": "text",
-                "mode": "direct",
-            })
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-2",
+                    "query": "What is the answer?",
+                    "content": "text",
+                    "mode": "direct",
+                }
+            )
 
             complete_event = None
             while True:
@@ -200,13 +204,15 @@ class TestDirectStreaming:
         with client.websocket_connect("/ws/chat/s1") as ws:
             ws.receive_json()  # connected
 
-            ws.send_json({
-                "type": "query",
-                "id": "msg-3",
-                "query": "test",
-                "content": "text",
-                "mode": "direct",
-            })
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-3",
+                    "query": "test",
+                    "content": "text",
+                    "mode": "direct",
+                }
+            )
 
             tokens: list[str] = []
             while True:
@@ -227,10 +233,12 @@ class TestDirectStreaming:
 class TestRLMStreaming:
     def test_rlm_step_events(self, client, monkeypatch):
         """RLM mode should emit step events for each iteration."""
-        fake_llm = FakeStreamingLLM([
-            '```python\nprint("hello")\n```',
-            "FINAL: The answer is found",
-        ])
+        fake_llm = FakeStreamingLLM(
+            [
+                '```python\nprint("hello")\n```',
+                "FINAL: The answer is found",
+            ]
+        )
         fake_sandbox = FakeSandbox()
 
         state = get_state()
@@ -240,13 +248,15 @@ class TestRLMStreaming:
         with client.websocket_connect("/ws/chat/s1") as ws:
             ws.receive_json()  # connected
 
-            ws.send_json({
-                "type": "query",
-                "id": "msg-rlm",
-                "query": "Find the answer",
-                "content": "some long document",
-                "mode": "rlm",
-            })
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-rlm",
+                    "query": "Find the answer",
+                    "content": "some long document",
+                    "mode": "rlm",
+                }
+            )
 
             events: list[dict] = []
             while True:
@@ -282,13 +292,15 @@ class TestRLMStreaming:
         with client.websocket_connect("/ws/chat/s1") as ws:
             ws.receive_json()
 
-            ws.send_json({
-                "type": "query",
-                "id": "msg-m",
-                "query": "test",
-                "content": "text",
-                "mode": "rlm",
-            })
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-m",
+                    "query": "test",
+                    "content": "text",
+                    "mode": "rlm",
+                }
+            )
 
             metrics_event = None
             while True:
@@ -345,13 +357,15 @@ class TestWSErrorHandling:
         with client.websocket_connect("/ws/chat/s1") as ws:
             ws.receive_json()  # connected
 
-            ws.send_json({
-                "type": "query",
-                "id": "msg-err",
-                "query": "will fail",
-                "content": "text",
-                "mode": "direct",
-            })
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-err",
+                    "query": "will fail",
+                    "content": "text",
+                    "mode": "direct",
+                }
+            )
 
             # Should get an error event (use case catches exceptions → EXECUTION_ERROR,
             # or exception bubbles to WS handler → INTERNAL_ERROR)

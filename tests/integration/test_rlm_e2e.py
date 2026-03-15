@@ -22,9 +22,7 @@ class TestRLMEndToEnd:
         assert result.answer != ""
         assert result.steps >= 1
 
-    def test_multi_step_exploration_with_mock(
-        self, rlm_multistep_instance, sample_document
-    ):
+    def test_multi_step_exploration_with_mock(self, rlm_multistep_instance, sample_document):
         """RLM executes multiple code steps before reaching FINAL."""
         result = rlm_multistep_instance.run(
             prompt=sample_document,
@@ -35,9 +33,7 @@ class TestRLMEndToEnd:
         assert result.steps == 3  # 2 code steps + 1 FINAL step
         assert "Found relevant information" in result.answer
 
-    def test_rlm_produces_execution_trace(
-        self, rlm_multistep_instance, sample_document
-    ):
+    def test_rlm_produces_execution_trace(self, rlm_multistep_instance, sample_document):
         """Execution trace contains assistant and execution entries in order."""
         result = rlm_multistep_instance.run(
             prompt=sample_document,
@@ -88,10 +84,12 @@ class TestRLMEndToEnd:
 
     def test_peek_returns_correct_substring(self, sample_document):
         """Code using peek() returns the correct slice of the document."""
-        client = MockLLMClient([
-            "```python\nfirst_50 = peek(0, 50)\nprint(first_50)\n```",
-            "FINAL: Checked the beginning",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nfirst_50 = peek(0, 50)\nprint(first_50)\n```",
+                "FINAL: Checked the beginning",
+            ]
+        )
         rlm = RLM(client=client)
         result = rlm.run(prompt=sample_document, query="Read the start")
 
@@ -104,10 +102,12 @@ class TestRLMEndToEnd:
 
     def test_grep_finds_pattern(self, sample_document):
         """Code using grep() locates patterns in the document."""
-        client = MockLLMClient([
-            "```python\nresults = grep(r'budget')\nprint(results)\n```",
-            "FINAL: Found budget references",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nresults = grep(r'budget')\nprint(results)\n```",
+                "FINAL: Found budget references",
+            ]
+        )
         rlm = RLM(client=client)
         result = rlm.run(prompt=sample_document, query="Find budget info")
 
@@ -117,15 +117,19 @@ class TestRLMEndToEnd:
         assert len(exec_entries) == 1
         # The word "budget" appears in the sample_document (lowercase b in "budget")
         # grep should find it
-        assert "budget" in exec_entries[0]["content"].lower() or "Budget" in exec_entries[0]["content"]
+        assert (
+            "budget" in exec_entries[0]["content"].lower() or "Budget" in exec_entries[0]["content"]
+        )
 
     def test_variables_persist_between_steps(self, sample_document):
         """Variables defined in one code step are available in the next."""
-        client = MockLLMClient([
-            "```python\nmy_var = peek(0, 10)\n```",
-            "```python\nprint(my_var.upper())\n```",
-            "FINAL: Variable persisted",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nmy_var = peek(0, 10)\n```",
+                "```python\nprint(my_var.upper())\n```",
+                "FINAL: Variable persisted",
+            ]
+        )
         rlm = RLM(client=client)
         result = rlm.run(prompt=sample_document, query="Test persistence")
 
@@ -140,10 +144,12 @@ class TestRLMEndToEnd:
 
     def test_code_execution_error_does_not_crash(self, sample_document):
         """A division-by-zero in generated code is handled, then FINAL accepted."""
-        client = MockLLMClient([
-            "```python\nx = 1 / 0\n```",
-            "FINAL: Handled the error",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nx = 1 / 0\n```",
+                "FINAL: Handled the error",
+            ]
+        )
         rlm = RLM(client=client)
         result = rlm.run(prompt=sample_document, query="Trigger error")
 

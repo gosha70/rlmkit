@@ -16,6 +16,7 @@ def vs(tmp_path):
 # Embedding serialization
 # ---------------------------------------------------------------------------
 
+
 class TestEmbeddingSerialization:
     def test_round_trip(self):
         emb = [0.1, 0.2, 0.3, -0.5, 1.0]
@@ -33,6 +34,7 @@ class TestEmbeddingSerialization:
 # ---------------------------------------------------------------------------
 # Cosine similarity
 # ---------------------------------------------------------------------------
+
 
 class TestCosineSimilarity:
     def test_identical(self):
@@ -56,6 +58,7 @@ class TestCosineSimilarity:
 # ---------------------------------------------------------------------------
 # Add + Search
 # ---------------------------------------------------------------------------
+
 
 class TestAddAndSearch:
     def test_add_and_search(self, vs):
@@ -107,6 +110,7 @@ class TestAddAndSearch:
 # Deduplication
 # ---------------------------------------------------------------------------
 
+
 class TestDeduplication:
     def test_same_text_not_readded(self, vs):
         chunks = ["duplicate", "duplicate", "unique"]
@@ -127,6 +131,7 @@ class TestDeduplication:
 # Source tracking
 # ---------------------------------------------------------------------------
 
+
 class TestSourceTracking:
     def test_has_source(self, vs):
         vs.add_chunks("col", ["chunk"], [[1.0]], source_id="src_1")
@@ -141,6 +146,7 @@ class TestSourceTracking:
 # ---------------------------------------------------------------------------
 # Delete collection
 # ---------------------------------------------------------------------------
+
 
 class TestDeleteCollection:
     def test_delete(self, vs):

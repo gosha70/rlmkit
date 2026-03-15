@@ -31,9 +31,7 @@ class LLMPort(Protocol):
         """
         ...
 
-    def complete_stream(
-        self, messages: list[dict[str, str]]
-    ) -> Iterator[str]:
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Generate a streaming completion, yielding text chunks.
 
         Args:
@@ -66,9 +64,7 @@ class LLMPort(Protocol):
 
     # -- Async counterparts for WebSocket streaming (Cycle 2) --
 
-    async def complete_async(
-        self, messages: list[dict[str, str]]
-    ) -> LLMResponseDTO:
+    async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Async version of :meth:`complete`.
 
         Default implementations may wrap the sync method with
@@ -82,9 +78,7 @@ class LLMPort(Protocol):
         """
         ...
 
-    async def complete_stream_async(
-        self, messages: list[dict[str, str]]
-    ) -> AsyncIterator[str]:
+    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """Async streaming completion, yielding text chunks.
 
         Args:

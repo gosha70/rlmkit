@@ -66,9 +66,7 @@ class StoragePort(Protocol):
 
     # -- File context --
 
-    def save_file_context(
-        self, content: str, filename: str | None = None
-    ) -> str:
+    def save_file_context(self, content: str, filename: str | None = None) -> str:
         """Store file content (deduplicated by hash).
 
         Args:

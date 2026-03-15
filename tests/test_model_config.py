@@ -18,7 +18,7 @@ class TestModelConfig:
             root_model="gpt-4o",
             sub_model="gpt-4o-mini",
             root_provider="openai",
-            sub_provider="openai"
+            sub_provider="openai",
         )
 
         assert config.root_model == "gpt-4o"
@@ -32,7 +32,7 @@ class TestModelConfig:
             root_model="claude-3-opus",
             root_provider="anthropic",
             sub_model="llama3",
-            sub_provider="ollama"
+            sub_provider="ollama",
         )
 
         assert config.root_provider == "anthropic"
@@ -40,10 +40,7 @@ class TestModelConfig:
 
     def test_from_single_model(self):
         """Test creating config from single model."""
-        config = ModelConfig.from_single_model(
-            model="gpt-4o",
-            provider="openai"
-        )
+        config = ModelConfig.from_single_model(model="gpt-4o", provider="openai")
 
         assert config.root_model == "gpt-4o"
         assert config.sub_model == "gpt-4o"
@@ -90,7 +87,7 @@ class TestModelConfig:
             root_model="gpt-4o",
             sub_model="gpt-4o-mini",
             root_provider="openai",
-            sub_provider="openai"
+            sub_provider="openai",
         )
 
         str_repr = str(config)
@@ -114,39 +111,25 @@ class TestModelMetrics:
 
     def test_total_calls(self):
         """Test total calls calculation."""
-        metrics = ModelMetrics(
-            root_calls=2,
-            sub_calls=8
-        )
+        metrics = ModelMetrics(root_calls=2, sub_calls=8)
 
         assert metrics.total_calls == 10
 
     def test_total_tokens(self):
         """Test total tokens calculation."""
-        metrics = ModelMetrics(
-            root_tokens=1000,
-            sub_tokens=5000
-        )
+        metrics = ModelMetrics(root_tokens=1000, sub_tokens=5000)
 
         assert metrics.total_tokens == 6000
 
     def test_total_cost(self):
         """Test total cost calculation."""
-        metrics = ModelMetrics(
-            root_cost=0.15,
-            sub_cost=0.02
-        )
+        metrics = ModelMetrics(root_cost=0.15, sub_cost=0.02)
 
         assert abs(metrics.total_cost - 0.17) < 0.001
 
     def test_savings_calculation(self):
         """Test savings vs single model calculation."""
-        metrics = ModelMetrics(
-            root_tokens=1000,
-            root_cost=0.10,
-            sub_tokens=5000,
-            sub_cost=0.05
-        )
+        metrics = ModelMetrics(root_tokens=1000, root_cost=0.10, sub_tokens=5000, sub_cost=0.05)
 
         # If we used expensive model for everything
         # 6000 tokens * 0.0001 = 0.60
@@ -166,7 +149,7 @@ class TestModelMetrics:
             root_cost=0.10,
             sub_calls=8,
             sub_tokens=5000,
-            sub_cost=0.05
+            sub_cost=0.05,
         )
 
         metrics_dict = metrics.to_dict()

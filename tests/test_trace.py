@@ -24,11 +24,7 @@ class TestTraceStep:
     def test_create_basic_step(self):
         """Test creating a basic trace step."""
         step = TraceStep(
-            index=0,
-            action_type="inspect",
-            code="print(len(P))",
-            output="1000",
-            tokens_used=50
+            index=0, action_type="inspect", code="print(len(P))", output="1000", tokens_used=50
         )
 
         assert step.index == 0
@@ -40,23 +36,13 @@ class TestTraceStep:
 
     def test_step_with_recursion(self):
         """Test step with recursion depth."""
-        step = TraceStep(
-            index=1,
-            action_type="subcall",
-            recursion_depth=2,
-            tokens_used=100
-        )
+        step = TraceStep(index=1, action_type="subcall", recursion_depth=2, tokens_used=100)
 
         assert step.recursion_depth == 2
 
     def test_step_with_error(self):
         """Test step with error."""
-        step = TraceStep(
-            index=2,
-            action_type="error",
-            error="Division by zero",
-            tokens_used=20
-        )
+        step = TraceStep(index=2, action_type="error", error="Division by zero", tokens_used=20)
 
         assert step.error == "Division by zero"
         assert step.action_type == "error"
@@ -70,7 +56,7 @@ class TestTraceStep:
             output="None",
             tokens_used=10,
             cost=0.001,
-            duration=0.5
+            duration=0.5,
         )
 
         step_dict = step.to_dict()
@@ -89,7 +75,7 @@ class TestTraceStep:
             code="print('hello')",
             output="hello",
             tokens_used=15,
-            cost=0.002
+            cost=0.002,
         )
 
         str_repr = str(step)
@@ -237,30 +223,39 @@ class TestTraceExport:
     def setup_method(self):
         """Create a sample trace for testing."""
         self.trace = ExecutionTrace()
-        self.trace.add_step(TraceStep(
-            0, "inspect",
-            code="print(len(P))",
-            output="1000",
-            tokens_used=10,
-            cost=0.001,
-            duration=0.5
-        ))
-        self.trace.add_step(TraceStep(
-            1, "subcall",
-            code="subcall('analyze', P[:100])",
-            output="Analysis complete",
-            tokens_used=50,
-            cost=0.005,
-            duration=2.0,
-            recursion_depth=1
-        ))
-        self.trace.add_step(TraceStep(
-            2, "final",
-            output="Final answer: The document is 1000 chars",
-            tokens_used=30,
-            cost=0.003,
-            duration=1.0
-        ))
+        self.trace.add_step(
+            TraceStep(
+                0,
+                "inspect",
+                code="print(len(P))",
+                output="1000",
+                tokens_used=10,
+                cost=0.001,
+                duration=0.5,
+            )
+        )
+        self.trace.add_step(
+            TraceStep(
+                1,
+                "subcall",
+                code="subcall('analyze', P[:100])",
+                output="Analysis complete",
+                tokens_used=50,
+                cost=0.005,
+                duration=2.0,
+                recursion_depth=1,
+            )
+        )
+        self.trace.add_step(
+            TraceStep(
+                2,
+                "final",
+                output="Final answer: The document is 1000 chars",
+                tokens_used=30,
+                cost=0.003,
+                duration=1.0,
+            )
+        )
         self.trace.finalize()
 
     def test_to_dict(self):
@@ -408,53 +403,65 @@ class TestTraceIntegration:
         trace.metadata = {
             "query": "Summarize this document",
             "model": "gpt-4o",
-            "provider": "openai"
+            "provider": "openai",
         }
 
         # Step 1: Inspect context
-        trace.add_step(TraceStep(
-            0, "inspect",
-            code="print(f'Context length: {len(P)}')",
-            output="Context length: 50000",
-            tokens_used=25,
-            cost=0.0001,
-            duration=0.3,
-            model="gpt-4o"
-        ))
+        trace.add_step(
+            TraceStep(
+                0,
+                "inspect",
+                code="print(f'Context length: {len(P)}')",
+                output="Context length: 50000",
+                tokens_used=25,
+                cost=0.0001,
+                duration=0.3,
+                model="gpt-4o",
+            )
+        )
 
         # Step 2: Subcall for section 1
-        trace.add_step(TraceStep(
-            1, "subcall",
-            code="subcall('Summarize section 1', P[:10000])",
-            output="Section 1 summary: Introduction to topic",
-            tokens_used=200,
-            cost=0.002,
-            duration=3.0,
-            recursion_depth=1,
-            model="gpt-4o"
-        ))
+        trace.add_step(
+            TraceStep(
+                1,
+                "subcall",
+                code="subcall('Summarize section 1', P[:10000])",
+                output="Section 1 summary: Introduction to topic",
+                tokens_used=200,
+                cost=0.002,
+                duration=3.0,
+                recursion_depth=1,
+                model="gpt-4o",
+            )
+        )
 
         # Step 3: Subcall for section 2
-        trace.add_step(TraceStep(
-            2, "subcall",
-            code="subcall('Summarize section 2', P[10000:20000])",
-            output="Section 2 summary: Main findings",
-            tokens_used=250,
-            cost=0.0025,
-            duration=3.5,
-            recursion_depth=1,
-            model="gpt-4o"
-        ))
+        trace.add_step(
+            TraceStep(
+                2,
+                "subcall",
+                code="subcall('Summarize section 2', P[10000:20000])",
+                output="Section 2 summary: Main findings",
+                tokens_used=250,
+                cost=0.0025,
+                duration=3.5,
+                recursion_depth=1,
+                model="gpt-4o",
+            )
+        )
 
         # Step 4: Final answer
-        trace.add_step(TraceStep(
-            3, "final",
-            output="FINAL: Document covers introduction and main findings...",
-            tokens_used=100,
-            cost=0.001,
-            duration=1.0,
-            model="gpt-4o"
-        ))
+        trace.add_step(
+            TraceStep(
+                3,
+                "final",
+                output="FINAL: Document covers introduction and main findings...",
+                tokens_used=100,
+                cost=0.001,
+                duration=1.0,
+                model="gpt-4o",
+            )
+        )
 
         trace.finalize()
 

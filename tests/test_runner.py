@@ -10,6 +10,7 @@ from rlmkit.strategies.base import StrategyResult
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class StubStrategy:
     """Minimal strategy that returns a fixed answer."""
 
@@ -56,6 +57,7 @@ def _make_dataset(n: int = 3) -> BenchmarkDataset:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestBenchmarkRunner:
     def test_run_all_cases(self):
@@ -123,9 +125,7 @@ class TestBenchmarkRunner:
 
 class TestBenchmarkRun:
     def _make_run(self):
-        runner = BenchmarkRunner(
-            strategies=[StubStrategy("fast", "a"), StubStrategy("slow", "b")]
-        )
+        runner = BenchmarkRunner(strategies=[StubStrategy("fast", "a"), StubStrategy("slow", "b")])
         return runner.run(_make_dataset(3))
 
     def test_success_rate(self):

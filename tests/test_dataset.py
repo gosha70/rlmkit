@@ -15,6 +15,7 @@ from rlmkit.benchmark.dataset import (
 # BenchmarkCase
 # ---------------------------------------------------------------------------
 
+
 class TestBenchmarkCase:
     def test_defaults(self):
         case = BenchmarkCase(id="c1", content="hello", query="what?")
@@ -32,9 +33,13 @@ class TestBenchmarkCase:
 
     def test_to_dict(self):
         case = BenchmarkCase(
-            id="c1", content="text", query="q",
-            expected_answer="a", category="factual",
-            difficulty="hard", tags=["t1"],
+            id="c1",
+            content="text",
+            query="q",
+            expected_answer="a",
+            category="factual",
+            difficulty="hard",
+            tags=["t1"],
         )
         d = case.to_dict()
         assert d["id"] == "c1"
@@ -49,12 +54,34 @@ class TestBenchmarkCase:
 # BenchmarkDataset
 # ---------------------------------------------------------------------------
 
+
 class TestBenchmarkDataset:
     def _make_dataset(self):
         cases = [
-            BenchmarkCase(id="a", content="x", query="q1", category="factual", difficulty="easy", tags=["short"]),
-            BenchmarkCase(id="b", content="yy", query="q2", category="factual", difficulty="hard", tags=["long"]),
-            BenchmarkCase(id="c", content="zzz", query="q3", category="analytical", difficulty="easy", tags=["short"]),
+            BenchmarkCase(
+                id="a",
+                content="x",
+                query="q1",
+                category="factual",
+                difficulty="easy",
+                tags=["short"],
+            ),
+            BenchmarkCase(
+                id="b",
+                content="yy",
+                query="q2",
+                category="factual",
+                difficulty="hard",
+                tags=["long"],
+            ),
+            BenchmarkCase(
+                id="c",
+                content="zzz",
+                query="q3",
+                category="analytical",
+                difficulty="easy",
+                tags=["short"],
+            ),
         ]
         return BenchmarkDataset(name="test", description="desc", cases=cases)
 
@@ -101,6 +128,7 @@ class TestBenchmarkDataset:
 # ---------------------------------------------------------------------------
 # YAML Loader
 # ---------------------------------------------------------------------------
+
 
 class TestLoadDataset:
     def test_load_valid_yaml(self, tmp_path):
@@ -182,6 +210,7 @@ cases:
 # ---------------------------------------------------------------------------
 # Dict Loader
 # ---------------------------------------------------------------------------
+
 
 class TestLoadDatasetFromDict:
     def test_basic(self):

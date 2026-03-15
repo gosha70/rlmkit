@@ -1,6 +1,5 @@
 """Shared fixtures for integration tests."""
 
-
 import pytest
 
 from rlmkit import RLM, BudgetLimits, MockLLMClient, RLMConfig
@@ -19,11 +18,13 @@ def mock_llm_client():
 @pytest.fixture
 def mock_llm_multistep():
     """MockLLMClient that performs two code steps then returns FINAL."""
-    return MockLLMClient([
-        "```python\nresult = peek(0, 50)\nprint(result)\n```",
-        "```python\nmatches = grep(r'important')\nprint(len(matches))\n```",
-        "FINAL: Found relevant information in the document",
-    ])
+    return MockLLMClient(
+        [
+            "```python\nresult = peek(0, 50)\nprint(result)\n```",
+            "```python\nmatches = grep(r'important')\nprint(len(matches))\n```",
+            "FINAL: Found relevant information in the document",
+        ]
+    )
 
 
 @pytest.fixture

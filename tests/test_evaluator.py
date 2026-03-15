@@ -12,6 +12,7 @@ from rlmkit.strategies.rlm_strategy import RLMStrategy
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class StubStrategy:
     """Minimal strategy for testing the evaluator."""
 
@@ -48,6 +49,7 @@ class FailingStrategy:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestMultiStrategyEvaluator:
     def test_evaluate_all_succeed(self):
         ev = MultiStrategyEvaluator([StubStrategy("a"), StubStrategy("b")])
@@ -76,10 +78,12 @@ class TestMultiStrategyEvaluator:
 
     def test_with_real_strategies(self):
         client = MockLLMClient(["FINAL: rlm answer", "direct answer"])
-        ev = MultiStrategyEvaluator([
-            RLMStrategy(client=client),
-            DirectStrategy(client=client),
-        ])
+        ev = MultiStrategyEvaluator(
+            [
+                RLMStrategy(client=client),
+                DirectStrategy(client=client),
+            ]
+        )
         result = ev.evaluate("some text", "what?")
 
         assert "rlm" in result.results
@@ -91,12 +95,8 @@ class TestMultiStrategyEvaluator:
 class TestEvaluationResult:
     def test_get_comparison(self):
         er = EvaluationResult(query="q", content_length=100)
-        er.results["a"] = StrategyResult(
-            strategy="a", answer="x", elapsed_time=1.0, cost=0.01
-        )
-        er.results["b"] = StrategyResult(
-            strategy="b", answer="y", elapsed_time=2.0, cost=0.02
-        )
+        er.results["a"] = StrategyResult(strategy="a", answer="x", elapsed_time=1.0, cost=0.01)
+        er.results["b"] = StrategyResult(strategy="b", answer="y", elapsed_time=2.0, cost=0.02)
 
         cmp = er.get_comparison("a", "b")
         assert cmp is not None
@@ -110,9 +110,7 @@ class TestEvaluationResult:
 
     def test_get_summary(self):
         er = EvaluationResult(query="q", content_length=100)
-        er.results["fast"] = StrategyResult(
-            strategy="fast", answer="x", elapsed_time=0.5, cost=0.1
-        )
+        er.results["fast"] = StrategyResult(strategy="fast", answer="x", elapsed_time=0.5, cost=0.1)
         er.results["cheap"] = StrategyResult(
             strategy="cheap", answer="y", elapsed_time=1.0, cost=0.01
         )

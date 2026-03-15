@@ -11,6 +11,7 @@ from rlmkit.ui.services.models import ExecutionMetrics
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_execution_metrics(
     total_tokens=500,
     input_tokens=300,
@@ -63,6 +64,7 @@ def _make_assistant_msg(
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestEmptyMessages:
     def test_empty_list_returns_zeroes(self):
         analytics = AnalyticsEngine([]).compute()
@@ -89,11 +91,17 @@ class TestEmptyMessages:
 class TestSingleCompareMessage:
     def test_both_modes_aggregated(self):
         rlm = _make_execution_metrics(
-            total_tokens=850, cost_usd=0.050, execution_time_seconds=3.0,
-            steps_taken=3, memory_peak_mb=80.0, execution_type="rlm",
+            total_tokens=850,
+            cost_usd=0.050,
+            execution_time_seconds=3.0,
+            steps_taken=3,
+            memory_peak_mb=80.0,
+            execution_type="rlm",
         )
         direct = _make_execution_metrics(
-            total_tokens=270, cost_usd=0.015, execution_time_seconds=1.0,
+            total_tokens=270,
+            cost_usd=0.015,
+            execution_time_seconds=1.0,
             memory_peak_mb=50.0,
         )
         msg = _make_assistant_msg(mode="compare", rlm_metrics=rlm, direct_metrics=direct)
@@ -134,8 +142,11 @@ class TestSingleCompareMessage:
 class TestSingleModeMessages:
     def test_rlm_only(self):
         rlm = _make_execution_metrics(
-            total_tokens=500, cost_usd=0.03, execution_type="rlm",
-            steps_taken=2, memory_peak_mb=70.0,
+            total_tokens=500,
+            cost_usd=0.03,
+            execution_type="rlm",
+            steps_taken=2,
+            memory_peak_mb=70.0,
         )
         msg = _make_assistant_msg(mode="rlm_only", rlm_metrics=rlm)
 
@@ -159,8 +170,11 @@ class TestSingleModeMessages:
 
     def test_rag_only(self):
         rag = _make_execution_metrics(
-            total_tokens=400, cost_usd=0.02, execution_type="rag",
-            steps_taken=1, memory_peak_mb=55.0,
+            total_tokens=400,
+            cost_usd=0.02,
+            execution_type="rag",
+            steps_taken=1,
+            memory_peak_mb=55.0,
         )
         msg = _make_assistant_msg(mode="rag_only", rag_metrics=rag)
 
@@ -176,22 +190,28 @@ class TestMixedModes:
             _make_assistant_msg(
                 mode="rlm_only",
                 rlm_metrics=_make_execution_metrics(
-                    total_tokens=500, cost_usd=0.03, execution_type="rlm",
+                    total_tokens=500,
+                    cost_usd=0.03,
+                    execution_type="rlm",
                 ),
             ),
             _make_assistant_msg(
                 mode="direct_only",
                 direct_metrics=_make_execution_metrics(
-                    total_tokens=200, cost_usd=0.01,
+                    total_tokens=200,
+                    cost_usd=0.01,
                 ),
             ),
             _make_assistant_msg(
                 mode="compare",
                 rlm_metrics=_make_execution_metrics(
-                    total_tokens=600, cost_usd=0.04, execution_type="rlm",
+                    total_tokens=600,
+                    cost_usd=0.04,
+                    execution_type="rlm",
                 ),
                 direct_metrics=_make_execution_metrics(
-                    total_tokens=250, cost_usd=0.012,
+                    total_tokens=250,
+                    cost_usd=0.012,
                 ),
             ),
         ]
@@ -270,7 +290,9 @@ class TestEfficiencyScore:
     def test_score_in_range(self):
         msg = _make_assistant_msg(
             rlm_metrics=_make_execution_metrics(
-                total_tokens=500, cost_usd=0.005, execution_time_seconds=1.0,
+                total_tokens=500,
+                cost_usd=0.005,
+                execution_time_seconds=1.0,
                 execution_type="rlm",
             ),
         )
@@ -281,7 +303,9 @@ class TestEfficiencyScore:
     def test_cheap_fast_is_high_score(self):
         msg = _make_assistant_msg(
             direct_metrics=_make_execution_metrics(
-                total_tokens=100, cost_usd=0.001, execution_time_seconds=0.5,
+                total_tokens=100,
+                cost_usd=0.001,
+                execution_time_seconds=0.5,
             ),
         )
         analytics = AnalyticsEngine([msg]).compute()
@@ -290,7 +314,9 @@ class TestEfficiencyScore:
     def test_expensive_slow_is_lower_score(self):
         msg = _make_assistant_msg(
             direct_metrics=_make_execution_metrics(
-                total_tokens=20000, cost_usd=0.50, execution_time_seconds=15.0,
+                total_tokens=20000,
+                cost_usd=0.50,
+                execution_time_seconds=15.0,
             ),
         )
         analytics = AnalyticsEngine([msg]).compute()
@@ -330,8 +356,12 @@ class TestQueryDetails:
             mode="rlm_only",
             content="Response text",
             rlm_metrics=_make_execution_metrics(
-                total_tokens=500, cost_usd=0.03, execution_time_seconds=2.5,
-                steps_taken=3, memory_peak_mb=65.0, execution_type="rlm",
+                total_tokens=500,
+                cost_usd=0.03,
+                execution_time_seconds=2.5,
+                steps_taken=3,
+                memory_peak_mb=65.0,
+                execution_type="rlm",
             ),
         )
         analytics = AnalyticsEngine([msg]).compute()

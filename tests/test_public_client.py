@@ -61,6 +61,7 @@ class TestRLMKitClientConstruction:
     def test_sandbox_default_is_local(self):
         client = RLMKitClient()
         from rlmkit.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
+
         assert isinstance(client._sandbox, LocalSandboxAdapter)
 
 

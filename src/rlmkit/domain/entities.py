@@ -202,6 +202,9 @@ class BudgetState:
             return False
         if config.max_time_seconds is not None and self.elapsed_seconds >= config.max_time_seconds:
             return False
-        if config.max_recursion_depth is not None and self.recursion_depth >= config.max_recursion_depth:
+        if (
+            config.max_recursion_depth is not None
+            and self.recursion_depth >= config.max_recursion_depth
+        ):
             return False
         return True

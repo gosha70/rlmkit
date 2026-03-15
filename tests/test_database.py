@@ -1,6 +1,5 @@
 """Tests for SQLite Database connection manager."""
 
-
 from rlmkit.storage.database import _SCHEMA_VERSION, Database, get_default_db_path
 
 
@@ -54,9 +53,7 @@ class TestDatabase:
 
     def test_tables_created(self, tmp_path):
         db = Database(tmp_path / "test.db")
-        rows = db.fetchall(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
+        rows = db.fetchall("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         names = {r["name"] for r in rows}
         assert "conversations" in names
         assert "messages" in names
@@ -90,10 +87,7 @@ class TestDatabase:
 
     def test_executemany(self, tmp_path):
         db = Database(tmp_path / "test.db")
-        params = [
-            (f"c{i}", f"Conv {i}", "2024-01-01", "2024-01-01", "compare")
-            for i in range(5)
-        ]
+        params = [(f"c{i}", f"Conv {i}", "2024-01-01", "2024-01-01", "compare") for i in range(5)]
         db.executemany(
             "INSERT INTO conversations (id, name, created_at, updated_at, mode) "
             "VALUES (?, ?, ?, ?, ?)",

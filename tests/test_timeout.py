@@ -11,26 +11,26 @@ class TestBasicTimeout:
         env = PyReplEnv(max_exec_time_s=1.0)
         result = env.execute("while True: pass")
 
-        assert result['timeout'] is True
-        assert result['exception'] is not None
-        assert "timed out" in result['exception'].lower()
+        assert result["timeout"] is True
+        assert result["exception"] is not None
+        assert "timed out" in result["exception"].lower()
 
     def test_timeout_long_sleep(self):
         """Test that long sleep times out."""
         env = PyReplEnv(max_exec_time_s=1.0)
         result = env.execute("import time\ntime.sleep(10)")
 
-        assert result['timeout'] is True
-        assert result['exception'] is not None
+        assert result["timeout"] is True
+        assert result["exception"] is not None
 
     def test_no_timeout_quick_execution(self):
         """Test that quick code doesn't timeout."""
         env = PyReplEnv(max_exec_time_s=5.0)
         result = env.execute("x = sum(range(1000))\nprint(x)")
 
-        assert result['timeout'] is False
-        assert result['exception'] is None
-        assert '499500' in result['stdout']
+        assert result["timeout"] is False
+        assert result["exception"] is None
+        assert "499500" in result["stdout"]
 
 
 class TestTimeoutSettings:
@@ -41,7 +41,7 @@ class TestTimeoutSettings:
         env = PyReplEnv(max_exec_time_s=0.5)
         result = env.execute("import time\ntime.sleep(2)")
 
-        assert result['timeout'] is True
+        assert result["timeout"] is True
 
     def test_long_timeout(self):
         """Test longer timeout allows more work."""
@@ -54,8 +54,8 @@ print('done')
 """)
 
         # Should complete within 3 seconds
-        assert result['timeout'] is False
-        assert 'done' in result['stdout']
+        assert result["timeout"] is False
+        assert "done" in result["stdout"]
 
     def test_default_timeout(self):
         """Test default timeout (5 seconds)."""
@@ -63,7 +63,7 @@ print('done')
         assert env.max_exec_time_s == 5.0
 
         result = env.execute("print('quick')")
-        assert result['timeout'] is False
+        assert result["timeout"] is False
 
 
 class TestTimeoutWithComputations:
@@ -81,7 +81,7 @@ for i in range(10000000):
 
         # Might timeout depending on system speed
         # At minimum, should not crash
-        assert isinstance(result['timeout'], bool)
+        assert isinstance(result["timeout"], bool)
 
     def test_no_timeout_reasonable_computation(self):
         """Test that reasonable computation doesn't timeout."""
@@ -92,8 +92,8 @@ result = sum(i**2 for i in range(10000))
 print(result)
 """)
 
-        assert result['timeout'] is False
-        assert result['exception'] is None
+        assert result["timeout"] is False
+        assert result["exception"] is None
 
 
 class TestTimeoutWithSafeMode:
@@ -104,7 +104,7 @@ class TestTimeoutWithSafeMode:
         env = PyReplEnv(safe_mode=True, max_exec_time_s=1.0)
         result = env.execute("while True: pass")
 
-        assert result['timeout'] is True
+        assert result["timeout"] is True
 
     def test_timeout_with_imports(self):
         """Test timeout with allowed imports."""
@@ -114,7 +114,7 @@ import time
 time.sleep(5)
 """)
 
-        assert result['timeout'] is True
+        assert result["timeout"] is True
 
 
 class TestTimeoutPreservesState:
@@ -126,13 +126,13 @@ class TestTimeoutPreservesState:
 
         # First: cause timeout
         result1 = env.execute("while True: pass")
-        assert result1['timeout'] is True
+        assert result1["timeout"] is True
 
         # Second: verify environment still works
         result2 = env.execute("x = 42\nprint(x)")
-        assert result2['timeout'] is False
-        assert result2['exception'] is None
-        assert '42' in result2['stdout']
+        assert result2["timeout"] is False
+        assert result2["exception"] is None
+        assert "42" in result2["stdout"]
 
     def test_variables_before_timeout(self):
         """Test that variables set before timeout are preserved."""
@@ -140,16 +140,16 @@ class TestTimeoutPreservesState:
 
         # Set a variable
         result1 = env.execute("y = 100")
-        assert result1['timeout'] is False
+        assert result1["timeout"] is False
 
         # Cause timeout
         result2 = env.execute("while True: pass")
-        assert result2['timeout'] is True
+        assert result2["timeout"] is True
 
         # Check if variable still exists
         result3 = env.execute("print(y)")
-        assert result3['timeout'] is False
-        assert '100' in result3['stdout']
+        assert result3["timeout"] is False
+        assert "100" in result3["stdout"]
 
 
 class TestTimeoutEdgeCases:
@@ -165,26 +165,26 @@ raise ValueError('test error')
 """)
 
         # Exception should be caught before potential timeout
-        assert result['timeout'] is False
-        assert result['exception'] is not None
-        assert 'ValueError' in result['exception']
+        assert result["timeout"] is False
+        assert result["exception"] is not None
+        assert "ValueError" in result["exception"]
 
     def test_timeout_empty_code(self):
         """Test timeout with empty code."""
         env = PyReplEnv(max_exec_time_s=1.0)
         result = env.execute("")
 
-        assert result['timeout'] is False
-        assert result['exception'] is None
+        assert result["timeout"] is False
+        assert result["exception"] is None
 
     def test_timeout_syntax_error(self):
         """Test that syntax errors are caught before timeout."""
         env = PyReplEnv(max_exec_time_s=1.0)
         result = env.execute("def broken(")
 
-        assert result['timeout'] is False
-        assert result['exception'] is not None
-        assert 'SyntaxError' in result['exception']
+        assert result["timeout"] is False
+        assert result["exception"] is not None
+        assert "SyntaxError" in result["exception"]
 
 
 class TestTimeoutWithOutput:
@@ -200,9 +200,9 @@ while True:
     pass
 """)
 
-        assert result['timeout'] is True
+        assert result["timeout"] is True
         # Output before timeout should be captured
-        assert 'starting' in result['stdout']
+        assert "starting" in result["stdout"]
 
     def test_output_truncation_with_timeout(self):
         """Test output truncation works with timeout."""
@@ -215,4 +215,4 @@ time.sleep(5)
 """)
 
         # Could timeout or truncate depending on timing
-        assert result['timeout'] is True or result['truncated'] is True
+        assert result["timeout"] is True or result["truncated"] is True

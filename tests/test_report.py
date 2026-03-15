@@ -15,6 +15,7 @@ from rlmkit.strategies.base import StrategyResult
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class StubStrategy:
     def __init__(self, name_val: str, answer: str = "ok", cost: float = 0.01, time: float = 0.1):
         self._name = name_val
@@ -54,6 +55,7 @@ def _make_run(n_cases: int = 3) -> BenchmarkRun:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestBenchmarkReport:
     def test_summary(self):

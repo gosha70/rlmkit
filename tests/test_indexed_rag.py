@@ -11,6 +11,7 @@ from rlmkit.strategies.indexed_rag import IndexedRAGStrategy
 # Mocks
 # ---------------------------------------------------------------------------
 
+
 class MockLLMClient:
     """Mock LLM client that echoes back a fixed answer."""
 
@@ -71,6 +72,7 @@ def setup(tmp_path):
 # Protocol conformance
 # ---------------------------------------------------------------------------
 
+
 class TestProtocol:
     def test_satisfies_llm_strategy(self, setup):
         rag, *_ = setup
@@ -84,6 +86,7 @@ class TestProtocol:
 # ---------------------------------------------------------------------------
 # Indexing
 # ---------------------------------------------------------------------------
+
 
 class TestIndexing:
     def test_index_content_stores_chunks(self, setup):
@@ -120,6 +123,7 @@ class TestIndexing:
 # ---------------------------------------------------------------------------
 # Run (end-to-end)
 # ---------------------------------------------------------------------------
+
 
 class TestRun:
     def test_run_produces_strategy_result(self, setup):

@@ -40,9 +40,7 @@ class OpenAIAdapter:
         model = getattr(self._client, "model", "")
         return LLMResponseDTO(content=text, model=model)
 
-    def complete_stream(
-        self, messages: list[dict[str, str]]
-    ) -> Iterator[str]:
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Streaming is not yet implemented for the legacy client."""
         result = self.complete(messages)
         yield result.content

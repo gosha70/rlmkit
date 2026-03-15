@@ -10,6 +10,7 @@ from rlmkit.core.recursion import RecursiveController
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_factory(client, max_steps=16):
     """Return a controller factory that builds an RLM for the given depth."""
 
@@ -23,6 +24,7 @@ def _make_factory(client, max_steps=16):
 # ---------------------------------------------------------------------------
 # Basic depth tests
 # ---------------------------------------------------------------------------
+
 
 class TestRecursiveControllerBasics:
     """Core depth-management behaviour."""
@@ -52,11 +54,13 @@ class TestRecursiveControllerBasics:
         #   child (depth=1): code that calls subcall -> triggers depth=2
         #   grandchild (depth=2): returns FINAL immediately
         #   child (depth=1): gets answer, returns FINAL
-        client = MockLLMClient([
-            "```python\nresult = subcall('inner', 'q2')\nprint(result)\n```",
-            "FINAL: grandchild",
-            "FINAL: child got grandchild",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nresult = subcall('inner', 'q2')\nprint(result)\n```",
+                "FINAL: grandchild",
+                "FINAL: child got grandchild",
+            ]
+        )
 
         tracker = BudgetTracker(BudgetLimits(max_recursion_depth=5))
 
@@ -67,7 +71,9 @@ class TestRecursiveControllerBasics:
         )
 
         answer = rc.execute_subcall(
-            content="outer", query="q1", depth=0,
+            content="outer",
+            query="q1",
+            depth=0,
         )
 
         assert "grandchild" in answer
@@ -76,18 +82,20 @@ class TestRecursiveControllerBasics:
 
     def test_depth_3_triple_nesting(self):
         """Three levels: root -> d1 -> d2 -> d3."""
-        client = MockLLMClient([
-            # d1: calls subcall to go to d2
-            "```python\nr = subcall('d2_content', 'd2_query')\nprint(r)\n```",
-            # d2: calls subcall to go to d3
-            "```python\nr = subcall('d3_content', 'd3_query')\nprint(r)\n```",
-            # d3: returns FINAL
-            "FINAL: d3 answer",
-            # d2: returns with d3 answer
-            "FINAL: d2 got d3 answer",
-            # d1: returns with d2 answer
-            "FINAL: d1 got d2 got d3 answer",
-        ])
+        client = MockLLMClient(
+            [
+                # d1: calls subcall to go to d2
+                "```python\nr = subcall('d2_content', 'd2_query')\nprint(r)\n```",
+                # d2: calls subcall to go to d3
+                "```python\nr = subcall('d3_content', 'd3_query')\nprint(r)\n```",
+                # d3: returns FINAL
+                "FINAL: d3 answer",
+                # d2: returns with d3 answer
+                "FINAL: d2 got d3 answer",
+                # d1: returns with d2 answer
+                "FINAL: d1 got d2 got d3 answer",
+            ]
+        )
 
         tracker = BudgetTracker(BudgetLimits(max_recursion_depth=5))
         rc = RecursiveController(

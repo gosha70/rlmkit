@@ -76,9 +76,9 @@ class TestTokenUsage:
         usage.add_output(50)
 
         data = usage.to_dict()
-        assert data['input_tokens'] == 100
-        assert data['output_tokens'] == 50
-        assert data['total_tokens'] == 150
+        assert data["input_tokens"] == 100
+        assert data["output_tokens"] == 50
+        assert data["total_tokens"] == 150
 
 
 class TestCostTracker:
@@ -102,7 +102,7 @@ class TestCostTracker:
         tracker = CostTracker(input_cost_per_1k=0.03, output_cost_per_1k=0.06)
 
         cost = tracker.add_usage(1000, 500)
-        expected = (1000/1000 * 0.03) + (500/1000 * 0.06)
+        expected = (1000 / 1000 * 0.03) + (500 / 1000 * 0.06)
         assert cost == pytest.approx(expected)
         assert tracker.total_cost == pytest.approx(expected)
 
@@ -124,9 +124,9 @@ class TestCostTracker:
         tracker.add_usage(1000, 500)
 
         data = tracker.to_dict()
-        assert data['input_cost_per_1k'] == 0.03
-        assert data['output_cost_per_1k'] == 0.06
-        assert 'total_cost' in data
+        assert data["input_cost_per_1k"] == 0.03
+        assert data["output_cost_per_1k"] == 0.06
+        assert "total_cost" in data
 
 
 class TestBudgetLimits:
@@ -161,9 +161,9 @@ class TestBudgetLimits:
         limits = BudgetLimits(max_steps=10, max_tokens=5000)
         data = limits.to_dict()
 
-        assert data['max_steps'] == 10
-        assert data['max_tokens'] == 5000
-        assert data['max_cost'] is None
+        assert data["max_steps"] == 10
+        assert data["max_tokens"] == 5000
+        assert data["max_cost"] is None
 
 
 class TestBudgetTracker:
@@ -350,12 +350,12 @@ class TestBudgetTracker:
 
         stats = tracker.get_stats()
 
-        assert stats['steps'] == 1
-        assert 'tokens' in stats
-        assert 'cost' in stats
-        assert 'elapsed_time' in stats
-        assert 'recursion_depth' in stats
-        assert 'limits' in stats
+        assert stats["steps"] == 1
+        assert "tokens" in stats
+        assert "cost" in stats
+        assert "elapsed_time" in stats
+        assert "recursion_depth" in stats
+        assert "limits" in stats
 
     def test_get_utilization(self):
         """Test getting budget utilization percentages."""
@@ -367,9 +367,9 @@ class TestBudgetTracker:
 
         utilization = tracker.get_utilization()
 
-        assert utilization['steps'] == 0.2  # 2/10
-        assert utilization['tokens'] == 0.0  # 0/1000
-        assert utilization['cost'] is None  # No cost limit
+        assert utilization["steps"] == 0.2  # 2/10
+        assert utilization["tokens"] == 0.0  # 0/1000
+        assert utilization["cost"] is None  # No cost limit
 
     def test_step_history(self):
         """Test step history recording."""
@@ -383,11 +383,11 @@ class TestBudgetTracker:
         tracker.add_llm_call("input2", "output2")
 
         assert len(tracker.step_history) == 2
-        assert tracker.step_history[0]['step'] == 1
-        assert tracker.step_history[1]['step'] == 2
-        assert 'input_tokens' in tracker.step_history[0]
-        assert 'output_tokens' in tracker.step_history[0]
-        assert 'cost' in tracker.step_history[0]
+        assert tracker.step_history[0]["step"] == 1
+        assert tracker.step_history[1]["step"] == 2
+        assert "input_tokens" in tracker.step_history[0]
+        assert "output_tokens" in tracker.step_history[0]
+        assert "cost" in tracker.step_history[0]
 
 
 class TestBudgetTrackerIntegration:
@@ -423,15 +423,15 @@ class TestBudgetTrackerIntegration:
 
         # Verify stats
         stats = tracker.get_stats()
-        assert stats['steps'] == 3
-        assert stats['tokens']['total_tokens'] > 0
-        assert stats['cost']['total_cost'] > 0
-        assert stats['elapsed_time'] >= 0
+        assert stats["steps"] == 3
+        assert stats["tokens"]["total_tokens"] > 0
+        assert stats["cost"]["total_cost"] > 0
+        assert stats["elapsed_time"] >= 0
 
         # Verify utilization
         util = tracker.get_utilization()
-        assert 0 < util['steps'] < 1.0
-        assert 0 < util['tokens'] < 1.0
+        assert 0 < util["steps"] < 1.0
+        assert 0 < util["tokens"] < 1.0
 
     def test_budget_enforcement_prevents_overuse(self):
         """Test that budget limits prevent excessive usage."""

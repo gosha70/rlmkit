@@ -1,6 +1,5 @@
 """Tests for RestrictedSandboxAdapter (RestrictedPython-based sandbox)."""
 
-
 from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
 # ---------------------------------------------------------------------------
@@ -83,7 +82,9 @@ class TestRestrictedSandboxSafeImports:
         sb = RestrictedSandboxAdapter()
         # Use re.findall to avoid RestrictedPython guard issues with
         # calling methods on match objects returned by re.search.
-        result = sb.execute("import re\nmatches = re.findall('[0-9]+', 'abc123')\nprint(matches[0])")
+        result = sb.execute(
+            "import re\nmatches = re.findall('[0-9]+', 'abc123')\nprint(matches[0])"
+        )
         assert result.success
         assert "123" in result.stdout
 
@@ -97,9 +98,7 @@ class TestRestrictedSandboxSafeImports:
     def test_import_collections(self):
         """collections module is importable."""
         sb = RestrictedSandboxAdapter()
-        result = sb.execute(
-            "import collections\nd = collections.Counter('aab')\nprint(d['a'])"
-        )
+        result = sb.execute("import collections\nd = collections.Counter('aab')\nprint(d['a'])")
         assert result.success
         assert "2" in result.stdout
 

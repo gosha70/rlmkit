@@ -93,9 +93,7 @@ class RunRAGUseCase:
                 },
                 {
                     "role": "user",
-                    "content": (
-                        f"Context:\n{context}\n\nQuestion: {query}"
-                    ),
+                    "content": (f"Context:\n{context}\n\nQuestion: {query}"),
                 },
             ]
 
@@ -110,12 +108,14 @@ class RunRAGUseCase:
                 input_tokens=response.input_tokens,
                 output_tokens=response.output_tokens,
                 elapsed_time=elapsed,
-                trace=[{
-                    "step": 0,
-                    "role": "rag_retrieval",
-                    "chunks_retrieved": len(results),
-                    "scores": [score for score, _, _ in results],
-                }],
+                trace=[
+                    {
+                        "step": 0,
+                        "role": "rag_retrieval",
+                        "chunks_retrieved": len(results),
+                        "scores": [score for score, _, _ in results],
+                    }
+                ],
                 metadata={
                     "chunks_total": len(chunks),
                     "chunks_retrieved": len(results),

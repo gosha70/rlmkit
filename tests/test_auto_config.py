@@ -4,7 +4,6 @@ Tests for LLM provider auto-configuration.
 This tests the Bet 2 implementation - auto-detection of providers from environment variables.
 """
 
-
 import pytest
 
 from rlmkit.llm.auto import (

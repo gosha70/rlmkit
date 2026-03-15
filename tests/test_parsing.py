@@ -293,7 +293,7 @@ class TestFormatResultForLLM:
 
     def test_formats_stdout(self):
         """Test formats stdout output."""
-        result = {'stdout': 'Hello, world!\n', 'stderr': '', 'exception': None}
+        result = {"stdout": "Hello, world!\n", "stderr": "", "exception": None}
         formatted = format_result_for_llm(result)
 
         assert "Output:" in formatted
@@ -301,7 +301,7 @@ class TestFormatResultForLLM:
 
     def test_formats_stderr(self):
         """Test formats stderr output."""
-        result = {'stdout': '', 'stderr': 'Warning: something\n', 'exception': None}
+        result = {"stdout": "", "stderr": "Warning: something\n", "exception": None}
         formatted = format_result_for_llm(result)
 
         assert "Errors:" in formatted
@@ -309,11 +309,7 @@ class TestFormatResultForLLM:
 
     def test_formats_exception(self):
         """Test formats exception."""
-        result = {
-            'stdout': '',
-            'stderr': '',
-            'exception': 'ZeroDivisionError: division by zero'
-        }
+        result = {"stdout": "", "stderr": "", "exception": "ZeroDivisionError: division by zero"}
         formatted = format_result_for_llm(result)
 
         assert "Exception:" in formatted
@@ -321,25 +317,21 @@ class TestFormatResultForLLM:
 
     def test_formats_timeout(self):
         """Test formats timeout indicator."""
-        result = {'stdout': '', 'stderr': '', 'exception': None, 'timeout': True}
+        result = {"stdout": "", "stderr": "", "exception": None, "timeout": True}
         formatted = format_result_for_llm(result)
 
         assert "timed out" in formatted.lower()
 
     def test_formats_successful_no_output(self):
         """Test formats successful execution with no output."""
-        result = {'stdout': '', 'stderr': '', 'exception': None}
+        result = {"stdout": "", "stderr": "", "exception": None}
         formatted = format_result_for_llm(result)
 
         assert "successfully" in formatted.lower()
 
     def test_formats_combined_outputs(self):
         """Test formats multiple outputs together."""
-        result = {
-            'stdout': 'Result: 42\n',
-            'stderr': 'Debug info\n',
-            'exception': None
-        }
+        result = {"stdout": "Result: 42\n", "stderr": "Debug info\n", "exception": None}
         formatted = format_result_for_llm(result)
 
         assert "Output:" in formatted
@@ -349,7 +341,7 @@ class TestFormatResultForLLM:
 
     def test_strips_whitespace(self):
         """Test strips excess whitespace."""
-        result = {'stdout': '  \n  Hello  \n  ', 'stderr': '', 'exception': None}
+        result = {"stdout": "  \n  Hello  \n  ", "stderr": "", "exception": None}
         formatted = format_result_for_llm(result)
 
         assert "Hello" in formatted

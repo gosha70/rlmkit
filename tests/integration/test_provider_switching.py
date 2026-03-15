@@ -30,14 +30,18 @@ class TestProviderSwitching:
 
     def test_no_state_leakage_between_rlm_instances(self, sample_document):
         """Two RLM instances using different clients have isolated environments."""
-        client_a = MockLLMClient([
-            "```python\nshared_var = 'from_a'\n```",
-            "FINAL: A done",
-        ])
-        client_b = MockLLMClient([
-            "```python\nprint(shared_var)\n```",  # shared_var should NOT exist
-            "FINAL: B done",
-        ])
+        client_a = MockLLMClient(
+            [
+                "```python\nshared_var = 'from_a'\n```",
+                "FINAL: A done",
+            ]
+        )
+        client_b = MockLLMClient(
+            [
+                "```python\nprint(shared_var)\n```",  # shared_var should NOT exist
+                "FINAL: B done",
+            ]
+        )
 
         rlm_a = RLM(client=client_a)
         rlm_b = RLM(client=client_b)

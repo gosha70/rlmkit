@@ -19,14 +19,14 @@ class TestJSONSubcallAction:
         # Mock LLM that returns JSON subcall action, then final answer
         responses = [
             # Step 1: Return a JSON subcall action
-            '''{
+            """{
                 "action": "subcall",
                 "query": "What is in section 1?",
                 "prompt": "Section 1: Introduction\\nThis is the introduction.",
                 "note": "Analyzing section 1"
-            }''',
+            }""",
             # Step 2: After subcall returns, provide final answer
-            "FINAL: The document has an introduction section."
+            "FINAL: The document has an introduction section.",
         ]
 
         client = MockLLMClient(responses)
@@ -37,7 +37,7 @@ class TestJSONSubcallAction:
         # Run with content that could benefit from subcall
         result = rlm.run(
             prompt="Section 1: Introduction\nThis is the introduction.\n\nSection 2: Main content here.",
-            query="What sections does this document have?"
+            query="What sections does this document have?",
         )
 
         assert result.success
@@ -45,20 +45,19 @@ class TestJSONSubcallAction:
         assert result.steps == 2
 
         # Check trace contains subcall execution
-        assert any("subcall" in str(item.get("content", "")).lower()
-                   for item in result.trace)
+        assert any("subcall" in str(item.get("content", "")).lower() for item in result.trace)
 
     def test_json_subcall_with_error_handling(self):
         """Test that subcall errors are handled gracefully."""
         # Mock LLM that returns invalid subcall action
         responses = [
             # Step 1: Return subcall with missing fields (should error)
-            '''{
+            """{
                 "action": "subcall",
                 "query": "Test query"
-            }''',  # Missing 'prompt' field
+            }""",  # Missing 'prompt' field
             # Step 2: Recover with direct answer
-            "FINAL: Could not complete subcall, but here's my answer: The document is about testing."
+            "FINAL: Could not complete subcall, but here's my answer: The document is about testing.",
         ]
 
         client = MockLLMClient(responses)
@@ -66,10 +65,7 @@ class TestJSONSubcallAction:
         config.execution.max_steps = 10
         rlm = RLM(client=client, config=config)
 
-        result = rlm.run(
-            prompt="Test content about error handling.",
-            query="What is this about?"
-        )
+        result = rlm.run(prompt="Test content about error handling.", query="What is this about?")
 
         # Should still succeed with final answer
         assert result.success
@@ -80,13 +76,13 @@ class TestJSONSubcallAction:
         # Mock LLM responses
         responses = [
             # Subcall action
-            '''{
+            """{
                 "action": "subcall",
                 "query": "Summarize this",
                 "prompt": "Content to summarize: The quick brown fox."
-            }''',
+            }""",
             # Final answer using subcall result
-            "FINAL: Based on the subcall, the content mentions a fox."
+            "FINAL: Based on the subcall, the content mentions a fox.",
         ]
 
         client = MockLLMClient(responses)
@@ -94,10 +90,7 @@ class TestJSONSubcallAction:
         config.execution.max_steps = 10
         rlm = RLM(client=client, config=config)
 
-        result = rlm.run(
-            prompt="Full document content here.",
-            query="What does the document say?"
-        )
+        result = rlm.run(prompt="Full document content here.", query="What does the document say?")
 
         assert result.success
         assert len(result.trace) >= 2
@@ -112,12 +105,12 @@ class TestJSONSubcallAction:
 
         # Test 1: JSON action
         json_responses = [
-            '''{
+            """{
                 "action": "subcall",
                 "query": "Count words",
                 "prompt": "One two three"
-            }''',
-            "FINAL: Three words found."
+            }""",
+            "FINAL: Three words found.",
         ]
 
         json_client = MockLLMClient(json_responses)
@@ -125,18 +118,15 @@ class TestJSONSubcallAction:
         json_config.execution.max_steps = 10
         json_rlm = RLM(client=json_client, config=json_config)
 
-        json_result = json_rlm.run(
-            prompt="Test document",
-            query="How many words?"
-        )
+        json_result = json_rlm.run(prompt="Test document", query="How many words?")
 
         # Test 2: Direct Python code (old way)
         python_responses = [
-            '''```python
+            """```python
 result = subcall(query="Count words", prompt="One two three")
 print(result)
-```''',
-            "FINAL: Three words found."
+```""",
+            "FINAL: Three words found.",
         ]
 
         python_client = MockLLMClient(python_responses)
@@ -144,10 +134,7 @@ print(result)
         python_config.execution.max_steps = 10
         python_rlm = RLM(client=python_client, config=python_config)
 
-        python_result = python_rlm.run(
-            prompt="Test document",
-            query="How many words?"
-        )
+        python_result = python_rlm.run(prompt="Test document", query="How many words?")
 
         # Both should succeed
         assert json_result.success
@@ -165,20 +152,20 @@ class TestJSONSubcallIntegration:
         # Simulate LLM that uses inspect, then subcall, then final
         responses = [
             # Step 1: Inspect with JSON
-            '''{
+            """{
                 "action": "inspect",
                 "tool": "peek",
                 "args": {"start": 0, "end": 100}
-            }''',
+            }""",
             # Step 2: Use subcall to analyze a section
-            '''{
+            """{
                 "action": "subcall",
                 "query": "Extract the date",
                 "prompt": "Date: 2026-02-06\\nAuthor: Test",
                 "note": "Getting metadata"
-            }''',
+            }""",
             # Step 3: Final answer
-            "FINAL: Document dated 2026-02-06 by Test author."
+            "FINAL: Document dated 2026-02-06 by Test author.",
         ]
 
         client = MockLLMClient(responses)
@@ -188,7 +175,7 @@ class TestJSONSubcallIntegration:
 
         result = rlm.run(
             prompt="Date: 2026-02-06\nAuthor: Test\n\nBody: Lorem ipsum...",
-            query="When was this written and by whom?"
+            query="When was this written and by whom?",
         )
 
         assert result.success

@@ -48,9 +48,7 @@ def create_sandbox(
         from rlmkit.envs.sandbox import DockerExecutor
 
         if not DockerExecutor.is_available():
-            raise ValueError(
-                "Docker sandbox requires Docker to be installed and running."
-            )
+            raise ValueError("Docker sandbox requires Docker to be installed and running.")
         from .docker_sandbox_adapter import DockerSandboxAdapter
 
         return DockerSandboxAdapter(
@@ -58,6 +56,5 @@ def create_sandbox(
         )
     else:
         raise ValueError(
-            f"Unknown sandbox type: {sandbox_type!r}. "
-            "Supported: 'local', 'restricted', 'docker'."
+            f"Unknown sandbox type: {sandbox_type!r}. Supported: 'local', 'restricted', 'docker'."
         )

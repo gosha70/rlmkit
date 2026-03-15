@@ -231,9 +231,7 @@ class TestMajor3AsyncPorts:
         mock_response.usage.completion_tokens = 5
 
         with patch("litellm.acompletion", return_value=mock_response) as mock_ac:
-            result = await adapter.complete_async(
-                [{"role": "user", "content": "hello"}]
-            )
+            result = await adapter.complete_async([{"role": "user", "content": "hello"}])
             mock_ac.assert_called_once()
             assert isinstance(result, LLMResponseDTO)
             assert result.content == "async answer"
@@ -264,9 +262,7 @@ class TestMajor3AsyncPorts:
 
         with patch("litellm.acompletion", return_value=mock_async_iter()):
             collected = []
-            async for text in adapter.complete_stream_async(
-                [{"role": "user", "content": "hi"}]
-            ):
+            async for text in adapter.complete_stream_async([{"role": "user", "content": "hi"}]):
                 collected.append(text)
 
             assert collected == ["Hello", " World"]
@@ -291,8 +287,9 @@ class FakeTwoModelLLM:
         idx = min(self._idx, len(self._responses) - 1)
         text = self._responses[idx]
         self._idx += 1
-        return LLMResponseDTO(content=text, model=self._active_model,
-                               input_tokens=10, output_tokens=5)
+        return LLMResponseDTO(
+            content=text, model=self._active_model, input_tokens=10, output_tokens=5
+        )
 
     def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         yield self.complete(messages).content
@@ -346,11 +343,13 @@ class TestMinor5TwoModelSwitching:
 
     def test_subsequent_steps_use_recursive_model(self):
         """Steps after step 1 should use recursive model."""
-        llm = FakeTwoModelLLM([
-            "```python\nprint('exploring')\n```",
-            "```python\nprint('more')\n```",
-            "FINAL: done",
-        ])
+        llm = FakeTwoModelLLM(
+            [
+                "```python\nprint('exploring')\n```",
+                "```python\nprint('more')\n```",
+                "FINAL: done",
+            ]
+        )
         sandbox = FakeSandbox()
         uc = RunRLMUseCase(llm, sandbox)
         uc.execute("content", "question")
@@ -362,10 +361,12 @@ class TestMinor5TwoModelSwitching:
 
     def test_root_model_restored_after_final(self):
         """After finding FINAL answer, root model should be restored."""
-        llm = FakeTwoModelLLM([
-            "```python\nprint('exploring')\n```",
-            "FINAL: answer",
-        ])
+        llm = FakeTwoModelLLM(
+            [
+                "```python\nprint('exploring')\n```",
+                "FINAL: answer",
+            ]
+        )
         sandbox = FakeSandbox()
         uc = RunRLMUseCase(llm, sandbox)
         uc.execute("content", "question")
@@ -387,12 +388,16 @@ class TestMinor5TwoModelSwitching:
 
         class SimpleLLM:
             def complete(self, messages):
-                return LLMResponseDTO(content="FINAL: answer", model="simple",
-                                       input_tokens=5, output_tokens=5)
+                return LLMResponseDTO(
+                    content="FINAL: answer", model="simple", input_tokens=5, output_tokens=5
+                )
+
             def complete_stream(self, messages):
                 yield "FINAL: answer"
+
             def count_tokens(self, text):
                 return 1
+
             def get_pricing(self):
                 return {}
 

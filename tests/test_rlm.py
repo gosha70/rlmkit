@@ -10,15 +10,13 @@ class TestBasicRLMExecution:
 
     def test_simple_code_execution(self):
         """Test RLM executes code and gets result."""
-        client = MockLLMClient([
-            "```python\nx = peek(0, 10)\nprint(x)\n```",
-            "FINAL: The first 10 characters"
-        ])
+        client = MockLLMClient(
+            ["```python\nx = peek(0, 10)\nprint(x)\n```", "FINAL: The first 10 characters"]
+        )
 
         rlm = RLM(client=client)
         result = rlm.run(
-            prompt="Hello, World! This is a test.",
-            query="What are the first 10 characters?"
+            prompt="Hello, World! This is a test.", query="What are the first 10 characters?"
         )
 
         assert result.success
@@ -28,15 +26,10 @@ class TestBasicRLMExecution:
 
     def test_direct_final_answer(self):
         """Test RLM with immediate FINAL answer (no code)."""
-        client = MockLLMClient([
-            "FINAL: This is the answer"
-        ])
+        client = MockLLMClient(["FINAL: This is the answer"])
 
         rlm = RLM(client=client)
-        result = rlm.run(
-            prompt="Some content",
-            query="What's the answer?"
-        )
+        result = rlm.run(prompt="Some content", query="What's the answer?")
 
         assert result.success
         assert result.answer == "This is the answer"
@@ -44,16 +37,10 @@ class TestBasicRLMExecution:
 
     def test_final_var_extraction(self):
         """Test FINAL_VAR extracts variable from environment."""
-        client = MockLLMClient([
-            "```python\nmy_result = peek(0, 5)\n```",
-            "FINAL_VAR: my_result"
-        ])
+        client = MockLLMClient(["```python\nmy_result = peek(0, 5)\n```", "FINAL_VAR: my_result"])
 
         rlm = RLM(client=client)
-        result = rlm.run(
-            prompt="Hello World",
-            query="Get first 5 chars"
-        )
+        result = rlm.run(prompt="Hello World", query="Get first 5 chars")
 
         assert result.success
         assert result.answer == "Hello"
@@ -61,17 +48,16 @@ class TestBasicRLMExecution:
 
     def test_multiple_execution_steps(self):
         """Test RLM with multiple code execution steps."""
-        client = MockLLMClient([
-            "```python\nmatches = grep(r'test')\nprint(len(matches))\n```",
-            "```python\nfirst_match = matches[0] if matches else None\nprint(first_match)\n```",
-            "FINAL: Found test pattern"
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nmatches = grep(r'test')\nprint(len(matches))\n```",
+                "```python\nfirst_match = matches[0] if matches else None\nprint(first_match)\n```",
+                "FINAL: Found test pattern",
+            ]
+        )
 
         rlm = RLM(client=client)
-        result = rlm.run(
-            prompt="This is a test. Another test here.",
-            query="Find 'test' pattern"
-        )
+        result = rlm.run(prompt="This is a test. Another test here.", query="Find 'test' pattern")
 
         assert result.success
         assert result.answer == "Found test pattern"
@@ -84,9 +70,7 @@ class TestBudgetEnforcement:
     def test_max_steps_exceeded(self):
         """Test BudgetExceeded raised when max_steps reached."""
         # Client that always returns code (never FINAL)
-        client = MockLLMClient([
-            "```python\nx = 1\n```"
-        ])
+        client = MockLLMClient(["```python\nx = 1\n```"])
 
         config = RLMConfig()
         config.execution.max_steps = 3
@@ -100,10 +84,7 @@ class TestBudgetEnforcement:
 
     def test_stops_at_final_before_budget(self):
         """Test RLM stops when FINAL found, even with budget remaining."""
-        client = MockLLMClient([
-            "```python\nx = peek(0, 5)\n```",
-            "FINAL: Done"
-        ])
+        client = MockLLMClient(["```python\nx = peek(0, 5)\n```", "FINAL: Done"])
 
         config = RLMConfig()
         config.execution.max_steps = 100  # Large budget
@@ -121,10 +102,12 @@ class TestErrorHandling:
 
     def test_code_execution_error(self):
         """Test RLM accepts FINAL after execution errors (with warning)."""
-        client = MockLLMClient([
-            "```python\nx = 1 / 0\n```",  # Will cause error
-            "FINAL: Handled error",  # Accepted with warning (model may reason directly)
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nx = 1 / 0\n```",  # Will cause error
+                "FINAL: Handled error",  # Accepted with warning (model may reason directly)
+            ]
+        )
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
@@ -134,14 +117,16 @@ class TestErrorHandling:
         assert result.answer == "Handled error"
 
         # Should have warning about FINAL after execution failure
-        warnings = [t for t in result.trace if t.get("role") == "system" and "Warning" in t.get("content", "")]
+        warnings = [
+            t
+            for t in result.trace
+            if t.get("role") == "system" and "Warning" in t.get("content", "")
+        ]
         assert len(warnings) >= 1, "Should warn about FINAL after execution error"
 
     def test_missing_final_var(self):
         """Test error when FINAL_VAR references non-existent variable."""
-        client = MockLLMClient([
-            "FINAL_VAR: nonexistent_variable"
-        ])
+        client = MockLLMClient(["FINAL_VAR: nonexistent_variable"])
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
@@ -151,10 +136,12 @@ class TestErrorHandling:
 
     def test_unclear_response_handling(self):
         """Test RLM prompts for clarity when no code or FINAL."""
-        client = MockLLMClient([
-            "I'm thinking about it...",  # No code, no FINAL
-            "FINAL: Here's my answer"
-        ])
+        client = MockLLMClient(
+            [
+                "I'm thinking about it...",  # No code, no FINAL
+                "FINAL: Here's my answer",
+            ]
+        )
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
@@ -168,10 +155,7 @@ class TestMessageHistory:
 
     def test_message_history_structure(self):
         """Test that messages are properly structured."""
-        client = MockLLMClient([
-            "```python\nx = peek(0, 5)\n```",
-            "FINAL: Done"
-        ])
+        client = MockLLMClient(["```python\nx = peek(0, 5)\n```", "FINAL: Done"])
 
         rlm = RLM(client=client)
         rlm.run(prompt="test content", query="test query")
@@ -210,10 +194,7 @@ class TestREPLIntegration:
 
     def test_content_set_as_p(self):
         """Test prompt is set as 'P' variable in REPL."""
-        client = MockLLMClient([
-            "```python\nprint(len(P))\n```",
-            "FINAL: Length checked"
-        ])
+        client = MockLLMClient(["```python\nprint(len(P))\n```", "FINAL: Length checked"])
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="Hello World", query="Check length")
@@ -226,10 +207,9 @@ class TestREPLIntegration:
 
     def test_tools_available_in_repl(self):
         """Test peek, grep, etc. are available."""
-        client = MockLLMClient([
-            "```python\nresult = peek(0, 5)\nprint(result)\n```",
-            "FINAL: Tools work"
-        ])
+        client = MockLLMClient(
+            ["```python\nresult = peek(0, 5)\nprint(result)\n```", "FINAL: Tools work"]
+        )
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="Testing tools", query="Test peek")
@@ -240,11 +220,13 @@ class TestREPLIntegration:
 
     def test_variables_persist_across_steps(self):
         """Test variables persist between execution steps."""
-        client = MockLLMClient([
-            "```python\nmy_var = peek(0, 5)\nprint(my_var)\n```",
-            "```python\nprint(my_var.upper())\n```",  # Use my_var from previous step
-            "FINAL: Persistence works"
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nmy_var = peek(0, 5)\nprint(my_var)\n```",
+                "```python\nprint(my_var.upper())\n```",  # Use my_var from previous step
+                "FINAL: Persistence works",
+            ]
+        )
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="hello world", query="Test persistence")
@@ -266,11 +248,7 @@ class TestCustomSystemPrompt:
         custom_prompt = "You are a test assistant. Answer everything with 'test'."
 
         rlm = RLM(client=client)
-        result = rlm.run(
-            prompt="content",
-            query="query",
-            system_prompt=custom_prompt
-        )
+        result = rlm.run(prompt="content", query="query", system_prompt=custom_prompt)
 
         assert result.success
 
@@ -284,11 +262,7 @@ class TestTraceLogging:
 
     def test_trace_includes_all_steps(self):
         """Test trace includes all execution steps."""
-        client = MockLLMClient([
-            "```python\nx = 1\n```",
-            "```python\ny = 2\n```",
-            "FINAL: Done"
-        ])
+        client = MockLLMClient(["```python\nx = 1\n```", "```python\ny = 2\n```", "FINAL: Done"])
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
@@ -303,10 +277,7 @@ class TestTraceLogging:
 
     def test_trace_includes_step_numbers(self):
         """Test trace entries include step numbers."""
-        client = MockLLMClient([
-            "```python\nx = 1\n```",
-            "FINAL: Done"
-        ])
+        client = MockLLMClient(["```python\nx = 1\n```", "FINAL: Done"])
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
@@ -317,10 +288,7 @@ class TestTraceLogging:
 
     def test_trace_includes_raw_results(self):
         """Test execution trace includes raw results."""
-        client = MockLLMClient([
-            "```python\nprint('test')\n```",
-            "FINAL: Done"
-        ])
+        client = MockLLMClient(["```python\nprint('test')\n```", "FINAL: Done"])
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")
@@ -346,11 +314,7 @@ class TestRLMResult:
 
     def test_result_includes_steps(self):
         """Test result includes step count."""
-        client = MockLLMClient([
-            "```python\nx = 1\n```",
-            "```python\ny = 2\n```",
-            "FINAL: Done"
-        ])
+        client = MockLLMClient(["```python\nx = 1\n```", "```python\ny = 2\n```", "FINAL: Done"])
 
         rlm = RLM(client=client)
         result = rlm.run(prompt="test", query="test")

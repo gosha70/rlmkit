@@ -26,14 +26,35 @@ from rlmkit.application.dto import ExecutionResultDTO
 from rlmkit.domain.exceptions import SecurityViolationError
 
 # Modules considered safe for LLM-generated code (subset of rlmkit defaults)
-_DEFAULT_ALLOWED_MODULES = frozenset({
-    "json", "re", "math", "datetime", "time", "calendar",
-    "decimal", "fractions", "statistics", "random",
-    "string", "textwrap", "unicodedata",
-    "itertools", "functools", "operator", "collections",
-    "heapq", "bisect", "array", "copy", "pprint",
-    "enum", "dataclasses", "typing",
-})
+_DEFAULT_ALLOWED_MODULES = frozenset(
+    {
+        "json",
+        "re",
+        "math",
+        "datetime",
+        "time",
+        "calendar",
+        "decimal",
+        "fractions",
+        "statistics",
+        "random",
+        "string",
+        "textwrap",
+        "unicodedata",
+        "itertools",
+        "functools",
+        "operator",
+        "collections",
+        "heapq",
+        "bisect",
+        "array",
+        "copy",
+        "pprint",
+        "enum",
+        "dataclasses",
+        "typing",
+    }
+)
 
 
 def _make_safe_import(allowed_modules: frozenset[str]):

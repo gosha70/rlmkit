@@ -38,10 +38,12 @@ class TestMaxStepsEnforcement:
 
     def test_stops_early_if_final_before_limit(self, sample_document):
         """RLM stops as soon as FINAL is returned, even with budget remaining."""
-        client = MockLLMClient([
-            "```python\nx = 1\n```",
-            "FINAL: Early answer",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nx = 1\n```",
+                "FINAL: Early answer",
+            ]
+        )
         config = RLMConfig()
         config.execution.max_steps = 100
 
@@ -54,12 +56,14 @@ class TestMaxStepsEnforcement:
 
     def test_step_count_matches_llm_calls(self, sample_document):
         """result.steps equals the number of LLM calls made."""
-        client = MockLLMClient([
-            "```python\na = 1\n```",
-            "```python\nb = 2\n```",
-            "```python\nc = 3\n```",
-            "FINAL: Three code steps done",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\na = 1\n```",
+                "```python\nb = 2\n```",
+                "```python\nc = 3\n```",
+                "FINAL: Three code steps done",
+            ]
+        )
         config = RLMConfig()
         config.execution.max_steps = 10
 

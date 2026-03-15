@@ -26,10 +26,9 @@ def test_error_then_final_answer():
     responses = [
         # Step 1: LLM writes code to calculate
         "```python\nresult = 7 * 9 + 1\nresult\n```",
-
         # Step 2: After seeing execution error, LLM provides final answer anyway
         # This is wrong because 'result' variable was never set due to error
-        "FINAL: Based on my calculation, the answer is 64."
+        "FINAL: Based on my calculation, the answer is 64.",
     ]
 
     client = MockLLMClient(responses)
@@ -37,18 +36,15 @@ def test_error_then_final_answer():
     rlm = RLM(client=client, config=config)
 
     # Simulate a simple math question
-    result = rlm.run(
-        prompt="Calculate 7 * 9 + 1",
-        query="What is 7 * 9 + 1?"
-    )
+    result = rlm.run(prompt="Calculate 7 * 9 + 1", query="What is 7 * 9 + 1?")
 
     print(f"Result success: {result.success}")
     print(f"Result answer: {result.answer}")
     print(f"Result steps: {result.steps}")
     print("\nTrace:")
     for i, step in enumerate(result.trace):
-        print(f"\nStep {i+1} ({step.get('role', 'unknown')}):")
-        content = step.get('content', '')
+        print(f"\nStep {i + 1} ({step.get('role', 'unknown')}):")
+        content = step.get("content", "")
         if len(content) > 200:
             content = content[:200] + "..."
         print(content)

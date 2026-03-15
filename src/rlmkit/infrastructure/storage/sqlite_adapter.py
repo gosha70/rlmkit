@@ -58,9 +58,7 @@ class SQLiteStorageAdapter:
 
     # -- File context --
 
-    def save_file_context(
-        self, content: str, filename: str | None = None
-    ) -> str:
+    def save_file_context(self, content: str, filename: str | None = None) -> str:
         """Store file content (deduplicated by hash)."""
         return self._conversations.save_file_context(content, filename)
 

@@ -39,9 +39,7 @@ class MockLLMAdapter:
         self._call_count += 1
         return LLMResponseDTO(content=text, model="mock")
 
-    def complete_stream(
-        self, messages: list[dict[str, str]]
-    ) -> Iterator[str]:
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Yield the next canned response as a single chunk."""
         result = self.complete(messages)
         yield result.content

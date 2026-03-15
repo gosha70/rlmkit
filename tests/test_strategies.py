@@ -108,10 +108,12 @@ class TestRLMStrategy:
         assert "max_steps" in result.metadata
 
     def test_multi_step(self):
-        client = MockLLMClient([
-            '```python\nx = peek(0, 5)\nprint(x)\n```',
-            "FINAL: first five chars",
-        ])
+        client = MockLLMClient(
+            [
+                "```python\nx = peek(0, 5)\nprint(x)\n```",
+                "FINAL: first five chars",
+            ]
+        )
         s = RLMStrategy(client=client)
         result = s.run("Hello World", "first 5 chars?")
         assert result.success

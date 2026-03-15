@@ -18,19 +18,15 @@ def test_variable_persistence():
     responses = [
         # Step 1: Set variable
         "```python\nresult = 9 + 8 * 55\nprint(f'result = {result}')\n```",
-
         # Step 2: Use FINAL_VAR to reference it
-        "FINAL_VAR: result"
+        "FINAL_VAR: result",
     ]
 
     client = MockLLMClient(responses)
     config = RLMConfig(execution=ExecutionConfig(max_steps=10))
     rlm = RLM(client=client, config=config)
 
-    result = rlm.run(
-        prompt="Calculate",
-        query="What is 9+8*55?"
-    )
+    result = rlm.run(prompt="Calculate", query="What is 9+8*55?")
 
     print(f"\n[RESULT] Success: {result.success}")
     print(f"[RESULT] Answer: {result.answer}")
@@ -39,8 +35,8 @@ def test_variable_persistence():
 
     print("\nTrace:")
     for step in result.trace:
-        role = step.get('role')
-        content = step.get('content', '')[:100]
+        role = step.get("role")
+        content = step.get("content", "")[:100]
         print(f"  {role}: {content}")
 
     # Check if error about variable not found
@@ -50,6 +46,7 @@ def test_variable_persistence():
     else:
         print("\n[PASS] Variable persistence working!")
         return True
+
 
 if __name__ == "__main__":
     success = test_variable_persistence()

@@ -20,6 +20,7 @@ from rlmkit.ui.services.profile_store import (
 # RunProfile serialization / backward-compat
 # ---------------------------------------------------------------------------
 
+
 class TestRunProfileSerialization:
     def test_round_trip(self):
         p = RunProfile(name="test", strategy="rlm", temperature=0.3)
@@ -79,6 +80,7 @@ class TestRunProfileSerialization:
 # RunProfileStore persistence
 # ---------------------------------------------------------------------------
 
+
 class TestRunProfileStore:
     def test_builtins_always_present(self, tmp_path):
         store = RunProfileStore(path=tmp_path / "profiles.json")
@@ -136,6 +138,7 @@ class TestRunProfileStore:
 # ---------------------------------------------------------------------------
 # resolve_system_prompt
 # ---------------------------------------------------------------------------
+
 
 class TestResolveSystemPrompt:
     def test_default_template_returns_prompts(self):
@@ -264,6 +267,7 @@ class TestResolveSystemPrompt:
 # ---------------------------------------------------------------------------
 # Custom prompts persistence (load_custom_prompts / save_custom_prompts)
 # ---------------------------------------------------------------------------
+
 
 class TestCustomPromptsPersistence:
     def test_load_nonexistent_file(self, tmp_path):

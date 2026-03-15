@@ -12,6 +12,7 @@ from rlmkit.strategies.rag import RAGStrategy
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class MockEmbedder:
     """Deterministic mock: embed text to a vector based on character counts."""
 
@@ -33,6 +34,7 @@ class MockEmbedder:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestRAGProtocol:
     def test_is_strategy(self):
@@ -168,7 +170,9 @@ class TestRAGRun:
             def complete(self, messages):
                 raise RuntimeError("generation failed")
 
-        s = RAGStrategy(client=FailingClient(), embedder=MockEmbedder(), chunk_size=10, chunk_overlap=0)
+        s = RAGStrategy(
+            client=FailingClient(), embedder=MockEmbedder(), chunk_size=10, chunk_overlap=0
+        )
         result = s.run("some content here", "query")
         assert not result.success
         assert "generation failed" in result.error
@@ -177,6 +181,7 @@ class TestRAGRun:
         class FailingEmbedder:
             def embed(self, texts):
                 raise RuntimeError("embed failed")
+
             def embed_query(self, text):
                 raise RuntimeError("embed failed")
 
