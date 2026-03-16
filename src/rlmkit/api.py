@@ -1,7 +1,8 @@
 """Unified high-level API for RLMKit.
 
 Provides ``interact()`` and ``complete()`` as the main programmatic entry
-points.  Under the hood these delegate to Clean Architecture use cases
+points, plus async variants ``interact_async()`` and ``complete_async()``.
+Under the hood these delegate to Clean Architecture use cases
 (``RunDirectUseCase``, ``RunRAGUseCase``, ``RunRLMUseCase``) with
 ``LiteLLMAdapter`` for provider-agnostic LLM access.
 """
@@ -90,7 +91,7 @@ def _resolve_model(provider: str, model: str | None) -> str:
     """Apply LiteLLM provider prefix and default model if needed."""
     _defaults: dict[str, str] = {
         "openai": "gpt-4o",
-        "anthropic": "claude-sonnet-4-20250514",
+        "anthropic": "claude-sonnet-4-5-20250514",
         "ollama": "llama3",
     }
     m = model or _defaults.get(provider, "gpt-4o")
@@ -100,42 +101,23 @@ def _resolve_model(provider: str, model: str | None) -> str:
     return m
 
 
-def interact(
+def _setup(
     content: str,
     query: str,
-    mode: InteractionMode = "auto",
-    provider: str | None = None,
-    model: str | None = None,
-    api_key: str | None = None,
-    max_steps: int = 16,
-    temperature: float = 0.7,
-    max_tokens: int | None = None,
-    verbose: bool = False,
-    **kwargs: Any,
-) -> InteractResult:
-    """Interact with content using an LLM through Direct, RAG, or RLM mode.
+    mode: InteractionMode,
+    provider: str | None,
+    model: str | None,
+    api_key: str | None,
+    api_base: str | None,
+    max_steps: int,
+    temperature: float,
+    max_tokens: int | None,
+    timeout: float | None,
+    verbose: bool,
+) -> tuple[str, str, LiteLLMAdapter, RunConfigDTO]:
+    """Validate inputs, resolve mode/provider/model, build adapter and config.
 
-    This is the main entry point for RLMKit.  It handles provider
-    resolution, mode selection, and use-case dispatch.
-
-    Args:
-        content: Document / text content to analyse.
-        query: Question or instruction for the LLM.
-        mode: ``"direct"`` | ``"rag"`` | ``"rlm"`` | ``"auto"``.
-        provider: Provider key (``"openai"``, ``"anthropic"``, ``"ollama"``).
-            Auto-detected from env vars when *None*.
-        model: Model name.  Defaults to the provider's flagship model.
-        api_key: API key override (usually read from env vars).
-        max_steps: Budget limit for RLM loop iterations.
-        temperature: Sampling temperature.
-        max_tokens: Max output tokens per LLM call.
-        verbose: Print progress to stdout.
-
-    Returns:
-        :class:`InteractResult` with answer, mode used, and metrics.
-
-    Raises:
-        ValueError: If inputs are invalid or no provider can be resolved.
+    Returns (actual_mode, provider, llm_adapter, run_config).
     """
     if not content:
         raise ValueError("content cannot be empty")
@@ -143,7 +125,7 @@ def interact(
         raise ValueError("query cannot be empty")
 
     # -- Resolve mode --
-    actual_mode = mode
+    actual_mode: str = mode
     if mode == "auto":
         actual_mode = _determine_auto_mode(content)
         if verbose:
@@ -175,8 +157,10 @@ def interact(
     llm = LiteLLMAdapter(
         model=prefixed_model,
         api_key=api_key,
+        api_base=api_base,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout if timeout is not None else 120.0,
     )
 
     config = RunConfigDTO(
@@ -186,25 +170,11 @@ def interact(
         max_steps=max_steps,
     )
 
-    # -- Dispatch --
-    if verbose:
-        print(f"[Execution] Running in '{actual_mode}' mode ...")
+    return actual_mode, provider, llm, config
 
-    result: RunResultDTO
-    if actual_mode == "rlm":
-        sandbox = create_sandbox()
-        uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute(content, query, config)
-    elif actual_mode == "rag":
-        # RAG use case requires embedder + storage; fall back to direct
-        # until those adapters are wired up in the public API.
-        uc_direct = RunDirectUseCase(llm)
-        result = uc_direct.execute(content, query, config)
-        result.mode_used = "rag"
-    else:
-        uc_direct = RunDirectUseCase(llm)
-        result = uc_direct.execute(content, query, config)
 
+def _build_result(actual_mode: str, result: RunResultDTO, verbose: bool) -> InteractResult:
+    """Convert a RunResultDTO into an InteractResult with metrics."""
     metrics = {
         "total_tokens": result.total_tokens,
         "input_tokens": result.input_tokens,
@@ -227,6 +197,158 @@ def interact(
     )
 
 
+def _dispatch_sync(
+    actual_mode: str,
+    llm: LiteLLMAdapter,
+    config: RunConfigDTO,
+    content: str,
+    query: str,
+) -> RunResultDTO:
+    """Run the appropriate use case synchronously."""
+    if actual_mode == "rlm":
+        sandbox = create_sandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        return uc.execute(content, query, config)
+    elif actual_mode == "rag":
+        # RAG use case requires embedder + storage; fall back to direct
+        # until those adapters are wired up in the public API.
+        uc_direct = RunDirectUseCase(llm)
+        result = uc_direct.execute(content, query, config)
+        result.mode_used = "rag"
+        return result
+    else:
+        uc_direct = RunDirectUseCase(llm)
+        return uc_direct.execute(content, query, config)
+
+
+async def _dispatch_async(
+    actual_mode: str,
+    llm: LiteLLMAdapter,
+    config: RunConfigDTO,
+    content: str,
+    query: str,
+) -> RunResultDTO:
+    """Run the appropriate use case asynchronously."""
+    if actual_mode == "rlm":
+        sandbox = create_sandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        return await uc.execute_async(content, query, config)
+    elif actual_mode == "rag":
+        uc_direct = RunDirectUseCase(llm)
+        result = await uc_direct.execute_async(content, query, config)
+        result.mode_used = "rag"
+        return result
+    else:
+        uc_direct = RunDirectUseCase(llm)
+        return await uc_direct.execute_async(content, query, config)
+
+
+def interact(
+    content: str,
+    query: str,
+    mode: InteractionMode = "auto",
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    max_steps: int = 16,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    verbose: bool = False,
+    **kwargs: Any,
+) -> InteractResult:
+    """Interact with content using an LLM through Direct, RAG, or RLM mode.
+
+    This is the main entry point for RLMKit.  It handles provider
+    resolution, mode selection, and use-case dispatch.
+
+    Args:
+        content: Document / text content to analyse.
+        query: Question or instruction for the LLM.
+        mode: ``"direct"`` | ``"rag"`` | ``"rlm"`` | ``"auto"``.
+        provider: Provider key (``"openai"``, ``"anthropic"``, ``"ollama"``).
+            Auto-detected from env vars when *None*.
+        model: Model name.  Defaults to the provider's flagship model.
+        api_key: API key override (usually read from env vars).
+        api_base: Custom API base URL (e.g. for Ollama on a non-default port).
+        max_steps: Budget limit for RLM loop iterations.
+        temperature: Sampling temperature.
+        max_tokens: Max output tokens per LLM call.
+        timeout: Request timeout in seconds (default 120).
+        verbose: Print progress to stdout.
+
+    Returns:
+        :class:`InteractResult` with answer, mode used, and metrics.
+
+    Raises:
+        ValueError: If inputs are invalid or no provider can be resolved.
+    """
+    actual_mode, _provider, llm, config = _setup(
+        content,
+        query,
+        mode,
+        provider,
+        model,
+        api_key,
+        api_base,
+        max_steps,
+        temperature,
+        max_tokens,
+        timeout,
+        verbose,
+    )
+
+    if verbose:
+        print(f"[Execution] Running in '{actual_mode}' mode ...")
+
+    result = _dispatch_sync(actual_mode, llm, config, content, query)
+    return _build_result(actual_mode, result, verbose)
+
+
+async def interact_async(
+    content: str,
+    query: str,
+    mode: InteractionMode = "auto",
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    max_steps: int = 16,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    verbose: bool = False,
+    **kwargs: Any,
+) -> InteractResult:
+    """Async version of :func:`interact`.
+
+    Same parameters and return type.  Uses the async execution path
+    of each use case (``execute_async``), which enables true async
+    LLM calls via ``litellm.acompletion``.
+    """
+    actual_mode, _provider, llm, config = _setup(
+        content,
+        query,
+        mode,
+        provider,
+        model,
+        api_key,
+        api_base,
+        max_steps,
+        temperature,
+        max_tokens,
+        timeout,
+        verbose,
+    )
+
+    if verbose:
+        print(f"[Execution] Running in '{actual_mode}' mode (async) ...")
+
+    result = await _dispatch_async(actual_mode, llm, config, content, query)
+    return _build_result(actual_mode, result, verbose)
+
+
 def complete(content: str, query: str, **kwargs: Any) -> str:
     """Convenience wrapper returning just the answer string.
 
@@ -239,3 +361,18 @@ def complete(content: str, query: str, **kwargs: Any) -> str:
         The answer text.
     """
     return interact(content=content, query=query, **kwargs).answer
+
+
+async def complete_async(content: str, query: str, **kwargs: Any) -> str:
+    """Async convenience wrapper returning just the answer string.
+
+    Args:
+        content: Document / text content.
+        query: Question or instruction.
+        **kwargs: Forwarded to :func:`interact_async`.
+
+    Returns:
+        The answer text.
+    """
+    result = await interact_async(content=content, query=query, **kwargs)
+    return result.answer

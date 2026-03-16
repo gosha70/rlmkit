@@ -28,7 +28,7 @@ from .config import RLMConfig, SecurityConfig, ExecutionConfig, MonitoringConfig
 from .llm import MockLLMClient, BaseLLMProvider, LLMResponse
 from .llm.config import LLMConfig, LLMProviderConfig, ModelPricing
 from .prompts import format_system_prompt, get_default_system_prompt
-from .api import interact, complete, InteractResult
+from .api import interact, interact_async, complete, complete_async, InteractResult
 
 # Optional external LLM providers
 try:
@@ -97,9 +97,11 @@ except ImportError:
 __version__ = "0.1.0"
 
 __all__ = [
-    # High-Level API (NEW - Bet 1)
+    # High-Level API
     "interact",
+    "interact_async",
     "complete",
+    "complete_async",
     "InteractResult",
     # Core RLM
     "RLM",

@@ -7,7 +7,7 @@ wiring.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -18,7 +18,9 @@ from rlmkit.api import (
     _estimate_tokens,
     _resolve_model,
     complete,
+    complete_async,
     interact,
+    interact_async,
 )
 from rlmkit.application.dto import RunResultDTO
 
@@ -244,5 +246,144 @@ class TestComplete:
     def test_returns_string(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         answer = complete("content", "question", provider="openai", mode="direct")
+        assert answer == "Test answer"
+        assert isinstance(answer, str)
+
+
+# ---------------------------------------------------------------------------
+# Default model updates
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultModels:
+    def test_default_anthropic_model(self):
+        result = _resolve_model("anthropic", None)
+        assert result == "anthropic/claude-sonnet-4-5-20250514"
+
+
+# ---------------------------------------------------------------------------
+# api_base and timeout parameters
+# ---------------------------------------------------------------------------
+
+
+class TestApiBaseAndTimeout:
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_api_base_passed_to_adapter(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact(
+            "content",
+            "question",
+            mode="direct",
+            provider="ollama",
+            api_base="http://localhost:11434",
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["api_base"] == "http://localhost:11434"
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_timeout_passed_to_adapter(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact(
+            "content",
+            "question",
+            mode="direct",
+            provider="openai",
+            timeout=30.0,
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["timeout"] == 30.0
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_default_timeout(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="openai")
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["timeout"] == 120.0
+
+
+# ---------------------------------------------------------------------------
+# interact_async / complete_async
+# ---------------------------------------------------------------------------
+
+
+class TestInteractAsync:
+    @pytest.mark.asyncio
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    async def test_async_direct_mode(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
+        result = await interact_async(
+            "content",
+            "question",
+            mode="direct",
+            provider="openai",
+        )
+        assert isinstance(result, InteractResult)
+        assert result.answer == "Test answer"
+        assert result.mode_used == "direct"
+        mock_uc_cls.return_value.execute_async.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("rlmkit.api.RunRLMUseCase")
+    @patch("rlmkit.api.create_sandbox")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    async def test_async_rlm_mode(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
+        rlm_result = RunResultDTO(
+            answer="Async RLM",
+            mode_used="rlm",
+            success=True,
+            steps=2,
+            input_tokens=40,
+            output_tokens=15,
+        )
+        mock_uc_cls.return_value.execute_async = AsyncMock(return_value=rlm_result)
+        result = await interact_async(
+            "content",
+            "question",
+            mode="rlm",
+            provider="openai",
+        )
+        assert result.mode_used == "rlm"
+        assert result.answer == "Async RLM"
+        mock_sandbox_fn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_validation(self):
+        with pytest.raises(ValueError, match="content cannot be empty"):
+            await interact_async("", "question")
+
+    @pytest.mark.asyncio
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    async def test_async_api_base_and_timeout(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
+        await interact_async(
+            "content",
+            "question",
+            mode="direct",
+            provider="ollama",
+            api_base="http://myhost:8080",
+            timeout=15.0,
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["api_base"] == "http://myhost:8080"
+        assert kwargs["timeout"] == 15.0
+
+
+class TestCompleteAsync:
+    @pytest.mark.asyncio
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    async def test_returns_string(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
+        answer = await complete_async(
+            "content",
+            "question",
+            provider="openai",
+            mode="direct",
+        )
         assert answer == "Test answer"
         assert isinstance(answer, str)

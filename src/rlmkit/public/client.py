@@ -81,7 +81,9 @@ class RLMKitClient:
 
         # Create LLM adapter
         self._llm = self._create_llm_adapter(
-            provider, model, api_key,
+            provider,
+            model,
+            api_key,
             root_model=root_model,
             recursive_model=recursive_model,
             api_base=api_base,
@@ -132,9 +134,7 @@ class RLMKitClient:
             model=self._model,
             api_key=self._api_key,
             max_steps=kwargs.get("max_steps", self._max_steps),
-            max_recursion_depth=kwargs.get(
-                "max_recursion_depth", self._max_recursion_depth
-            ),
+            max_recursion_depth=kwargs.get("max_recursion_depth", self._max_recursion_depth),
             verbose=verbose,
             extra=kwargs,
         )
@@ -156,8 +156,7 @@ class RLMKitClient:
             )
         else:
             raise ValueError(
-                f"Unsupported mode: {actual_mode!r}. "
-                "Use 'direct', 'rlm', 'auto', or 'compare'."
+                f"Unsupported mode: {actual_mode!r}. Use 'direct', 'rlm', 'auto', or 'compare'."
             )
 
         return self._to_public_result(result)
@@ -230,7 +229,7 @@ class RLMKitClient:
                 from rlmkit.llm.anthropic_client import ClaudeClient
                 from rlmkit.infrastructure.llm.anthropic_adapter import AnthropicAdapter
 
-                client = ClaudeClient(model=model or "claude-3-sonnet-20240229", api_key=api_key)
+                client = ClaudeClient(model=model or "claude-sonnet-4-5-20250514", api_key=api_key)
                 return AnthropicAdapter(client)
             except ImportError as exc:
                 raise ConfigError(f"Anthropic not available: {exc}")
@@ -240,7 +239,7 @@ class RLMKitClient:
                 from rlmkit.llm.ollama_client import OllamaClient
                 from rlmkit.infrastructure.llm.ollama_adapter import OllamaAdapter
 
-                client = OllamaClient(model=model or "llama2")
+                client = OllamaClient(model=model or "llama3")
                 return OllamaAdapter(client)
             except ImportError as exc:
                 raise ConfigError(f"Ollama not available: {exc}")

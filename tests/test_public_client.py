@@ -4,6 +4,8 @@ Verifies that RLMKitClient wires up adapters correctly and provides
 a stable interface for end users.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from rlmkit.domain.exceptions import (
@@ -32,20 +34,20 @@ from rlmkit.public.types import PublicInteractResult, PublicRunResult
 class TestRLMKitClientConstruction:
     """Test client initialization with various configurations."""
 
-    def test_default_construction(self):
+    def test_default_construction(self) -> None:
         client = RLMKitClient()
         assert client._provider == "mock"
 
-    def test_mock_provider(self):
+    def test_mock_provider(self) -> None:
         client = RLMKitClient(provider="mock")
         assert type(client._llm).__name__ == "MockLLMAdapter"
 
-    def test_litellm_provider(self):
+    def test_litellm_provider(self) -> None:
         client = RLMKitClient(provider="litellm", model="gpt-4o")
         assert type(client._llm).__name__ == "LiteLLMAdapter"
         assert client._llm.active_model == "gpt-4o"
 
-    def test_litellm_two_model(self):
+    def test_litellm_two_model(self) -> None:
         client = RLMKitClient(
             provider="litellm",
             model="gpt-4o",
@@ -54,11 +56,11 @@ class TestRLMKitClientConstruction:
         )
         assert client._llm.is_two_model is True
 
-    def test_unknown_provider_raises(self):
+    def test_unknown_provider_raises(self) -> None:
         with pytest.raises(ConfigError, match="Unknown provider"):
             RLMKitClient(provider="nonexistent")
 
-    def test_sandbox_default_is_local(self):
+    def test_sandbox_default_is_local(self) -> None:
         client = RLMKitClient()
         from rlmkit.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
 
@@ -73,7 +75,7 @@ class TestRLMKitClientConstruction:
 class TestRLMKitClientInteract:
     """Test the interact() high-level API."""
 
-    def test_direct_mode(self):
+    def test_direct_mode(self) -> None:
         client = RLMKitClient(provider="mock")
         result = client.interact("document text", "question", mode="direct")
 
@@ -82,7 +84,7 @@ class TestRLMKitClientInteract:
         assert result.mode_used == "direct"
         assert result.answer != ""
 
-    def test_rlm_mode(self):
+    def test_rlm_mode(self) -> None:
         client = RLMKitClient(provider="mock")
         result = client.interact("document text", "question", mode="rlm")
 
@@ -90,14 +92,14 @@ class TestRLMKitClientInteract:
         assert result.success is True
         assert result.mode_used == "rlm"
 
-    def test_auto_mode_short_content(self):
+    def test_auto_mode_short_content(self) -> None:
         client = RLMKitClient(provider="mock")
         # Short content (<8000 tokens ~32000 chars) -> direct
         result = client.interact("short", "question", mode="auto")
         assert result.success is True
         assert result.mode_used == "direct"
 
-    def test_auto_mode_long_content(self):
+    def test_auto_mode_long_content(self) -> None:
         client = RLMKitClient(provider="mock")
         # Long content (>8000 tokens ~32000 chars) -> rlm
         long_text = "x" * 40000
@@ -105,22 +107,22 @@ class TestRLMKitClientInteract:
         assert result.success is True
         assert result.mode_used == "rlm"
 
-    def test_compare_mode(self):
+    def test_compare_mode(self) -> None:
         client = RLMKitClient(provider="mock")
         result = client.interact("document", "question", mode="compare")
         assert result.success is True
 
-    def test_empty_content_raises(self):
+    def test_empty_content_raises(self) -> None:
         client = RLMKitClient(provider="mock")
         with pytest.raises(ValueError, match="content cannot be empty"):
             client.interact("", "question")
 
-    def test_empty_query_raises(self):
+    def test_empty_query_raises(self) -> None:
         client = RLMKitClient(provider="mock")
         with pytest.raises(ValueError, match="query cannot be empty"):
             client.interact("content", "")
 
-    def test_unsupported_mode_raises(self):
+    def test_unsupported_mode_raises(self) -> None:
         client = RLMKitClient(provider="mock")
         with pytest.raises(ValueError, match="Unsupported mode"):
             client.interact("content", "question", mode="invalid_mode")
@@ -134,13 +136,13 @@ class TestRLMKitClientInteract:
 class TestRLMKitClientComplete:
     """Test the simplified complete() API."""
 
-    def test_returns_string(self):
+    def test_returns_string(self) -> None:
         client = RLMKitClient(provider="mock")
         answer = client.complete("document", "question")
         assert isinstance(answer, str)
         assert len(answer) > 0
 
-    def test_passes_kwargs(self):
+    def test_passes_kwargs(self) -> None:
         client = RLMKitClient(provider="mock")
         answer = client.complete("document", "question", mode="direct")
         assert isinstance(answer, str)
@@ -154,15 +156,15 @@ class TestRLMKitClientComplete:
 class TestAutoMode:
     """Test automatic mode selection based on content size."""
 
-    def test_short_content_selects_direct(self):
+    def test_short_content_selects_direct(self) -> None:
         assert RLMKitClient._determine_auto_mode("short text") == "direct"
 
-    def test_medium_content_selects_rlm(self):
+    def test_medium_content_selects_rlm(self) -> None:
         # > 8000 tokens = > 32000 chars
         content = "x" * 40000
         assert RLMKitClient._determine_auto_mode(content) == "rlm"
 
-    def test_very_long_content_selects_rlm(self):
+    def test_very_long_content_selects_rlm(self) -> None:
         content = "x" * 500000
         assert RLMKitClient._determine_auto_mode(content) == "rlm"
 
@@ -175,11 +177,11 @@ class TestAutoMode:
 class TestPublicRunResult:
     """Tests for the public result type."""
 
-    def test_str_returns_answer(self):
+    def test_str_returns_answer(self) -> None:
         r = PublicRunResult(answer="42")
         assert str(r) == "42"
 
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
         r = PublicRunResult(
             answer="42",
             mode_used="direct",
@@ -192,7 +194,7 @@ class TestPublicRunResult:
         assert d["total_tokens"] == 100
         assert d["has_trace"] is False
 
-    def test_to_dict_with_trace(self):
+    def test_to_dict_with_trace(self) -> None:
         r = PublicRunResult(answer="42", trace=[{"step": 0}])
         d = r.to_dict()
         assert d["has_trace"] is True
@@ -206,11 +208,11 @@ class TestPublicRunResult:
 class TestPublicInteractResult:
     """Tests for the backward-compatible result type."""
 
-    def test_str_returns_answer(self):
+    def test_str_returns_answer(self) -> None:
         r = PublicInteractResult(answer="hello", mode_used="direct")
         assert str(r) == "hello"
 
-    def test_to_dict(self):
+    def test_to_dict(self) -> None:
         r = PublicInteractResult(answer="hello", mode_used="rlm", metrics={"tokens": 100})
         d = r.to_dict()
         assert d["answer"] == "hello"
@@ -226,33 +228,60 @@ class TestPublicInteractResult:
 class TestPublicErrors:
     """Tests for the public error types and wrap_domain_error."""
 
-    def test_rlmkit_error_hierarchy(self):
+    def test_rlmkit_error_hierarchy(self) -> None:
         assert issubclass(ProviderError, RLMKitError)
         assert issubclass(BudgetError, RLMKitError)
         assert issubclass(SandboxError, RLMKitError)
         assert issubclass(ConfigError, RLMKitError)
 
-    def test_wrap_budget_exceeded(self):
+    def test_wrap_budget_exceeded(self) -> None:
         exc = wrap_domain_error(BudgetExceededError("max steps"))
         assert isinstance(exc, BudgetError)
         assert "max steps" in str(exc)
 
-    def test_wrap_execution_failed(self):
+    def test_wrap_execution_failed(self) -> None:
         exc = wrap_domain_error(ExecutionFailedError("code crashed"))
         assert isinstance(exc, SandboxError)
 
-    def test_wrap_security_violation(self):
+    def test_wrap_security_violation(self) -> None:
         exc = wrap_domain_error(SecurityViolationError("blocked import"))
         assert isinstance(exc, SandboxError)
 
-    def test_wrap_configuration_error(self):
+    def test_wrap_configuration_error(self) -> None:
         exc = wrap_domain_error(ConfigurationError("bad config"))
         assert isinstance(exc, ConfigError)
 
-    def test_wrap_generic_domain_error(self):
+    def test_wrap_generic_domain_error(self) -> None:
         exc = wrap_domain_error(DomainError("generic"))
         assert isinstance(exc, RLMKitError)
 
-    def test_wrap_non_domain_exception(self):
+    def test_wrap_non_domain_exception(self) -> None:
         exc = wrap_domain_error(RuntimeError("unknown"))
         assert isinstance(exc, RLMKitError)
+
+
+# ---------------------------------------------------------------------------
+# Default model strings in _create_llm_adapter
+# ---------------------------------------------------------------------------
+
+
+class TestClientDefaultModels:
+    """Assert that RLMKitClient legacy provider defaults stay aligned with api.py."""
+
+    @patch("rlmkit.llm.anthropic_client.ClaudeClient", create=True)
+    @patch("rlmkit.infrastructure.llm.anthropic_adapter.AnthropicAdapter", create=True)
+    def test_anthropic_default_model(
+        self, _adapter_cls: MagicMock, mock_client_cls: MagicMock
+    ) -> None:
+        mock_client_cls.return_value = MagicMock()
+        RLMKitClient._create_llm_adapter("anthropic", model=None, api_key="k")
+        mock_client_cls.assert_called_once_with(model="claude-sonnet-4-5-20250514", api_key="k")
+
+    @patch("rlmkit.llm.ollama_client.OllamaClient", create=True)
+    @patch("rlmkit.infrastructure.llm.ollama_adapter.OllamaAdapter", create=True)
+    def test_ollama_default_model(
+        self, _adapter_cls: MagicMock, mock_client_cls: MagicMock
+    ) -> None:
+        mock_client_cls.return_value = MagicMock()
+        RLMKitClient._create_llm_adapter("ollama", model=None, api_key=None)
+        mock_client_cls.assert_called_once_with(model="llama3")
