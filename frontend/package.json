@@ -37,6 +37,9 @@
     "swr": "^2.4.0",
     "tailwind-merge": "^3.4.0"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
