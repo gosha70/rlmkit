@@ -271,7 +271,9 @@ class TestClientDefaultModels:
     @patch("rlmkit.llm.anthropic_client.ClaudeClient", create=True)
     @patch("rlmkit.infrastructure.llm.anthropic_adapter.AnthropicAdapter", create=True)
     def test_anthropic_default_model(
-        self, _adapter_cls: MagicMock, mock_client_cls: MagicMock
+        self,
+        _adapter_cls: MagicMock,  # noqa: PT019
+        mock_client_cls: MagicMock,
     ) -> None:
         mock_client_cls.return_value = MagicMock()
         RLMKitClient._create_llm_adapter("anthropic", model=None, api_key="k")
@@ -280,7 +282,9 @@ class TestClientDefaultModels:
     @patch("rlmkit.llm.ollama_client.OllamaClient", create=True)
     @patch("rlmkit.infrastructure.llm.ollama_adapter.OllamaAdapter", create=True)
     def test_ollama_default_model(
-        self, _adapter_cls: MagicMock, mock_client_cls: MagicMock
+        self,
+        _adapter_cls: MagicMock,  # noqa: PT019
+        mock_client_cls: MagicMock,
     ) -> None:
         mock_client_cls.return_value = MagicMock()
         RLMKitClient._create_llm_adapter("ollama", model=None, api_key=None)

@@ -5,7 +5,7 @@ RLM Studio is a web application for experimenting with, tuning, and monitoring R
 ## Prerequisites
 
 - Python 3.10+ with `uv`
-- Node.js 20.9+
+- Node.js 22+
 - At least one LLM provider API key (OpenAI, Anthropic) or a local model (Ollama, LM Studio)
 
 ## Starting the Application

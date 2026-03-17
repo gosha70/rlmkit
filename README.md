@@ -138,22 +138,58 @@ For a complete walkthrough of all RLM Studio features, see **[docs/rlm-studio-gu
 
 ## Architecture
 
+```mermaid
+graph TB
+    subgraph Frontend["Frontend (Next.js 16 + React 19)"]
+        Chat[Chat Page]
+        Dash[Dashboard]
+        Traces[Traces]
+        Settings[Settings]
+    end
+
+    subgraph Server["FastAPI Backend"]
+        REST[REST API]
+        WS[WebSocket]
+    end
+
+    subgraph App["Application Layer"]
+        Direct[RunDirectUseCase]
+        RLM[RunRLMUseCase]
+        RAG[RunRAGUseCase]
+    end
+
+    subgraph Infra["Infrastructure"]
+        LiteLLM[LiteLLMAdapter<br/>100+ providers]
+        Sandbox[RestrictedPython<br/>Sandbox]
+    end
+
+    subgraph Domain["Domain (zero deps)"]
+        Entities[Entities & Value Objects]
+        Ports[Ports / Protocols]
+    end
+
+    Frontend -->|HTTP + WebSocket| Server
+    REST --> App
+    WS -->|streaming| App
+    App --> Infra
+    App --> Domain
+    Infra -.->|implements| Ports
+```
+
+**Dependency rule:** inner layers never import from outer layers. All external dependencies sit behind port interfaces.
+
 ```
 src/rlmkit/
 ├── domain/            # Entities, ports (zero external deps)
-├── application/       # Use cases (run_rlm, etc.)
+├── application/       # Use cases (run_rlm, run_direct, run_rag)
 ├── infrastructure/    # Adapters (LiteLLM, sandbox, storage)
-│   ├── llm/           # LiteLLMAdapter (100+ providers)
-│   └── sandbox/       # RestrictedPython sandbox
-├── core/              # Legacy RLM controller, PyReplEnv
-├── server/            # FastAPI API + WebSocket server
-│   └── routes/        # chat, providers, sessions, traces, metrics
+├── server/            # FastAPI REST + WebSocket server
 └── api.py             # Public interact() / complete() API
 
 frontend/              # Next.js 16 + React 19 + shadcn/ui
 ├── src/app/           # Pages: chat, dashboard, traces, settings
-├── src/components/    # Shared UI components
-└── src/lib/           # API client, hooks
+├── src/components/    # 50+ React components (shadcn/ui + custom)
+└── src/lib/           # API client, WebSocket hook, types
 ```
 
 ## Running Tests

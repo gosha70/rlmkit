@@ -337,7 +337,7 @@ class TestWSErrorHandling:
 
             async def complete_stream_async(self, messages):
                 raise RuntimeError("LLM exploded")
-                yield  # noqa: unreachable - makes this an async generator
+                yield  # noqa: F841 - makes this an async generator
 
             def count_tokens(self, text):
                 return 1
