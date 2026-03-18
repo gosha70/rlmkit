@@ -3,9 +3,10 @@
 
 """Custom navigation component for RLM Studio."""
 
-import streamlit as st
-from pathlib import Path
 import logging
+
+import streamlit as st
+
 logger = logging.getLogger("rlmkit.nav")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
@@ -36,25 +37,25 @@ def render_custom_navigation():
     Replaces Streamlit's default auto-generated navigation with custom buttons.
     Note: Default nav is hidden via CSS in styles.css.
     """
-    
+
     # Detect current page
     current_page = get_current_page()
     _nav_log(f"render_custom_navigation current_page={current_page}")
-    
+
     # Render navigation buttons in sidebar
     with st.sidebar:
-        # Chat button  
+        # Chat button
         chat_class = "nav-button-active" if current_page == 'chat' else "nav-button"
         st.markdown(f'<div class="{chat_class}">', unsafe_allow_html=True)
         chat_btn = st.button("💬 Chat", key="nav_chat", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
+
         # Analysis button
         analysis_class = "nav-button-active" if current_page == 'analysis' else "nav-button"
         st.markdown(f'<div class="{analysis_class}">', unsafe_allow_html=True)
         analysis_btn = st.button("📊 Analysis", key="nav_analysis", use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
+
         # Metrics button
         metrics_class = "nav-button-active" if current_page == 'metrics' else "nav-button"
         st.markdown(f'<div class="{metrics_class}">', unsafe_allow_html=True)

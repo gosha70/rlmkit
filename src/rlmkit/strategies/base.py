@@ -3,10 +3,15 @@
 
 """Strategy protocol and unified result type for multi-strategy evaluation."""
 
-from typing import Protocol, List, Dict, Any, Optional, runtime_checkable
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from rlmkit.core.budget import TokenUsage
+
+if TYPE_CHECKING:
+    from rlmkit.core.comparison import ExecutionMetrics
 
 
 @runtime_checkable
@@ -16,7 +21,7 @@ class LLMStrategy(Protocol):
     @property
     def name(self) -> str: ...
 
-    def run(self, content: str, query: str) -> "StrategyResult": ...
+    def run(self, content: str, query: str) -> StrategyResult: ...
 
 
 @dataclass
@@ -26,15 +31,15 @@ class StrategyResult:
     strategy: str
     answer: str
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     steps: int = 0
     tokens: TokenUsage = field(default_factory=TokenUsage)
     cost: float = 0.0
     elapsed_time: float = 0.0
-    trace: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    trace: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "strategy": self.strategy,
             "answer": self.answer,
@@ -48,7 +53,7 @@ class StrategyResult:
             "metadata": self.metadata,
         }
 
-    def to_execution_metrics(self) -> "ExecutionMetrics":
+    def to_execution_metrics(self) -> ExecutionMetrics:  # noqa: F821
         """Convert to existing comparison.ExecutionMetrics for UI compat."""
         from rlmkit.core.comparison import ExecutionMetrics
 

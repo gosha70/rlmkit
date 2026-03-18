@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import importlib.resources
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 
 @dataclass
@@ -31,10 +31,10 @@ class RunProfile:
     strategy: str = "direct"
     """'direct', 'rlm', or 'rag' (only used in single mode)."""
 
-    default_provider: Optional[str] = None
+    default_provider: str | None = None
     """Provider key used in single mode."""
 
-    providers_enabled: List[str] = field(default_factory=list)
+    providers_enabled: list[str] = field(default_factory=list)
     """Provider keys used in compare mode."""
 
     # -- sampling --
@@ -59,18 +59,18 @@ class RunProfile:
     system_prompt_template: str = "Default"
     """Name of the built-in template to use when mode is 'default'."""
 
-    system_prompt_custom: Optional[Dict[str, str]] = None
+    system_prompt_custom: dict[str, str] | None = None
     """Per-mode user-supplied prompts when mode is 'custom'. Keys: 'direct', 'rag', 'rlm'."""
 
     # -- key policy --
-    key_policy: Optional[str] = None
+    key_policy: str | None = None
     """'env', 'file', or 'keyring'. None = use session default."""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> RunProfile:
+    def from_dict(cls, data: dict[str, Any]) -> RunProfile:
         # Filter out unknown keys for forward-compat
         known = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in known}
@@ -86,7 +86,7 @@ class RunProfile:
 # Built-in profiles
 # ---------------------------------------------------------------------------
 
-BUILTIN_PROFILES: List[RunProfile] = [
+BUILTIN_PROFILES: list[RunProfile] = [
     RunProfile(
         name="Fast & cheap",
         strategy="direct",
@@ -122,16 +122,16 @@ _DEFAULT_PROFILES_PATH = Path.home() / ".rlmkit" / "profiles.json"
 class RunProfileStore:
     """Load / save ``RunProfile`` objects from a JSON file."""
 
-    def __init__(self, path: Optional[Path] = None):
+    def __init__(self, path: Path | None = None):
         self._path = Path(path) if path else _DEFAULT_PROFILES_PATH
 
     # -- read --------------------------------------------------------------
 
-    def list_profiles(self) -> List[RunProfile]:
+    def list_profiles(self) -> list[RunProfile]:
         """Return all profiles (builtins + user-saved)."""
         return BUILTIN_PROFILES + self._load_user()
 
-    def get_profile(self, name: str) -> Optional[RunProfile]:
+    def get_profile(self, name: str) -> RunProfile | None:
         for p in self.list_profiles():
             if p.name == name:
                 return p
@@ -160,17 +160,17 @@ class RunProfileStore:
 
     # -- internal ----------------------------------------------------------
 
-    def _load_user(self) -> List[RunProfile]:
+    def _load_user(self) -> list[RunProfile]:
         if not self._path.exists():
             return []
         try:
-            with open(self._path, "r") as f:
+            with open(self._path) as f:
                 items = json.load(f)
             return [RunProfile.from_dict(d) for d in items]
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return []
 
-    def _write_user(self, profiles: List[RunProfile]) -> None:
+    def _write_user(self, profiles: list[RunProfile]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._path, "w") as f:
             json.dump([p.to_dict() for p in profiles], f, indent=2)
@@ -183,7 +183,7 @@ class RunProfileStore:
 _DEFAULT_CUSTOM_PROMPTS_PATH = Path.home() / ".rlmkit" / "system_prompt_custom.json"
 
 
-def load_custom_prompts(path: Optional[Path] = None) -> Dict[str, str]:
+def load_custom_prompts(path: Path | None = None) -> dict[str, str]:
     """Load user custom prompts from JSON file.
 
     Returns dict with keys 'direct', 'rag', 'rlm' (may be empty strings).
@@ -192,7 +192,7 @@ def load_custom_prompts(path: Optional[Path] = None) -> Dict[str, str]:
     if not p.exists():
         return {"direct": "", "rag": "", "rlm": ""}
     try:
-        with open(p, "r") as f:
+        with open(p) as f:
             data = json.load(f)
         # Ensure all keys exist
         return {
@@ -200,13 +200,13 @@ def load_custom_prompts(path: Optional[Path] = None) -> Dict[str, str]:
             "rag": data.get("rag", ""),
             "rlm": data.get("rlm", ""),
         }
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return {"direct": "", "rag": "", "rlm": ""}
 
 
 def save_custom_prompts(
-    prompts: Dict[str, str],
-    path: Optional[Path] = None,
+    prompts: dict[str, str],
+    path: Path | None = None,
 ) -> None:
     """Save user custom prompts to JSON file."""
     p = Path(path) if path else _DEFAULT_CUSTOM_PROMPTS_PATH
@@ -221,10 +221,10 @@ def save_custom_prompts(
 
 _TEMPLATES_FILE = "system_prompt_templates.json"
 
-_templates_cache: Optional[Dict[str, Dict[str, Any]]] = None
+_templates_cache: dict[str, dict[str, Any]] | None = None
 
 
-def _load_system_prompt_templates() -> Dict[str, Dict[str, Any]]:
+def _load_system_prompt_templates() -> dict[str, dict[str, Any]]:
     """Load system prompt templates from the JSON data file.
 
     The file lives in the ``rlmkit.prompts`` package so it is included
@@ -246,26 +246,26 @@ def _load_system_prompt_templates() -> Dict[str, Dict[str, Any]]:
     return _templates_cache
 
 
-def get_system_prompt_templates() -> Dict[str, Dict[str, Any]]:
+def get_system_prompt_templates() -> dict[str, dict[str, Any]]:
     """Public accessor for the template catalog."""
     return _load_system_prompt_templates()
 
 
-def get_system_prompt_template_names() -> List[str]:
+def get_system_prompt_template_names() -> list[str]:
     """Return ordered list of template names."""
     return list(get_system_prompt_templates().keys())
 
 
 # Module-level constants so existing ``from profile_store import SYSTEM_PROMPT_TEMPLATES``
 # continues to work.  The JSON is small and loaded once at import time.
-SYSTEM_PROMPT_TEMPLATES: Dict[str, Dict[str, Any]] = _load_system_prompt_templates()
-SYSTEM_PROMPT_TEMPLATE_NAMES: List[str] = list(SYSTEM_PROMPT_TEMPLATES.keys())
+SYSTEM_PROMPT_TEMPLATES: dict[str, dict[str, Any]] = _load_system_prompt_templates()
+SYSTEM_PROMPT_TEMPLATE_NAMES: list[str] = list(SYSTEM_PROMPT_TEMPLATES.keys())
 
 
 def resolve_system_prompt(
     mode: str,
     session_state: Any = None,
-) -> Optional[str]:
+) -> str | None:
     """Resolve the active system prompt for a given execution *mode*.
 
     Resolution order:
@@ -283,7 +283,7 @@ def resolve_system_prompt(
     """
     prompt_mode = "default"
     template_name = "Default"
-    custom_prompts: Optional[Dict[str, str]] = None
+    custom_prompts: dict[str, str] | None = None
 
     if session_state is not None:
         prompt_mode = getattr(session_state, "system_prompt_mode", None) or "default"

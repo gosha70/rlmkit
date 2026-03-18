@@ -3,27 +3,36 @@
 
 """Configuration Management Page - Streamlit UI for managing LLM providers."""
 
-import streamlit as st
-from pathlib import Path
 import os
+from pathlib import Path
 
-from rlmkit.ui.services import LLMConfigManager
-from rlmkit.ui.services.models import RAGConfig, ExecutionSlot, ExecutionPlan
-from rlmkit.ui.services.secret_store import (
-    get_secret_store, resolve_api_key, KEY_POLICY_OPTIONS,
-)
-from rlmkit.ui.services.profile_store import (
-    RunProfile, RunProfileStore,
-    SYSTEM_PROMPT_TEMPLATE_NAMES, SYSTEM_PROMPT_TEMPLATES,
-    load_custom_prompts, save_custom_prompts,
-)
+import streamlit as st
+
+from rlmkit.ui.app import _inject_rlmkit_desktop_css
 from rlmkit.ui.components.navigation import render_custom_navigation
 from rlmkit.ui.components.session_summary import render_session_summary
-from rlmkit.ui.app import _inject_rlmkit_desktop_css
 from rlmkit.ui.data.providers_catalog import (
-    PROVIDERS, PROVIDER_OPTIONS, PROVIDERS_BY_KEY,
-    get_provider, get_model_pricing, get_model_names, get_env_var,
-    get_embedding_model_names, build_pricing_table,
+    PROVIDER_OPTIONS,
+    build_pricing_table,
+    get_embedding_model_names,
+    get_env_var,
+    get_model_names,
+    get_model_pricing,
+    get_provider,
+)
+from rlmkit.ui.services import LLMConfigManager
+from rlmkit.ui.services.models import ExecutionPlan, ExecutionSlot, RAGConfig
+from rlmkit.ui.services.profile_store import (
+    SYSTEM_PROMPT_TEMPLATE_NAMES,
+    SYSTEM_PROMPT_TEMPLATES,
+    RunProfile,
+    RunProfileStore,
+    load_custom_prompts,
+    save_custom_prompts,
+)
+from rlmkit.ui.services.secret_store import (
+    KEY_POLICY_OPTIONS,
+    get_secret_store,
 )
 
 
@@ -42,7 +51,7 @@ def render_provider_selection():
     manager = st.session_state.llm_manager
     providers = manager.list_providers()
 
-    if 'selected_provider' not in st.session_state:
+    if "selected_provider" not in st.session_state:
         st.session_state.selected_provider = providers[0] if providers else None
 
 
@@ -58,7 +67,10 @@ def render_provider_list():
         return
 
     # Ensure selected_provider exists
-    if "selected_provider" not in st.session_state or st.session_state.selected_provider not in providers:
+    if (
+        "selected_provider" not in st.session_state
+        or st.session_state.selected_provider not in providers
+    ):
         st.session_state.selected_provider = providers[0]
 
     for provider_name in providers:
@@ -77,17 +89,15 @@ def render_provider_list():
             with col_info:
                 badge = "**[Default]** " if is_default else ""
                 status_icon = "Ready" if config.is_ready else "Not tested"
-                st.markdown(
-                    f"### {badge}{display_name}  \n"
-                    f"`{config.model}` — {status_icon}"
-                )
+                st.markdown(f"### {badge}{display_name}  \n`{config.model}` — {status_icon}")
 
             with col_actions:
                 btn_cols = st.columns(3)
                 with btn_cols[0]:
                     if st.button("Test", key=f"test_{provider_name}", use_container_width=True):
                         success, msg = manager.test_connection(
-                            config.provider, config.model,
+                            config.provider,
+                            config.model,
                             api_key=config.api_key,
                             api_key_env_var=config.api_key_env_var,
                         )
@@ -99,7 +109,9 @@ def render_provider_list():
                             st.error(msg)
                 with btn_cols[1]:
                     if not is_default:
-                        if st.button("Set default", key=f"default_{provider_name}", use_container_width=True):
+                        if st.button(
+                            "Set default", key=f"default_{provider_name}", use_container_width=True
+                        ):
                             st.session_state.selected_provider = provider_name
                             st.rerun()
                 with btn_cols[2]:
@@ -118,7 +130,11 @@ def render_add_provider_form():
 
     policy_labels = [label for _, label in KEY_POLICY_OPTIONS]
     policy_keys = [k for k, _ in KEY_POLICY_OPTIONS]
-    current_idx = policy_keys.index(st.session_state.key_policy) if st.session_state.key_policy in policy_keys else 0
+    current_idx = (
+        policy_keys.index(st.session_state.key_policy)
+        if st.session_state.key_policy in policy_keys
+        else 0
+    )
 
     selected_policy_idx = st.selectbox(
         "🔐 Key Storage Policy",
@@ -139,7 +155,7 @@ def render_add_provider_form():
     provider_labels = [opt[0] for opt in PROVIDER_OPTIONS]
     provider_values = [opt[1] for opt in PROVIDER_OPTIONS]
 
-    if 'selected_provider_idx' not in st.session_state:
+    if "selected_provider_idx" not in st.session_state:
         st.session_state.selected_provider_idx = 0
 
     selected_idx = st.selectbox(
@@ -149,7 +165,9 @@ def render_add_provider_form():
         help="Select the LLM provider type",
         key="provider_selectbox_main",
         index=st.session_state.selected_provider_idx,
-        on_change=lambda: st.session_state.update({'selected_provider_idx': st.session_state.provider_selectbox_main})
+        on_change=lambda: st.session_state.update(
+            {"selected_provider_idx": st.session_state.provider_selectbox_main}
+        ),
     )
     provider_key = provider_values[selected_idx]
     catalog_entry = get_provider(provider_key)
@@ -179,13 +197,15 @@ def render_add_provider_form():
         # Single API Key field (simplified!)
         st.write("🔑 **API Key** (optional if set in environment)")
 
-        placeholder = catalog_entry.api_key_placeholder if catalog_entry else "Paste your API key here"
+        placeholder = (
+            catalog_entry.api_key_placeholder if catalog_entry else "Paste your API key here"
+        )
 
         api_key_input = st.text_input(
             "API Key (paste here or use environment variable)",
             type="password",
             placeholder=placeholder,
-            help="Your API key. Not saved to disk. If empty, looks for env variable like OPENAI_API_KEY or ANTHROPIC_API_KEY"
+            help="Your API key. Not saved to disk. If empty, looks for env variable like OPENAI_API_KEY or ANTHROPIC_API_KEY",
         )
 
         # Submit button
@@ -206,7 +226,9 @@ def render_add_provider_form():
                 if env_var_name and os.getenv(env_var_name):
                     api_key_env_var = env_var_name
                 elif catalog_entry and catalog_entry.requires_api_key:
-                    st.error(f"❌ No API key provided and {env_var_name} environment variable not found")
+                    st.error(
+                        f"❌ No API key provided and {env_var_name} environment variable not found"
+                    )
                     return
 
             with st.spinner(f"Testing connection to {provider_key}..."):
@@ -246,7 +268,7 @@ def render_pricing_info():
 
         tabs = st.tabs(list(pricing_data.keys()))
 
-        for tab, provider_display in zip(tabs, pricing_data.keys()):
+        for tab, provider_display in zip(tabs, pricing_data.keys(), strict=False):
             with tab:
                 cols = st.columns([2, 1, 1, 1])
                 with cols[0]:
@@ -396,12 +418,18 @@ def render_execution_settings():
 
     with col_strategies:
         st.write("**Strategies**")
-        rlm_checked = st.checkbox("RLM", value="rlm" in st.session_state.selected_strategies, key="strat_rlm")
-        direct_checked = st.checkbox("Direct", value="direct" in st.session_state.selected_strategies, key="strat_direct")
+        rlm_checked = st.checkbox(
+            "RLM", value="rlm" in st.session_state.selected_strategies, key="strat_rlm"
+        )
+        direct_checked = st.checkbox(
+            "Direct", value="direct" in st.session_state.selected_strategies, key="strat_direct"
+        )
 
         # RAG requires OpenAI for embeddings
         if openai_configured:
-            rag_checked = st.checkbox("RAG", value="rag" in st.session_state.selected_strategies, key="strat_rag")
+            rag_checked = st.checkbox(
+                "RAG", value="rag" in st.session_state.selected_strategies, key="strat_rag"
+            )
         else:
             rag_checked = st.checkbox("RAG", value=False, disabled=True, key="strat_rag")
             st.caption("⚠️ To enable RAG, configure OpenAI first")
@@ -433,8 +461,12 @@ def render_execution_settings():
             selected = st.selectbox(
                 "Provider",
                 providers,
-                index=providers.index(st.session_state.selected_provider) if st.session_state.get("selected_provider") in providers else 0,
-                format_func=lambda p: f"{p.upper()} ({manager.get_provider_config(p).model})" if manager.get_provider_config(p) else p,
+                index=providers.index(st.session_state.selected_provider)
+                if st.session_state.get("selected_provider") in providers
+                else 0,
+                format_func=lambda p: f"{p.upper()} ({manager.get_provider_config(p).model})"
+                if manager.get_provider_config(p)
+                else p,
                 key="mode_provider",
             )
             st.session_state.selected_provider = selected
@@ -457,12 +489,14 @@ def render_execution_settings():
         plan_slots = []
         for mode in selected_strategies:
             mode_label = {"rlm": "RLM", "direct": "Direct", "rag": "RAG"}[mode]
-            plan_slots.append(ExecutionSlot(
-                mode=mode,
-                provider_name=provider_name,
-                label=f"{mode_label} ({model_name})",
-                rag_config=rag_cfg if mode == "rag" else None,
-            ))
+            plan_slots.append(
+                ExecutionSlot(
+                    mode=mode,
+                    provider_name=provider_name,
+                    label=f"{mode_label} ({model_name})",
+                    rag_config=rag_cfg if mode == "rag" else None,
+                )
+            )
         st.session_state.execution_plan = ExecutionPlan(slots=plan_slots)
 
     # --- Part B: Strategy-specific settings ---
@@ -480,7 +514,8 @@ def render_execution_settings():
             with col1:
                 temperature = st.slider(
                     "Temperature",
-                    min_value=0.0, max_value=2.0,
+                    min_value=0.0,
+                    max_value=2.0,
                     value=st.session_state.get("default_temperature", 0.7),
                     step=0.1,
                     key="run_temperature",
@@ -489,7 +524,8 @@ def render_execution_settings():
             with col2:
                 max_output_tokens = st.number_input(
                     "Max Output Tokens",
-                    min_value=100, max_value=32000,
+                    min_value=100,
+                    max_value=32000,
                     value=st.session_state.get("default_max_tokens", 2000),
                     key="run_max_tokens",
                 )
@@ -498,7 +534,8 @@ def render_execution_settings():
             with st.expander("Advanced sampling", expanded=False):
                 top_p = st.slider(
                     "Top-p",
-                    min_value=0.0, max_value=1.0,
+                    min_value=0.0,
+                    max_value=1.0,
                     value=st.session_state.get("default_top_p", 1.0),
                     step=0.05,
                     key="run_top_p",
@@ -507,7 +544,8 @@ def render_execution_settings():
 
                 timeout_direct = st.slider(
                     "Timeout (seconds)",
-                    min_value=1, max_value=120,
+                    min_value=1,
+                    max_value=120,
                     value=st.session_state.get("timeout", 30),
                     key="run_timeout",
                 )
@@ -521,7 +559,8 @@ def render_execution_settings():
             with col1:
                 max_steps = st.slider(
                     "Max Steps",
-                    min_value=1, max_value=32,
+                    min_value=1,
+                    max_value=32,
                     value=st.session_state.get("max_steps", 16),
                     help="Maximum exploration steps for RLM",
                     key="run_max_steps",
@@ -530,7 +569,8 @@ def render_execution_settings():
             with col2:
                 rlm_timeout = st.slider(
                     "RLM Timeout (seconds)",
-                    min_value=5, max_value=300,
+                    min_value=5,
+                    max_value=300,
                     value=st.session_state.get("rlm_timeout", 60),
                     help="Total time budget for the RLM run",
                     key="run_rlm_timeout",
@@ -551,13 +591,16 @@ def render_execution_settings():
 def _render_system_prompt_settings():
     """Render system prompt configuration controls."""
     # Fix text area resize handle clipping
-    st.markdown("""
+    st.markdown(
+        """
         <style>
         .stTextArea textarea {
             resize: none !important;
         }
         </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     st.write("**System Prompt**")
 
@@ -686,7 +729,11 @@ def _render_rag_settings_inline():
 
     embedding_models = get_embedding_model_names()
     if not embedding_models:
-        embedding_models = ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"]
+        embedding_models = [
+            "text-embedding-3-small",
+            "text-embedding-3-large",
+            "text-embedding-ada-002",
+        ]
 
     col1, col2 = st.columns(2)
     with col1:
@@ -718,7 +765,9 @@ def _render_rag_settings_inline():
         embedding_model = st.selectbox(
             "Embedding Model",
             embedding_models,
-            index=embedding_models.index(rc.embedding_model) if rc.embedding_model in embedding_models else 0,
+            index=embedding_models.index(rc.embedding_model)
+            if rc.embedding_model in embedding_models
+            else 0,
             help="OpenAI embedding model for chunk similarity",
         )
 
@@ -733,7 +782,7 @@ def _render_rag_settings_inline():
 def main():
     """Main configuration page."""
     # Mark this as the configuration page in session state
-    st.session_state.current_nav_page = 'configuration'
+    st.session_state.current_nav_page = "configuration"
 
     st.set_page_config(
         page_title="Configuration - RLM Studio",

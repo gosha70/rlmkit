@@ -1,3 +1,4 @@
+# mypy: disable-error-code="assignment,arg-type,no-any-return"
 # Copyright (c) EGOGE - All Rights Reserved.
 # This software may be used and distributed according to the terms of the MIT license.
 """
@@ -849,8 +850,7 @@ class ChatManager:
                 )
         else:
             recommendation = (
-                "RLM and Direct have similar costs. "
-                "Use RLM for complex analysis, Direct for speed."
+                "RLM and Direct have similar costs. Use RLM for complex analysis, Direct for speed."
             )
 
         return ComparisonMetrics(
@@ -885,7 +885,7 @@ class ChatManager:
         """Clear all messages from this session."""
         self.session_state["messages"] = []
 
-    def export_conversation(self, format: str = "json") -> str:
+    def export_conversation(self, format: str = "json") -> str:  # noqa: A002
         """
         Export conversation to JSON, Markdown, or CSV.
 

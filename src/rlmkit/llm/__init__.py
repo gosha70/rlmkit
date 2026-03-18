@@ -3,16 +3,18 @@
 
 """LLM client interfaces and implementations."""
 
-from .mock_client import MockLLMClient
-from .base import BaseLLMProvider, LLMResponse
+from typing import Any
+
 from .auto import (
+    ConfigurationError,
     auto_detect_provider,
-    list_available_providers,
-    get_provider_info,
     get_default_client,
     get_default_client_config,
-    ConfigurationError
+    get_provider_info,
+    list_available_providers,
 )
+from .base import BaseLLMProvider, LLMResponse
+from .mock_client import MockLLMClient
 
 # Optional external providers (lazy import to avoid requiring dependencies)
 __all__ = [
@@ -30,91 +32,113 @@ __all__ = [
 # Try to import OpenAI client
 try:
     from .openai_client import OpenAIClient
+
     __all__.append("OpenAIClient")
+    _OpenAIClient: Any = OpenAIClient
 except ImportError:
-    OpenAIClient = None
+    OpenAIClient = None  # type: ignore[assignment,misc]  # noqa: F401
+    _OpenAIClient = None
 
 # Try to import Claude client
 try:
     from .anthropic_client import ClaudeClient
+
     __all__.append("ClaudeClient")
+    _ClaudeClient: Any = ClaudeClient
 except ImportError:
-    ClaudeClient = None
+    ClaudeClient = None  # type: ignore[assignment,misc]  # noqa: F401
+    _ClaudeClient = None
 
 # Try to import Ollama client
 try:
     from .ollama_client import OllamaClient
+
     __all__.append("OllamaClient")
+    _OllamaClient: Any = OllamaClient
 except ImportError:
-    OllamaClient = None
+    OllamaClient = None  # type: ignore[assignment,misc]  # noqa: F401
+    _OllamaClient = None
 
 # Try to import LM Studio client
 try:
     from .lmstudio_client import LMStudioClient
+
     __all__.append("LMStudioClient")
+    _LMStudioClient: Any = LMStudioClient
 except ImportError:
-    LMStudioClient = None
+    LMStudioClient = None  # type: ignore[assignment,misc]  # noqa: F401
+    _LMStudioClient = None
 
 # Try to import vLLM client
 try:
     from .vllm_client import vLLMClient
+
     __all__.append("vLLMClient")
+    _vLLMClient: Any = vLLMClient  # noqa: N816
 except ImportError:
-    vLLMClient = None
+    vLLMClient = None  # type: ignore[assignment,misc]  # noqa: F401,N816
+    _vLLMClient = None  # noqa: N816
 
 
-def get_llm_client(provider: str, model: str = None, api_key: str = None, **kwargs) -> BaseLLMProvider:
+def get_llm_client(
+    provider: str,
+    model: str | None = None,
+    api_key: str | None = None,
+    **kwargs: Any,
+) -> BaseLLMProvider:
     """
     Factory function to create LLM client based on provider name.
-    
+
     Args:
         provider: Provider name ('openai', 'anthropic', 'ollama', 'lmstudio', 'vllm', 'mock')
         model: Model name (provider-specific)
         api_key: API key for the provider (optional, will use environment variable if not provided)
         **kwargs: Additional arguments for the client
-        
+
     Returns:
         LLM client instance
-        
+
     Raises:
         ValueError: If provider is not supported or not installed
     """
     provider = provider.lower()
-    
+
     if provider == "mock":
-        return MockLLMClient(**kwargs)
-    
+        return MockLLMClient(**kwargs)  # type: ignore[return-value]
+
     elif provider == "openai":
-        if OpenAIClient is None:
+        if _OpenAIClient is None:
             raise ValueError("OpenAI client not available. Install with: pip install openai")
         if api_key:
-            kwargs['api_key'] = api_key
-        return OpenAIClient(model=model or "gpt-4", **kwargs)
-    
+            kwargs["api_key"] = api_key
+        return _OpenAIClient(model=model or "gpt-4", **kwargs)  # type: ignore[no-any-return]
+
     elif provider == "anthropic":
-        if ClaudeClient is None:
+        if _ClaudeClient is None:
             raise ValueError("Anthropic client not available. Install with: pip install anthropic")
         if api_key:
-            kwargs['api_key'] = api_key
-        return ClaudeClient(model=model or "claude-3-sonnet-20240229", **kwargs)
-    
+            kwargs["api_key"] = api_key
+        return _ClaudeClient(model=model or "claude-3-sonnet-20240229", **kwargs)  # type: ignore[no-any-return]
+
     elif provider == "ollama":
-        if OllamaClient is None:
+        if _OllamaClient is None:
             raise ValueError("Ollama client not available. Install with: pip install ollama")
-        return OllamaClient(model=model or "llama2", **kwargs)
-    
+        return _OllamaClient(model=model or "llama2", **kwargs)  # type: ignore[no-any-return]
+
     elif provider == "lmstudio" or provider == "lm studio":
-        if LMStudioClient is None:
+        if _LMStudioClient is None:
             raise ValueError("LM Studio client not available")
-        return LMStudioClient(model=model, **kwargs)
-    
+        return _LMStudioClient(model=model, **kwargs)  # type: ignore[no-any-return]
+
     elif provider == "vllm":
-        if vLLMClient is None:
+        if _vLLMClient is None:
             raise ValueError("vLLM client not available")
-        return vLLMClient(model=model, **kwargs)
-    
+        return _vLLMClient(model=model, **kwargs)  # type: ignore[no-any-return]
+
     else:
-        raise ValueError(f"Unknown provider: {provider}. Supported: openai, anthropic, ollama, lmstudio, vllm, mock")
+        raise ValueError(
+            f"Unknown provider: {provider}. Supported: openai, anthropic, ollama, lmstudio, vllm, mock"
+        )
 
 
 __all__.append("get_llm_client")

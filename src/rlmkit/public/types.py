@@ -7,7 +7,7 @@ internal implementation changes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -32,20 +32,20 @@ class PublicRunResult:
     answer: str = ""
     mode_used: str = ""
     success: bool = True
-    error: Optional[str] = None
+    error: str | None = None
     total_tokens: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     total_cost: float = 0.0
     elapsed_time: float = 0.0
     steps: int = 0
-    trace: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    trace: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
         return self.answer
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a plain dictionary."""
         return {
             "answer": self.answer,
@@ -77,13 +77,13 @@ class PublicInteractResult:
 
     answer: str
     mode_used: str
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    trace: Optional[Any] = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    trace: Any | None = None
 
     def __str__(self) -> str:
         return self.answer
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary format."""
         return {
             "answer": self.answer,

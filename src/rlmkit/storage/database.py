@@ -5,8 +5,6 @@
 
 import sqlite3
 from pathlib import Path
-from typing import Optional, List, Any
-
 
 _SCHEMA_VERSION = 1
 
@@ -89,12 +87,12 @@ def get_default_db_path() -> Path:
 class Database:
     """SQLite connection manager with schema initialization."""
 
-    def __init__(self, db_path: Optional[str | Path] = None):
+    def __init__(self, db_path: str | Path | None = None):
         if db_path is None:
             db_path = get_default_db_path()
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn: Optional[sqlite3.Connection] = None
+        self._conn: sqlite3.Connection | None = None
         self._init_schema()
 
     def connect(self) -> sqlite3.Connection:
@@ -132,17 +130,17 @@ class Database:
         conn.commit()
         return cursor
 
-    def executemany(self, sql: str, params_list: List[tuple]) -> None:
+    def executemany(self, sql: str, params_list: list[tuple]) -> None:
         """Execute a SQL statement for each set of params and commit."""
         conn = self.connect()
         conn.executemany(sql, params_list)
         conn.commit()
 
-    def fetchone(self, sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
+    def fetchone(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         """Execute and return a single row."""
         return self.connect().execute(sql, params).fetchone()
 
-    def fetchall(self, sql: str, params: tuple = ()) -> List[sqlite3.Row]:
+    def fetchall(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         """Execute and return all rows."""
         return self.connect().execute(sql, params).fetchall()
 

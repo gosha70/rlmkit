@@ -14,10 +14,8 @@ import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 from rlmkit.ui.data.providers_catalog import get_env_var
-
 
 # ---------------------------------------------------------------------------
 # Abstract interface
@@ -27,7 +25,7 @@ class SecretStore(ABC):
     """Interface for API-key storage backends."""
 
     @abstractmethod
-    def get(self, provider: str) -> Optional[str]:
+    def get(self, provider: str) -> str | None:
         """Return the API key for *provider*, or ``None``."""
 
     @abstractmethod
@@ -55,7 +53,7 @@ class EnvSecretStore(SecretStore):
 
     label = "Environment variables only"
 
-    def get(self, provider: str) -> Optional[str]:
+    def get(self, provider: str) -> str | None:
         env_var = get_env_var(provider)
         if env_var:
             return os.environ.get(env_var)
@@ -86,7 +84,7 @@ class FileSecretStore(SecretStore):
 
     label = "Save to local file (unencrypted)"
 
-    def __init__(self, path: Optional[Path] = None):
+    def __init__(self, path: Path | None = None):
         self._path = Path(path) if path else _DEFAULT_KEYS_PATH
 
     # -- helpers ----------------------------------------------------------
@@ -95,9 +93,9 @@ class FileSecretStore(SecretStore):
         if not self._path.exists():
             return {}
         try:
-            with open(self._path, "r") as f:
+            with open(self._path) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return {}
 
     def _write_all(self, data: dict) -> None:
@@ -111,7 +109,7 @@ class FileSecretStore(SecretStore):
 
     # -- interface --------------------------------------------------------
 
-    def get(self, provider: str) -> Optional[str]:
+    def get(self, provider: str) -> str | None:
         return self._read_all().get(provider)
 
     def set(self, provider: str, key: str) -> None:
@@ -151,7 +149,7 @@ class KeyringSecretStore(SecretStore):
         except ImportError:
             return False
 
-    def get(self, provider: str) -> Optional[str]:
+    def get(self, provider: str) -> str | None:
         import keyring
         return keyring.get_password(_KEYRING_SERVICE, provider)
 
@@ -217,7 +215,7 @@ def get_secret_store(session_state=None) -> SecretStore:
     return create_secret_store(policy)
 
 
-def resolve_api_key(provider: str, session_state=None) -> Optional[str]:
+def resolve_api_key(provider: str, session_state=None) -> str | None:
     """Try every available source to find an API key for *provider*.
 
     Resolution order:

@@ -4,11 +4,13 @@
 """Benchmark runner for executing strategies across dataset cases."""
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Callable
+from typing import Any
 
 from rlmkit.strategies.base import LLMStrategy, StrategyResult
-from rlmkit.strategies.evaluator import MultiStrategyEvaluator, EvaluationResult
+from rlmkit.strategies.evaluator import EvaluationResult, MultiStrategyEvaluator
+
 from .dataset import BenchmarkCase, BenchmarkDataset
 
 
@@ -20,7 +22,7 @@ class CaseResult:
     evaluation: EvaluationResult
     elapsed_time: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "case": self.case.to_dict(),
             "evaluation": self.evaluation.get_summary(),
@@ -33,19 +35,19 @@ class BenchmarkRun:
     """Complete results from a benchmark run across all cases."""
 
     dataset_name: str
-    strategy_names: List[str]
-    case_results: List[CaseResult] = field(default_factory=list)
+    strategy_names: list[str]
+    case_results: list[CaseResult] = field(default_factory=list)
     total_elapsed_time: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def case_count(self) -> int:
         return len(self.case_results)
 
     @property
-    def success_rate(self) -> Dict[str, float]:
+    def success_rate(self) -> dict[str, float]:
         """Per-strategy success rate across all cases."""
-        rates: Dict[str, float] = {}
+        rates: dict[str, float] = {}
         for name in self.strategy_names:
             total = 0
             successes = 0
@@ -57,9 +59,9 @@ class BenchmarkRun:
             rates[name] = (successes / total) if total > 0 else 0.0
         return rates
 
-    def get_strategy_metrics(self, strategy_name: str) -> Dict[str, Any]:
+    def get_strategy_metrics(self, strategy_name: str) -> dict[str, Any]:
         """Aggregate metrics for a single strategy across all cases."""
-        results: List[StrategyResult] = []
+        results: list[StrategyResult] = []
         for cr in self.case_results:
             sr = cr.evaluation.results.get(strategy_name)
             if sr is not None:
@@ -87,7 +89,7 @@ class BenchmarkRun:
             "avg_steps": sum(r.steps for r in results) / len(results),
         }
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "dataset_name": self.dataset_name,
             "strategy_names": self.strategy_names,
@@ -114,8 +116,8 @@ class BenchmarkRunner:
 
     def __init__(
         self,
-        strategies: List[LLMStrategy],
-        on_case_complete: Optional[Callable[[CaseResult], None]] = None,
+        strategies: list[LLMStrategy],
+        on_case_complete: Callable[[CaseResult], None] | None = None,
     ):
         self.strategies = strategies
         self.evaluator = MultiStrategyEvaluator(strategies)
@@ -124,7 +126,7 @@ class BenchmarkRunner:
     def run(
         self,
         dataset: BenchmarkDataset,
-        case_ids: Optional[List[str]] = None,
+        case_ids: list[str] | None = None,
     ) -> BenchmarkRun:
         """Run all strategies on each case in the dataset.
 

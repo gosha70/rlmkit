@@ -4,16 +4,16 @@
 """Embedding provider abstraction for RAG strategy."""
 
 import os
-from typing import Protocol, List, Optional, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
 class EmbeddingProvider(Protocol):
     """Embed text into vectors."""
 
-    def embed(self, texts: List[str]) -> List[List[float]]: ...
+    def embed(self, texts: list[str]) -> list[list[float]]: ...
 
-    def embed_query(self, text: str) -> List[float]: ...
+    def embed_query(self, text: str) -> list[float]: ...
 
 
 class OpenAIEmbedder:
@@ -22,11 +22,11 @@ class OpenAIEmbedder:
     def __init__(
         self,
         model: str = "text-embedding-3-small",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         self.model = model
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        self._client: Optional[object] = None
+        self._client: object | None = None
 
     def _get_client(self):
         if self._client is None:
@@ -41,10 +41,10 @@ class OpenAIEmbedder:
             self._client = openai.OpenAI(api_key=self._api_key)
         return self._client
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         client = self._get_client()
         response = client.embeddings.create(input=texts, model=self.model)
         return [item.embedding for item in response.data]
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str) -> list[float]:
         return self.embed([text])[0]

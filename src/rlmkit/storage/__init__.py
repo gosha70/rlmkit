@@ -3,8 +3,8 @@
 
 """Persistent storage: conversations, messages, and vector embeddings."""
 
-from .database import Database, get_default_db_path
 from .conversation_store import ConversationStore
+from .database import Database, get_default_db_path
 from .vector_store import VectorStore
 
 __all__ = [

@@ -4,11 +4,11 @@ These wrap domain exceptions into a stable public API surface.
 """
 
 from rlmkit.domain.exceptions import (
-    DomainError,
     BudgetExceededError,
+    ConfigurationError,
+    DomainError,
     ExecutionFailedError,
     SecurityViolationError,
-    ConfigurationError,
 )
 
 

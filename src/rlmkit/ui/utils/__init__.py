@@ -1,6 +1,6 @@
 """UI Utilities - Formatting, constants, helpers."""
 
-from typing import Dict, Any
+from typing import Any  # noqa: F401 — re-exported
 
 # Constants for UI
 APP_TITLE = "RLMKit Chat Studio"

@@ -7,7 +7,7 @@ import hashlib
 import math
 import struct
 from datetime import datetime
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Any
 from uuid import uuid4
 
 from .database import Database
@@ -22,10 +22,10 @@ class VectorStore:
     def add_chunks(
         self,
         collection: str,
-        chunks: List[str],
-        embeddings: List[List[float]],
-        source_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        chunks: list[str],
+        embeddings: list[list[float]],
+        source_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         """Store chunks with embeddings. Deduplicates by content_hash within collection.
 
@@ -38,7 +38,7 @@ class VectorStore:
         now = datetime.now().isoformat()
         meta_json = json.dumps(metadata or {})
 
-        for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
+        for i, (chunk_text, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
             content_hash = hashlib.sha256(chunk_text.encode()).hexdigest()
 
             # Check for duplicate within collection
@@ -57,8 +57,18 @@ class VectorStore:
                    (id, collection, content_hash, chunk_text, chunk_index,
                     embedding, embedding_dim, source_id, metadata_json, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (chunk_id, collection, content_hash, chunk_text, i,
-                 emb_blob, len(embedding), source_id, meta_json, now),
+                (
+                    chunk_id,
+                    collection,
+                    content_hash,
+                    chunk_text,
+                    i,
+                    emb_blob,
+                    len(embedding),
+                    source_id,
+                    meta_json,
+                    now,
+                ),
             )
             added += 1
 
@@ -67,9 +77,9 @@ class VectorStore:
     def search(
         self,
         collection: str,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
-    ) -> List[Tuple[float, str, str]]:
+    ) -> list[tuple[float, str, str]]:
         """Search for similar chunks by cosine similarity.
 
         Returns:
@@ -102,7 +112,8 @@ class VectorStore:
     def delete_collection(self, collection: str) -> None:
         """Delete all chunks in a collection."""
         self.db.execute(
-            "DELETE FROM vector_chunks WHERE collection = ?", (collection,),
+            "DELETE FROM vector_chunks WHERE collection = ?",
+            (collection,),
         )
 
     def has_source(self, collection: str, source_id: str) -> bool:
@@ -118,19 +129,19 @@ class VectorStore:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _serialize_embedding(embedding: List[float]) -> bytes:
+    def _serialize_embedding(embedding: list[float]) -> bytes:
         """Pack float32 array to bytes."""
         return struct.pack(f"{len(embedding)}f", *embedding)
 
     @staticmethod
-    def _deserialize_embedding(data: bytes, dim: int) -> List[float]:
+    def _deserialize_embedding(data: bytes, dim: int) -> list[float]:
         """Unpack bytes to float32 array."""
         return list(struct.unpack(f"{dim}f", data))
 
     @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
         """Compute cosine similarity between two vectors."""
-        dot = sum(x * y for x, y in zip(a, b))
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         norm_a = math.sqrt(sum(x * x for x in a))
         norm_b = math.sqrt(sum(x * x for x in b))
         if norm_a == 0 or norm_b == 0:

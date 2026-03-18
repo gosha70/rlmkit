@@ -12,33 +12,34 @@ controller loop that:
 5. Extracts final answers
 """
 
-from dataclasses import dataclass
-from typing import Optional, Protocol, List, Dict, Any
 import time
-from .parsing import parse_response, format_result_for_llm, ParsedResponse
-from .actions import parse_action, ParseError, FinalAction, InspectAction
-from .errors import BudgetExceeded
-from .budget import BudgetTracker, BudgetLimits, CostTracker, TokenUsage, estimate_tokens
-from .comparison import ExecutionMetrics, ComparisonResult
-from ..envs.pyrepl_env import PyReplEnv
+from dataclasses import dataclass
+from typing import Any, Protocol
+
 from ..config import RLMConfig
+from ..envs.pyrepl_env import PyReplEnv
 from ..prompts import format_system_prompt
 from ..tools.recursion import create_subcall
+from .actions import ParseError, parse_action
+from .budget import BudgetTracker, TokenUsage, estimate_tokens
+from .comparison import ComparisonResult, ExecutionMetrics
+from .errors import BudgetExceeded
+from .parsing import ParsedResponse, format_result_for_llm, parse_response
 
 
 class LLMClient(Protocol):
     """Protocol for LLM providers.
-    
+
     Any LLM client must implement this interface to work with RLM.
     """
-    
-    def complete(self, messages: List[Dict[str, str]]) -> str:
+
+    def complete(self, messages: list[dict[str, str]]) -> str:
         """
         Generate completion from messages.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content' keys
-            
+
         Returns:
             Generated text response from LLM
         """
@@ -55,13 +56,13 @@ class RLMResult:
     steps: int
     """Number of execution steps taken"""
 
-    trace: List[Dict[str, Any]]
+    trace: list[dict[str, Any]]
     """Full execution trace (messages + execution results)"""
 
     success: bool = True
     """Whether execution completed successfully"""
 
-    error: Optional[str] = None
+    error: str | None = None
     """Error message if execution failed"""
 
     total_input_tokens: int = 0
@@ -74,32 +75,32 @@ class RLMResult:
 class RLM:
     """
     Recursive Language Model controller.
-    
+
     Implements the RLM paradigm from arXiv:2512.24601 where:
     - Large prompts are loaded as variables in a REPL environment
     - LLM writes Python code to explore the content
     - Code execution results feed back to LLM
     - Process repeats until final answer is found
-    
+
     Example:
         >>> from rlmkit import RLM, RLMConfig
         >>> from rlmkit.llm import MockLLMClient
-        >>> 
+        >>>
         >>> client = MockLLMClient(["```python\\nx = peek(0, 10)\\n```", "FINAL: Done"])
         >>> rlm = RLM(client=client, config=RLMConfig(max_steps=10))
         >>> result = rlm.run(prompt="Large content here...", query="Summarize this")
         >>> print(result.answer)  # "Done"
     """
-    
+
     def __init__(
         self,
         client: LLMClient,
-        config: Optional[RLMConfig] = None,
-        budget_tracker: Optional[BudgetTracker] = None,
+        config: RLMConfig | None = None,
+        budget_tracker: BudgetTracker | None = None,
     ):
         """
         Initialize RLM controller.
-        
+
         Args:
             client: LLM client implementing LLMClient protocol
             config: Configuration for execution limits and security
@@ -107,18 +108,13 @@ class RLM:
         """
         self.client = client
         self.config = config or RLMConfig()
-        self.env: Optional[PyReplEnv] = None
+        self.env: PyReplEnv | None = None
         self._budget_tracker = budget_tracker  # For recursion tracking
-        
-    def run(
-        self,
-        prompt: str,
-        query: str,
-        system_prompt: Optional[str] = None
-    ) -> RLMResult:
+
+    def run(self, prompt: str, query: str, system_prompt: str | None = None) -> RLMResult:
         """
         Run RLM on a prompt to answer a query.
-        
+
         This is the main entry point for RLM execution:
         1. Initializes a REPL environment with the prompt as variable 'P'
         2. Sends query to LLM with instructions about available tools
@@ -126,15 +122,15 @@ class RLM:
         4. If code: executes it, shows results to LLM, repeats
         5. If final: extracts answer and returns
         6. Enforces budget limits (max_steps)
-        
+
         Args:
             prompt: Large content to analyze (the "P" variable in paper)
             query: Question to answer about the prompt
             system_prompt: Optional custom system prompt (uses default if None)
-            
+
         Returns:
             RLMResult with answer, execution trace, and statistics
-            
+
         Raises:
             BudgetExceeded: If max_steps is reached without final answer
         """
@@ -146,28 +142,22 @@ class RLM:
             max_stdout_chars=self.config.execution.max_output_chars,
         )
         self.env.set_content(prompt)
-        
+
         # Bind subcall function to REPL environment for recursion support
         subcall_func = create_subcall(self)
-        self.env.env_globals['subcall'] = subcall_func
-        
+        self.env.env_globals["subcall"] = subcall_func
+
         # Build message history
         messages = []
-        
+
         # Add system prompt
         if system_prompt is None:
             system_prompt = self._build_system_prompt(len(prompt))
-        messages.append({
-            "role": "system",
-            "content": system_prompt
-        })
-        
+        messages.append({"role": "system", "content": system_prompt})
+
         # Add user query
-        messages.append({
-            "role": "user",
-            "content": query
-        })
-        
+        messages.append({"role": "user", "content": query})
+
         # Main execution loop
         trace = []
         steps = 0
@@ -182,7 +172,7 @@ class RLM:
                 # Get LLM response — prefer complete_with_metadata() for real token counts
                 step_input_tokens = 0
                 step_output_tokens = 0
-                if hasattr(self.client, 'complete_with_metadata'):
+                if hasattr(self.client, "complete_with_metadata"):
                     try:
                         llm_response = self.client.complete_with_metadata(messages)
                         response = llm_response.content
@@ -197,17 +187,19 @@ class RLM:
                 cumulative_output_tokens += step_output_tokens
 
                 # Add to trace
-                trace.append({
-                    "step": steps,
-                    "role": "assistant",
-                    "content": response,
-                    "input_tokens": step_input_tokens,
-                    "output_tokens": step_output_tokens,
-                })
-                
+                trace.append(
+                    {
+                        "step": steps,
+                        "role": "assistant",
+                        "content": response,
+                        "input_tokens": step_input_tokens,
+                        "output_tokens": step_output_tokens,
+                    }
+                )
+
                 # Parse response - try JSON format (v2.0) first, fall back to markdown (v1.0)
                 parsed = self._parse_rlm_response(response)
-                
+
                 # Check if complete - FINAL is a HARD STOP
                 # CRITICAL: According to control-loop engineering analysis,
                 # FINAL must be a terminal state. Once detected, execution stops immediately.
@@ -217,12 +209,14 @@ class RLM:
                     # Log warning if there was an unresolved execution failure
                     # But still accept the FINAL answer (model may have used direct reasoning)
                     if last_execution_failed:
-                        trace.append({
-                            "step": steps,
-                            "role": "system",
-                            "content": "⚠️ Warning: FINAL provided after execution failure. "
-                                      "Model may have used direct reasoning instead of code execution."
-                        })
+                        trace.append(
+                            {
+                                "step": steps,
+                                "role": "system",
+                                "content": "⚠️ Warning: FINAL provided after execution failure. "
+                                "Model may have used direct reasoning instead of code execution.",
+                            }
+                        )
 
                     # Extract and return final answer - NO FURTHER PROCESSING
                     answer = self._extract_final_answer(parsed)
@@ -235,63 +229,59 @@ class RLM:
                         total_input_tokens=cumulative_input_tokens,
                         total_output_tokens=cumulative_output_tokens,
                     )
-                
+
                 # Execute code if present
-                if parsed.has_code:
+                if parsed.has_code and parsed.code is not None:
                     # Execute in REPL
                     result = self.env.execute(parsed.code)
-                    
+
                     # Track if execution failed or succeeded
                     # This flag persists until successful execution or FINAL is provided
-                    last_execution_failed = (
-                        result.get('exception') is not None or
-                        result.get('timeout', False)
+                    last_execution_failed = result.get("exception") is not None or result.get(
+                        "timeout", False
                     )
-                    
+
                     # Format for LLM
                     formatted_result = format_result_for_llm(result)
-                    
+
                     # Add to trace
-                    trace.append({
-                        "step": steps,
-                        "role": "execution",
-                        "content": formatted_result,
-                        "raw_result": result
-                    })
-                    
+                    trace.append(
+                        {
+                            "step": steps,
+                            "role": "execution",
+                            "content": formatted_result,
+                            "raw_result": result,
+                        }
+                    )
+
                     # Add to message history
-                    messages.append({
-                        "role": "assistant",
-                        "content": response
-                    })
-                    messages.append({
-                        "role": "user",
-                        "content": f"Execution result:\n{formatted_result}"
-                    })
+                    messages.append({"role": "assistant", "content": response})
+                    messages.append(
+                        {"role": "user", "content": f"Execution result:\n{formatted_result}"}
+                    )
                 else:
                     # No code and no FINAL - unclear response
                     # Prompt the model to provide executable code or a final answer
                     # Note: last_execution_failed flag persists until successful execution
                     # or FINAL is provided (where it's logged as a warning)
 
-                    messages.append({
-                        "role": "assistant",
-                        "content": response
-                    })
-                    messages.append({
-                        "role": "user",
-                        "content": "Please provide either:\n"
-                                  "1. Python code to execute (in a ```python code block), OR\n"
-                                  "2. A FINAL answer (using FINAL: prefix)\n\n"
-                                  "Remember: If the question is self-contained and doesn't require "
-                                  "inspecting P, you can answer directly with FINAL."
-                    })
-            
+                    messages.append({"role": "assistant", "content": response})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "Please provide either:\n"
+                            "1. Python code to execute (in a ```python code block), OR\n"
+                            "2. A FINAL answer (using FINAL: prefix)\n\n"
+                            "Remember: If the question is self-contained and doesn't require "
+                            "inspecting P, you can answer directly with FINAL.",
+                        }
+                    )
+
             # Max steps exceeded
             raise BudgetExceeded(
                 f"Maximum steps ({self.config.execution.max_steps}) exceeded without finding final answer"
             )
-            
+
         except BudgetExceeded:
             raise
         except Exception as e:
@@ -305,22 +295,22 @@ class RLM:
                 total_input_tokens=cumulative_input_tokens,
                 total_output_tokens=cumulative_output_tokens,
             )
-    
+
     def _extract_final_answer(self, parsed: ParsedResponse) -> str:
         """
         Extract final answer from parsed response.
-        
+
         Handles both FINAL: direct answers and FINAL_VAR: variable references.
-        
+
         Args:
             parsed: Parsed LLM response
-            
+
         Returns:
             Final answer string
         """
         if parsed.final_answer:
             return parsed.final_answer
-        
+
         if parsed.final_var and self.env:
             # Get variable from environment
             var_value = self.env.get_var(parsed.final_var)
@@ -328,7 +318,7 @@ class RLM:
                 return str(var_value)
             else:
                 return f"Error: Variable '{parsed.final_var}' not found in environment"
-        
+
         return "Error: No final answer found"
 
     def _parse_rlm_response(self, response: str) -> ParsedResponse:
@@ -350,10 +340,7 @@ class RLM:
 
             # Convert JSON action to ParsedResponse
             if action_type == "final":
-                return ParsedResponse(
-                    final_answer=action_obj.answer,
-                    raw_text=response
-                )
+                return ParsedResponse(final_answer=action_obj.answer, raw_text=response)
             elif action_type == "inspect":
                 # Convert inspect action to executable code
                 tool = action_obj.tool
@@ -373,14 +360,11 @@ class RLM:
                     # Unknown tool, return as text
                     return ParsedResponse(raw_text=response)
 
-                return ParsedResponse(
-                    code=code,
-                    raw_text=response
-                )
+                return ParsedResponse(code=code, raw_text=response)
             elif action_type == "subcall":
                 # Execute subcall via the bound function
-                subcall_func = self.env.env_globals.get('subcall') if self.env else None
-                if subcall_func and hasattr(action_obj, 'query') and hasattr(action_obj, 'prompt'):
+                subcall_func = self.env.env_globals.get("subcall") if self.env else None
+                if subcall_func and hasattr(action_obj, "query") and hasattr(action_obj, "prompt"):
                     # Generate code representation for tracing
                     # Note: SubcallAction uses 'prompt' but subcall() function uses 'content'
                     code = f"subcall(content={repr(action_obj.prompt)}, query={repr(action_obj.query)})"
@@ -391,16 +375,12 @@ class RLM:
                         sub_answer = subcall_func(content=action_obj.prompt, query=action_obj.query)
                         # Return as if it was code execution with result
                         return ParsedResponse(
-                            code=code,
-                            result=str(sub_answer),
-                            raw_text=response
+                            code=code, final_answer=str(sub_answer), raw_text=response
                         )
                     except Exception as e:
                         # Return error as execution result
                         return ParsedResponse(
-                            code=code,
-                            result=f"Error in subcall: {str(e)}",
-                            raw_text=response
+                            code=code, final_answer=f"Error in subcall: {str(e)}", raw_text=response
                         )
                 else:
                     # Subcall function not available or malformed action
@@ -416,127 +396,101 @@ class RLM:
     def _build_system_prompt(self, prompt_length: int) -> str:
         """
         Build default system prompt for RLM.
-        
+
         Uses the templated prompt system for easy customization and versioning.
-        
+
         Args:
             prompt_length: Length of the prompt content in characters
-            
+
         Returns:
             System prompt string
         """
         return format_system_prompt(prompt_length=prompt_length)
-    
-    def run_direct(
-        self,
-        prompt: str,
-        query: str,
-        system_prompt: Optional[str] = None
-    ) -> RLMResult:
+
+    def run_direct(self, prompt: str, query: str, system_prompt: str | None = None) -> RLMResult:
         """
         Run in direct mode (no RLM exploration, just send full prompt to LLM).
-        
+
         This mode sends the entire prompt and query to the LLM in a single request,
         bypassing the RLM exploration loop. Useful for comparison and baseline testing.
-        
+
         Args:
             prompt: Large content to analyze
             query: Question to answer about the prompt
             system_prompt: Optional custom system prompt
-            
+
         Returns:
             RLMResult with answer and metrics
         """
         start_time = time.time()
-        
+
         # Build message for direct query
         messages = []
-        
+
         if system_prompt is None:
             system_prompt = "You are a helpful assistant. Answer the user's question based on the provided content."
-        
-        messages.append({
-            "role": "system",
-            "content": system_prompt
-        })
-        
+
+        messages.append({"role": "system", "content": system_prompt})
+
         # Combine prompt and query
         combined_content = f"Content:\n{prompt}\n\nQuestion: {query}"
-        
-        messages.append({
-            "role": "user",
-            "content": combined_content
-        })
-        
+
+        messages.append({"role": "user", "content": combined_content})
+
         try:
             # Get LLM response
             response = self.client.complete(messages)
-            
-            elapsed_time = time.time() - start_time
-            
+
+            _elapsed_time = time.time() - start_time
+
             return RLMResult(
                 answer=response,
                 steps=0,  # Direct mode = 0 steps
-                trace=[{
-                    "step": 0,
-                    "role": "assistant",
-                    "content": response,
-                    "mode": "direct"
-                }],
-                success=True
+                trace=[{"step": 0, "role": "assistant", "content": response, "mode": "direct"}],
+                success=True,
             )
         except Exception as e:
-            elapsed_time = time.time() - start_time
-            return RLMResult(
-                answer="",
-                steps=0,
-                trace=[],
-                success=False,
-                error=str(e)
-            )
-    
+            return RLMResult(answer="", steps=0, trace=[], success=False, error=str(e))
+
     def run_comparison(
-        self,
-        prompt: str,
-        query: str,
-        system_prompt: Optional[str] = None
+        self, prompt: str, query: str, system_prompt: str | None = None
     ) -> ComparisonResult:
         """
         Run both RLM and Direct modes and compare results.
-        
+
         This method executes the same query using both RLM exploration mode
         and direct mode, tracking metrics for comparison. Useful for demonstrating
         the value of RLM and understanding when it helps.
-        
+
         Args:
             prompt: Large content to analyze
             query: Question to answer about the prompt
             system_prompt: Optional custom system prompt (used for RLM mode)
-            
+
         Returns:
             ComparisonResult with metrics from both modes
         """
         comparison = ComparisonResult()
-        
+
         # Run RLM mode
         if self.config.execution.enable_rlm:
             rlm_start = time.time()
             try:
                 rlm_result = self.run(prompt, query, system_prompt)
                 rlm_elapsed = time.time() - rlm_start
-                
+
                 # Calculate token usage for RLM mode
                 rlm_tokens = TokenUsage()
                 for trace_item in rlm_result.trace:
-                    if trace_item.get('role') == 'assistant':
-                        rlm_tokens.add_output(estimate_tokens(trace_item['content']))
-                    elif trace_item.get('role') == 'execution':
+                    if trace_item.get("role") == "assistant":
+                        rlm_tokens.add_output(estimate_tokens(trace_item["content"]))
+                    elif trace_item.get("role") == "execution":
                         # Count execution results as input to next step
-                        rlm_tokens.add_input(estimate_tokens(trace_item['content']))
-                
+                        rlm_tokens.add_input(estimate_tokens(trace_item["content"]))
+
                 # Add initial prompt
                 rlm_tokens.add_input(estimate_tokens(prompt + query))
-                
+
                 comparison.rlm_metrics = ExecutionMetrics(
                     mode="rlm",
                     answer=rlm_result.answer,
@@ -545,7 +499,7 @@ class RLM:
                     elapsed_time=rlm_elapsed,
                     success=rlm_result.success,
                     error=rlm_result.error,
-                    trace=rlm_result.trace
+                    trace=rlm_result.trace,
                 )
             except Exception as e:
                 rlm_elapsed = time.time() - rlm_start
@@ -557,20 +511,20 @@ class RLM:
                     elapsed_time=rlm_elapsed,
                     success=False,
                     error=str(e),
-                    trace=[]
+                    trace=[],
                 )
-        
+
         # Run Direct mode
         direct_start = time.time()
         try:
             direct_result = self.run_direct(prompt, query)
             direct_elapsed = time.time() - direct_start
-            
+
             # Calculate token usage for Direct mode
             direct_tokens = TokenUsage()
             direct_tokens.add_input(estimate_tokens(prompt + query))
             direct_tokens.add_output(estimate_tokens(direct_result.answer))
-            
+
             comparison.direct_metrics = ExecutionMetrics(
                 mode="direct",
                 answer=direct_result.answer,
@@ -579,7 +533,7 @@ class RLM:
                 elapsed_time=direct_elapsed,
                 success=direct_result.success,
                 error=direct_result.error,
-                trace=direct_result.trace
+                trace=direct_result.trace,
             )
         except Exception as e:
             direct_elapsed = time.time() - direct_start
@@ -591,7 +545,7 @@ class RLM:
                 elapsed_time=direct_elapsed,
                 success=False,
                 error=str(e),
-                trace=[]
+                trace=[],
             )
-        
+
         return comparison

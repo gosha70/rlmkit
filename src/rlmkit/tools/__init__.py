@@ -3,6 +3,6 @@
 
 """Content navigation tools for RLM."""
 
-from rlmkit.tools.content import peek, grep, chunk, select
+from rlmkit.tools.content import chunk, grep, peek, select
 
 __all__ = ['peek', 'grep', 'chunk', 'select']

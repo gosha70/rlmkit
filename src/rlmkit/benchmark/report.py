@@ -7,7 +7,7 @@ import csv
 import io
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 from .runner import BenchmarkRun
 
@@ -29,7 +29,7 @@ class BenchmarkReport:
     def __init__(self, run: BenchmarkRun):
         self.run = run
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         """High-level summary of the benchmark run."""
         per_strategy = {
             name: self.run.get_strategy_metrics(name)
@@ -37,7 +37,7 @@ class BenchmarkReport:
         }
 
         # Find winners
-        winners: Dict[str, Any] = {}
+        winners: dict[str, Any] = {}
         successful_strategies = {
             name: m for name, m in per_strategy.items() if m.get("cases", 0) > 0
         }
@@ -70,7 +70,7 @@ class BenchmarkReport:
             "winners": winners,
         }
 
-    def pairwise_comparison(self, strategy_a: str, strategy_b: str) -> Dict[str, Any]:
+    def pairwise_comparison(self, strategy_a: str, strategy_b: str) -> dict[str, Any]:
         """Compare two strategies across all cases."""
         a_metrics = self.run.get_strategy_metrics(strategy_a)
         b_metrics = self.run.get_strategy_metrics(strategy_b)
@@ -104,9 +104,9 @@ class BenchmarkReport:
             },
         }
 
-    def per_case_table(self) -> List[Dict[str, Any]]:
+    def per_case_table(self) -> list[dict[str, Any]]:
         """Flat table of per-case, per-strategy metrics for CSV export."""
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for cr in self.run.case_results:
             for name in self.run.strategy_names:
                 sr = cr.evaluation.results.get(name)

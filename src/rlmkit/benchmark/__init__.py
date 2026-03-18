@@ -4,8 +4,8 @@
 """Benchmark harness for evaluating strategies on datasets."""
 
 from .dataset import BenchmarkCase, BenchmarkDataset, load_dataset, load_dataset_from_dict
-from .runner import BenchmarkRunner, BenchmarkRun, CaseResult
 from .report import BenchmarkReport
+from .runner import BenchmarkRun, BenchmarkRunner, CaseResult
 
 __all__ = [
     "BenchmarkCase",

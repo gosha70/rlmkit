@@ -1,27 +1,27 @@
 """UI Services - Chat management, metrics collection, configuration."""
 
+from .analytics_engine import AnalyticsEngine, SessionAnalytics
+from .chat_manager import ChatManager
+from .llm_config_manager import LLMConfigManager
+from .memory_monitor import MemoryMonitor
+from .metrics_collector import MetricsCollector
 from .models import (
     ChatMessage,
-    Response,
-    ExecutionMetrics,
     ComparisonMetrics,
+    ExecutionMetrics,
     LLMProviderConfig,
+    Response,
     SessionMetrics,
 )
-from .chat_manager import ChatManager
-from .metrics_collector import MetricsCollector
-from .memory_monitor import MemoryMonitor
-from .llm_config_manager import LLMConfigManager
-from .analytics_engine import AnalyticsEngine, SessionAnalytics
 from .secret_store import (
-    SecretStore,
+    KEY_POLICY_OPTIONS,
     EnvSecretStore,
     FileSecretStore,
     KeyringSecretStore,
+    SecretStore,
     create_secret_store,
     get_secret_store,
     resolve_api_key,
-    KEY_POLICY_OPTIONS,
 )
 
 __all__ = [

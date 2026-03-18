@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 import yaml
 
@@ -17,17 +17,17 @@ class BenchmarkCase:
     id: str
     content: str
     query: str
-    expected_answer: Optional[str] = None
+    expected_answer: str | None = None
     category: str = "general"
     difficulty: str = "medium"  # easy, medium, hard
-    tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def content_length(self) -> int:
         return len(self.content)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "query": self.query,
@@ -46,8 +46,8 @@ class BenchmarkDataset:
 
     name: str
     description: str = ""
-    cases: List[BenchmarkCase] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    cases: list[BenchmarkCase] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.cases)
@@ -89,10 +89,10 @@ class BenchmarkDataset:
         )
 
     @property
-    def categories(self) -> List[str]:
-        return sorted(set(c.category for c in self.cases))
+    def categories(self) -> list[str]:
+        return sorted({c.category for c in self.cases})
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "description": self.description,
@@ -157,7 +157,7 @@ def load_dataset(path: str) -> BenchmarkDataset:
     )
 
 
-def load_dataset_from_dict(data: Dict[str, Any]) -> BenchmarkDataset:
+def load_dataset_from_dict(data: dict[str, Any]) -> BenchmarkDataset:
     """Load a benchmark dataset from an in-memory dictionary (same schema as YAML)."""
     cases = []
     for i, case_data in enumerate(data.get("cases", [])):

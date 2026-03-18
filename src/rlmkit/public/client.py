@@ -6,19 +6,19 @@ and ``rlmkit.complete()`` but is backed by the new layered architecture.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rlmkit.application.dto import RunConfigDTO, RunResultDTO
-from rlmkit.application.use_cases.run_direct import RunDirectUseCase
-from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 from rlmkit.application.use_cases.run_comparison import (
-    ComparisonResultDTO,
     RunComparisonUseCase,
 )
+from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+
+from .errors import ConfigError
 from .types import PublicRunResult
-from .errors import ConfigError, RLMKitError
 
 
 class RLMKitClient:
@@ -54,11 +54,11 @@ class RLMKitClient:
     def __init__(
         self,
         provider: str = "mock",
-        model: Optional[str] = None,
-        root_model: Optional[str] = None,
-        recursive_model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        api_base: Optional[str] = None,
+        model: str | None = None,
+        root_model: str | None = None,
+        recursive_model: str | None = None,
+        api_key: str | None = None,
+        api_base: str | None = None,
         sandbox_type: str = "local",
         safe_mode: bool = False,
         max_steps: int = 16,
@@ -191,11 +191,11 @@ class RLMKitClient:
     @staticmethod
     def _create_llm_adapter(
         provider: str,
-        model: Optional[str],
-        api_key: Optional[str],
-        root_model: Optional[str] = None,
-        recursive_model: Optional[str] = None,
-        api_base: Optional[str] = None,
+        model: str | None,
+        api_key: str | None,
+        root_model: str | None = None,
+        recursive_model: str | None = None,
+        api_base: str | None = None,
     ) -> object:
         """Create the appropriate LLM adapter for the given provider."""
         if provider == "mock":
@@ -216,33 +216,33 @@ class RLMKitClient:
         # Legacy direct adapters (opt-in fallbacks)
         if provider == "openai":
             try:
-                from rlmkit.llm.openai_client import OpenAIClient
                 from rlmkit.infrastructure.llm.openai_adapter import OpenAIAdapter
+                from rlmkit.llm.openai_client import OpenAIClient
 
                 client = OpenAIClient(model=model or "gpt-4o", api_key=api_key)
                 return OpenAIAdapter(client)
             except ImportError as exc:
-                raise ConfigError(f"OpenAI not available: {exc}")
+                raise ConfigError(f"OpenAI not available: {exc}") from exc
 
         if provider == "anthropic":
             try:
-                from rlmkit.llm.anthropic_client import ClaudeClient
                 from rlmkit.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+                from rlmkit.llm.anthropic_client import ClaudeClient
 
                 client = ClaudeClient(model=model or "claude-sonnet-4-5-20250514", api_key=api_key)
                 return AnthropicAdapter(client)
             except ImportError as exc:
-                raise ConfigError(f"Anthropic not available: {exc}")
+                raise ConfigError(f"Anthropic not available: {exc}") from exc
 
         if provider == "ollama":
             try:
-                from rlmkit.llm.ollama_client import OllamaClient
                 from rlmkit.infrastructure.llm.ollama_adapter import OllamaAdapter
+                from rlmkit.llm.ollama_client import OllamaClient
 
                 client = OllamaClient(model=model or "llama3")
                 return OllamaAdapter(client)
             except ImportError as exc:
-                raise ConfigError(f"Ollama not available: {exc}")
+                raise ConfigError(f"Ollama not available: {exc}") from exc
 
         raise ConfigError(
             f"Unknown provider: {provider!r}. "

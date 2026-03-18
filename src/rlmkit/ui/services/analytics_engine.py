@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .models import ExecutionMetrics
 
@@ -45,16 +45,16 @@ class SessionAnalytics:
     rlm_savings_cost: float = 0.0
 
     # Time series data (ordered by assistant message index)
-    token_trends: List[Dict[str, Any]] = field(default_factory=list)
-    cost_trends: List[Dict[str, Any]] = field(default_factory=list)
-    memory_timeline: List[Dict[str, Any]] = field(default_factory=list)
-    time_trends: List[Dict[str, Any]] = field(default_factory=list)
+    token_trends: list[dict[str, Any]] = field(default_factory=list)
+    cost_trends: list[dict[str, Any]] = field(default_factory=list)
+    memory_timeline: list[dict[str, Any]] = field(default_factory=list)
+    time_trends: list[dict[str, Any]] = field(default_factory=list)
 
     # Per-query detail rows for the insights table
-    query_details: List[Dict[str, Any]] = field(default_factory=list)
+    query_details: list[dict[str, Any]] = field(default_factory=list)
 
     # Advanced analytics
-    outlier_indices: List[int] = field(default_factory=list)
+    outlier_indices: list[int] = field(default_factory=list)
 
 
 class AnalyticsEngine:
@@ -66,7 +66,7 @@ class AnalyticsEngine:
         analytics = engine.compute()
     """
 
-    def __init__(self, messages: List[dict]) -> None:
+    def __init__(self, messages: list[dict]) -> None:
         # Keep only assistant messages (user messages have no metrics)
         self._messages = [
             m for m in messages if m.get("role") == "assistant"
@@ -81,7 +81,7 @@ class AnalyticsEngine:
         a = SessionAnalytics()
 
         total_time = 0.0
-        all_tokens: List[int] = []  # for outlier detection
+        all_tokens: list[int] = []  # for outlier detection
 
         for idx, msg in enumerate(self._messages):
             rlm_m = self._get_metrics(msg, "rlm")
@@ -224,7 +224,7 @@ class AnalyticsEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _get_metrics(msg: dict, mode: str) -> Optional[ExecutionMetrics]:
+    def _get_metrics(msg: dict, mode: str) -> ExecutionMetrics | None:
         """Safely extract ExecutionMetrics from a message dict."""
         metrics = msg.get(f"{mode}_metrics")
         if isinstance(metrics, ExecutionMetrics):
@@ -281,7 +281,7 @@ class AnalyticsEngine:
         return max(0.0, min(100.0, score))
 
     @staticmethod
-    def _detect_outliers(token_counts: List[int]) -> List[int]:
+    def _detect_outliers(token_counts: list[int]) -> list[int]:
         """Flag messages with token count > mean + 2*stddev."""
         if len(token_counts) < 3:
             return []

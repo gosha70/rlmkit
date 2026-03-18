@@ -4,11 +4,11 @@
 Chat Panel - Main interactive chat interface
 """
 
-import streamlit as st
 
 # Import all the chat functions from app module
 import sys
 from pathlib import Path
+
 from rlmkit.ui.app import render_chat_page
 
 # Add parent directory to path to import from app

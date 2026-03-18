@@ -10,83 +10,90 @@ through code generation and recursive exploration.
 Based on the RLM paper (arXiv:2512.24601).
 """
 
-from .core import (
+from .core import (  # noqa: I001 — .core must be imported before .api to avoid circular imports
     RLM,
-    RLMResult,
+    BudgetExceeded,
+    BudgetLimits,
+    BudgetTracker,
+    CostTracker,
+    ExecutionError,
     LLMClient,
     RLMError,
-    BudgetExceeded,
-    ExecutionError,
+    RLMResult,
     SecurityError,
-    BudgetTracker,
-    BudgetLimits,
     TokenUsage,
-    CostTracker,
     estimate_tokens,
 )
-from .config import RLMConfig, SecurityConfig, ExecutionConfig, MonitoringConfig
-from .llm import MockLLMClient, BaseLLMProvider, LLMResponse
+from .config import ExecutionConfig, MonitoringConfig, RLMConfig, SecurityConfig
+from .llm import BaseLLMProvider, LLMResponse, MockLLMClient
 from .llm.config import LLMConfig, LLMProviderConfig, ModelPricing
 from .prompts import format_system_prompt, get_default_system_prompt
-from .api import interact, interact_async, complete, complete_async, InteractResult
+from .api import InteractResult, complete, complete_async, interact, interact_async
 
-# Optional external LLM providers
+# Optional external LLM providers — assigned None when the dependency is missing,
+# so the variable type is ``type[X] | None``.  mypy cannot express that cleanly
+# with a try/except import, so we pre-declare with the correct union type.
+OpenAIClient: type | None
 try:
     from .llm import OpenAIClient
 except ImportError:
     OpenAIClient = None
 
+ClaudeClient: type | None
 try:
     from .llm import ClaudeClient
 except ImportError:
     ClaudeClient = None
 
+OllamaClient: type | None
 try:
     from .llm import OllamaClient
 except ImportError:
     OllamaClient = None
 
+LMStudioClient: type | None
 try:
     from .llm import LMStudioClient
 except ImportError:
     LMStudioClient = None
 
+vLLMClient: type | None  # noqa: N816
 try:
-    from .llm import vLLMClient
+    from .llm import vLLMClient  # noqa: N816
 except ImportError:
-    vLLMClient = None
+    vLLMClient = None  # noqa: N816
 
 # Strategy framework
 try:
-    from .strategies import (
-        LLMStrategy,
-        StrategyResult,
+    from .strategies import (  # noqa: F401
         DirectStrategy,
-        RLMStrategy,
-        RAGStrategy,
-        IndexedRAGStrategy,
         EmbeddingProvider,
-        OpenAIEmbedder,
-        MultiStrategyEvaluator,
         EvaluationResult,
+        IndexedRAGStrategy,
+        LLMStrategy,
+        MultiStrategyEvaluator,
+        OpenAIEmbedder,
+        RAGStrategy,
+        RLMStrategy,
+        StrategyResult,
     )
 except ImportError:
     pass
 
 # Storage layer
 try:
-    from .storage import Database, ConversationStore, VectorStore, get_default_db_path
+    from .storage import ConversationStore, Database, VectorStore, get_default_db_path  # noqa: F401
 except ImportError:
     pass
 
 # Benchmark harness
 try:
-    from .benchmark import (
+    from .benchmark import (  # noqa: F401
         BenchmarkCase,
         BenchmarkDataset,
-        BenchmarkRunner,
-        BenchmarkRun,
         BenchmarkReport,
+        BenchmarkRun,
+        BenchmarkRunner,
         CaseResult,
         load_dataset,
         load_dataset_from_dict,

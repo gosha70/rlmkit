@@ -9,13 +9,13 @@ recursion where sub-models can spawn their own sub-models to handle focused subt
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
-from .budget import BudgetTracker, BudgetLimits
+from .budget import BudgetLimits, BudgetTracker
 from .errors import BudgetExceeded
 
 if TYPE_CHECKING:
-    from .rlm import LLMClient, RLM, RLMResult
+    from .rlm import RLM, RLMResult
 
 
 class RecursiveController:
@@ -45,7 +45,7 @@ class RecursiveController:
         self,
         controller_factory: Any,  # Callable[[int], RLM] — Any to avoid import
         max_depth: int = 5,
-        budget_tracker: Optional[BudgetTracker] = None,
+        budget_tracker: BudgetTracker | None = None,
     ) -> None:
         self.controller_factory = controller_factory
         self.max_depth = max_depth
@@ -57,7 +57,7 @@ class RecursiveController:
         self.budget_tracker = budget_tracker
 
         # Trace of recursive calls: list of dicts capturing each subcall
-        self.recursion_trace: List[Dict[str, Any]] = []
+        self.recursion_trace: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -68,7 +68,7 @@ class RecursiveController:
         content: str,
         query: str,
         depth: int,
-        max_steps: Optional[int] = None,
+        max_steps: int | None = None,
     ) -> str:
         """Execute a child RLM controller at *depth + 1*.
 
@@ -146,7 +146,7 @@ class RecursiveController:
         def subcall(
             content: str,
             query: str,
-            max_steps: Optional[int] = None,
+            max_steps: int | None = None,
         ) -> str:
             """Spawn a sub-RLM to analyse *content* and answer *query*."""
             return self.execute_subcall(

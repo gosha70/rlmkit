@@ -1,16 +1,18 @@
 """Session state initialization for RLMKit Chat UI."""
 
-from typing import Dict, Any
-import streamlit as st
-from uuid import uuid4
 from datetime import datetime
+from typing import Any
+from uuid import uuid4
 
-from .services import ChatManager, MetricsCollector, MemoryMonitor, LLMConfigManager
+import streamlit as st
+
+from rlmkit.storage import ConversationStore, Database, VectorStore
+
+from .services import ChatManager, LLMConfigManager, MemoryMonitor, MetricsCollector
 from .services.models import SessionMetrics
-from rlmkit.storage import Database, ConversationStore, VectorStore
 
 
-def init_session_state() -> Dict[str, Any]:
+def init_session_state() -> dict[str, Any]:
     """
     Initialize Streamlit session state for chat UI.
 
@@ -37,14 +39,14 @@ def init_session_state() -> Dict[str, Any]:
         st.session_state.conversation_id = str(uuid4())
         st.session_state.messages = []
         st.session_state.session_start_time = datetime.now()
-        
+
         # UI state
         st.session_state.current_mode = "compare"
         st.session_state.show_settings = False
         st.session_state.show_metrics = True
         st.session_state.file_context = None
         st.session_state.file_info = None
-        
+
         # Configuration
         st.session_state.active_provider = None
         st.session_state.active_model = None
@@ -60,7 +62,7 @@ def init_session_state() -> Dict[str, Any]:
 
         # Session metrics
         st.session_state.session_metrics = SessionMetrics()
-    
+
     return st.session_state
 
 
@@ -70,7 +72,7 @@ def reset_session() -> None:
     init_session_state()
 
 
-def get_session_info() -> Dict[str, Any]:
+def get_session_info() -> dict[str, Any]:
     """Get current session information."""
     return {
         "conversation_id": st.session_state.conversation_id,

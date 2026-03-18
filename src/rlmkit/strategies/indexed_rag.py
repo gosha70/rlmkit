@@ -5,12 +5,12 @@
 
 import hashlib
 import time
-from typing import Optional, List
 
-from rlmkit.core.rlm import LLMClient
 from rlmkit.core.budget import TokenUsage, estimate_tokens
-from rlmkit.tools.content import chunk as chunk_content
+from rlmkit.core.rlm import LLMClient
 from rlmkit.storage.vector_store import VectorStore
+from rlmkit.tools.content import chunk as chunk_content
+
 from .base import StrategyResult
 from .embeddings import EmbeddingProvider
 
@@ -33,7 +33,7 @@ class IndexedRAGStrategy:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         top_k: int = 5,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ):
         self.client = client
         self.embedder = embedder
@@ -53,7 +53,7 @@ class IndexedRAGStrategy:
     def name(self) -> str:
         return "rag"
 
-    def index_content(self, content: str, source_id: Optional[str] = None) -> int:
+    def index_content(self, content: str, source_id: str | None = None) -> int:
         """Index new content into the vector store.
 
         If source_id is given and already indexed, skips entirely.

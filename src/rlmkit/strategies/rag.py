@@ -5,11 +5,11 @@
 
 import math
 import time
-from typing import List, Optional, Tuple
 
-from rlmkit.core.rlm import LLMClient
 from rlmkit.core.budget import TokenUsage, estimate_tokens
+from rlmkit.core.rlm import LLMClient
 from rlmkit.tools.content import chunk as chunk_content
+
 from .base import StrategyResult
 from .embeddings import EmbeddingProvider
 
@@ -24,7 +24,7 @@ class RAGStrategy:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         top_k: int = 5,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ):
         self.client = client
         self.embedder = embedder
@@ -124,16 +124,18 @@ class RAGStrategy:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _chunk_content(self, content: str) -> List[str]:
-        return chunk_content(
-            content,
-            size=self.chunk_size,
-            overlap=self.chunk_overlap,
+    def _chunk_content(self, content: str) -> list[str]:
+        return list(
+            chunk_content(
+                content,
+                size=self.chunk_size,
+                overlap=self.chunk_overlap,
+            )
         )
 
     @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        dot = sum(x * y for x, y in zip(a, b, strict=False))
         norm_a = math.sqrt(sum(x * x for x in a))
         norm_b = math.sqrt(sum(x * x for x in b))
         if norm_a == 0 or norm_b == 0:
@@ -142,18 +144,18 @@ class RAGStrategy:
 
     def _rank_chunks(
         self,
-        query_emb: List[float],
-        chunk_embs: List[List[float]],
-        chunks: List[str],
-    ) -> List[Tuple[float, str]]:
+        query_emb: list[float],
+        chunk_embs: list[list[float]],
+        chunks: list[str],
+    ) -> list[tuple[float, str]]:
         scored = [
             (self._cosine_similarity(query_emb, emb), text)
-            for emb, text in zip(chunk_embs, chunks)
+            for emb, text in zip(chunk_embs, chunks, strict=False)
         ]
         scored.sort(key=lambda x: x[0], reverse=True)
         return scored
 
-    def _assemble_context(self, ranked_chunks: List[Tuple[float, str]]) -> str:
+    def _assemble_context(self, ranked_chunks: list[tuple[float, str]]) -> str:
         parts = []
         for i, (score, text) in enumerate(ranked_chunks, 1):
             parts.append(f"[Chunk {i} (relevance: {score:.3f})]\n{text}")

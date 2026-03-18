@@ -3,13 +3,18 @@
 
 """Conversation and message CRUD operations."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from .database import Database
+
+if TYPE_CHECKING:
+    from rlmkit.ui.services.models import ChatMessage
 
 
 class ConversationStore:
@@ -26,9 +31,9 @@ class ConversationStore:
         self,
         name: str = "Untitled",
         mode: str = "compare",
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        provider: str | None = None,
+        model: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Create a new conversation and return its ID."""
         conv_id = str(uuid4())
@@ -37,12 +42,11 @@ class ConversationStore:
             """INSERT INTO conversations
                (id, name, created_at, updated_at, mode, provider, model, metadata_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (conv_id, name, now, now, mode, provider, model,
-             json.dumps(metadata or {})),
+            (conv_id, name, now, now, mode, provider, model, json.dumps(metadata or {})),
         )
         return conv_id
 
-    def list_conversations(self) -> List[Dict[str, Any]]:
+    def list_conversations(self) -> list[dict[str, Any]]:
         """List all conversations ordered by most recently updated."""
         rows = self.db.fetchall(
             """SELECT c.*, COUNT(m.id) AS message_count
@@ -53,10 +57,11 @@ class ConversationStore:
         )
         return [self._row_to_dict(r) for r in rows]
 
-    def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+    def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         """Get a single conversation by ID."""
         row = self.db.fetchone(
-            "SELECT * FROM conversations WHERE id = ?", (conversation_id,),
+            "SELECT * FROM conversations WHERE id = ?",
+            (conversation_id,),
         )
         return self._row_to_dict(row) if row else None
 
@@ -71,7 +76,8 @@ class ConversationStore:
     def delete_conversation(self, conversation_id: str) -> None:
         """Delete a conversation and all its messages (cascade)."""
         self.db.execute(
-            "DELETE FROM conversations WHERE id = ?", (conversation_id,),
+            "DELETE FROM conversations WHERE id = ?",
+            (conversation_id,),
         )
 
     def update_conversation_timestamp(self, conversation_id: str) -> None:
@@ -86,9 +92,8 @@ class ConversationStore:
     # Message persistence
     # ------------------------------------------------------------------
 
-    def save_message(self, conversation_id: str, message: "ChatMessage") -> None:
+    def save_message(self, conversation_id: str, message: ChatMessage) -> None:  # noqa: F821
         """Serialize a ChatMessage and store it."""
-        from rlmkit.ui.services.models import Response, ExecutionMetrics, ComparisonMetrics
 
         seq = self.get_message_count(conversation_id)
 
@@ -131,10 +136,10 @@ class ConversationStore:
         )
         self.update_conversation_timestamp(conversation_id)
 
-    def load_messages(self, conversation_id: str) -> List["ChatMessage"]:
+    def load_messages(self, conversation_id: str) -> list[ChatMessage]:
         """Load all messages for a conversation, ordered by sequence."""
         from rlmkit.ui.services.models import (
-            ChatMessage, Response, ExecutionMetrics, ComparisonMetrics,
+            ChatMessage,
         )
 
         rows = self.db.fetchall(
@@ -194,7 +199,9 @@ class ConversationStore:
     # ------------------------------------------------------------------
 
     def save_file_context(
-        self, content: str, filename: Optional[str] = None,
+        self,
+        content: str,
+        filename: str | None = None,
     ) -> str:
         """Save file content (deduped by hash). Returns content hash."""
         content_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -212,7 +219,7 @@ class ConversationStore:
             )
         return content_hash
 
-    def get_file_context(self, content_hash: str) -> Optional[str]:
+    def get_file_context(self, content_hash: str) -> str | None:
         """Retrieve file content by hash."""
         row = self.db.fetchone(
             "SELECT content FROM file_contexts WHERE content_hash = ?",
@@ -225,7 +232,7 @@ class ConversationStore:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _row_to_dict(row) -> Dict[str, Any]:
+    def _row_to_dict(row: Any) -> dict[str, Any]:
         d = dict(row)
         if "metadata_json" in d:
             d["metadata"] = json.loads(d.pop("metadata_json"))
@@ -236,11 +243,13 @@ class ConversationStore:
 # Serialization helpers (module-level for testability)
 # ------------------------------------------------------------------
 
-def _serialize_optional(obj) -> Optional[str]:
+
+def _serialize_optional(obj: Any) -> str | None:
     """Serialize a dataclass instance to JSON string, or None."""
     if obj is None:
         return None
     from dataclasses import asdict
+
     data = asdict(obj)
     # Convert datetime fields to ISO strings
     for k, v in data.items():
@@ -249,28 +258,31 @@ def _serialize_optional(obj) -> Optional[str]:
     return json.dumps(data)
 
 
-def _deserialize_response(json_str: Optional[str]):
+def _deserialize_response(json_str: str | None) -> Any:
     """Deserialize a Response from JSON string."""
     if not json_str:
         return None
     from rlmkit.ui.services.models import Response
+
     d = json.loads(json_str)
     return Response(**d)
 
 
-def _deserialize_metrics(json_str: Optional[str]):
+def _deserialize_metrics(json_str: str | None) -> Any:
     """Deserialize ExecutionMetrics from JSON string."""
     if not json_str:
         return None
     from rlmkit.ui.services.models import ExecutionMetrics
+
     d = json.loads(json_str)
     return ExecutionMetrics(**d)
 
 
-def _deserialize_comparison(json_str: Optional[str]):
+def _deserialize_comparison(json_str: str | None) -> Any:
     """Deserialize ComparisonMetrics from JSON string."""
     if not json_str:
         return None
     from rlmkit.ui.services.models import ComparisonMetrics
+
     d = json.loads(json_str)
     return ComparisonMetrics(**d)

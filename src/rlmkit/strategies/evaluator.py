@@ -3,10 +3,15 @@
 
 """Multi-strategy evaluator for comparing N strategies on the same query."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from .base import LLMStrategy, StrategyResult
+
+if TYPE_CHECKING:
+    from rlmkit.core.comparison import ComparisonResult
 
 
 @dataclass
@@ -15,9 +20,9 @@ class EvaluationResult:
 
     query: str
     content_length: int
-    results: Dict[str, StrategyResult] = field(default_factory=dict)
+    results: dict[str, StrategyResult] = field(default_factory=dict)
 
-    def get_comparison(self, a: str, b: str) -> Optional[Dict[str, Any]]:
+    def get_comparison(self, a: str, b: str) -> dict[str, Any] | None:
         """Pairwise comparison between two strategies."""
         ra, rb = self.results.get(a), self.results.get(b)
         if ra is None or rb is None:
@@ -39,9 +44,9 @@ class EvaluationResult:
             "success": {a: ra.success, b: rb.success},
         }
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """Summary across all strategies."""
-        summary: Dict[str, Any] = {
+        summary: dict[str, Any] = {
             "query": self.query,
             "content_length": self.content_length,
             "strategies": list(self.results.keys()),
@@ -60,7 +65,7 @@ class EvaluationResult:
         summary["per_strategy"] = {k: v.to_dict() for k, v in self.results.items()}
         return summary
 
-    def to_comparison_result(self) -> "ComparisonResult":
+    def to_comparison_result(self) -> ComparisonResult:  # noqa: F821
         """Convert to existing ComparisonResult for backward-compat UI."""
         from rlmkit.core.comparison import ComparisonResult
 
@@ -75,7 +80,7 @@ class EvaluationResult:
 class MultiStrategyEvaluator:
     """Run N strategies on the same content + query and collect results."""
 
-    def __init__(self, strategies: List[LLMStrategy]):
+    def __init__(self, strategies: list[LLMStrategy]):
         self.strategies = strategies
 
     def evaluate(self, content: str, query: str) -> EvaluationResult:
@@ -93,7 +98,5 @@ class MultiStrategyEvaluator:
                 )
         return result
 
-    def evaluate_batch(
-        self, content: str, queries: List[str]
-    ) -> List[EvaluationResult]:
+    def evaluate_batch(self, content: str, queries: list[str]) -> list[EvaluationResult]:
         return [self.evaluate(content, q) for q in queries]

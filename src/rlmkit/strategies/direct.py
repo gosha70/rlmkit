@@ -4,10 +4,10 @@
 """Direct LLM strategy — single call, full context."""
 
 import time
-from typing import Optional
 
-from rlmkit.core.rlm import LLMClient
 from rlmkit.core.budget import TokenUsage, estimate_tokens
+from rlmkit.core.rlm import LLMClient
+
 from .base import StrategyResult
 
 
@@ -17,7 +17,7 @@ class DirectStrategy:
     def __init__(
         self,
         client: LLMClient,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
     ):
         self.client = client
         self.system_prompt = (

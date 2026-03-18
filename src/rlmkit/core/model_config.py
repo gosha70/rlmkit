@@ -9,23 +9,23 @@ allowing significant cost optimization without sacrificing quality.
 """
 
 from dataclasses import dataclass
-from typing import Optional
-from ..llm.base import BaseLLMProvider
+
 from ..llm import get_llm_client
+from ..llm.base import BaseLLMProvider
 
 
 @dataclass
 class ModelConfig:
     """
     Configuration for multi-model RLM execution.
-    
+
     This allows specifying different models for:
     - Root agent: Main reasoning and final answer generation
     - Sub-agents: Exploration and information gathering subcalls
-    
+
     This can reduce costs by 50-80% while maintaining quality, as exploration
     tasks can use cheaper models while critical reasoning uses powerful models.
-    
+
     Attributes:
         root_model: Model name for root agent (e.g., "gpt-4o", "claude-3-opus")
         root_provider: Provider for root model (e.g., "openai", "anthropic")
@@ -33,7 +33,7 @@ class ModelConfig:
         sub_provider: Provider for sub-agents
         root_api_key: API key for root provider (if not in environment)
         sub_api_key: API key for sub provider (if not in environment)
-    
+
     Examples:
         >>> # Use GPT-4 for root, GPT-4-mini for subs (same provider)
         >>> config = ModelConfig(
@@ -42,7 +42,7 @@ class ModelConfig:
         ...     root_provider="openai",
         ...     sub_provider="openai"
         ... )
-        
+
         >>> # Cross-provider: Claude for root, local Llama for subs
         >>> config = ModelConfig(
         ...     root_model="claude-3-opus",
@@ -53,15 +53,15 @@ class ModelConfig:
     """
     root_model: str
     sub_model: str
-    root_provider: Optional[str] = None
-    sub_provider: Optional[str] = None
-    root_api_key: Optional[str] = None
-    sub_api_key: Optional[str] = None
-    
+    root_provider: str | None = None
+    sub_provider: str | None = None
+    root_api_key: str | None = None
+    sub_api_key: str | None = None
+
     def get_root_client(self) -> BaseLLMProvider:
         """
         Get configured LLM client for root agent.
-        
+
         Returns:
             Configured root client
         """
@@ -73,17 +73,17 @@ class ModelConfig:
                     "No provider specified for root model and auto-detection failed. "
                     "Please specify root_provider or set environment variables."
                 )
-        
+
         return get_llm_client(
             provider=self.root_provider,
             model=self.root_model,
             api_key=self.root_api_key
         )
-    
+
     def get_sub_client(self) -> BaseLLMProvider:
         """
         Get configured LLM client for sub-agents.
-        
+
         Returns:
             Configured sub-agent client
         """
@@ -99,26 +99,26 @@ class ModelConfig:
                     )
             else:
                 self.sub_provider = self.root_provider
-        
+
         return get_llm_client(
             provider=self.sub_provider,
             model=self.sub_model,
             api_key=self.sub_api_key
         )
-    
+
     @classmethod
-    def from_single_model(cls, model: str, provider: Optional[str] = None, 
-                         api_key: Optional[str] = None) -> 'ModelConfig':
+    def from_single_model(cls, model: str, provider: str | None = None,
+                         api_key: str | None = None) -> 'ModelConfig':
         """
         Create ModelConfig using same model for both root and sub-agents.
-        
+
         This is equivalent to single-model RLM execution.
-        
+
         Args:
             model: Model name to use for both root and subs
             provider: Provider name (auto-detected if None)
             api_key: API key (from environment if None)
-            
+
         Returns:
             ModelConfig with same model for root and subs
         """
@@ -130,27 +130,27 @@ class ModelConfig:
             root_api_key=api_key,
             sub_api_key=api_key
         )
-    
+
     @classmethod
     def cost_optimized(cls, provider: str = "openai") -> 'ModelConfig':
         """
         Create a cost-optimized configuration for common providers.
-        
+
         This uses best-in-class models for root and cheap models for subs.
-        
+
         Args:
             provider: Provider to use ("openai", "anthropic", or "mixed")
-            
+
         Returns:
             Cost-optimized ModelConfig
-            
+
         Examples:
             >>> # OpenAI: GPT-4o for root, GPT-4o-mini for subs
             >>> config = ModelConfig.cost_optimized("openai")
-            
+
             >>> # Anthropic: Opus for root, Haiku for subs
             >>> config = ModelConfig.cost_optimized("anthropic")
-            
+
             >>> # Mixed: Claude Opus for root, local Llama for subs (max savings)
             >>> config = ModelConfig.cost_optimized("mixed")
         """
@@ -181,7 +181,7 @@ class ModelConfig:
                 f"Unknown provider '{provider}'. "
                 "Supported: 'openai', 'anthropic', 'mixed'"
             )
-    
+
     def __str__(self) -> str:
         """Human-readable representation."""
         return (
@@ -194,10 +194,10 @@ class ModelConfig:
 class ModelMetrics:
     """
     Metrics broken down by model usage.
-    
+
     Tracks separate statistics for root and sub-agent model usage,
     enabling cost analysis and optimization insights.
-    
+
     Attributes:
         root_calls: Number of calls to root model
         root_tokens: Total tokens used by root model
@@ -212,35 +212,35 @@ class ModelMetrics:
     sub_calls: int = 0
     sub_tokens: int = 0
     sub_cost: float = 0.0
-    
+
     @property
     def total_calls(self) -> int:
         """Total number of LLM calls."""
         return self.root_calls + self.sub_calls
-    
+
     @property
     def total_tokens(self) -> int:
         """Total tokens across all models."""
         return self.root_tokens + self.sub_tokens
-    
+
     @property
     def total_cost(self) -> float:
         """Total cost across all models."""
         return self.root_cost + self.sub_cost
-    
+
     def savings_vs_single_model(self, single_model_cost_per_token: float) -> float:
         """
         Calculate cost savings vs. using a single model for everything.
-        
+
         Args:
             single_model_cost_per_token: Cost per token if using only root model
-            
+
         Returns:
             Savings amount (positive = saved money)
         """
         hypothetical_cost = self.total_tokens * single_model_cost_per_token
         return hypothetical_cost - self.total_cost
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {

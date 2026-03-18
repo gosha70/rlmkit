@@ -4,11 +4,11 @@
 """RLM strategy — wraps the existing RLM controller."""
 
 import time
-from typing import Optional
 
-from rlmkit.core.rlm import RLM, LLMClient
-from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.config import RLMConfig
+from rlmkit.core.budget import TokenUsage, estimate_tokens
+from rlmkit.core.rlm import RLM, LLMClient
+
 from .base import StrategyResult
 
 
@@ -18,7 +18,7 @@ class RLMStrategy:
     def __init__(
         self,
         client: LLMClient,
-        config: Optional[RLMConfig] = None,
+        config: RLMConfig | None = None,
     ):
         self.client = client
         self.config = config or RLMConfig()

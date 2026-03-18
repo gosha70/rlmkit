@@ -10,7 +10,6 @@ hints live here so that UI rendering code stays free of hard-coded data.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -41,10 +40,10 @@ class ProviderEntry:
     display_name: str
     """Human-readable label shown in the UI."""
 
-    models: List[ModelInfo] = field(default_factory=list)
+    models: list[ModelInfo] = field(default_factory=list)
     """Pre-defined models (empty for local providers where user types a name)."""
 
-    env_var: Optional[str] = None
+    env_var: str | None = None
     """Default environment variable for the API key (``None`` for local)."""
 
     api_key_placeholder: str = "Paste your API key here"
@@ -53,14 +52,14 @@ class ProviderEntry:
     requires_api_key: bool = True
     """Whether this provider needs an API key at all."""
 
-    default_endpoint: Optional[str] = None
+    default_endpoint: str | None = None
     """Default API endpoint (useful for local providers)."""
 
     model_input_hint: str = ""
     """Placeholder for the free-text model input (local providers only)."""
 
     # Embedding support
-    embedding_models: List[ModelInfo] = field(default_factory=list)
+    embedding_models: list[ModelInfo] = field(default_factory=list)
     """Embedding models available from this provider."""
 
 
@@ -68,7 +67,7 @@ class ProviderEntry:
 # Catalog data
 # ---------------------------------------------------------------------------
 
-OPENAI_MODELS: List[ModelInfo] = [
+OPENAI_MODELS: list[ModelInfo] = [
     ModelInfo("gpt-4o", 0.005, 0.015),
     ModelInfo("gpt-4o-mini", 0.00015, 0.0006),
     ModelInfo("gpt-4-turbo", 0.01, 0.03),
@@ -78,13 +77,13 @@ OPENAI_MODELS: List[ModelInfo] = [
     ModelInfo("o1-mini", 0.003, 0.012),
 ]
 
-ANTHROPIC_MODELS: List[ModelInfo] = [
+ANTHROPIC_MODELS: list[ModelInfo] = [
     ModelInfo("claude-opus-4-6", 0.003, 0.015),
     ModelInfo("claude-sonnet-4-6", 0.003, 0.015),
     ModelInfo("claude-haiku-4-5-20251001", 0.008, 0.024),
 ]
 
-OPENAI_EMBEDDING_MODELS: List[ModelInfo] = [
+OPENAI_EMBEDDING_MODELS: list[ModelInfo] = [
     ModelInfo("text-embedding-3-small", 0.00002, 0.0),
     ModelInfo("text-embedding-3-large", 0.00013, 0.0),
     ModelInfo("text-embedding-ada-002", 0.0001, 0.0),
@@ -94,7 +93,7 @@ OPENAI_EMBEDDING_MODELS: List[ModelInfo] = [
 # Provider catalog (ordered — first entry is the UI default)
 # ---------------------------------------------------------------------------
 
-PROVIDERS: List[ProviderEntry] = [
+PROVIDERS: list[ProviderEntry] = [
     ProviderEntry(
         key="openai",
         display_name="OpenAI",
@@ -136,19 +135,19 @@ PROVIDERS: List[ProviderEntry] = [
 # Convenience look-ups
 # ---------------------------------------------------------------------------
 
-PROVIDERS_BY_KEY: Dict[str, ProviderEntry] = {p.key: p for p in PROVIDERS}
+PROVIDERS_BY_KEY: dict[str, ProviderEntry] = {p.key: p for p in PROVIDERS}
 """Look up a ``ProviderEntry`` by its internal key."""
 
-PROVIDER_OPTIONS: List[Tuple[str, str]] = [(p.display_name, p.key) for p in PROVIDERS]
+PROVIDER_OPTIONS: list[tuple[str, str]] = [(p.display_name, p.key) for p in PROVIDERS]
 """``(display_name, key)`` pairs for select-box widgets."""
 
 
-def get_provider(key: str) -> Optional[ProviderEntry]:
+def get_provider(key: str) -> ProviderEntry | None:
     """Return the catalog entry for *key*, or ``None``."""
     return PROVIDERS_BY_KEY.get(key)
 
 
-def get_model_pricing(provider_key: str, model_name: str) -> Tuple[float, float]:
+def get_model_pricing(provider_key: str, model_name: str) -> tuple[float, float]:
     """Return ``(input_cost_per_1k, output_cost_per_1k)`` for a model.
 
     Falls back to ``(0.0, 0.0)`` for unknown models / local providers.
@@ -162,7 +161,7 @@ def get_model_pricing(provider_key: str, model_name: str) -> Tuple[float, float]
     return (0.0, 0.0)
 
 
-def get_model_names(provider_key: str) -> List[str]:
+def get_model_names(provider_key: str) -> list[str]:
     """Return the list of model names for a provider."""
     entry = PROVIDERS_BY_KEY.get(provider_key)
     if not entry:
@@ -170,22 +169,22 @@ def get_model_names(provider_key: str) -> List[str]:
     return [m.name for m in entry.models]
 
 
-def get_env_var(provider_key: str) -> Optional[str]:
+def get_env_var(provider_key: str) -> str | None:
     """Return the expected env-var name for a provider's API key."""
     entry = PROVIDERS_BY_KEY.get(provider_key)
     return entry.env_var if entry else None
 
 
-def get_embedding_model_names() -> List[str]:
+def get_embedding_model_names() -> list[str]:
     """Return all available embedding model names (across all providers)."""
-    names: List[str] = []
+    names: list[str] = []
     for p in PROVIDERS:
         for m in p.embedding_models:
             names.append(m.name)
     return names
 
 
-def build_pricing_table() -> Dict[str, Dict[str, Dict[str, str]]]:
+def build_pricing_table() -> dict[str, dict[str, dict[str, str]]]:
     """Build the pricing reference table for display.
 
     Returns a nested dict::
@@ -198,7 +197,7 @@ def build_pricing_table() -> Dict[str, Dict[str, Dict[str, str]]]:
             ...
         }
     """
-    table: Dict[str, Dict[str, Dict[str, str]]] = {}
+    table: dict[str, dict[str, dict[str, str]]] = {}
     for p in PROVIDERS:
         if not p.models:
             # Local providers get a single "free" row
@@ -206,7 +205,7 @@ def build_pricing_table() -> Dict[str, Dict[str, Dict[str, str]]]:
                 "Any Model": {"input": "Free", "output": "Free", "per": "Local execution"},
             }
         else:
-            models_dict: Dict[str, Dict[str, str]] = {}
+            models_dict: dict[str, dict[str, str]] = {}
             for m in p.models:
                 models_dict[m.name] = {
                     "input": f"${m.input_cost_per_1k}",
@@ -217,7 +216,7 @@ def build_pricing_table() -> Dict[str, Dict[str, Dict[str, str]]]:
     return table
 
 
-def build_metrics_pricing() -> Dict[str, Dict[str, Dict[str, float]]]:
+def build_metrics_pricing() -> dict[str, dict[str, dict[str, float]]]:
     """Build pricing dict in the format expected by ``MetricsCollector``.
 
     Returns::
@@ -230,9 +229,9 @@ def build_metrics_pricing() -> Dict[str, Dict[str, Dict[str, float]]]:
             ...
         }
     """
-    result: Dict[str, Dict[str, Dict[str, float]]] = {}
+    result: dict[str, dict[str, dict[str, float]]] = {}
     for p in PROVIDERS:
-        models: Dict[str, Dict[str, float]] = {}
+        models: dict[str, dict[str, float]] = {}
         for m in p.models:
             models[m.name] = {
                 "input": m.input_cost_per_1k,
