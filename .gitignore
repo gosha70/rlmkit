@@ -18,6 +18,9 @@ htmlcov/
 *.swp
 *.swo
 
+# Notebooks
+notebooks/
+
 # OS
 .DS_Store
 Thumbs.db
