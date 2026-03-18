@@ -2,10 +2,8 @@
  * Chat component tests.
  *
  * Covers: ChatInput, TypingIndicator, FileAttachment, ProviderBadge,
- * ChatProviderSelector.
- *
- * MessageBubble, ModeSelector, TraceInline, ComparisonBanner left as stubs
- * (require heavier mocking or are covered elsewhere).
+ * ChatProviderSelector, MessageBubble, ModeSelector, TraceInline,
+ * ComparisonBanner, ResponseRating, PickWinner, JudgeScores.
  */
 
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -19,6 +17,9 @@ import { MessageBubble } from "@/components/chat/message-bubble";
 import { ModeSelector } from "@/components/chat/mode-selector";
 import { TraceInline } from "@/components/chat/trace-inline";
 import { ComparisonBanner } from "@/components/chat/comparison-banner";
+import { ResponseRating } from "@/components/chat/response-rating";
+import { PickWinner } from "@/components/chat/pick-winner";
+import { JudgeScores } from "@/components/chat/judge-scores";
 import type { ChatProviderConfig, ProviderInfo, TraceStep, MessageMetrics } from "@/lib/api";
 import type { ChatMessage } from "@/lib/use-chat";
 
@@ -729,5 +730,207 @@ describe("ComparisonBanner", () => {
     );
     // The component calculates savings percentage and renders it
     expect(screen.getByText(/50%/)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ResponseRating
+// ---------------------------------------------------------------------------
+
+describe("ResponseRating", () => {
+  const baseProps = {
+    executionId: "exec-1",
+    sessionId: "sess-1",
+    chatProviderId: "cp-1",
+    onRate: vi.fn(),
+  };
+
+  test("renders thumbs up and thumbs down buttons", () => {
+    render(<ResponseRating {...baseProps} />);
+    expect(screen.getByLabelText("Thumbs up")).toBeInTheDocument();
+    expect(screen.getByLabelText("Thumbs down")).toBeInTheDocument();
+  });
+
+  test("calls onRate with 'up' when thumbs up clicked", () => {
+    const onRate = vi.fn();
+    render(<ResponseRating {...baseProps} onRate={onRate} />);
+    fireEvent.click(screen.getByLabelText("Thumbs up"));
+    expect(onRate).toHaveBeenCalledWith("exec-1", "up");
+  });
+
+  test("calls onRate with 'down' when thumbs down clicked", () => {
+    const onRate = vi.fn();
+    render(<ResponseRating {...baseProps} onRate={onRate} />);
+    fireEvent.click(screen.getByLabelText("Thumbs down"));
+    expect(onRate).toHaveBeenCalledWith("exec-1", "down");
+  });
+
+  test("toggles off when clicking already-active rating", () => {
+    const onRate = vi.fn();
+    render(<ResponseRating {...baseProps} currentRating="up" onRate={onRate} />);
+    fireEvent.click(screen.getByLabelText("Thumbs up"));
+    expect(onRate).toHaveBeenCalledWith("exec-1", null);
+  });
+
+  test("switches rating when clicking opposite thumb", () => {
+    const onRate = vi.fn();
+    render(<ResponseRating {...baseProps} currentRating="up" onRate={onRate} />);
+    fireEvent.click(screen.getByLabelText("Thumbs down"));
+    expect(onRate).toHaveBeenCalledWith("exec-1", "down");
+  });
+
+  test("applies highlight class to active thumbs up", () => {
+    render(<ResponseRating {...baseProps} currentRating="up" />);
+    const btn = screen.getByLabelText("Thumbs up");
+    expect(btn.className).toMatch(/emerald/);
+  });
+
+  test("applies highlight class to active thumbs down", () => {
+    render(<ResponseRating {...baseProps} currentRating="down" />);
+    const btn = screen.getByLabelText("Thumbs down");
+    expect(btn.className).toMatch(/red/);
+  });
+
+  test("no highlight when no rating selected", () => {
+    render(<ResponseRating {...baseProps} />);
+    expect(screen.getByLabelText("Thumbs up").className).not.toMatch(/emerald/);
+    expect(screen.getByLabelText("Thumbs down").className).not.toMatch(/red/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PickWinner
+// ---------------------------------------------------------------------------
+
+describe("PickWinner", () => {
+  const responses = [
+    { executionId: "exec-1", cpId: "cp-1", name: "GPT-4o" },
+    { executionId: "exec-2", cpId: "cp-2", name: "Claude" },
+  ];
+
+  test("renders null when fewer than 2 responses", () => {
+    const { container } = render(
+      <PickWinner
+        sessionId="sess-1"
+        responses={[responses[0]]}
+        onPick={vi.fn()}
+      />
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  test("renders null when zero responses", () => {
+    const { container } = render(
+      <PickWinner sessionId="sess-1" responses={[]} onPick={vi.fn()} />
+    );
+    expect(container.innerHTML).toBe("");
+  });
+
+  test("renders a button for each response when >= 2", () => {
+    render(
+      <PickWinner sessionId="sess-1" responses={responses} onPick={vi.fn()} />
+    );
+    expect(screen.getByRole("button", { name: "GPT-4o" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Claude" })).toBeInTheDocument();
+  });
+
+  test("calls onPick with executionId when button clicked", () => {
+    const onPick = vi.fn();
+    render(
+      <PickWinner sessionId="sess-1" responses={responses} onPick={onPick} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Claude" }));
+    expect(onPick).toHaveBeenCalledWith("exec-2");
+  });
+
+  test("highlights current winner with amber styling", () => {
+    render(
+      <PickWinner
+        sessionId="sess-1"
+        responses={responses}
+        currentWinnerId="exec-1"
+        onPick={vi.fn()}
+      />
+    );
+    const winnerBtn = screen.getByRole("button", { name: "GPT-4o" });
+    expect(winnerBtn.className).toMatch(/amber/);
+    const otherBtn = screen.getByRole("button", { name: "Claude" });
+    expect(otherBtn.className).not.toMatch(/amber/);
+  });
+
+  test("no highlight when no winner selected", () => {
+    render(
+      <PickWinner sessionId="sess-1" responses={responses} onPick={vi.fn()} />
+    );
+    expect(screen.getByRole("button", { name: "GPT-4o" }).className).not.toMatch(/amber/);
+    expect(screen.getByRole("button", { name: "Claude" }).className).not.toMatch(/amber/);
+  });
+
+  test("renders 'Best:' label", () => {
+    render(
+      <PickWinner sessionId="sess-1" responses={responses} onPick={vi.fn()} />
+    );
+    expect(screen.getByText("Best:")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// JudgeScores
+// ---------------------------------------------------------------------------
+
+describe("JudgeScores", () => {
+  const dimensions = {
+    relevance: 4.2,
+    correctness: 3.8,
+    completeness: 4.5,
+  };
+
+  test("renders abbreviated labels for known dimensions", () => {
+    render(<JudgeScores dimensions={dimensions} overallScore={4.0} />);
+    expect(screen.getByText("Rel:")).toBeInTheDocument();
+    expect(screen.getByText("Cor:")).toBeInTheDocument();
+    expect(screen.getByText("Com:")).toBeInTheDocument();
+  });
+
+  test("renders raw key for unknown dimensions", () => {
+    render(
+      <JudgeScores dimensions={{ novelty: 3.0 }} overallScore={3.0} />
+    );
+    expect(screen.getByText("novelty:")).toBeInTheDocument();
+  });
+
+  test("renders score values", () => {
+    render(<JudgeScores dimensions={dimensions} overallScore={4.0} />);
+    expect(screen.getByText("4.2")).toBeInTheDocument();
+    expect(screen.getByText("3.8")).toBeInTheDocument();
+    expect(screen.getByText("4.5")).toBeInTheDocument();
+  });
+
+  test("renders overall score with /5 suffix", () => {
+    render(<JudgeScores dimensions={dimensions} overallScore={4.167} />);
+    expect(screen.getByText("4.2/5")).toBeInTheDocument();
+  });
+
+  test("renders dimension bars with correct width", () => {
+    render(<JudgeScores dimensions={{ relevance: 5 }} overallScore={5.0} />);
+    const bar = document.querySelector('[style*="width"]') as HTMLElement;
+    expect(bar).toBeTruthy();
+    expect(bar.style.width).toBe("100%");
+  });
+
+  test("renders 0-score dimension bar with 0% width", () => {
+    render(<JudgeScores dimensions={{ relevance: 0 }} overallScore={0.0} />);
+    const bar = document.querySelector('[style*="width"]') as HTMLElement;
+    expect(bar).toBeTruthy();
+    expect(bar.style.width).toBe("0%");
+  });
+
+  test("renders empty state when no dimensions", () => {
+    const { container } = render(
+      <JudgeScores dimensions={{}} overallScore={0.0} />
+    );
+    expect(screen.getByText("0.0/5")).toBeInTheDocument();
+    // No dimension entries rendered
+    expect(container.querySelectorAll('[style*="width"]')).toHaveLength(0);
   });
 });
