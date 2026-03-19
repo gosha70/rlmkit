@@ -122,7 +122,7 @@ export default function DashboardPage() {
                   <TableRow>
                     <TableHead>#</TableHead>
                     <TableHead>Mode</TableHead>
-                    <TableHead>Provider</TableHead>
+                    <TableHead>Chat Provider</TableHead>
                     <TableHead className="text-right">Tokens</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
                     <TableHead className="text-right">Latency</TableHead>
@@ -136,7 +136,7 @@ export default function DashboardPage() {
                         <Badge variant="outline">{entry.mode.toUpperCase()}</Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
-                        {entry.provider || "—"}
+                        {entry.chat_provider_name || entry.provider || "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         {entry.tokens.toLocaleString()}

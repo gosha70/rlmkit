@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   getExecutions,
   getTrace,
@@ -25,11 +26,29 @@ export default function TracesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedStep, setSelectedStep] = useState<TraceStep | null>(null);
+  const [filterProviderId, setFilterProviderId] = useState<string>("");
 
-  const { data: executions = [] } = useSWR<ExecutionSummary[]>(
-    "executions",
-    () => getExecutions(),
+  // Unfiltered fetch — drives the filter dropdown so it never disappears
+  const { data: allExecutions = [] } = useSWR<ExecutionSummary[]>(
+    "executions-all",
+    () => getExecutions(50),
     { refreshInterval: 5000 },
+  );
+
+  // Filtered fetch — drives the table
+  const { data: executions = [] } = useSWR<ExecutionSummary[]>(
+    ["executions", filterProviderId],
+    () => getExecutions(50, filterProviderId || undefined),
+    { refreshInterval: 5000 },
+  );
+
+  // Unique chat providers from ALL executions for the filter dropdown
+  const chatProviderOptions = Array.from(
+    new Map(
+      allExecutions
+        .filter((e) => e.chat_provider_id && e.chat_provider_name)
+        .map((e) => [e.chat_provider_id!, e.chat_provider_name!]),
+    ),
   );
 
   const handleSelectExecution = async (executionId: string) => {
@@ -50,7 +69,25 @@ export default function TracesPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-[1200px] space-y-6 p-6">
-        <h2 className="text-2xl font-semibold">Traces</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">Traces</h2>
+          {chatProviderOptions.length > 0 && (
+            <Select
+              value={filterProviderId}
+              onValueChange={(v) => setFilterProviderId(v === "all" ? "" : v)}
+            >
+              <SelectTrigger className="w-56" aria-label="Filter by Chat Provider">
+                <SelectValue placeholder="All Chat Providers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Chat Providers</SelectItem>
+                {chatProviderOptions.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
 
         {/* Execution list */}
         <Card>

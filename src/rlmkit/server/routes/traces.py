@@ -33,11 +33,15 @@ class ExecutionSummary(BaseModel):
 @router.get("/api/executions")
 async def list_executions(
     limit: int = Query(default=20, ge=1, le=100),
+    chat_provider_id: str | None = Query(default=None),
     state: AppState = Depends(get_state),
 ) -> list[ExecutionSummary]:
-    """List recent executions (newest first)."""
+    """List recent executions (newest first), optionally filtered by chat_provider_id."""
+    all_execs = state.executions.values()
+    if chat_provider_id is not None:
+        all_execs = [e for e in all_execs if e.chat_provider_id == chat_provider_id]
     execs = sorted(
-        state.executions.values(),
+        all_execs,
         key=lambda e: e.started_at or "",
         reverse=True,
     )[:limit]

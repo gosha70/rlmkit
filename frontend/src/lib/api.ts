@@ -99,6 +99,7 @@ export interface TimelineEntry {
   latency_seconds: number;
   mode: ChatMode;
   provider: string;
+  chat_provider_name?: string | null;
 }
 
 export interface MetricsResponse {
@@ -426,8 +427,11 @@ export interface ExecutionSummary {
   chat_provider_name?: string | null;
 }
 
-export const getExecutions = (limit = 20) =>
-  fetchJSON<ExecutionSummary[]>(`/api/executions?limit=${limit}`);
+export const getExecutions = (limit = 20, chatProviderId?: string) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (chatProviderId) params.set("chat_provider_id", chatProviderId);
+  return fetchJSON<ExecutionSummary[]>(`/api/executions?${params}`);
+};
 
 export const getTrace = (executionId: string) =>
   fetchJSON<TraceResponse>(`/api/traces/${executionId}`);

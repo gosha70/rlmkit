@@ -155,6 +155,7 @@ class TimelineEntry(BaseModel):
     latency_seconds: float = 0.0
     mode: str = ""
     provider: str = ""
+    chat_provider_name: str | None = None
 
 
 class MetricsResponse(BaseModel):

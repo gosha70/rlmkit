@@ -102,6 +102,7 @@ async def get_metrics(
                 latency_seconds=latency,
                 mode=mode,
                 provider=provider,
+                chat_provider_name=cp_name,
             )
         )
 
