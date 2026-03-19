@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from rlmkit.server.dependencies import AppState, get_state
+from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     TraceBudget,
     TraceResponse,
@@ -37,7 +39,7 @@ async def list_executions(
     state: AppState = Depends(get_state),
 ) -> list[ExecutionSummary]:
     """List recent executions (newest first), optionally filtered by chat_provider_id."""
-    all_execs = state.executions.values()
+    all_execs: Iterable[ExecutionRecord] = state.executions.values()
     if chat_provider_id is not None:
         all_execs = [e for e in all_execs if e.chat_provider_id == chat_provider_id]
     execs = sorted(
