@@ -6,6 +6,7 @@ internal implementation changes.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,31 +64,14 @@ class PublicRunResult:
         }
 
 
-@dataclass
-class PublicInteractResult:
-    """Result from an interact() call, backward-compatible with the
-    existing ``InteractResult`` shape.
+def __getattr__(name: str) -> Any:
+    if name == "PublicInteractResult":
+        warnings.warn(
+            "PublicInteractResult is deprecated. Use rlmkit.InteractResult instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from rlmkit.api import InteractResult
 
-    Attributes:
-        answer: The generated response text.
-        mode_used: Which strategy was actually used.
-        metrics: Token usage, cost, and timing information.
-        trace: Optional execution trace.
-    """
-
-    answer: str
-    mode_used: str
-    metrics: dict[str, Any] = field(default_factory=dict)
-    trace: Any | None = None
-
-    def __str__(self) -> str:
-        return self.answer
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert result to dictionary format."""
-        return {
-            "answer": self.answer,
-            "mode_used": self.mode_used,
-            "metrics": self.metrics,
-            "has_trace": self.trace is not None,
-        }
+        return InteractResult
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -24,7 +24,7 @@ from rlmkit.public.errors import (
     SandboxError,
     wrap_domain_error,
 )
-from rlmkit.public.types import PublicInteractResult, PublicRunResult
+from rlmkit.public.types import PublicRunResult
 
 # ---------------------------------------------------------------------------
 # Client construction
@@ -198,26 +198,6 @@ class TestPublicRunResult:
         r = PublicRunResult(answer="42", trace=[{"step": 0}])
         d = r.to_dict()
         assert d["has_trace"] is True
-
-
-# ---------------------------------------------------------------------------
-# PublicInteractResult
-# ---------------------------------------------------------------------------
-
-
-class TestPublicInteractResult:
-    """Tests for the backward-compatible result type."""
-
-    def test_str_returns_answer(self) -> None:
-        r = PublicInteractResult(answer="hello", mode_used="direct")
-        assert str(r) == "hello"
-
-    def test_to_dict(self) -> None:
-        r = PublicInteractResult(answer="hello", mode_used="rlm", metrics={"tokens": 100})
-        d = r.to_dict()
-        assert d["answer"] == "hello"
-        assert d["mode_used"] == "rlm"
-        assert d["metrics"]["tokens"] == 100
 
 
 # ---------------------------------------------------------------------------

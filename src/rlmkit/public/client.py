@@ -6,6 +6,7 @@ and ``rlmkit.complete()`` but is backed by the new layered architecture.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 from rlmkit.application.dto import RunConfigDTO, RunResultDTO
@@ -64,6 +65,11 @@ class RLMKitClient:
         max_steps: int = 16,
         max_recursion_depth: int = 5,
     ) -> None:
+        warnings.warn(
+            "RLMKitClient is deprecated. Use rlmkit.interact() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._provider = provider
         self._model = model
         self._root_model = root_model

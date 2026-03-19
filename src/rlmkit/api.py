@@ -14,17 +14,22 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from rlmkit.application.dto import RunConfigDTO, RunResultDTO
+from rlmkit.application.use_cases.run_comparison import (
+    ComparisonResultDTO,
+    RunComparisonUseCase,
+)
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 
 # Type alias for interaction modes
-InteractionMode = Literal["direct", "rag", "rlm", "auto"]
+InteractionMode = Literal["direct", "rag", "rlm", "compare", "auto"]
 
-# Token-count thresholds for auto mode selection
+# Token-count threshold for auto mode selection.
+# RAG tier removed — auto-mode skips it until EmbeddingPort/StoragePort
+# adapters are wired into the public API.
 _DIRECT_THRESHOLD = 8_000
-_RAG_THRESHOLD = 100_000
 
 
 @dataclass
@@ -58,14 +63,13 @@ def _determine_auto_mode(content: str) -> str:
     """Pick the best mode based on content size.
 
     - < 8K tokens  -> direct
-    - 8K–100K      -> rag
-    - > 100K       -> rlm
+    - >= 8K        -> rlm
+
+    RAG tier removed until EmbeddingPort/StoragePort adapters are wired.
     """
     token_count = _estimate_tokens(content)
     if token_count < _DIRECT_THRESHOLD:
         return "direct"
-    if token_count < _RAG_THRESHOLD:
-        return "rag"
     return "rlm"
 
 
@@ -114,6 +118,8 @@ def _setup(
     max_tokens: int | None,
     timeout: float | None,
     verbose: bool,
+    root_model: str | None = None,
+    recursive_model: str | None = None,
 ) -> tuple[str, str, LiteLLMAdapter, RunConfigDTO]:
     """Validate inputs, resolve mode/provider/model, build adapter and config.
 
@@ -134,8 +140,10 @@ def _setup(
                 f"({_estimate_tokens(content):,} tokens)"
             )
 
-    if actual_mode not in ("direct", "rag", "rlm"):
-        raise ValueError(f"Invalid mode: {actual_mode}. Must be 'direct', 'rag', 'rlm', or 'auto'")
+    if actual_mode not in ("direct", "rag", "rlm", "compare"):
+        raise ValueError(
+            f"Invalid mode: {actual_mode}. Must be 'direct', 'rag', 'rlm', 'compare', or 'auto'"
+        )
 
     # -- Resolve provider --
     if provider is None:
@@ -150,12 +158,16 @@ def _setup(
             print(f"[Auto-Detect] Using '{provider}' provider from environment")
 
     prefixed_model = _resolve_model(provider, model)
+    resolved_root = _resolve_model(provider, root_model) if root_model else None
+    resolved_recursive = _resolve_model(provider, recursive_model) if recursive_model else None
 
     if verbose:
         print(f"[Setup] Configuring {provider}/{prefixed_model} ...")
 
     llm = LiteLLMAdapter(
         model=prefixed_model,
+        root_model=resolved_root,
+        recursive_model=resolved_recursive,
         api_key=api_key,
         api_base=api_base,
         temperature=temperature,
@@ -173,8 +185,47 @@ def _setup(
     return actual_mode, provider, llm, config
 
 
-def _build_result(actual_mode: str, result: RunResultDTO, verbose: bool) -> InteractResult:
-    """Convert a RunResultDTO into an InteractResult with metrics."""
+def _build_result(
+    actual_mode: str,
+    result: RunResultDTO | ComparisonResultDTO,
+    verbose: bool,
+) -> InteractResult:
+    """Convert a RunResultDTO or ComparisonResultDTO into an InteractResult."""
+    if isinstance(result, ComparisonResultDTO):
+        # Pick best answer: prefer successful rlm, then successful direct, then any
+        successful = {m: r for m, r in result.results.items() if r.success}
+        best = (
+            successful.get("rlm")
+            or successful.get("direct")
+            or result.results.get("rlm")
+            or result.results.get("direct")
+            or RunResultDTO(answer="", mode_used="compare", success=False, error="No results")
+        )
+        metrics: dict[str, Any] = {
+            "total_tokens": sum(r.total_tokens for r in result.results.values()),
+            "total_cost": sum(r.total_cost for r in result.results.values()),
+            "execution_time": result.total_elapsed,
+            "comparison": {
+                mode: {
+                    "answer_length": len(r.answer),
+                    "total_tokens": r.total_tokens,
+                    "total_cost": r.total_cost,
+                    "elapsed_time": r.elapsed_time,
+                }
+                for mode, r in result.results.items()
+            },
+        }
+        if verbose:
+            print(f"[Compare] Ran {len(result.results)} modes: {result.modes_run}")
+            for mode, r in result.results.items():
+                print(f"  {mode}: {r.total_tokens} tokens, ${r.total_cost:.4f}")
+        return InteractResult(
+            answer=best.answer,
+            mode_used="compare",
+            metrics=metrics,
+            raw_result=best,
+        )
+
     metrics = {
         "total_tokens": result.total_tokens,
         "input_tokens": result.input_tokens,
@@ -203,9 +254,13 @@ def _dispatch_sync(
     config: RunConfigDTO,
     content: str,
     query: str,
-) -> RunResultDTO:
+) -> RunResultDTO | ComparisonResultDTO:
     """Run the appropriate use case synchronously."""
-    if actual_mode == "rlm":
+    if actual_mode == "compare":
+        sandbox = create_sandbox()
+        uc_cmp = RunComparisonUseCase(llm, sandbox)
+        return uc_cmp.execute(content, query, config)
+    elif actual_mode == "rlm":
         sandbox = create_sandbox()
         uc = RunRLMUseCase(llm, sandbox)
         return uc.execute(content, query, config)
@@ -227,9 +282,16 @@ async def _dispatch_async(
     config: RunConfigDTO,
     content: str,
     query: str,
-) -> RunResultDTO:
+) -> RunResultDTO | ComparisonResultDTO:
     """Run the appropriate use case asynchronously."""
-    if actual_mode == "rlm":
+    if actual_mode == "compare":
+        # RunComparisonUseCase has no execute_async; run sync in thread
+        import asyncio
+
+        sandbox = create_sandbox()
+        uc_cmp = RunComparisonUseCase(llm, sandbox)
+        return await asyncio.to_thread(uc_cmp.execute, content, query, config)
+    elif actual_mode == "rlm":
         sandbox = create_sandbox()
         uc = RunRLMUseCase(llm, sandbox)
         return await uc.execute_async(content, query, config)
@@ -256,9 +318,11 @@ def interact(
     max_tokens: int | None = None,
     timeout: float | None = None,
     verbose: bool = False,
+    root_model: str | None = None,
+    recursive_model: str | None = None,
     **kwargs: Any,
 ) -> InteractResult:
-    """Interact with content using an LLM through Direct, RAG, or RLM mode.
+    """Interact with content using an LLM through Direct, RLM, or Compare mode.
 
     This is the main entry point for RLMKit.  It handles provider
     resolution, mode selection, and use-case dispatch.
@@ -266,7 +330,7 @@ def interact(
     Args:
         content: Document / text content to analyse.
         query: Question or instruction for the LLM.
-        mode: ``"direct"`` | ``"rag"`` | ``"rlm"`` | ``"auto"``.
+        mode: ``"direct"`` | ``"rlm"`` | ``"compare"`` | ``"auto"``.
         provider: Provider key (``"openai"``, ``"anthropic"``, ``"ollama"``).
             Auto-detected from env vars when *None*.
         model: Model name.  Defaults to the provider's flagship model.
@@ -277,6 +341,8 @@ def interact(
         max_tokens: Max output tokens per LLM call.
         timeout: Request timeout in seconds (default 120).
         verbose: Print progress to stdout.
+        root_model: Model for root-level reasoning (paper's two-model optimization).
+        recursive_model: Cheaper model for RLM exploration subcalls.
 
     Returns:
         :class:`InteractResult` with answer, mode used, and metrics.
@@ -297,6 +363,8 @@ def interact(
         max_tokens,
         timeout,
         verbose,
+        root_model=root_model,
+        recursive_model=recursive_model,
     )
 
     if verbose:
@@ -319,6 +387,8 @@ async def interact_async(
     max_tokens: int | None = None,
     timeout: float | None = None,
     verbose: bool = False,
+    root_model: str | None = None,
+    recursive_model: str | None = None,
     **kwargs: Any,
 ) -> InteractResult:
     """Async version of :func:`interact`.
@@ -340,6 +410,8 @@ async def interact_async(
         max_tokens,
         timeout,
         verbose,
+        root_model=root_model,
+        recursive_model=recursive_model,
     )
 
     if verbose:

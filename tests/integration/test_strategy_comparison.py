@@ -157,11 +157,11 @@ class TestAutoModeSelection:
         short = "a" * 1000  # ~250 tokens, well under 8K
         assert _determine_auto_mode(short) == "direct"
 
-    def test_medium_content_selects_rag(self):
-        """Content between 8K and 100K tokens resolves to rag mode."""
+    def test_medium_content_selects_rlm(self):
+        """Content >= 8K tokens resolves to rlm (RAG tier removed)."""
         # Need >= 8000 tokens -> >= 32000 chars
         medium = "a" * 40000  # ~10000 tokens
-        assert _determine_auto_mode(medium) == "rag"
+        assert _determine_auto_mode(medium) == "rlm"
 
     def test_large_content_selects_rlm(self):
         """Content over 100K tokens resolves to rlm mode."""
@@ -170,14 +170,14 @@ class TestAutoModeSelection:
         assert _determine_auto_mode(large) == "rlm"
 
     def test_boundary_at_8k_tokens(self):
-        """Content exactly at the 8K-token boundary selects rag."""
+        """Content exactly at the 8K-token boundary selects rlm."""
         # estimate_tokens uses len(text) // 4, so 32000 chars = 8000 tokens
         boundary = "a" * 32000
         assert _estimate_tokens(boundary) == 8000
-        assert _determine_auto_mode(boundary) == "rag"
+        assert _determine_auto_mode(boundary) == "rlm"
 
     def test_boundary_at_100k_tokens(self):
-        """Content exactly at the 100K-token boundary selects rlm."""
+        """Content at 100K tokens still selects rlm."""
         boundary = "a" * 400000
         assert _estimate_tokens(boundary) == 100000
         assert _determine_auto_mode(boundary) == "rlm"

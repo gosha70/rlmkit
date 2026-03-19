@@ -18,7 +18,7 @@ from .errors import (
     RLMKitError,
     SandboxError,
 )
-from .types import PublicInteractResult, PublicRunResult
+from .types import PublicRunResult
 
 __all__ = [
     "RLMKitClient",
@@ -30,3 +30,18 @@ __all__ = [
     "SandboxError",
     "ConfigError",
 ]
+
+
+def __getattr__(name: str):  # type: ignore[no-untyped-def]
+    if name == "PublicInteractResult":
+        import warnings
+
+        warnings.warn(
+            "PublicInteractResult is deprecated. Use rlmkit.InteractResult instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from rlmkit.api import InteractResult
+
+        return InteractResult
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

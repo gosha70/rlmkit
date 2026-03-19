@@ -44,8 +44,9 @@ class TestDetermineAutoMode:
     def test_short_selects_direct(self):
         assert _determine_auto_mode("a" * 1000) == "direct"
 
-    def test_medium_selects_rag(self):
-        assert _determine_auto_mode("a" * 40_000) == "rag"
+    def test_medium_selects_rlm(self):
+        # RAG tier removed — medium content goes to rlm
+        assert _determine_auto_mode("a" * 40_000) == "rlm"
 
     def test_large_selects_rlm(self):
         assert _determine_auto_mode("a" * 500_000) == "rlm"
@@ -387,3 +388,218 @@ class TestCompleteAsync:
         )
         assert answer == "Test answer"
         assert isinstance(answer, str)
+
+
+# ---------------------------------------------------------------------------
+# Compare mode
+# ---------------------------------------------------------------------------
+
+
+class TestCompareMode:
+    @patch("rlmkit.api.RunComparisonUseCase")
+    @patch("rlmkit.api.create_sandbox")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_compare_mode_returns_result(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
+        from rlmkit.application.use_cases.run_comparison import ComparisonResultDTO
+
+        cmp = ComparisonResultDTO(
+            results={
+                "direct": RunResultDTO(answer="Direct answer", mode_used="direct", success=True),
+                "rlm": RunResultDTO(
+                    answer="RLM answer",
+                    mode_used="rlm",
+                    success=True,
+                    input_tokens=30,
+                    output_tokens=20,
+                ),
+            },
+            total_elapsed=1.5,
+        )
+        mock_uc_cls.return_value.execute.return_value = cmp
+        result = interact("content", "question", mode="compare", provider="openai")
+
+        assert result.mode_used == "compare"
+        assert result.answer == "RLM answer"  # prefers rlm
+        assert "comparison" in result.metrics
+        assert "direct" in result.metrics["comparison"]
+        assert "rlm" in result.metrics["comparison"]
+        mock_sandbox_fn.assert_called_once()
+
+    @patch("rlmkit.api.RunComparisonUseCase")
+    @patch("rlmkit.api.create_sandbox")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_compare_aggregates_tokens(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
+        from rlmkit.application.use_cases.run_comparison import ComparisonResultDTO
+
+        cmp = ComparisonResultDTO(
+            results={
+                "direct": RunResultDTO(
+                    answer="A",
+                    mode_used="direct",
+                    success=True,
+                    input_tokens=5,
+                    output_tokens=5,
+                    total_cost=0.01,
+                ),
+                "rlm": RunResultDTO(
+                    answer="B",
+                    mode_used="rlm",
+                    success=True,
+                    input_tokens=20,
+                    output_tokens=20,
+                    total_cost=0.04,
+                ),
+            },
+            total_elapsed=2.0,
+        )
+        mock_uc_cls.return_value.execute.return_value = cmp
+        result = interact("content", "question", mode="compare", provider="openai")
+
+        assert result.metrics["total_tokens"] == 50
+        assert result.metrics["total_cost"] == 0.05
+
+
+# ---------------------------------------------------------------------------
+# Two-model params (root_model / recursive_model)
+# ---------------------------------------------------------------------------
+
+
+class TestTwoModelParams:
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_root_model_passed_to_adapter(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact(
+            "content",
+            "question",
+            mode="direct",
+            provider="openai",
+            root_model="gpt-4o",
+            recursive_model="gpt-4o-mini",
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["root_model"] == "gpt-4o"
+        assert kwargs["recursive_model"] == "gpt-4o-mini"
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_none_by_default(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="openai")
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["root_model"] is None
+        assert kwargs["recursive_model"] is None
+
+
+# ---------------------------------------------------------------------------
+# RLMKitClient deprecation
+# ---------------------------------------------------------------------------
+
+
+class TestRLMKitClientDeprecation:
+    def test_emits_deprecation_warning(self):
+        import warnings
+
+        from rlmkit.public import RLMKitClient
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            RLMKitClient(provider="mock")
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
+
+
+# ---------------------------------------------------------------------------
+# Explicit rag mode still works (falls back to direct)
+# ---------------------------------------------------------------------------
+
+
+class TestExplicitRagMode:
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_rag_mode_returns_result(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        result = interact("content", "question", mode="rag", provider="openai")
+        assert result.mode_used == "rag"
+        assert result.answer == "Test answer"
+
+
+# ---------------------------------------------------------------------------
+# Compare mode: failed rlm falls back to successful direct
+# ---------------------------------------------------------------------------
+
+
+class TestCompareFailedRlmFallback:
+    @patch("rlmkit.api.RunComparisonUseCase")
+    @patch("rlmkit.api.create_sandbox")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_prefers_successful_direct_over_failed_rlm(
+        self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls
+    ):
+        from rlmkit.application.use_cases.run_comparison import ComparisonResultDTO
+
+        cmp = ComparisonResultDTO(
+            results={
+                "direct": RunResultDTO(
+                    answer="Good direct answer", mode_used="direct", success=True
+                ),
+                "rlm": RunResultDTO(
+                    answer="", mode_used="rlm", success=False, error="Budget exceeded"
+                ),
+            },
+            total_elapsed=3.0,
+        )
+        mock_uc_cls.return_value.execute.return_value = cmp
+        result = interact("content", "question", mode="compare", provider="openai")
+
+        assert result.answer == "Good direct answer"
+        assert result.mode_used == "compare"
+
+
+# ---------------------------------------------------------------------------
+# PublicInteractResult deprecation alias
+# ---------------------------------------------------------------------------
+
+
+class TestPublicInteractResultAlias:
+    def test_import_emits_deprecation(self):
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            from rlmkit.public.types import PublicInteractResult  # noqa: F811
+
+            assert len(w) >= 1
+            assert any(
+                issubclass(x.category, DeprecationWarning)
+                and "PublicInteractResult" in str(x.message)
+                for x in w
+            )
+            # It should resolve to InteractResult
+            from rlmkit.api import InteractResult
+
+            assert PublicInteractResult is InteractResult
+
+
+# ---------------------------------------------------------------------------
+# Two-model provider normalization
+# ---------------------------------------------------------------------------
+
+
+class TestTwoModelNormalization:
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_anthropic_root_model_gets_prefix(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact(
+            "content",
+            "question",
+            mode="direct",
+            provider="anthropic",
+            root_model="claude-sonnet-4-5-20250514",
+            recursive_model="claude-haiku-4-5-20251001",
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["root_model"] == "anthropic/claude-sonnet-4-5-20250514"
+        assert kwargs["recursive_model"] == "anthropic/claude-haiku-4-5-20251001"
