@@ -5,8 +5,6 @@ These tests verify the fixes for Bugs #1, #3, and #7 from the outstanding bugs h
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 from starlette.testclient import TestClient
 
@@ -20,7 +18,7 @@ def _clean_state() -> None:
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
 

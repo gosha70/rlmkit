@@ -21,7 +21,7 @@ def _clean_state() -> None:
     reset_state()
 
 
-@pytest.fixture()
+@pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
 
