@@ -125,10 +125,9 @@ describe("ComparisonChart", () => {
     );
     // Card title rendered
     expect(screen.getByText("RLM vs Direct")).toBeInTheDocument();
-    // The chart wrapper div with aria-label is rendered
-    expect(
-      screen.getByRole("img", { name: /Bar chart comparing RLM and Direct/ }),
-    ).toBeInTheDocument();
+    // Both split chart panels (tokens + cost) are rendered
+    const charts = screen.getAllByRole("img", { name: /Bar chart comparing RLM and Direct/ });
+    expect(charts).toHaveLength(2);
   });
 
   test("shows legend for each mode via aria-label description", () => {
@@ -138,9 +137,9 @@ describe("ComparisonChart", () => {
         directData={makeModeSummary()}
       />,
     );
-    // The aria-label contains both mode names
-    const chartImg = screen.getByRole("img", { name: /RLM and Direct/ });
-    expect(chartImg).toBeInTheDocument();
+    // Both split chart panels have aria-labels containing mode names
+    const chartImgs = screen.getAllByRole("img", { name: /RLM and Direct/ });
+    expect(chartImgs.length).toBeGreaterThanOrEqual(2);
   });
 
   test("handles empty data gracefully (undefined props)", () => {

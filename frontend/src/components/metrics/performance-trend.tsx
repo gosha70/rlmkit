@@ -39,9 +39,9 @@ export function PerformanceTrend({ timeline }: PerformanceTrendProps) {
                 }}
               />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line yAxisId="left" type="monotone" dataKey="tokens" stroke="#2563eb" strokeWidth={2} dot={false} name="Tokens" />
-              <Line yAxisId="right" type="monotone" dataKey="cost" stroke="#7c3aed" strokeWidth={2} dot={false} name="Cost ($)" />
-              <Line yAxisId="right" type="monotone" dataKey="latency" stroke="#d97706" strokeWidth={2} dot={false} name="Latency (s)" />
+              <Line yAxisId="left" type="monotone" dataKey="tokens" stroke="#2563eb" strokeWidth={2} dot={timeline.length < 20} name="Tokens" />
+              <Line yAxisId="right" type="monotone" dataKey="cost" stroke="#7c3aed" strokeWidth={2} dot={timeline.length < 20} name="Cost ($)" />
+              <Line yAxisId="right" type="monotone" dataKey="latency" stroke="#d97706" strokeWidth={2} dot={timeline.length < 20} name="Latency (s)" />
             </LineChart>
           </ResponsiveContainer>
         </div>

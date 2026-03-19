@@ -8,14 +8,13 @@ interface ProviderPerformanceProps {
   title?: string;
 }
 
-const COLORS = { tokens: "#2563eb", latency: "#d97706", cost: "#7c3aed" };
+const COLORS = { tokens: "#2563eb", latency: "#d97706" };
 
 export function ProviderPerformance({ data, title = "Provider Performance" }: ProviderPerformanceProps) {
   const chartData = Object.entries(data).map(([name, values]) => ({
     name,
     tokens: values.total_tokens,
     latency: values.avg_latency_seconds,
-    cost: values.total_cost_usd,
     queries: values.queries,
   }));
 
@@ -27,7 +26,7 @@ export function ProviderPerformance({ data, title = "Provider Performance" }: Pr
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64" role="img" aria-label="Bar chart comparing provider performance by tokens, latency, and cost">
+        <div className="h-64" role="img" aria-label="Bar chart comparing provider performance by tokens and latency">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart data={chartData} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
