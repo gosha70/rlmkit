@@ -14,6 +14,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any, cast
 
 from rlmkit.ui.data.providers_catalog import get_env_var
 
@@ -89,12 +90,12 @@ class FileSecretStore(SecretStore):
 
     # -- helpers ----------------------------------------------------------
 
-    def _read_all(self) -> dict:
+    def _read_all(self) -> dict[str, Any]:
         if not self._path.exists():
             return {}
         try:
             with open(self._path) as f:
-                return json.load(f)
+                return cast(dict[str, Any], json.load(f))
         except (OSError, json.JSONDecodeError):
             return {}
 
@@ -151,7 +152,8 @@ class KeyringSecretStore(SecretStore):
 
     def get(self, provider: str) -> str | None:
         import keyring
-        return keyring.get_password(_KEYRING_SERVICE, provider)
+        result = keyring.get_password(_KEYRING_SERVICE, provider)
+        return str(result) if result is not None else None
 
     def set(self, provider: str, key: str) -> None:
         import keyring
@@ -183,7 +185,7 @@ if KeyringSecretStore.is_available():
     KEY_POLICY_OPTIONS.append(("keyring", "Save to system keyring"))
 
 
-def create_secret_store(policy: str, **kwargs) -> SecretStore:
+def create_secret_store(policy: str, **kwargs: Any) -> SecretStore:
     """Instantiate the right SecretStore for a policy key.
 
     Args:
@@ -203,7 +205,7 @@ def create_secret_store(policy: str, **kwargs) -> SecretStore:
     raise ValueError(f"Unknown key policy: {policy!r}")
 
 
-def get_secret_store(session_state=None) -> SecretStore:
+def get_secret_store(session_state: object = None) -> SecretStore:
     """Return the active SecretStore from session state, or a sensible default.
 
     The config panel stores ``st.session_state.key_policy`` (str) which is
@@ -215,7 +217,7 @@ def get_secret_store(session_state=None) -> SecretStore:
     return create_secret_store(policy)
 
 
-def resolve_api_key(provider: str, session_state=None) -> str | None:
+def resolve_api_key(provider: str, session_state: object = None) -> str | None:
     """Try every available source to find an API key for *provider*.
 
     Resolution order:
@@ -227,7 +229,7 @@ def resolve_api_key(provider: str, session_state=None) -> str | None:
     if session_state is not None:
         cache = getattr(session_state, "provider_api_keys", None) or {}
         if provider in cache:
-            return cache[provider]
+            return str(cache[provider])
 
     # 2. Active store
     store = get_secret_store(session_state)

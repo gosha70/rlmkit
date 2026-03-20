@@ -3,6 +3,7 @@
 """
 Data models for RLMKit UI - Chat messages, metrics, responses.
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -216,15 +217,15 @@ class ChatMessage:
 
     def has_rlm_response(self) -> bool:
         """Check if RLM response exists."""
-        return self.rlm_response is not None and self.rlm_response.content
+        return bool(self.rlm_response is not None and self.rlm_response.content)
 
     def has_direct_response(self) -> bool:
         """Check if Direct response exists."""
-        return self.direct_response is not None and self.direct_response.content
+        return bool(self.direct_response is not None and self.direct_response.content)
 
     def has_rag_response(self) -> bool:
         """Check if RAG response exists."""
-        return self.rag_response is not None and self.rag_response.content
+        return bool(self.rag_response is not None and self.rag_response.content)
 
     def is_complete(self) -> bool:
         """Check if all expected responses are complete."""
@@ -426,11 +427,13 @@ class SessionMetrics:
     rlm_savings_cost: float = 0.0
     """Total cost saved by using RLM."""
 
-    requests_by_mode: dict[str, int] = field(default_factory=lambda: {
-        "rlm_only": 0,
-        "direct_only": 0,
-        "compare": 0,
-    })
+    requests_by_mode: dict[str, int] = field(
+        default_factory=lambda: {
+            "rlm_only": 0,
+            "direct_only": 0,
+            "compare": 0,
+        }
+    )
     """Breakdown of requests by mode."""
 
     avg_response_time_seconds: float = 0.0

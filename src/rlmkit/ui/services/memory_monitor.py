@@ -3,6 +3,7 @@
 """
 MemoryMonitor - Track memory usage during execution.
 """
+
 import psutil
 
 
@@ -17,7 +18,7 @@ class MemoryMonitor:
     - Provide timeline of memory usage
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize MemoryMonitor with baseline memory."""
         self.process = psutil.Process()
         self.start_memory_mb = self._get_memory_mb()
@@ -38,7 +39,7 @@ class MemoryMonitor:
         """
         try:
             memory_bytes = self.process.memory_info().rss
-            return memory_bytes / 1024 / 1024
+            return float(memory_bytes) / 1024.0 / 1024.0
         except Exception:
             return 0.0
 
@@ -92,10 +93,12 @@ class MemoryMonitor:
         """
         timeline = []
         for i, memory_mb in enumerate(self.measurements):
-            timeline.append({
-                "time_ms": i * 100,  # Assume 100ms between captures
-                "memory_mb": memory_mb - self.baseline_memory_mb,
-            })
+            timeline.append(
+                {
+                    "time_ms": i * 100,  # Assume 100ms between captures
+                    "memory_mb": memory_mb - self.baseline_memory_mb,
+                }
+            )
         return timeline
 
     def get_stats(self) -> dict[str, float]:

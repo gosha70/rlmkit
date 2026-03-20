@@ -7,11 +7,12 @@ LLMConfigManager - Secure management of LLM provider configurations.
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from .models import LLMProviderConfig
 
 
-def load_env_file(env_path: Path | None = None):
+def load_env_file(env_path: Path | None = None) -> None:
     """
     Load environment variables from .env file.
     """
@@ -29,7 +30,7 @@ def load_env_file(env_path: Path | None = None):
                 os.environ[key] = value
 
 
-def update_env_file(key: str, value: str, env_path: Path | None = None):
+def update_env_file(key: str, value: str, env_path: Path | None = None) -> None:
     """
     Add or update a key-value pair in the .env file.
     """
@@ -197,7 +198,7 @@ class LLMConfigManager:
         api_key_env_var: str | None = None,
         input_cost_per_1k: float = 0.0,
         output_cost_per_1k: float = 0.0,
-        **kwargs,
+        **kwargs: Any,
     ) -> tuple:
         """
         Add or update a provider configuration.

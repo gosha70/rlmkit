@@ -844,7 +844,11 @@ class TestMetricsCollectorCollection:
         collector = MetricsCollector()
         monitor = MemoryMonitor()
 
-        result: dict[str, object] = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        result: dict[str, object] = {
+            "input_tokens": 150,
+            "output_tokens": 120,
+            "execution_time": 0.8,
+        }
 
         metrics = await collector.collect_direct_metrics(result, monitor, "openai", "gpt-4")
 
@@ -857,7 +861,11 @@ class TestMetricsCollectorCollection:
         collector = MetricsCollector()
         monitor = MemoryMonitor()
 
-        result: dict[str, object] = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        result: dict[str, object] = {
+            "input_tokens": 150,
+            "output_tokens": 120,
+            "execution_time": 0.8,
+        }
 
         metrics = await collector.collect_direct_metrics(result, monitor, "openai", "gpt-4")
 
@@ -869,7 +877,11 @@ class TestMetricsCollectorCollection:
         collector = MetricsCollector()
         monitor = MemoryMonitor()
 
-        direct_result: dict[str, object] = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        direct_result: dict[str, object] = {
+            "input_tokens": 150,
+            "output_tokens": 120,
+            "execution_time": 0.8,
+        }
 
         direct_metrics = await collector.collect_direct_metrics(
             direct_result, monitor, "openai", "gpt-4"
