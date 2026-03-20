@@ -42,6 +42,7 @@ import {
 } from "@/lib/api";
 import { Plus, Edit2, Trash2, Upload, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -137,6 +138,7 @@ export default function SettingsPage() {
       mutateProfiles();
     } catch (err) {
       console.error("Failed to create profile:", err);
+      toast.error("Failed to create profile");
     } finally {
       setCreatingProfile(false);
     }
@@ -190,6 +192,7 @@ export default function SettingsPage() {
       mutateChatProviders();
     } catch (err) {
       console.error("Failed to save chat provider:", err);
+      toast.error("Failed to save Chat Provider");
     } finally {
       setSavingProvider(false);
     }
@@ -209,6 +212,7 @@ export default function SettingsPage() {
       }
     } catch (err) {
       console.error("Failed to delete chat provider:", err);
+      toast.error("Failed to delete Chat Provider");
     } finally {
       setDeletingId(null);
     }

@@ -5,6 +5,7 @@ import useSWR from "swr";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { User, Bot, Sparkles, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/shared/app-shell";
 import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
 import { ChatInput } from "@/components/chat/chat-input";
@@ -467,6 +468,7 @@ export default function ChatPage() {
         setJudgeScores(newScores);
       } catch (err) {
         console.error("Judge failed:", err);
+        toast.error("Judge evaluation failed");
       } finally {
         setIsJudging(false);
       }
@@ -605,6 +607,7 @@ export default function ChatPage() {
       setUploadedFile(resp);
     } catch (err) {
       console.error("Failed to upload file:", err);
+      toast.error("File upload failed");
     }
   }, []);
 
