@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
@@ -23,7 +23,7 @@ import {
   type TraceStep,
 } from "@/lib/api";
 
-export default function TracesPage() {
+function TracesPageInner() {
   const searchParams = useSearchParams();
   const [trace, setTrace] = useState<TraceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -279,5 +279,13 @@ export default function TracesPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+export default function TracesPage() {
+  return (
+    <Suspense>
+      <TracesPageInner />
+    </Suspense>
   );
 }
