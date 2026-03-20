@@ -9,6 +9,7 @@ import { TraceTree } from "@/components/trace/trace-tree";
 import { StepDetail } from "@/components/trace/step-detail";
 import { CodeBlock } from "@/components/trace/code-block";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,6 +30,7 @@ export default function TracesPage() {
   const [loading, setLoading] = useState(false);
   const [selectedStep, setSelectedStep] = useState<TraceStep | null>(null);
   const [filterProviderId, setFilterProviderId] = useState<string>("");
+  const [limit, setLimit] = useState(20);
 
   // Unfiltered fetch — drives the filter dropdown so it never disappears
   const { data: allExecutions = [] } = useSWR<ExecutionSummary[]>(
@@ -39,8 +41,8 @@ export default function TracesPage() {
 
   // Filtered fetch — drives the table
   const { data: executions = [] } = useSWR<ExecutionSummary[]>(
-    ["executions", filterProviderId],
-    () => getExecutions(50, filterProviderId || undefined),
+    ["executions", filterProviderId, limit],
+    () => getExecutions(limit, filterProviderId || undefined),
     { refreshInterval: 5000 },
   );
 
@@ -85,7 +87,7 @@ export default function TracesPage() {
           {chatProviderOptions.length > 0 && (
             <Select
               value={filterProviderId}
-              onValueChange={(v) => setFilterProviderId(v === "all" ? "" : v)}
+              onValueChange={(v) => { setFilterProviderId(v === "all" ? "" : v); setLimit(20); }}
             >
               <SelectTrigger className="w-56" aria-label="Filter by Chat Provider">
                 <SelectValue placeholder="All Chat Providers" />
@@ -170,6 +172,13 @@ export default function TracesPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+            {executions.length === limit && (
+              <div className="mt-3 flex justify-center">
+                <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + 20)}>
+                  Load more
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
