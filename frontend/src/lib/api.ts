@@ -100,6 +100,7 @@ export interface TimelineEntry {
   mode: ChatMode;
   provider: string;
   chat_provider_name?: string | null;
+  execution_id?: string | null;
 }
 
 export interface MetricsResponse {

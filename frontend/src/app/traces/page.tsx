@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
 import { Timeline } from "@/components/trace/timeline";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/api";
 
 export default function TracesPage() {
+  const searchParams = useSearchParams();
   const [trace, setTrace] = useState<TraceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,6 +67,15 @@ export default function TracesPage() {
       setLoading(false);
     }
   };
+
+  // Auto-load trace when navigated from Dashboard with ?exec=<id>
+  useEffect(() => {
+    const execId = searchParams.get("exec");
+    if (execId) {
+      handleSelectExecution(execId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AppShell>

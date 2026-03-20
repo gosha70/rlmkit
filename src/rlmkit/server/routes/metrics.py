@@ -103,6 +103,7 @@ async def get_metrics(
                 mode=mode,
                 provider=provider,
                 chat_provider_name=cp_name,
+                execution_id=msg.get("execution_id"),
             )
         )
 

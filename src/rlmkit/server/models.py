@@ -156,6 +156,7 @@ class TimelineEntry(BaseModel):
     mode: str = ""
     provider: str = ""
     chat_provider_name: str | None = None
+    execution_id: str | None = None
 
 
 class MetricsResponse(BaseModel):

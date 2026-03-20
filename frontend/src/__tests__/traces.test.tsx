@@ -14,6 +14,14 @@ import { StepDetail } from "@/components/trace/step-detail";
 import type { TraceStep, ExecutionSummary } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
+// Mock next/navigation — used by TracesPage (useSearchParams)
+// ---------------------------------------------------------------------------
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => ({ get: () => null }),
+}));
+
+// ---------------------------------------------------------------------------
 // Mock SWR — used by TracesPage
 // ---------------------------------------------------------------------------
 

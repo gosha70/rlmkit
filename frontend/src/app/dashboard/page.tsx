@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { Hash, DollarSign, Clock, Activity } from "lucide-react";
 import { AppShell } from "@/components/shared/app-shell";
@@ -17,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getSessions, getMetrics, type SessionSummary, type MetricsResponse } from "@/lib/api";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [selectedSession, setSelectedSession] = useState<string>("");
 
   const { data: sessions = [] } = useSWR<SessionSummary[]>("sessions", () => getSessions());
@@ -130,7 +132,11 @@ export default function DashboardPage() {
                 </TableHeader>
                 <TableBody>
                   {metrics.timeline.map((entry, i) => (
-                    <TableRow key={i}>
+                    <TableRow
+                      key={i}
+                      className={entry.execution_id ? "cursor-pointer hover:bg-muted/50" : undefined}
+                      onClick={entry.execution_id ? () => router.push(`/traces?exec=${entry.execution_id}`) : undefined}
+                    >
                       <TableCell>{i + 1}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{entry.mode.toUpperCase()}</Badge>
