@@ -87,7 +87,6 @@ export default function ChatPage() {
   });
 
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
-  const [, setFileContent] = useState<string>("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [isAnyStreaming, setIsAnyStreaming] = useState(false);
   const [ratings, setRatings] = useState<Record<string, "up" | "down">>({});
@@ -604,12 +603,6 @@ export default function ChatPage() {
     try {
       const resp = await uploadFile(file);
       setUploadedFile(resp);
-      if (file.type === "text/plain" || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-        const text = await file.text();
-        setFileContent(text);
-      } else {
-        setFileContent("");
-      }
     } catch (err) {
       console.error("Failed to upload file:", err);
     }
@@ -639,7 +632,6 @@ export default function ChatPage() {
     setSessionId(null);
     setTurns([]);
     setUploadedFile(null);
-    setFileContent("");
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -685,7 +677,6 @@ export default function ChatPage() {
               tokenCount={uploadedFile.token_count}
               onRemove={() => {
                 setUploadedFile(null);
-                setFileContent("");
               }}
             />
           </div>

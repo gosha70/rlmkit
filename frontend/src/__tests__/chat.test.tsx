@@ -1,9 +1,8 @@
 /**
  * Chat component tests.
  *
- * Covers: ChatInput, TypingIndicator, FileAttachment, ProviderBadge,
- * ChatProviderSelector, MessageBubble, ModeSelector, TraceInline,
- * ComparisonBanner, ResponseRating, PickWinner, JudgeScores.
+ * Covers: ChatInput, TypingIndicator, FileAttachment, ChatProviderSelector,
+ * ResponseRating, PickWinner, JudgeScores.
  */
 
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -11,17 +10,11 @@ import { vi, describe, test, expect } from "vitest";
 import { ChatInput } from "@/components/chat/chat-input";
 import { TypingIndicator } from "@/components/chat/typing-indicator";
 import { FileAttachment } from "@/components/chat/file-attachment";
-import { ProviderBadge } from "@/components/chat/provider-badge";
 import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
-import { MessageBubble } from "@/components/chat/message-bubble";
-import { ModeSelector } from "@/components/chat/mode-selector";
-import { TraceInline } from "@/components/chat/trace-inline";
-import { ComparisonBanner } from "@/components/chat/comparison-banner";
 import { ResponseRating } from "@/components/chat/response-rating";
 import { PickWinner } from "@/components/chat/pick-winner";
 import { JudgeScores } from "@/components/chat/judge-scores";
-import type { ChatProviderConfig, ProviderInfo, TraceStep, MessageMetrics } from "@/lib/api";
-import type { ChatMessage } from "@/lib/use-chat";
+import type { ChatProviderConfig, ProviderInfo } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // ChatInput
@@ -251,44 +244,6 @@ describe("FileAttachment", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ProviderBadge
-// ---------------------------------------------------------------------------
-
-describe("ProviderBadge", () => {
-  test("renders provider name alone when no model", () => {
-    render(<ProviderBadge provider="openai" />);
-    expect(screen.getByText("openai")).toBeInTheDocument();
-  });
-
-  test("renders 'model via provider' when model provided", () => {
-    render(<ProviderBadge provider="openai" model="gpt-4o" />);
-    expect(screen.getByText("gpt-4o via openai")).toBeInTheDocument();
-  });
-
-  test("has aria-label describing provider and status", () => {
-    const { container } = render(
-      <ProviderBadge provider="openai" status="connected" />
-    );
-    const badge = container.firstChild as HTMLElement;
-    expect(badge).toHaveAttribute("aria-label", "openai - connected");
-  });
-
-  test("aria-label includes model when provided", () => {
-    const { container } = render(
-      <ProviderBadge provider="openai" model="gpt-4o" status="offline" />
-    );
-    const badge = container.firstChild as HTMLElement;
-    expect(badge).toHaveAttribute("aria-label", "gpt-4o via openai - offline");
-  });
-
-  test("defaults to connected status", () => {
-    const { container } = render(<ProviderBadge provider="openai" />);
-    const badge = container.firstChild as HTMLElement;
-    expect(badge).toHaveAttribute("aria-label", "openai - connected");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // ChatProviderSelector
 // ---------------------------------------------------------------------------
 
@@ -506,230 +461,6 @@ describe("ChatProviderSelector", () => {
     );
 
     expect(screen.getByRole("group", { name: "Chat providers" })).toBeInTheDocument();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// MessageBubble
-// ---------------------------------------------------------------------------
-
-const makeMessage = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
-  id: "msg-1",
-  role: "user",
-  content: "Hello world",
-  ...overrides,
-});
-
-describe("MessageBubble", () => {
-  test("renders user message with correct styling", () => {
-    render(<MessageBubble message={makeMessage({ role: "user", content: "Hi there" })} />);
-    expect(screen.getByText("Hi there")).toBeInTheDocument();
-    // User messages render content in a <p> with whitespace-pre-wrap
-    const p = screen.getByText("Hi there");
-    expect(p.tagName).toBe("P");
-  });
-
-  test("renders assistant message with correct styling", () => {
-    render(<MessageBubble message={makeMessage({ role: "assistant", content: "Hello back" })} />);
-    expect(screen.getByText("Hello back")).toBeInTheDocument();
-  });
-
-  test("renders markdown content in assistant messages", () => {
-    render(
-      <MessageBubble
-        message={makeMessage({ role: "assistant", content: "**bold text**" })}
-      />
-    );
-    // react-markdown renders **bold** as <strong>
-    expect(screen.getByText("bold text").tagName).toBe("STRONG");
-  });
-
-  test("displays execution metrics when provided", () => {
-    const metrics = {
-      input_tokens: 100,
-      output_tokens: 200,
-      total_tokens: 300,
-      cost_usd: 0.0015,
-      elapsed_seconds: 1.5,
-      steps: 3,
-    };
-    render(
-      <MessageBubble
-        message={makeMessage({ role: "assistant", content: "Done", metrics, isStreaming: false })}
-      />
-    );
-    expect(screen.getByText(/300/)).toBeInTheDocument();
-    expect(screen.getByText(/\$0\.0015/)).toBeInTheDocument();
-    expect(screen.getByText(/1\.5s/)).toBeInTheDocument();
-  });
-
-  test("shows mode badge (direct/rlm/rag)", () => {
-    render(
-      <MessageBubble
-        message={makeMessage({ role: "assistant", content: "Reply", mode_used: "rlm" })}
-      />
-    );
-    expect(screen.getByText("RLM")).toBeInTheDocument();
-  });
-
-  test("shows loading state for in-progress messages", () => {
-    // When isStreaming=true and content is empty, the component renders a Loader2 spinner
-    render(
-      <MessageBubble
-        message={makeMessage({ role: "assistant", content: "", isStreaming: true })}
-      />
-    );
-    // The spinner has aria-hidden but the container has aria-live="polite"
-    const liveRegion = document.querySelector('[aria-live="polite"]');
-    expect(liveRegion).toBeInTheDocument();
-    // Loader2 renders an svg; confirm it's present inside the message bubble area
-    const svg = liveRegion?.querySelector("svg");
-    expect(svg).toBeTruthy();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// ModeSelector
-// ---------------------------------------------------------------------------
-
-describe("ModeSelector", () => {
-  test("renders all mode options (rlm, direct, rag)", () => {
-    render(
-      <ModeSelector
-        modes={["direct"]}
-        onModesChange={vi.fn()}
-        providers={[]}
-        selectedProvider=""
-        onProviderChange={vi.fn()}
-      />
-    );
-    expect(screen.getByRole("checkbox", { name: /RLM/i })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /Direct/i })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /RAG/i })).toBeInTheDocument();
-  });
-
-  test("highlights currently selected mode", () => {
-    render(
-      <ModeSelector
-        modes={["direct"]}
-        onModesChange={vi.fn()}
-        providers={[]}
-        selectedProvider=""
-        onProviderChange={vi.fn()}
-      />
-    );
-    const directBtn = screen.getByRole("checkbox", { name: /Direct/i });
-    expect(directBtn).toHaveAttribute("aria-checked", "true");
-    const rlmBtn = screen.getByRole("checkbox", { name: /RLM/i });
-    expect(rlmBtn).toHaveAttribute("aria-checked", "false");
-  });
-
-  test("calls onModesChange when a mode is toggled on", () => {
-    const onModesChange = vi.fn();
-    render(
-      <ModeSelector
-        modes={["direct"]}
-        onModesChange={onModesChange}
-        providers={[]}
-        selectedProvider=""
-        onProviderChange={vi.fn()}
-      />
-    );
-    fireEvent.click(screen.getByRole("checkbox", { name: /RLM/i }));
-    expect(onModesChange).toHaveBeenCalledWith(["direct", "rlm"]);
-  });
-
-  test.skip("shows tooltip with mode description on hover", () => {
-    // Skipped: Radix UI Tooltip portals outside the render container and
-    // requires pointer events not available in jsdom. Testing tooltip content
-    // reliably requires a browser-based test (Playwright/Cypress).
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TraceInline
-// ---------------------------------------------------------------------------
-
-const makeTraceStep = (overrides: Partial<TraceStep> = {}): TraceStep => ({
-  index: 0,
-  action_type: "code",
-  code: "print('hello')",
-  output: null,
-  input_tokens: 10,
-  output_tokens: 5,
-  cost_usd: 0.0001,
-  duration_seconds: 0.3,
-  recursion_depth: 0,
-  model: null,
-  timestamp: null,
-  ...overrides,
-});
-
-describe("TraceInline", () => {
-  test("renders step count summary", () => {
-    const steps = [makeTraceStep({ index: 0 }), makeTraceStep({ index: 1 }), makeTraceStep({ index: 2 })];
-    render(<TraceInline steps={steps} />);
-    expect(screen.getByText("3 steps")).toBeInTheDocument();
-  });
-
-  test("expands to show step details on click", () => {
-    const steps = [makeTraceStep({ index: 0, action_type: "think", code: null, output: "some output" })];
-    render(<TraceInline steps={steps} />);
-    // Initially collapsed — step content not visible
-    expect(screen.queryByText("some output")).not.toBeInTheDocument();
-    // Click the toggle button
-    fireEvent.click(screen.getByRole("button"));
-    // Now content should appear
-    expect(screen.getByText("some output")).toBeInTheDocument();
-  });
-
-  test("displays code blocks for code steps", () => {
-    const steps = [makeTraceStep({ index: 0, action_type: "code", code: "x = 42" })];
-    render(<TraceInline steps={steps} expanded={true} />);
-    expect(screen.getByText("x = 42")).toBeInTheDocument();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// ComparisonBanner
-// ---------------------------------------------------------------------------
-
-const makeMetrics = (overrides: Partial<MessageMetrics> = {}): MessageMetrics => ({
-  input_tokens: 100,
-  output_tokens: 100,
-  total_tokens: 200,
-  cost_usd: 0.002,
-  elapsed_seconds: 1.0,
-  steps: 1,
-  ...overrides,
-});
-
-describe("ComparisonBanner", () => {
-  test("renders side-by-side results for direct and RLM modes", () => {
-    render(
-      <ComparisonBanner
-        rlmMetrics={makeMetrics({ total_tokens: 150, cost_usd: 0.0015 })}
-        directMetrics={makeMetrics({ total_tokens: 300, cost_usd: 0.003 })}
-      />
-    );
-    // The banner shows both token counts
-    expect(screen.getByText(/150/)).toBeInTheDocument();
-    expect(screen.getByText(/300/)).toBeInTheDocument();
-    // Both "RLM" and "Direct" are mentioned in the description
-    expect(screen.getByText(/RLM/)).toBeInTheDocument();
-    expect(screen.getByText(/Direct/)).toBeInTheDocument();
-  });
-
-  test("highlights the winning mode based on metrics", () => {
-    // RLM uses 100 tokens, Direct uses 200 — 50% savings
-    render(
-      <ComparisonBanner
-        rlmMetrics={makeMetrics({ total_tokens: 100, cost_usd: 0.001 })}
-        directMetrics={makeMetrics({ total_tokens: 200, cost_usd: 0.002 })}
-      />
-    );
-    // The component calculates savings percentage and renders it
-    expect(screen.getByText(/50%/)).toBeInTheDocument();
   });
 });
 

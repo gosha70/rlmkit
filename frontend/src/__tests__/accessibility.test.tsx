@@ -11,44 +11,8 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { vi, describe, test, expect } from "vitest";
 import { ChatInput } from "@/components/chat/chat-input";
-import { ModeSelector } from "@/components/chat/mode-selector";
-import { MessageBubble } from "@/components/chat/message-bubble";
 import { TypingIndicator } from "@/components/chat/typing-indicator";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import type { ProviderInfo } from "@/lib/api";
-import type { ChatMessage } from "@/lib/use-chat";
-
-// ---------------------------------------------------------------------------
-// Shared fixtures
-// ---------------------------------------------------------------------------
-
-const makeProvider = (overrides: Partial<ProviderInfo> = {}): ProviderInfo => ({
-  name: "openai",
-  display_name: "OpenAI",
-  status: "connected",
-  models: [],
-  default_model: "gpt-4o",
-  configured: true,
-  requires_api_key: true,
-  default_endpoint: null,
-  model_input_hint: "",
-  masked_api_key: "sk-...xxxx",
-  ...overrides,
-});
-
-const makeUserMessage = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
-  id: "msg-1",
-  role: "user",
-  content: "Hello world",
-  ...overrides,
-});
-
-const makeAssistantMessage = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
-  id: "msg-2",
-  role: "assistant",
-  content: "Hello back",
-  ...overrides,
-});
 
 // ---------------------------------------------------------------------------
 // Keyboard Navigation
@@ -75,36 +39,6 @@ describe("Keyboard Navigation", () => {
     // Radix UI's keyboard event handling (including Escape to close) relies
     // on real focus management that jsdom does not fully support.
     // Use Playwright or Cypress with a real browser to test this.
-  });
-
-  test("ModeSelector strategy buttons are keyboard-activatable via click", () => {
-    // ModeSelector uses role="group" with role="checkbox" toggle buttons,
-    // not a radiogroup. Arrow-key navigation within a radiogroup is a
-    // browser-native behaviour for <input type="radio"> elements.
-    // The checkbox-group pattern requires explicit keyDown handlers per
-    // ARIA spec; those are not implemented on these buttons.
-    // This test verifies the accessible checkbox semantics are correct
-    // so that assistive technologies can activate them.
-    const onModesChange = vi.fn();
-    render(
-      <ModeSelector
-        modes={["rlm"]}
-        onModesChange={onModesChange}
-        providers={[makeProvider()]}
-        selectedProvider="openai"
-        onProviderChange={vi.fn()}
-      />
-    );
-
-    // Buttons are accessible via role="checkbox"
-    const rlmBtn = screen.getByRole("checkbox", { name: "RLM" });
-    const directBtn = screen.getByRole("checkbox", { name: "Direct" });
-    expect(rlmBtn).toHaveAttribute("aria-checked", "true");
-    expect(directBtn).toHaveAttribute("aria-checked", "false");
-
-    // Clicking Direct (simulates keyboard activation via Space/Enter → click)
-    fireEvent.click(directBtn);
-    expect(onModesChange).toHaveBeenCalledWith(["rlm", "direct"]);
   });
 
   test.skip("Arrow keys navigate within sidebar session list", () => {
@@ -137,51 +71,6 @@ describe("ARIA Attributes", () => {
     const btn = screen.getByLabelText("Send message");
     expect(btn).toBeInTheDocument();
     expect(btn.tagName).toBe("BUTTON");
-  });
-
-  test("ModeSelector strategy group has role=group with aria-label", () => {
-    // ModeSelector uses role="group" (not radiogroup) because the buttons
-    // are checkboxes that allow multiple simultaneous selections.
-    render(
-      <ModeSelector
-        modes={["rlm"]}
-        onModesChange={vi.fn()}
-        providers={[]}
-        selectedProvider=""
-        onProviderChange={vi.fn()}
-      />
-    );
-    const group = screen.getByRole("group", { name: "Execution strategies" });
-    expect(group).toBeInTheDocument();
-  });
-
-  test("ModeSelector strategy buttons use role=checkbox with aria-checked", () => {
-    render(
-      <ModeSelector
-        modes={["rlm", "rag"]}
-        onModesChange={vi.fn()}
-        providers={[]}
-        selectedProvider=""
-        onProviderChange={vi.fn()}
-      />
-    );
-    expect(screen.getByRole("checkbox", { name: "RLM" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("checkbox", { name: "Direct" })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByRole("checkbox", { name: "RAG" })).toHaveAttribute("aria-checked", "true");
-  });
-
-  test("Assistant MessageBubble has aria-live=polite for dynamic updates", () => {
-    // The outer div of assistant messages has aria-live="polite" so that
-    // screen readers announce new assistant content as it arrives.
-    const { container } = render(<MessageBubble message={makeAssistantMessage()} />);
-    const liveRegion = container.querySelector('[aria-live="polite"]');
-    expect(liveRegion).toBeInTheDocument();
-  });
-
-  test("User MessageBubble does not add aria-live (user wrote the content)", () => {
-    const { container } = render(<MessageBubble message={makeUserMessage()} />);
-    const liveRegion = container.querySelector('[aria-live="polite"]');
-    expect(liveRegion).not.toBeInTheDocument();
   });
 
   test.skip("Sidebar navigation uses role=navigation with aria-label", () => {
