@@ -57,7 +57,7 @@ _DEFAULT_ALLOWED_MODULES = frozenset(
 )
 
 
-def _make_safe_import(allowed_modules: frozenset[str]):
+def _make_safe_import(allowed_modules: frozenset[str]) -> Any:
     """Return a restricted ``__import__`` that only allows *allowed_modules*."""
     import builtins as _builtins
 

@@ -94,7 +94,7 @@ class DockerSandboxAdapter:
         """
         from rlmkit.envs.sandbox import DockerExecutor
 
-        return DockerExecutor.is_available()
+        return bool(DockerExecutor.is_available())
 
     def set_variable(self, name: str, value: Any) -> None:
         """Inject a variable into the sandbox namespace.

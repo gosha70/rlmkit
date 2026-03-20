@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 from rlmkit.application.dto import LLMResponseDTO
 
@@ -15,7 +16,7 @@ class OpenAIAdapter:
         client: An existing ``OpenAIClient`` instance.
     """
 
-    def __init__(self, client: object) -> None:
+    def __init__(self, client: Any) -> None:
         self._client = client
 
     def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
@@ -48,7 +49,7 @@ class OpenAIAdapter:
     def count_tokens(self, text: str) -> int:
         """Estimate tokens using the wrapped client or heuristic."""
         if hasattr(self._client, "estimate_tokens"):
-            return self._client.estimate_tokens(text)
+            return int(self._client.estimate_tokens(text))
         return max(1, len(text) // 4)
 
     def get_pricing(self) -> dict[str, float]:

@@ -4,7 +4,7 @@ and VectorStore to implement StoragePort.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from rlmkit.storage.conversation_store import ConversationStore
 from rlmkit.storage.database import Database
@@ -36,21 +36,24 @@ class SQLiteStorageAdapter:
         metadata: dict[str, Any] | None = None,
     ) -> str:
         """Create a new conversation and return its ID."""
-        return self._conversations.create_conversation(
-            name=name,
-            mode=mode,
-            provider=provider,
-            model=model,
-            metadata=metadata,
+        return cast(
+            str,
+            self._conversations.create_conversation(
+                name=name,
+                mode=mode,
+                provider=provider,
+                model=model,
+                metadata=metadata,
+            ),
         )
 
     def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         """Retrieve a conversation by ID."""
-        return self._conversations.get_conversation(conversation_id)
+        return cast("dict[str, Any] | None", self._conversations.get_conversation(conversation_id))
 
     def list_conversations(self) -> list[dict[str, Any]]:
         """List all conversations ordered by most recently updated."""
-        return self._conversations.list_conversations()
+        return cast("list[dict[str, Any]]", self._conversations.list_conversations())
 
     def delete_conversation(self, conversation_id: str) -> None:
         """Delete a conversation and all its messages."""
@@ -60,11 +63,11 @@ class SQLiteStorageAdapter:
 
     def save_file_context(self, content: str, filename: str | None = None) -> str:
         """Store file content (deduplicated by hash)."""
-        return self._conversations.save_file_context(content, filename)
+        return cast(str, self._conversations.save_file_context(content, filename))
 
     def get_file_context(self, content_hash: str) -> str | None:
         """Retrieve file content by its hash."""
-        return self._conversations.get_file_context(content_hash)
+        return cast("str | None", self._conversations.get_file_context(content_hash))
 
     # -- Vector operations --
 
@@ -77,13 +80,13 @@ class SQLiteStorageAdapter:
         metadata: dict[str, Any] | None = None,
     ) -> int:
         """Store text chunks with their embeddings."""
-        return self._vectors.add_chunks(
+        return cast(int, self._vectors.add_chunks(
             collection=collection,
             chunks=chunks,
             embeddings=embeddings,
             source_id=source_id,
             metadata=metadata,
-        )
+        ))
 
     def search_chunks(
         self,
@@ -92,11 +95,11 @@ class SQLiteStorageAdapter:
         top_k: int = 5,
     ) -> list[tuple[float, str, str]]:
         """Search for similar chunks by cosine similarity."""
-        return self._vectors.search(
+        return cast("list[tuple[float, str, str]]", self._vectors.search(
             collection=collection,
             query_embedding=query_embedding,
             top_k=top_k,
-        )
+        ))
 
     def close(self) -> None:
         """Close the underlying database connection."""

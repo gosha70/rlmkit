@@ -28,11 +28,11 @@ class RunDirectUseCase:
         """Compute cost using LiteLLM's completion_cost (handles prefix stripping)."""
         try:
             if hasattr(self._llm, "get_completion_cost"):
-                return self._llm.get_completion_cost(input_tokens, output_tokens)
+                return float(self._llm.get_completion_cost(input_tokens, output_tokens))
             pricing = self._llm.get_pricing()
             input_cost = input_tokens * pricing.get("input_cost_per_1m", 0) / 1_000_000
             output_cost = output_tokens * pricing.get("output_cost_per_1m", 0) / 1_000_000
-            return input_cost + output_cost
+            return float(input_cost + output_cost)
         except Exception:
             return 0.0
 
