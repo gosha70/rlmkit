@@ -5,6 +5,10 @@ Analysis Page - Metrics dashboard comparing RLM vs Direct LLM
 Page 2 of RLM Studio: Performance analysis and recommendations
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -15,7 +19,7 @@ from rlmkit.ui.components.session_summary import render_session_summary
 from rlmkit.ui.utils import format_memory
 
 
-def render_analysis_page():
+def render_analysis_page() -> None:
     """Render the analysis dashboard page."""
 
     # Mark this as the analysis page in session state
@@ -64,7 +68,7 @@ def render_analysis_page():
     render_quality_metrics()
 
 
-def render_summary_cards():
+def render_summary_cards() -> None:
     """Render summary metric cards at top of page."""
 
     latest_message = get_latest_message()
@@ -160,7 +164,7 @@ def render_summary_cards():
             st.metric("User Ratings", "Not rated", "Rate in Chat page")
 
 
-def render_metrics_comparison():
+def render_metrics_comparison() -> None:
     """Render detailed metrics comparison table."""
 
     st.subheader("📋 Detailed Metrics Comparison")
@@ -242,7 +246,7 @@ def render_metrics_comparison():
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
-def render_cost_analysis():
+def render_cost_analysis() -> None:
     """Render cost breakdown and comparison charts."""
 
     st.subheader("💰 Cost Analysis")
@@ -337,7 +341,7 @@ def render_cost_analysis():
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_quality_metrics():
+def render_quality_metrics() -> None:
     """Render quality metrics and recommendations."""
 
     st.subheader("⭐ Quality Metrics & Recommendations")
@@ -476,10 +480,10 @@ def render_quality_metrics():
 class MessageWrapper:
     """Wrapper to access dict message data with attribute syntax."""
 
-    def __init__(self, data):
+    def __init__(self, data: dict) -> None:
         self._data = data
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         value = self._data.get(name)
         # If value is a dict, wrap it too
         if isinstance(value, dict):
@@ -487,7 +491,7 @@ class MessageWrapper:
         return value
 
 
-def get_latest_message():
+def get_latest_message() -> MessageWrapper | None:
     """Get the latest message with metrics from chat history."""
 
     messages = st.session_state.get("chat_messages", [])

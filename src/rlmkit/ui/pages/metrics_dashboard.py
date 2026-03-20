@@ -422,7 +422,7 @@ def _chart_performance_radar(a: SessionAnalytics) -> None:
     direct_avg_time = sum(direct_times) / len(direct_times) if direct_times else 0
 
     # Normalize: higher is better, so invert metrics where lower is better
-    def _norm_inv(val, max_val):
+    def _norm_inv(val: float, max_val: float) -> float:
         """1 = best, 0 = worst. Lower original value → higher score."""
         if max_val == 0:
             return 0.5

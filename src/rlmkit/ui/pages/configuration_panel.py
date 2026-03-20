@@ -36,7 +36,7 @@ from rlmkit.ui.services.secret_store import (
 )
 
 
-def init_config_session_state():
+def init_config_session_state() -> None:
     """Initialize session state for configuration page."""
     if "llm_manager" not in st.session_state:
         config_dir = Path.home() / ".rlmkit"
@@ -46,7 +46,7 @@ def init_config_session_state():
         st.session_state.refresh_providers = False
 
 
-def render_provider_selection():
+def render_provider_selection() -> None:
     """Initialize selected provider if not already set."""
     manager = st.session_state.llm_manager
     providers = manager.list_providers()
@@ -55,7 +55,7 @@ def render_provider_selection():
         st.session_state.selected_provider = providers[0] if providers else None
 
 
-def render_provider_list():
+def render_provider_list() -> None:
     """Display configured providers as cards with Test / Set default / Delete actions."""
     st.subheader("Configured Providers")
 
@@ -120,7 +120,7 @@ def render_provider_list():
                         st.rerun()
 
 
-def render_add_provider_form():
+def render_add_provider_form() -> None:
     """Display form for adding new provider with simplified API key setup."""
     st.subheader("➕ Add New Provider")
 
@@ -260,7 +260,7 @@ def render_add_provider_form():
                 st.error(f"❌ Connection test failed:\n\n{error_msg}")
 
 
-def render_pricing_info():
+def render_pricing_info() -> None:
     """Display pricing information inside a collapsible expander."""
     with st.expander("Pricing reference (optional)", expanded=False):
         st.caption("Prices may drift; update in code/data if needed.")
@@ -294,7 +294,7 @@ def render_pricing_info():
                         st.write(f"_{costs['per']}_")
 
 
-def render_config_sidebar():
+def render_config_sidebar() -> None:
     """Minimal sidebar - Streamlit handles navigation automatically."""
     # No additional sidebar content - Streamlit shows navigation by default
     pass
@@ -350,7 +350,7 @@ def _build_profile_from_session(name: str) -> RunProfile:
     )
 
 
-def render_execution_settings():
+def render_execution_settings() -> None:
     """Render execution mode and budget limits in main content area."""
     st.subheader("Run Settings")
 
@@ -588,7 +588,7 @@ def render_execution_settings():
         _render_system_prompt_settings()
 
 
-def _render_system_prompt_settings():
+def _render_system_prompt_settings() -> None:
     """Render system prompt configuration controls."""
     # Fix text area resize handle clipping
     st.markdown(
@@ -720,7 +720,7 @@ def _render_system_prompt_settings():
         )
 
 
-def _render_rag_settings_inline():
+def _render_rag_settings_inline() -> None:
     """Render RAG settings inline within Run Settings (no subheader)."""
     if "rag_config" not in st.session_state or st.session_state.rag_config is None:
         st.session_state.rag_config = RAGConfig()
@@ -779,7 +779,7 @@ def _render_rag_settings_inline():
     )
 
 
-def main():
+def main() -> None:
     """Main configuration page."""
     # Mark this as the configuration page in session state
     st.session_state.current_nav_page = "configuration"

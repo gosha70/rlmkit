@@ -25,7 +25,7 @@ from rlmkit.ui.services import (
 class TestDataModels:
     """Test data class definitions."""
 
-    def test_response_creation(self):
+    def test_response_creation(self) -> None:
         """Test Response dataclass."""
         response = Response(
             content="Hello, world!",
@@ -34,7 +34,7 @@ class TestDataModels:
         assert response.content == "Hello, world!"
         assert response.stop_reason == "stop"
 
-    def test_execution_metrics_creation(self):
+    def test_execution_metrics_creation(self) -> None:
         """Test ExecutionMetrics dataclass."""
         metrics = ExecutionMetrics(
             input_tokens=100,
@@ -51,7 +51,7 @@ class TestDataModels:
         assert metrics.total_tokens == 150
         assert metrics.success is True
 
-    def test_chat_message_creation(self):
+    def test_chat_message_creation(self) -> None:
         """Test ChatMessage dataclass."""
         message = ChatMessage(
             user_query="What is RLM?",
@@ -62,7 +62,7 @@ class TestDataModels:
         assert message.id is not None
         assert message.timestamp is not None
 
-    def test_chat_message_has_responses(self):
+    def test_chat_message_has_responses(self) -> None:
         """Test response checking methods."""
         message = ChatMessage(user_query="Test")
         assert not message.has_rlm_response()
@@ -73,7 +73,7 @@ class TestDataModels:
         assert message.has_rlm_response()
         assert not message.has_direct_response()
 
-    def test_llm_provider_config_creation(self):
+    def test_llm_provider_config_creation(self) -> None:
         """Test LLMProviderConfig dataclass."""
         config = LLMProviderConfig(
             provider="openai",
@@ -86,7 +86,7 @@ class TestDataModels:
         assert config.is_configured is True  # Has model and env var
         assert config.is_ready is False  # Not ready until test_successful=True
 
-    def test_session_metrics_creation(self):
+    def test_session_metrics_creation(self) -> None:
         """Test SessionMetrics dataclass."""
         metrics = SessionMetrics(
             total_messages=5,
@@ -100,17 +100,17 @@ class TestDataModels:
 class TestChatManager:
     """Test ChatManager service."""
 
-    def test_chat_manager_init(self):
+    def test_chat_manager_init(self) -> None:
         """Test ChatManager initialization."""
-        session = {}
+        session: dict[str, object] = {}
         manager = ChatManager(session)
         assert "messages" in session
         assert "conversation_id" in session
         assert len(manager.get_messages()) == 0
 
-    def test_get_messages(self):
+    def test_get_messages(self) -> None:
         """Test getting messages."""
-        session = {}
+        session: dict[str, object] = {}
         manager = ChatManager(session)
         messages = manager.get_messages()
         assert isinstance(messages, list)
@@ -120,13 +120,13 @@ class TestChatManager:
 class TestMemoryMonitor:
     """Test MemoryMonitor service."""
 
-    def test_memory_monitor_init(self):
+    def test_memory_monitor_init(self) -> None:
         """Test MemoryMonitor initialization."""
         monitor = MemoryMonitor()
         assert monitor.baseline_memory_mb >= 0
         assert monitor.peak_memory_mb >= 0
 
-    def test_memory_capture(self):
+    def test_memory_capture(self) -> None:
         """Test memory capture."""
         monitor = MemoryMonitor()
         monitor.current_mb()
@@ -142,13 +142,13 @@ class TestMemoryMonitor:
 class TestMetricsCollector:
     """Test MetricsCollector service."""
 
-    def test_metrics_collector_init(self):
+    def test_metrics_collector_init(self) -> None:
         """Test MetricsCollector initialization."""
         collector = MetricsCollector()
         assert "openai" in collector.provider_pricing
         assert "anthropic" in collector.provider_pricing
 
-    def test_add_provider_pricing(self):
+    def test_add_provider_pricing(self) -> None:
         """Test adding provider pricing."""
         collector = MetricsCollector()
         collector.add_provider_pricing(
@@ -160,7 +160,7 @@ class TestMetricsCollector:
         assert "custom" in collector.provider_pricing
         assert "custom-model" in collector.provider_pricing["custom"]
 
-    def test_calculate_cost_openai_gpt4(self):
+    def test_calculate_cost_openai_gpt4(self) -> None:
         """Test cost calculation for OpenAI GPT-4."""
         collector = MetricsCollector()
         # GPT-4: input $0.03/1k, output $0.06/1k
@@ -170,7 +170,7 @@ class TestMetricsCollector:
         cost = collector._calculate_cost(1000, 500, "openai", "gpt-4")
         assert abs(cost - 0.06) < 0.0001
 
-    def test_calculate_cost_anthropic_haiku(self):
+    def test_calculate_cost_anthropic_haiku(self) -> None:
         """Test cost calculation for Anthropic Claude Haiku."""
         collector = MetricsCollector()
         # Claude Haiku 4.5: input $0.008/1k, output $0.024/1k
@@ -180,19 +180,19 @@ class TestMetricsCollector:
         cost = collector._calculate_cost(1000, 1000, "anthropic", "claude-haiku-4-5-20251001")
         assert abs(cost - 0.032) < 0.001
 
-    def test_calculate_cost_unknown_provider(self):
+    def test_calculate_cost_unknown_provider(self) -> None:
         """Test cost calculation with unknown provider."""
         collector = MetricsCollector()
         cost = collector._calculate_cost(1000, 500, "unknown-provider", "model")
         assert cost == 0.0
 
-    def test_calculate_cost_unknown_model(self):
+    def test_calculate_cost_unknown_model(self) -> None:
         """Test cost calculation with unknown model."""
         collector = MetricsCollector()
         cost = collector._calculate_cost(1000, 500, "openai", "unknown-model")
         assert cost == 0.0
 
-    def test_cost_breakdown_openai_gpt4(self):
+    def test_cost_breakdown_openai_gpt4(self) -> None:
         """Test cost breakdown for OpenAI GPT-4."""
         collector = MetricsCollector()
         # GPT-4: input $0.03/1k, output $0.06/1k
@@ -202,7 +202,7 @@ class TestMetricsCollector:
         assert abs(breakdown["input"] - 0.03) < 0.0001
         assert abs(breakdown["output"] - 0.03) < 0.0001
 
-    def test_cost_breakdown_structure(self):
+    def test_cost_breakdown_structure(self) -> None:
         """Test cost breakdown returns correct structure."""
         collector = MetricsCollector()
         breakdown = collector._cost_breakdown(1000, 500, "openai", "gpt-4")
@@ -212,14 +212,14 @@ class TestMetricsCollector:
         assert isinstance(breakdown["input"], float)
         assert isinstance(breakdown["output"], float)
 
-    def test_cost_breakdown_unknown_provider(self):
+    def test_cost_breakdown_unknown_provider(self) -> None:
         """Test cost breakdown with unknown provider."""
         collector = MetricsCollector()
         breakdown = collector._cost_breakdown(1000, 500, "unknown", "model")
         assert breakdown["input"] == 0.0
         assert breakdown["output"] == 0.0
 
-    def test_cost_calculation_consistency(self):
+    def test_cost_calculation_consistency(self) -> None:
         """Test that _calculate_cost equals sum of breakdown."""
         collector = MetricsCollector()
         input_tokens = 1234
@@ -237,19 +237,19 @@ class TestMetricsCollector:
 class TestLLMConfigManager:
     """Test LLMConfigManager service."""
 
-    def test_llm_config_manager_init(self, tmp_path):
+    def test_llm_config_manager_init(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test LLMConfigManager initialization."""
         manager = LLMConfigManager(config_dir=tmp_path)
         assert manager.config_dir.exists()
         assert len(manager.list_providers()) == 0
 
-    def test_list_providers(self, tmp_path):
+    def test_list_providers(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test listing providers."""
         manager = LLMConfigManager(config_dir=tmp_path)
         providers = manager.list_providers()
         assert isinstance(providers, list)
 
-    def test_test_connection_openai_valid(self, tmp_path):
+    def test_test_connection_openai_valid(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test connection to OpenAI with valid key."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Valid OpenAI key format (sk-...) and valid model
@@ -260,7 +260,7 @@ class TestLLMConfigManager:
         )
         assert success is True
 
-    def test_test_connection_openai_invalid_key_format(self, tmp_path):
+    def test_test_connection_openai_invalid_key_format(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test OpenAI connection with invalid key format."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Invalid key format (doesn't start with sk-)
@@ -271,7 +271,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_openai_invalid_model(self, tmp_path):
+    def test_test_connection_openai_invalid_model(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test OpenAI connection with invalid model."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Invalid model name
@@ -282,7 +282,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_openai_gpt35(self, tmp_path):
+    def test_test_connection_openai_gpt35(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test OpenAI connection with GPT-3.5."""
         manager = LLMConfigManager(config_dir=tmp_path)
         success = manager.test_connection(
@@ -292,7 +292,7 @@ class TestLLMConfigManager:
         )
         assert success is True
 
-    def test_test_connection_anthropic_valid(self, tmp_path):
+    def test_test_connection_anthropic_valid(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test connection to Anthropic with valid key."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Valid Anthropic key format (sk-ant-...)
@@ -303,7 +303,7 @@ class TestLLMConfigManager:
         )
         assert success is True
 
-    def test_test_connection_anthropic_invalid_key_format(self, tmp_path):
+    def test_test_connection_anthropic_invalid_key_format(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test Anthropic connection with invalid key format."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Invalid Anthropic key format
@@ -314,7 +314,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_anthropic_invalid_model(self, tmp_path):
+    def test_test_connection_anthropic_invalid_model(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test Anthropic connection with invalid model."""
         manager = LLMConfigManager(config_dir=tmp_path)
         success = manager.test_connection(
@@ -324,7 +324,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_ollama_valid(self, tmp_path):
+    def test_test_connection_ollama_valid(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test connection to Ollama with valid model."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Ollama doesn't need API key
@@ -335,7 +335,7 @@ class TestLLMConfigManager:
         )
         assert success is True
 
-    def test_test_connection_ollama_no_model(self, tmp_path):
+    def test_test_connection_ollama_no_model(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test Ollama connection without model."""
         manager = LLMConfigManager(config_dir=tmp_path)
         success = manager.test_connection(
@@ -345,7 +345,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_lmstudio_valid(self, tmp_path):
+    def test_test_connection_lmstudio_valid(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test connection to LMStudio with valid model."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # LMStudio doesn't need API key
@@ -356,7 +356,7 @@ class TestLLMConfigManager:
         )
         assert success is True
 
-    def test_test_connection_unknown_provider(self, tmp_path):
+    def test_test_connection_unknown_provider(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test connection to unknown provider."""
         manager = LLMConfigManager(config_dir=tmp_path)
         success = manager.test_connection(
@@ -366,7 +366,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_no_api_key_openai(self, tmp_path):
+    def test_test_connection_no_api_key_openai(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test OpenAI connection without API key."""
         manager = LLMConfigManager(config_dir=tmp_path)
         success = manager.test_connection(
@@ -377,7 +377,7 @@ class TestLLMConfigManager:
         )
         assert success is False
 
-    def test_test_connection_env_var_fallback(self, tmp_path, monkeypatch):
+    def test_test_connection_env_var_fallback(self, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
         """Test using environment variable for API key."""
         manager = LLMConfigManager(config_dir=tmp_path)
         # Set environment variable
@@ -391,7 +391,7 @@ class TestLLMConfigManager:
         )
         assert success is True
 
-    def test_test_connection_returns_bool(self, tmp_path):
+    def test_test_connection_returns_bool(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         """Test that test_connection always returns bool."""
         manager = LLMConfigManager(config_dir=tmp_path)
         result = manager.test_connection("openai", "gpt-4", "sk-key")
@@ -407,7 +407,7 @@ class TestChatManagerDirectExecution:
     """Test ChatManager._execute_direct() method."""
 
     @pytest.mark.asyncio
-    async def test_execute_direct_returns_dict(self):
+    async def test_execute_direct_returns_dict(self) -> None:
         """Test that _execute_direct returns proper dict structure."""
         manager = ChatManager()
         result = await manager._execute_direct("What is RLM?")
@@ -418,8 +418,7 @@ class TestChatManagerDirectExecution:
         assert "trace" not in result  # Direct has no trace
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_execute_direct_response_structure(self):
+    async def test_execute_direct_response_structure(self, mock_execute_methods: None) -> None:
         """Test Response object from direct execution."""
         manager = ChatManager()
         result = await manager._execute_direct("Summarize this")
@@ -430,8 +429,7 @@ class TestChatManagerDirectExecution:
         assert response.stop_reason == "stop"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_execute_direct_metrics_structure(self):
+    async def test_execute_direct_metrics_structure(self, mock_execute_methods: None) -> None:
         """Test ExecutionMetrics from direct execution."""
         manager = ChatManager()
         result = await manager._execute_direct("Test query")
@@ -447,7 +445,7 @@ class TestChatManagerDirectExecution:
         assert metrics.execution_type == "direct"
 
     @pytest.mark.asyncio
-    async def test_execute_direct_metrics_breakdown(self):
+    async def test_execute_direct_metrics_breakdown(self) -> None:
         """Test cost breakdown in direct metrics."""
         manager = ChatManager()
         result = await manager._execute_direct("Test")
@@ -459,8 +457,7 @@ class TestChatManagerDirectExecution:
         assert metrics.cost_breakdown["output"] >= 0
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_execute_direct_faster_than_rlm(self):
+    async def test_execute_direct_faster_than_rlm(self, mock_execute_methods: None) -> None:
         """Test that direct execution is faster than RLM."""
 
         manager = ChatManager()
@@ -483,8 +480,7 @@ class TestChatManagerDirectExecution:
         assert direct_metrics.execution_time_seconds < rlm_metrics.execution_time_seconds
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_execute_direct_less_tokens_than_rlm(self):
+    async def test_execute_direct_less_tokens_than_rlm(self, mock_execute_methods: None) -> None:
         """Test that direct execution uses fewer tokens than RLM."""
         manager = ChatManager()
 
@@ -498,8 +494,7 @@ class TestChatManagerDirectExecution:
         assert direct_metrics.total_tokens < rlm_metrics.total_tokens
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_execute_direct_success(self):
+    async def test_execute_direct_success(self, mock_execute_methods: None) -> None:
         """Test that direct execution marks success."""
         manager = ChatManager()
         result = await manager._execute_direct("Test")
@@ -512,7 +507,7 @@ class TestChatManagerDirectExecution:
 class TestChatManagerComparison:
     """Test ChatManager._compare_metrics() method."""
 
-    def test_compare_metrics_returns_comparison_metrics(self):
+    def test_compare_metrics_returns_comparison_metrics(self) -> None:
         """Test that _compare_metrics returns ComparisonMetrics."""
         manager = ChatManager()
 
@@ -547,7 +542,7 @@ class TestChatManagerComparison:
         comparison = manager._compare_metrics(rlm_metrics, direct_metrics)
         assert isinstance(comparison, ComparisonMetrics)
 
-    def test_compare_metrics_cost_delta(self):
+    def test_compare_metrics_cost_delta(self) -> None:
         """Test cost delta calculation."""
         manager = ChatManager()
 
@@ -585,7 +580,7 @@ class TestChatManagerComparison:
         assert comparison.rlm_cost_usd == 0.050
         assert comparison.direct_cost_usd == 0.015
 
-    def test_compare_metrics_time_delta(self):
+    def test_compare_metrics_time_delta(self) -> None:
         """Test time delta calculation."""
         manager = ChatManager()
 
@@ -623,7 +618,7 @@ class TestChatManagerComparison:
         assert comparison.rlm_time_seconds == 1.6
         assert comparison.direct_time_seconds == 0.8
 
-    def test_compare_metrics_token_delta(self):
+    def test_compare_metrics_token_delta(self) -> None:
         """Test token delta calculation."""
         manager = ChatManager()
 
@@ -661,7 +656,7 @@ class TestChatManagerComparison:
         assert comparison.rlm_tokens == 850
         assert comparison.direct_tokens == 270
 
-    def test_compare_metrics_percentages(self):
+    def test_compare_metrics_percentages(self) -> None:
         """Test percentage calculations."""
         manager = ChatManager()
 
@@ -700,7 +695,7 @@ class TestChatManagerComparison:
         # RLM takes 100% more time (2x)
         assert comparison.time_delta_percent == pytest.approx(100, abs=1)
 
-    def test_compare_metrics_generates_recommendation(self):
+    def test_compare_metrics_generates_recommendation(self) -> None:
         """Test that recommendation is generated."""
         manager = ChatManager()
 
@@ -750,7 +745,7 @@ class TestMetricsCollectorCollection:
     """Test MetricsCollector collection methods."""
 
     @pytest.mark.asyncio
-    async def test_collect_rlm_metrics_returns_execution_metrics(self):
+    async def test_collect_rlm_metrics_returns_execution_metrics(self) -> None:
         """Test that collect_rlm_metrics returns ExecutionMetrics."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
@@ -761,7 +756,7 @@ class TestMetricsCollectorCollection:
             {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
             {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
         ]
-        result = {"response": Response("RLM result", "stop")}
+        result: dict[str, object] = {"response": Response("RLM result", "stop")}
 
         metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
 
@@ -769,7 +764,7 @@ class TestMetricsCollectorCollection:
         assert metrics.execution_type == "rlm"
 
     @pytest.mark.asyncio
-    async def test_collect_rlm_metrics_sums_tokens(self):
+    async def test_collect_rlm_metrics_sums_tokens(self) -> None:
         """Test that RLM metrics correctly sum tokens from trace."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
@@ -779,7 +774,7 @@ class TestMetricsCollectorCollection:
             {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
             {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
         ]
-        result = {}
+        result: dict[str, object] = {}
 
         metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
 
@@ -791,7 +786,7 @@ class TestMetricsCollectorCollection:
         assert metrics.total_tokens == 1130
 
     @pytest.mark.asyncio
-    async def test_collect_rlm_metrics_sums_execution_time(self):
+    async def test_collect_rlm_metrics_sums_execution_time(self) -> None:
         """Test that RLM metrics sum execution time from trace."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
@@ -801,7 +796,7 @@ class TestMetricsCollectorCollection:
             {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
             {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
         ]
-        result = {}
+        result: dict[str, object] = {}
 
         metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
 
@@ -809,7 +804,7 @@ class TestMetricsCollectorCollection:
         assert metrics.execution_time_seconds == pytest.approx(1.8, abs=0.01)
 
     @pytest.mark.asyncio
-    async def test_collect_rlm_metrics_steps_taken(self):
+    async def test_collect_rlm_metrics_steps_taken(self) -> None:
         """Test that RLM metrics records number of steps."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
@@ -819,14 +814,14 @@ class TestMetricsCollectorCollection:
             {"step": 2, "input_tokens": 250, "output_tokens": 130, "duration_seconds": 0.6},
             {"step": 3, "input_tokens": 300, "output_tokens": 150, "duration_seconds": 0.7},
         ]
-        result = {}
+        result: dict[str, object] = {}
 
         metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
 
         assert metrics.steps_taken == 3
 
     @pytest.mark.asyncio
-    async def test_collect_rlm_metrics_calculates_cost(self):
+    async def test_collect_rlm_metrics_calculates_cost(self) -> None:
         """Test that RLM metrics calculates cost correctly."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
@@ -835,7 +830,7 @@ class TestMetricsCollectorCollection:
         trace = [
             {"input_tokens": 1000, "output_tokens": 1000, "duration_seconds": 1.0},
         ]
-        result = {}
+        result: dict[str, object] = {}
 
         metrics = await collector.collect_rlm_metrics(result, trace, monitor, "openai", "gpt-4")
 
@@ -844,12 +839,12 @@ class TestMetricsCollectorCollection:
         assert metrics.cost_usd == pytest.approx(0.09, abs=0.001)
 
     @pytest.mark.asyncio
-    async def test_collect_direct_metrics_returns_execution_metrics(self):
+    async def test_collect_direct_metrics_returns_execution_metrics(self) -> None:
         """Test that collect_direct_metrics returns ExecutionMetrics."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
 
-        result = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        result: dict[str, object] = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
 
         metrics = await collector.collect_direct_metrics(result, monitor, "openai", "gpt-4")
 
@@ -857,24 +852,24 @@ class TestMetricsCollectorCollection:
         assert metrics.execution_type == "direct"
 
     @pytest.mark.asyncio
-    async def test_collect_direct_metrics_no_steps(self):
+    async def test_collect_direct_metrics_no_steps(self) -> None:
         """Test that direct metrics has zero steps."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
 
-        result = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        result: dict[str, object] = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
 
         metrics = await collector.collect_direct_metrics(result, monitor, "openai", "gpt-4")
 
         assert metrics.steps_taken == 0
 
     @pytest.mark.asyncio
-    async def test_collect_direct_metrics_fewer_tokens(self):
+    async def test_collect_direct_metrics_fewer_tokens(self) -> None:
         """Test that direct metrics has fewer tokens than RLM."""
         collector = MetricsCollector()
         monitor = MemoryMonitor()
 
-        direct_result = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
+        direct_result: dict[str, object] = {"input_tokens": 150, "output_tokens": 120, "execution_time": 0.8}
 
         direct_metrics = await collector.collect_direct_metrics(
             direct_result, monitor, "openai", "gpt-4"
@@ -888,7 +883,7 @@ class TestMetricsCollectorCollection:
 class TestMetricsCollectorComparison:
     """Test MetricsCollector.compare_metrics() method."""
 
-    def test_metrics_collector_compare_returns_comparison_metrics(self):
+    def test_metrics_collector_compare_returns_comparison_metrics(self) -> None:
         """Test that compare_metrics returns ComparisonMetrics."""
         collector = MetricsCollector()
 
@@ -924,7 +919,7 @@ class TestMetricsCollectorComparison:
 
         assert isinstance(comparison, ComparisonMetrics)
 
-    def test_metrics_collector_compare_cost_delta(self):
+    def test_metrics_collector_compare_cost_delta(self) -> None:
         """Test cost delta calculation in collector."""
         collector = MetricsCollector()
 
@@ -963,7 +958,7 @@ class TestMetricsCollectorComparison:
         # That's 500% more expensive
         assert comparison.cost_delta_percent == pytest.approx(500, abs=1)
 
-    def test_metrics_collector_compare_token_delta(self):
+    def test_metrics_collector_compare_token_delta(self) -> None:
         """Test token delta calculation in collector."""
         collector = MetricsCollector()
 
@@ -1000,7 +995,7 @@ class TestMetricsCollectorComparison:
         # RLM uses 860 more tokens (1130 - 270 = 860)
         assert comparison.token_delta == 860
 
-    def test_metrics_collector_compare_time_delta(self):
+    def test_metrics_collector_compare_time_delta(self) -> None:
         """Test time delta calculation in collector."""
         collector = MetricsCollector()
 
@@ -1039,7 +1034,7 @@ class TestMetricsCollectorComparison:
         # That's 125% slower
         assert comparison.time_delta_percent == pytest.approx(125, abs=1)
 
-    def test_metrics_collector_compare_recommendation(self):
+    def test_metrics_collector_compare_recommendation(self) -> None:
         """Test recommendation generation in collector."""
         collector = MetricsCollector()
 
@@ -1083,8 +1078,7 @@ class TestChatManagerProcessMessage:
     """Test ChatManager.process_message() routing and execution."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_process_message_rlm_only_mode(self):
+    async def test_process_message_rlm_only_mode(self, mock_execute_methods: None) -> None:
         """Test process_message in RLM-only mode."""
         manager = ChatManager()
 
@@ -1105,7 +1099,7 @@ class TestChatManagerProcessMessage:
         assert message.rlm_metrics.steps_taken >= 1
 
     @pytest.mark.asyncio
-    async def test_process_message_direct_only_mode(self):
+    async def test_process_message_direct_only_mode(self) -> None:
         """Test process_message in Direct-only mode."""
         manager = ChatManager()
 
@@ -1123,7 +1117,7 @@ class TestChatManagerProcessMessage:
         assert message.direct_metrics.steps_taken == 0
 
     @pytest.mark.asyncio
-    async def test_process_message_compare_mode_both_paths(self):
+    async def test_process_message_compare_mode_both_paths(self) -> None:
         """Test process_message in Compare mode executes both paths."""
         manager = ChatManager()
 
@@ -1139,8 +1133,9 @@ class TestChatManagerProcessMessage:
         assert message.comparison_metrics is not None
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_process_message_comparison_metrics_calculated(self):
+    async def test_process_message_comparison_metrics_calculated(
+        self, mock_execute_methods: None
+    ) -> None:
         """Test that comparison metrics are calculated correctly."""
         manager = ChatManager()
 
@@ -1159,24 +1154,24 @@ class TestChatManagerProcessMessage:
         assert comparison.recommendation
 
     @pytest.mark.asyncio
-    async def test_process_message_adds_to_session_state(self):
+    async def test_process_message_adds_to_session_state(self) -> None:
         """Test that process_message adds message to session state."""
-        session_state = {}
+        session_state: dict[str, object] = {}
         manager = ChatManager(session_state)
 
         # Initial state should have empty messages
-        assert len(session_state["messages"]) == 0
+        assert len(session_state["messages"]) == 0  # type: ignore[arg-type]
 
         message1 = await manager.process_message("First query")
-        assert len(session_state["messages"]) == 1
-        assert session_state["messages"][0] == message1
+        assert len(session_state["messages"]) == 1  # type: ignore[arg-type]
+        assert session_state["messages"][0] == message1  # type: ignore[index]
 
         message2 = await manager.process_message("Second query")
-        assert len(session_state["messages"]) == 2
-        assert session_state["messages"][1] == message2
+        assert len(session_state["messages"]) == 2  # type: ignore[arg-type]
+        assert session_state["messages"][1] == message2  # type: ignore[index]
 
     @pytest.mark.asyncio
-    async def test_process_message_with_file_context(self):
+    async def test_process_message_with_file_context(self) -> None:
         """Test process_message with file context."""
         manager = ChatManager()
 
@@ -1192,8 +1187,9 @@ class TestChatManagerProcessMessage:
         assert message.rlm_response is not None
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_process_message_rlm_faster_than_direct_false(self):
+    async def test_process_message_rlm_faster_than_direct_false(
+        self, mock_execute_methods: None
+    ) -> None:
         """Test that RLM is slower than Direct (as expected)."""
         manager = ChatManager()
 
@@ -1206,8 +1202,9 @@ class TestChatManagerProcessMessage:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_process_message_rlm_more_tokens_than_direct(self):
+    async def test_process_message_rlm_more_tokens_than_direct(
+        self, mock_execute_methods: None
+    ) -> None:
         """Test that RLM uses more tokens than Direct."""
         manager = ChatManager()
 
@@ -1217,7 +1214,7 @@ class TestChatManagerProcessMessage:
         assert message.rlm_metrics.total_tokens > message.direct_metrics.total_tokens
 
     @pytest.mark.asyncio
-    async def test_process_message_error_handling_rlm(self):
+    async def test_process_message_error_handling_rlm(self) -> None:
         """Test error handling if RLM fails (graceful degradation)."""
         manager = ChatManager()
 
@@ -1236,7 +1233,7 @@ class TestChatManagerExportConversation:
     """Test ChatManager.export_conversation() for different formats."""
 
     @pytest.mark.asyncio
-    async def test_export_conversation_json_format(self):
+    async def test_export_conversation_json_format(self) -> None:
         """Test exporting conversation as JSON."""
         manager = ChatManager()
 
@@ -1264,7 +1261,7 @@ class TestChatManagerExportConversation:
         assert msg_data["comparison"] is not None
 
     @pytest.mark.asyncio
-    async def test_export_conversation_markdown_format(self):
+    async def test_export_conversation_markdown_format(self) -> None:
         """Test exporting conversation as Markdown."""
         manager = ChatManager()
 
@@ -1282,7 +1279,7 @@ class TestChatManagerExportConversation:
         assert "**RLM Metrics:**" in export
 
     @pytest.mark.asyncio
-    async def test_export_conversation_csv_format(self):
+    async def test_export_conversation_csv_format(self) -> None:
         """Test exporting conversation as CSV."""
         manager = ChatManager()
 
@@ -1303,7 +1300,7 @@ class TestChatManagerExportConversation:
         assert len(lines) == 2  # Header + 1 message
 
     @pytest.mark.asyncio
-    async def test_export_conversation_multiple_messages(self):
+    async def test_export_conversation_multiple_messages(self) -> None:
         """Test exporting conversation with multiple messages."""
         manager = ChatManager()
 
@@ -1320,8 +1317,9 @@ class TestChatManagerExportConversation:
         assert len(data["messages"]) == 3
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Legacy Streamlit ChatManager mock returns zero metrics")
-    async def test_export_conversation_json_has_cost_metrics(self):
+    async def test_export_conversation_json_has_cost_metrics(
+        self, mock_execute_methods: None
+    ) -> None:
         """Test that JSON export includes cost metrics."""
         manager = ChatManager()
 
@@ -1340,7 +1338,7 @@ class TestChatManagerExportConversation:
         assert msg["comparison"]["cost_delta_usd"] > 0
 
     @pytest.mark.asyncio
-    async def test_export_conversation_markdown_has_recommendation(self):
+    async def test_export_conversation_markdown_has_recommendation(self) -> None:
         """Test that Markdown export includes recommendation."""
         manager = ChatManager()
 
@@ -1353,7 +1351,7 @@ class TestChatManagerExportConversation:
         assert "Deltas:" in export
 
     @pytest.mark.asyncio
-    async def test_export_conversation_csv_escapes_quotes(self):
+    async def test_export_conversation_csv_escapes_quotes(self) -> None:
         """Test that CSV export properly escapes quotes in queries."""
         manager = ChatManager()
 
@@ -1366,7 +1364,7 @@ class TestChatManagerExportConversation:
         assert '""' in export  # Double quotes for escaping
 
     @pytest.mark.asyncio
-    async def test_export_conversation_empty_conversation(self):
+    async def test_export_conversation_empty_conversation(self) -> None:
         """Test exporting empty conversation."""
         manager = ChatManager()
 
@@ -1379,7 +1377,7 @@ class TestChatManagerExportConversation:
         assert len(data["messages"]) == 0
 
     @pytest.mark.asyncio
-    async def test_export_conversation_invalid_format(self):
+    async def test_export_conversation_invalid_format(self) -> None:
         """Test that invalid format raises ValueError."""
         manager = ChatManager()
 
@@ -1387,7 +1385,7 @@ class TestChatManagerExportConversation:
             manager.export_conversation("xml")
 
     @pytest.mark.asyncio
-    async def test_export_conversation_preserves_timestamps(self):
+    async def test_export_conversation_preserves_timestamps(self) -> None:
         """Test that export preserves message timestamps."""
         manager = ChatManager()
 

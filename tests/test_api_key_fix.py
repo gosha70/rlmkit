@@ -8,9 +8,9 @@ import tempfile
 from pathlib import Path
 
 
-def test_env_loading():
+def test_env_loading() -> None:
     """Test that .env file is properly loaded."""
-    from src.rlmkit.ui.services.llm_config_manager import load_env_file, update_env_file
+    from rlmkit.ui.services.llm_config_manager import load_env_file, update_env_file
 
     # Create a temporary .env file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
@@ -54,12 +54,12 @@ def test_env_loading():
             del os.environ["OPENAI_API_KEY"]
 
 
-def test_config_loading():
+def test_config_loading() -> None:
     """Test that provider config properly loads API keys."""
     import json
     import tempfile
 
-    from src.rlmkit.ui.services.llm_config_manager import LLMConfigManager
+    from rlmkit.ui.services.llm_config_manager import LLMConfigManager
 
     # Create temporary config directory
     with tempfile.TemporaryDirectory() as tmpdir:

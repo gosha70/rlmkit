@@ -43,6 +43,7 @@ dev = [
     "bandit>=1.7.0",
     "pre-commit>=3.7.0",
     "types-pyyaml>=6.0.12.20250915",
+    "nest-asyncio>=1.6.0",
 ]
 
 server = [
@@ -121,4 +122,5 @@ ignore_missing_imports = true
 [tool.bandit]
 exclude_dirs = ["tests", "poc", "notebooks"]
 skips = ["B101", "B102", "B112"]  # B101: assert, B102: exec (sandbox by design), B112: try-except-continue (LiteLLM pricing fallback)
+
 
