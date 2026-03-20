@@ -4,7 +4,6 @@
 """Mock LLM client for testing."""
 
 
-
 class MockLLMClient:
     """
     Mock LLM client that returns pre-programmed responses.
@@ -56,7 +55,7 @@ class MockLLMClient:
 
         return response
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset call count and history."""
         self.call_count = 0
         self.call_history = []

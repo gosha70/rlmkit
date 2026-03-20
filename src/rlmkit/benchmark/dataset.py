@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -52,7 +52,7 @@ class BenchmarkDataset:
     def __len__(self) -> int:
         return len(self.cases)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[BenchmarkCase]:
         return iter(self.cases)
 
     def __getitem__(self, index: int) -> BenchmarkCase:

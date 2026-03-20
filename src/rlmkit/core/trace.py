@@ -11,7 +11,7 @@ trajectory of RLM agents, including all actions, results, and metadata.
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 ActionType = Literal["inspect", "subcall", "final", "error"]
 
@@ -35,6 +35,7 @@ class TraceStep:
         raw_response: Full LLM response text
         error: Error message if step failed
     """
+
     index: int
     action_type: ActionType
     code: str | None = None
@@ -59,7 +60,9 @@ class TraceStep:
         if self.code:
             result += f"\n{indent}  Code: {self.code[:100]}{'...' if len(self.code) > 100 else ''}"
         if self.output:
-            result += f"\n{indent}  Output: {self.output[:100]}{'...' if len(self.output) > 100 else ''}"
+            result += (
+                f"\n{indent}  Output: {self.output[:100]}{'...' if len(self.output) > 100 else ''}"
+            )
         if self.error:
             result += f"\n{indent}  Error: {self.error}"
         result += f"\n{indent}  Tokens: {self.tokens_used} | Cost: ${self.cost:.4f} | Time: {self.duration:.2f}s"
@@ -73,7 +76,7 @@ class ExecutionTrace:
     This captures all steps, metadata, and provides export functionality.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.steps: list[TraceStep] = []
         self.start_time: float = datetime.now().timestamp()
         self.end_time: float | None = None
@@ -137,8 +140,8 @@ class ExecutionTrace:
                 "total_cost": self.total_cost,
                 "total_steps": len(self.steps),
                 "max_recursion_depth": self.max_recursion_depth,
-                **self.metadata
-            }
+                **self.metadata,
+            },
         }
 
     def to_jsonl(self, filepath: str) -> None:
@@ -150,7 +153,7 @@ class ExecutionTrace:
         Args:
             filepath: Path to save JSONL file
         """
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             # Write metadata as first line
             f.write(json.dumps({"metadata": self.to_dict()["metadata"]}) + "\n")
 
@@ -166,7 +169,7 @@ class ExecutionTrace:
             filepath: Path to save JSON file
             pretty: If True, format with indentation
         """
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             if pretty:
                 json.dump(self.to_dict(), f, indent=2)
             else:
@@ -191,7 +194,7 @@ class ExecutionTrace:
             f"- **Max Recursion Depth:** {self.max_recursion_depth}",
             "",
             "## Execution Steps",
-            ""
+            "",
         ]
 
         for step in self.steps:
@@ -228,7 +231,7 @@ class ExecutionTrace:
                 lines.append(f"{indent}- Model: {step.model}")
             lines.append("")
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("\n".join(lines))
 
     def __len__(self) -> int:
@@ -239,7 +242,7 @@ class ExecutionTrace:
         """Get step by index."""
         return self.steps[index]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[TraceStep]:
         """Iterate over steps."""
         return iter(self.steps)
 
@@ -299,8 +302,9 @@ def load_trace_from_jsonl(filepath: str) -> ExecutionTrace:
                 meta = metadata_line["metadata"]
                 trace.start_time = meta.get("start_time", trace.start_time)
                 trace.end_time = meta.get("end_time")
-                trace.metadata = {k: v for k, v in meta.items()
-                                 if k not in ["start_time", "end_time"]}
+                trace.metadata = {
+                    k: v for k, v in meta.items() if k not in ["start_time", "end_time"]
+                }
 
         # Remaining lines are steps
         for line in lines[1:]:
@@ -331,8 +335,7 @@ def load_trace_from_json(filepath: str) -> ExecutionTrace:
             meta = data["metadata"]
             trace.start_time = meta.get("start_time", trace.start_time)
             trace.end_time = meta.get("end_time")
-            trace.metadata = {k: v for k, v in meta.items()
-                             if k not in ["start_time", "end_time"]}
+            trace.metadata = {k: v for k, v in meta.items() if k not in ["start_time", "end_time"]}
 
         # Load steps
         if "steps" in data:

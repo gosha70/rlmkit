@@ -4,12 +4,14 @@
 """Auto-detection and configuration of LLM providers from environment variables."""
 
 import os
+from typing import Any
 
 from .base import BaseLLMProvider
 
 
 class ConfigurationError(Exception):
     """Raised when no LLM provider is properly configured."""
+
     pass
 
 
@@ -82,7 +84,7 @@ def list_available_providers() -> list[str]:
     return available
 
 
-def get_provider_info() -> dict[str, dict[str, str]]:
+def get_provider_info() -> dict[str, dict[str, Any]]:
     """
     Get detailed information about each provider's configuration status.
 
@@ -102,7 +104,7 @@ def get_provider_info() -> dict[str, dict[str, str]]:
         "configured": bool(openai_key),
         "env_var": "OPENAI_API_KEY",
         "status": "ready" if openai_key else "missing",
-        "key_preview": f"{openai_key[:8]}..." if openai_key else None
+        "key_preview": f"{openai_key[:8]}..." if openai_key else None,
     }
 
     # Anthropic
@@ -111,7 +113,7 @@ def get_provider_info() -> dict[str, dict[str, str]]:
         "configured": bool(anthropic_key),
         "env_var": "ANTHROPIC_API_KEY",
         "status": "ready" if anthropic_key else "missing",
-        "key_preview": f"{anthropic_key[:8]}..." if anthropic_key else None
+        "key_preview": f"{anthropic_key[:8]}..." if anthropic_key else None,
     }
 
     # Ollama
@@ -120,7 +122,7 @@ def get_provider_info() -> dict[str, dict[str, str]]:
         "configured": bool(os.getenv("OLLAMA_BASE_URL")),
         "env_var": "OLLAMA_BASE_URL",
         "status": "ready" if os.getenv("OLLAMA_BASE_URL") else "default",
-        "base_url": ollama_url
+        "base_url": ollama_url,
     }
 
     # LM Studio
@@ -129,7 +131,7 @@ def get_provider_info() -> dict[str, dict[str, str]]:
         "configured": bool(lmstudio_url),
         "env_var": "LMSTUDIO_BASE_URL",
         "status": "ready" if lmstudio_url else "missing",
-        "base_url": lmstudio_url
+        "base_url": lmstudio_url,
     }
 
     # vLLM
@@ -138,7 +140,7 @@ def get_provider_info() -> dict[str, dict[str, str]]:
         "configured": bool(vllm_url),
         "env_var": "VLLM_BASE_URL",
         "status": "ready" if vllm_url else "missing",
-        "base_url": vllm_url
+        "base_url": vllm_url,
     }
 
     return info
@@ -173,7 +175,7 @@ def get_default_client_config() -> tuple[str, str | None]:
         "anthropic": "claude-3-5-sonnet-20241022",
         "ollama": "llama3.2",
         "lmstudio": None,  # User must specify
-        "vllm": None  # User must specify
+        "vllm": None,  # User must specify
     }
 
     return provider, default_models.get(provider)

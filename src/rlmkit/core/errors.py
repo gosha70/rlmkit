@@ -22,10 +22,3 @@ class ParseError(RLMError):
 
 class SecurityError(RLMError):
     """Raised when unsafe operation is attempted in sandbox mode."""
-
-
-def test_format(x, y, z):
-    return x + y + z
-
-
-pass

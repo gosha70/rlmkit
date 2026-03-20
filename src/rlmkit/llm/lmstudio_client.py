@@ -3,6 +3,7 @@
 
 """LM Studio LLM provider implementation."""
 
+from typing import Any
 
 from .openai_client import OpenAIClient
 
@@ -33,8 +34,8 @@ class LMStudioClient(OpenAIClient):
         api_key: str = "lm-studio",  # LM Studio doesn't require real API key
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         Initialize LM Studio client.
 
@@ -53,7 +54,7 @@ class LMStudioClient(OpenAIClient):
             base_url=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
-            **kwargs
+            **kwargs,
         )
 
     def calculate_cost(self, input_tokens: int, output_tokens: int) -> float:

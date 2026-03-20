@@ -48,15 +48,15 @@ class ExecutionMetrics:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'mode': self.mode,
-            'answer': self.answer,
-            'steps': self.steps,
-            'tokens': self.tokens.to_dict(),
-            'elapsed_time': self.elapsed_time,
-            'cost': self.cost,
-            'success': self.success,
-            'error': self.error,
-            'trace_length': len(self.trace),
+            "mode": self.mode,
+            "answer": self.answer,
+            "steps": self.steps,
+            "tokens": self.tokens.to_dict(),
+            "elapsed_time": self.elapsed_time,
+            "cost": self.cost,
+            "success": self.success,
+            "error": self.error,
+            "trace_length": len(self.trace),
         }
 
 
@@ -92,11 +92,11 @@ class ComparisonResult:
         savings_percent = (savings / direct_total * 100) if direct_total > 0 else 0
 
         return {
-            'rlm_tokens': rlm_total,
-            'direct_tokens': direct_total,
-            'savings_tokens': savings,
-            'savings_percent': savings_percent,
-            'rlm_is_better': savings > 0,
+            "rlm_tokens": rlm_total,
+            "direct_tokens": direct_total,
+            "savings_tokens": savings,
+            "savings_percent": savings_percent,
+            "rlm_is_better": savings > 0,
         }
 
     def get_cost_savings(self) -> dict[str, Any] | None:
@@ -116,11 +116,11 @@ class ComparisonResult:
         savings_percent = (savings / direct_cost * 100) if direct_cost > 0 else 0
 
         return {
-            'rlm_cost': rlm_cost,
-            'direct_cost': direct_cost,
-            'savings': savings,
-            'savings_percent': savings_percent,
-            'rlm_is_better': savings > 0,
+            "rlm_cost": rlm_cost,
+            "direct_cost": direct_cost,
+            "savings": savings,
+            "savings_percent": savings_percent,
+            "rlm_is_better": savings > 0,
         }
 
     def get_time_comparison(self) -> dict[str, Any] | None:
@@ -140,11 +140,11 @@ class ComparisonResult:
         ratio = rlm_time / direct_time if direct_time > 0 else 0
 
         return {
-            'rlm_time': rlm_time,
-            'direct_time': direct_time,
-            'difference': difference,
-            'ratio': ratio,
-            'direct_is_faster': difference > 0,
+            "rlm_time": rlm_time,
+            "direct_time": direct_time,
+            "difference": difference,
+            "ratio": ratio,
+            "direct_is_faster": difference > 0,
         }
 
     def get_summary(self) -> dict[str, Any]:
@@ -154,39 +154,45 @@ class ComparisonResult:
         Returns:
             Dictionary with all comparison metrics and recommendations
         """
-        summary = {
-            'has_rlm': self.rlm_metrics is not None,
-            'has_direct': self.direct_metrics is not None,
-            'can_compare': self.rlm_metrics is not None and self.direct_metrics is not None,
+        summary: dict[str, Any] = {
+            "has_rlm": self.rlm_metrics is not None,
+            "has_direct": self.direct_metrics is not None,
+            "can_compare": self.rlm_metrics is not None and self.direct_metrics is not None,
         }
 
-        if summary['can_compare']:
-            summary.update({
-                'token_savings': self.get_token_savings(),
-                'cost_savings': self.get_cost_savings(),
-                'time_comparison': self.get_time_comparison(),
-            })
+        if summary["can_compare"]:
+            summary.update(
+                {
+                    "token_savings": self.get_token_savings(),
+                    "cost_savings": self.get_cost_savings(),
+                    "time_comparison": self.get_time_comparison(),
+                }
+            )
 
             # Add recommendation
             token_savings = self.get_token_savings()
             cost_savings = self.get_cost_savings()
 
             if token_savings and cost_savings:
-                if token_savings['savings_percent'] > 20:
-                    summary['recommendation'] = 'rlm'
-                    summary['recommendation_reason'] = f"RLM saves {token_savings['savings_percent']:.1f}% tokens"
-                elif token_savings['savings_percent'] < -20:
-                    summary['recommendation'] = 'direct'
-                    summary['recommendation_reason'] = f"Direct mode uses {-token_savings['savings_percent']:.1f}% fewer tokens"
+                if token_savings["savings_percent"] > 20:
+                    summary["recommendation"] = "rlm"
+                    summary["recommendation_reason"] = (
+                        f"RLM saves {token_savings['savings_percent']:.1f}% tokens"
+                    )
+                elif token_savings["savings_percent"] < -20:
+                    summary["recommendation"] = "direct"
+                    summary["recommendation_reason"] = (
+                        f"Direct mode uses {-token_savings['savings_percent']:.1f}% fewer tokens"
+                    )
                 else:
-                    summary['recommendation'] = 'similar'
-                    summary['recommendation_reason'] = "Both modes perform similarly"
+                    summary["recommendation"] = "similar"
+                    summary["recommendation_reason"] = "Both modes perform similarly"
 
         if self.rlm_metrics:
-            summary['rlm_metrics'] = self.rlm_metrics.to_dict()
+            summary["rlm_metrics"] = self.rlm_metrics.to_dict()
 
         if self.direct_metrics:
-            summary['direct_metrics'] = self.direct_metrics.to_dict()
+            summary["direct_metrics"] = self.direct_metrics.to_dict()
 
         return summary
 

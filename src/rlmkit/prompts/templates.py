@@ -133,9 +133,16 @@ def load_prompt_from_file(filepath: Path) -> str:
 
         with open(filepath) as f:
             data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError(f"YAML file must be a mapping, got {type(data).__name__}: {filepath}")
         if "template" not in data:
             raise ValueError(f"YAML file must have 'template' key: {filepath}")
-        return data["template"]
+        template = data["template"]
+        if not isinstance(template, str):
+            raise ValueError(
+                f"YAML 'template' value must be a string, got {type(template).__name__}: {filepath}"
+            )
+        return template
     else:
         raise ValueError(f"Unsupported template file format: {suffix}")
 

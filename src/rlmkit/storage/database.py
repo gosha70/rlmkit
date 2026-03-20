@@ -5,6 +5,7 @@
 
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 _SCHEMA_VERSION = 1
 
@@ -138,7 +139,7 @@ class Database:
 
     def fetchone(self, sql: str, params: tuple = ()) -> sqlite3.Row | None:
         """Execute and return a single row."""
-        return self.connect().execute(sql, params).fetchone()
+        return cast(sqlite3.Row | None, self.connect().execute(sql, params).fetchone())
 
     def fetchall(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         """Execute and return all rows."""

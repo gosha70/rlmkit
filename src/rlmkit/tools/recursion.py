@@ -7,13 +7,13 @@ Based on the RLM paper, allows spawning sub-RLM instances to handle
 complex subtasks within the main RLM execution.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from ..core.rlm import RLM
 
 
-def create_subcall(rlm_instance: 'RLM'):
+def create_subcall(rlm_instance: "RLM") -> "Callable[[str, str, int | None], str]":
     """
     Create a subcall function bound to an RLM instance.
 
@@ -68,8 +68,11 @@ def create_subcall(rlm_instance: 'RLM'):
                 # Determine max steps for sub-RLM
                 if max_steps is None:
                     # Use parent's remaining steps
-                    remaining_steps = (tracker.limits.max_steps - tracker.steps
-                                     if tracker.limits.max_steps else None)
+                    remaining_steps = (
+                        tracker.limits.max_steps - tracker.steps
+                        if tracker.limits.max_steps
+                        else None
+                    )
                     if remaining_steps is not None:
                         max_steps = max(1, remaining_steps)  # At least 1 step
 
@@ -111,6 +114,7 @@ def create_subcall(rlm_instance: 'RLM'):
         else:
             # No budget tracker, run without recursion tracking
             from ..core.rlm import RLM
+
             sub_rlm = RLM(
                 client=rlm_instance.client,
                 config=rlm_instance.config,

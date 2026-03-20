@@ -70,8 +70,13 @@ class IndexedRAGStrategy:
             return 0
 
         embeddings = self.embedder.embed(chunks)
-        return self.vector_store.add_chunks(
-            self.collection, chunks, embeddings, source_id=source_id,
+        return int(
+            self.vector_store.add_chunks(
+                self.collection,
+                chunks,
+                embeddings,
+                source_id=source_id,
+            )
         )
 
     def run(self, content: str, query: str) -> StrategyResult:
@@ -85,7 +90,9 @@ class IndexedRAGStrategy:
             # Step 2: Embed query and search index
             query_embedding = self.embedder.embed_query(query)
             results = self.vector_store.search(
-                self.collection, query_embedding, top_k=self.top_k,
+                self.collection,
+                query_embedding,
+                top_k=self.top_k,
             )
 
             if not results:

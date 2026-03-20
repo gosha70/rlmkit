@@ -46,8 +46,8 @@ class BaseLLMProvider(ABC):
         model: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
-        **kwargs
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         Initialize base provider.
 
@@ -82,10 +82,7 @@ class BaseLLMProvider(ABC):
         pass
 
     @abstractmethod
-    def complete_with_metadata(
-        self,
-        messages: list[dict[str, str]]
-    ) -> LLMResponse:
+    def complete_with_metadata(self, messages: list[dict[str, str]]) -> LLMResponse:
         """
         Generate completion with full metadata.
 
@@ -120,13 +117,13 @@ class BaseLLMProvider(ABC):
             if not isinstance(msg, dict):
                 raise ValueError(f"Message {i} must be a dictionary")
 
-            if 'role' not in msg:
+            if "role" not in msg:
                 raise ValueError(f"Message {i} missing 'role' key")
 
-            if 'content' not in msg:
+            if "content" not in msg:
                 raise ValueError(f"Message {i} missing 'content' key")
 
-            if msg['role'] not in ['system', 'user', 'assistant']:
+            if msg["role"] not in ["system", "user", "assistant"]:
                 raise ValueError(
                     f"Message {i} has invalid role: {msg['role']}. "
                     f"Must be 'system', 'user', or 'assistant'"

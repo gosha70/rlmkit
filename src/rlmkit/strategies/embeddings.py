@@ -4,7 +4,7 @@
 """Embedding provider abstraction for RAG strategy."""
 
 import os
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -28,7 +28,7 @@ class OpenAIEmbedder:
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self._client: object | None = None
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         if self._client is None:
             try:
                 import openai
