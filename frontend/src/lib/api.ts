@@ -391,8 +391,6 @@ export async function uploadFile(file: File): Promise<FileUploadResponse> {
   return resp.json();
 }
 
-export const getFile = (id: string) => fetchJSON<FileUploadResponse>(`/api/files/${id}`);
-
 // Sessions
 export const getSessions = (limit = 20, offset = 0) =>
   fetchJSON<SessionSummary[]>(`/api/sessions?limit=${limit}&offset=${offset}`);
@@ -554,9 +552,6 @@ export const getPromptTemplates = () =>
 // Chat Providers CRUD
 export const getChatProviders = () => fetchJSON<ChatProviderConfig[]>("/api/chat-providers");
 
-export const getChatProvider = (id: string) =>
-  fetchJSON<ChatProviderConfig>(`/api/chat-providers/${id}`);
-
 export const createChatProvider = (req: ChatProviderCreateRequest) =>
   fetchJSON<ChatProviderConfig>("/api/chat-providers", {
     method: "POST",
@@ -614,11 +609,3 @@ export const triggerJudge = (req: JudgeRequest) =>
     body: JSON.stringify(req),
   });
 
-export function connectChatWS(sessionId: string): WebSocket {
-  if (API_BASE && API_BASE.startsWith("http")) {
-    const wsBase = API_BASE.replace(/^http/, "ws");
-    return new WebSocket(`${wsBase}/ws/chat/${sessionId}`);
-  }
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return new WebSocket(`${proto}//${window.location.host}/ws/chat/${sessionId}`);
-}
