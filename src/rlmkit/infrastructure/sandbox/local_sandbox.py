@@ -83,3 +83,9 @@ class LocalSandboxAdapter:
             The variable's value, or None if not found.
         """
         return self._env.get_var(name)
+
+    async def execute_async(self, code: str) -> ExecutionResultDTO:
+        """Execute code asynchronously by delegating to the sync method."""
+        import asyncio
+
+        return await asyncio.to_thread(self.execute, code)

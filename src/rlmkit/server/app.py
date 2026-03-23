@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os as _os
 import time
 from pathlib import Path
 
@@ -28,9 +29,37 @@ from rlmkit.server.routes import (
     traces,
 )
 
-# Load .env file so API keys persist across restarts
+# Snapshot keys already in the real process environment *before* load_dotenv.
+# This lets us distinguish user-set shell variables (must not be overridden)
+# from .env-loaded values (may be overridden by a newer SecretStore entry).
+_real_env_keys: frozenset[str] = frozenset(_os.environ.keys())
+
+# Load .env file (backward-compat: keys saved before the SecretStore migration)
 _env_path = Path(".env")
 load_dotenv(_env_path)
+
+
+# Reload keys persisted via SecretStore (keyring / JSON file) into os.environ
+# so all server read-paths (os.environ.get) work after restart.
+# SecretStore wins over .env; real process-env vars are never overridden.
+def _reload_stored_api_keys() -> None:
+    from rlmkit.ui.data.providers_catalog import PROVIDERS
+    from rlmkit.ui.services.secret_store import FileSecretStore, KeyringSecretStore
+
+    file_store = FileSecretStore()
+    keyring_store = KeyringSecretStore() if KeyringSecretStore.is_available() else None
+
+    for p in PROVIDERS:
+        if not p.env_var:
+            continue
+        if p.env_var in _real_env_keys:
+            continue  # set in the shell before the server started — never override
+        key = (keyring_store.get(p.key) if keyring_store else None) or file_store.get(p.key)
+        if key:
+            _os.environ[p.env_var] = key
+
+
+_reload_stored_api_keys()
 
 logger = logging.getLogger(__name__)
 

@@ -5,6 +5,7 @@
 
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 import streamlit as st
 
@@ -491,7 +492,7 @@ def render_execution_settings() -> None:
             mode_label = {"rlm": "RLM", "direct": "Direct", "rag": "RAG"}[mode]
             plan_slots.append(
                 ExecutionSlot(
-                    mode=mode,
+                    mode=cast(Literal["rlm", "direct", "rag"], mode),
                     provider_name=provider_name,
                     label=f"{mode_label} ({model_name})",
                     rag_config=rag_cfg if mode == "rag" else None,

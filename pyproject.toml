@@ -121,17 +121,18 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 omit = [
-    # Streamlit rendering — ≥85% st.* calls; unit-testing requires a live
-    # Streamlit runtime (not installed in the test environment). Being replaced
-    # by the Next.js frontend.
+    # These files call Streamlit APIs (st.*, switch_page, session_state) and
+    # require a live Streamlit runtime to import. The `ui` extra is not
+    # installed in the dev+server test environment, so they cannot be measured
+    # here. To cover them: uv sync --extra ui && pytest --cov ...
+    #
+    # Pure-Python modules under ui/ (data/, services/, utils/, file_processor)
+    # are NOT omitted — they are imported by the server layer and are measured.
     "src/rlmkit/ui/app.py",
     "src/rlmkit/ui/charts.py",
+    "src/rlmkit/ui/session.py",
     "src/rlmkit/ui/pages/*",
     "src/rlmkit/ui/components/*",
-    # session.py is entirely built around st.session_state (a Streamlit
-    # singleton). Testing it requires the Streamlit runtime, which is not
-    # installed in the dev+server test environment.
-    "src/rlmkit/ui/session.py",
 ]
 
 [tool.bandit]

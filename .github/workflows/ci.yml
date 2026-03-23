@@ -49,7 +49,7 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --extra dev --extra server
-      - name: Run tests with coverage
+      - name: Run tests with coverage (non-UI runtime; ui/* excluded — see pyproject.toml)
         run: uv run pytest tests/ --cov=rlmkit --cov-report=term-missing --cov-report=xml --cov-fail-under=80 -q
       - name: Upload coverage to Codecov
         if: always()

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +20,7 @@ from rlmkit.server.models import (
     ProviderTestResponse,
 )
 from rlmkit.ui.data.providers_catalog import PROVIDERS, PROVIDERS_BY_KEY
+from rlmkit.ui.services.secret_store import FileSecretStore, KeyringSecretStore
 
 logger = logging.getLogger(__name__)
 
@@ -230,25 +230,18 @@ async def test_provider(
         )
 
 
-def _update_env_file(key: str, value: str) -> None:
-    """Write or update a key=value pair in the project .env file."""
-    env_path = Path(".env")
-    lines: list[str] = []
-    if env_path.exists():
-        lines = env_path.read_text().splitlines(keepends=True)
-    found = False
-    for i, line in enumerate(lines):
-        if line.strip().startswith(f"{key}="):
-            lines[i] = f"{key}={value}\n"
-            found = True
-            break
-    if not found:
-        lines.append(f"{key}={value}\n")
-    env_path.write_text("".join(lines))
-    try:
-        env_path.chmod(0o600)
-    except OSError:
-        pass  # Windows
+def _persist_api_key(provider_name: str, api_key: str) -> None:
+    """Persist an API key using the most secure available backend.
+
+    Prefers the OS keyring (encrypted, no plain-text file) when the
+    ``keyring`` package is installed; falls back to the JSON file store
+    (~/.rlmkit/api_keys.json, chmod 600).  Both backends also inject the
+    key into ``os.environ`` so the current process can use it immediately.
+    """
+    if KeyringSecretStore.is_available():
+        KeyringSecretStore().set(provider_name, api_key)
+    else:
+        FileSecretStore().set(provider_name, api_key)
 
 
 @router.put("/api/providers/{provider_name}")
@@ -257,9 +250,11 @@ async def save_provider(
     req: ProviderSaveRequest,
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> ProviderSaveResponse:
-    """Save provider configuration. Writes API key to .env and os.environ.
+    """Save provider configuration and persist the API key via SecretStore.
 
-    Also persists runtime_settings and enabled state in AppState.config.
+    Uses the OS keyring when available; falls back to the JSON file store
+    (~/.rlmkit/api_keys.json).  Also persists runtime_settings and enabled
+    state in AppState.config.
     """
     entry = PROVIDERS_BY_KEY.get(provider_name)
     if entry is None:
@@ -268,10 +263,11 @@ async def save_provider(
     env_var = entry.env_var
 
     if req.api_key and env_var:
-        # Persist to .env file and update current process environment
-        _update_env_file(env_var, req.api_key)
-        os.environ[env_var] = req.api_key
-        logger.info("Saved API key for %s to .env (%s)", provider_name, env_var)
+        # Persist via SecretStore (keyring when available, else JSON file).
+        # The store also sets os.environ[env_var] for the current process.
+        _persist_api_key(provider_name, req.api_key)
+        os.environ[env_var] = req.api_key  # explicit fallback in case env_var lookup differs
+        logger.info("Saved API key for %s (%s)", provider_name, env_var)
 
     # Update provider config in AppState
     _update_provider_config(state, provider_name, req)
@@ -293,9 +289,7 @@ async def save_provider(
         provider=provider_name,
         env_var=env_var,
         message=(
-            f"API key saved to .env as {env_var}"
-            if env_var and req.api_key
-            else "Configuration saved"
+            f"API key saved ({env_var})" if env_var and req.api_key else "Configuration saved"
         ),
     )
 

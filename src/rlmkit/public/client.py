@@ -10,6 +10,7 @@ import warnings
 from typing import Any
 
 from rlmkit.application.dto import RunConfigDTO, RunResultDTO
+from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.use_cases.run_comparison import (
     RunComparisonUseCase,
 )
@@ -202,7 +203,7 @@ class RLMKitClient:
         root_model: str | None = None,
         recursive_model: str | None = None,
         api_base: str | None = None,
-    ) -> object:
+    ) -> LLMPort:
         """Create the appropriate LLM adapter for the given provider."""
         if provider == "mock":
             return MockLLMAdapter(["FINAL: Mock response"])
@@ -225,8 +226,8 @@ class RLMKitClient:
                 from rlmkit.infrastructure.llm.openai_adapter import OpenAIAdapter
                 from rlmkit.llm.openai_client import OpenAIClient
 
-                client = OpenAIClient(model=model or "gpt-4o", api_key=api_key)
-                return OpenAIAdapter(client)
+                openai_client = OpenAIClient(model=model or "gpt-4o", api_key=api_key)
+                return OpenAIAdapter(openai_client)
             except ImportError as exc:
                 raise ConfigError(f"OpenAI not available: {exc}") from exc
 
@@ -235,8 +236,10 @@ class RLMKitClient:
                 from rlmkit.infrastructure.llm.anthropic_adapter import AnthropicAdapter
                 from rlmkit.llm.anthropic_client import ClaudeClient
 
-                client = ClaudeClient(model=model or "claude-sonnet-4-5-20250514", api_key=api_key)
-                return AnthropicAdapter(client)
+                anthropic_client = ClaudeClient(
+                    model=model or "claude-sonnet-4-5-20250514", api_key=api_key
+                )
+                return AnthropicAdapter(anthropic_client)
             except ImportError as exc:
                 raise ConfigError(f"Anthropic not available: {exc}") from exc
 
@@ -245,8 +248,8 @@ class RLMKitClient:
                 from rlmkit.infrastructure.llm.ollama_adapter import OllamaAdapter
                 from rlmkit.llm.ollama_client import OllamaClient
 
-                client = OllamaClient(model=model or "llama3")
-                return OllamaAdapter(client)
+                ollama_client = OllamaClient(model=model or "llama3")
+                return OllamaAdapter(ollama_client)
             except ImportError as exc:
                 raise ConfigError(f"Ollama not available: {exc}") from exc
 

@@ -4,6 +4,7 @@ Covers:
 - infrastructure/config (yaml_config, __init__)
 - infrastructure/storage (sqlite_adapter, __init__)
 - infrastructure/llm adapters (anthropic, openai, ollama)
+- infrastructure/sandbox adapters (execute_async on all three)
 - server/judge (_parse_json_from_response, JudgeService sync paths)
 """
 
@@ -475,6 +476,49 @@ class TestParseJsonFromResponse:
 
         result = _parse_json_from_response('  {"x": 1}  ')
         assert result == {"x": 1}
+
+
+class TestSandboxExecuteAsync:
+    """Verify execute_async delegates to execute() on all three sandbox adapters."""
+
+    @pytest.mark.asyncio
+    async def test_local_sandbox_execute_async(self) -> None:
+        from rlmkit.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
+
+        adapter = LocalSandboxAdapter()
+        result = await adapter.execute_async("x = 1 + 1")
+        assert result.exception is None
+
+    @pytest.mark.asyncio
+    async def test_restricted_sandbox_execute_async(self) -> None:
+        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+
+        adapter = RestrictedSandboxAdapter()
+        result = await adapter.execute_async("x = 2 + 2")
+        assert result.exception is None
+
+    @pytest.mark.asyncio
+    async def test_docker_sandbox_execute_async_delegates_to_execute(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """execute_async must call execute(); patch execute() to avoid Docker dependency."""
+        from rlmkit.application.dto import ExecutionResultDTO
+        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import DockerSandboxAdapter
+
+        adapter = DockerSandboxAdapter.__new__(DockerSandboxAdapter)
+        adapter._namespace = {}  # type: ignore[attr-defined]
+
+        captured: list[str] = []
+
+        def _fake_execute(code: str) -> ExecutionResultDTO:
+            captured.append(code)
+            return ExecutionResultDTO(stdout="ok")
+
+        monkeypatch.setattr(adapter, "execute", _fake_execute)
+
+        result = await adapter.execute_async("print('hello')")
+        assert result.stdout == "ok"
+        assert captured == ["print('hello')"]
 
 
 class TestJudgeService:
