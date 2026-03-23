@@ -37,8 +37,8 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --extra dev
-      - name: Mypy (server module)
-        run: uv run mypy src/rlmkit/server/ --ignore-missing-imports --follow-imports=silent
+      - name: Mypy
+        run: uv run mypy src/rlmkit/ --ignore-missing-imports
 
   test-backend:
     name: Backend Tests

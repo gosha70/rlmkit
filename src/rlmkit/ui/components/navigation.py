@@ -11,8 +11,10 @@ logger = logging.getLogger("rlmkit.nav")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
+
 def _nav_log(msg: str) -> None:
     logger.info(msg)
+
 
 def get_current_page() -> str:
     """
@@ -22,15 +24,15 @@ def get_current_page() -> str:
         Page identifier: 'chat', 'analysis', or 'configuration'
     """
     # Use session state to track current page (more reliable than script_path)
-    if 'current_nav_page' not in st.session_state:
-        st.session_state.current_nav_page = 'chat'
+    if "current_nav_page" not in st.session_state:
+        st.session_state.current_nav_page = "chat"
 
     current = st.session_state.current_nav_page
     _nav_log(f"get_current_page returning: {current}")
-    return current
+    return str(current)
 
 
-def render_custom_navigation():
+def render_custom_navigation() -> None:
     """
     Render custom navigation sidebar with clean labels and icons.
 
@@ -45,46 +47,48 @@ def render_custom_navigation():
     # Render navigation buttons in sidebar
     with st.sidebar:
         # Chat button
-        chat_class = "nav-button-active" if current_page == 'chat' else "nav-button"
+        chat_class = "nav-button-active" if current_page == "chat" else "nav-button"
         st.markdown(f'<div class="{chat_class}">', unsafe_allow_html=True)
         chat_btn = st.button("💬 Chat", key="nav_chat", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         # Analysis button
-        analysis_class = "nav-button-active" if current_page == 'analysis' else "nav-button"
+        analysis_class = "nav-button-active" if current_page == "analysis" else "nav-button"
         st.markdown(f'<div class="{analysis_class}">', unsafe_allow_html=True)
         analysis_btn = st.button("📊 Analysis", key="nav_analysis", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         # Metrics button
-        metrics_class = "nav-button-active" if current_page == 'metrics' else "nav-button"
+        metrics_class = "nav-button-active" if current_page == "metrics" else "nav-button"
         st.markdown(f'<div class="{metrics_class}">', unsafe_allow_html=True)
         metrics_btn = st.button("📈 Metrics", key="nav_metrics", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         # Configuration button
-        config_class = "nav-button-active" if current_page == 'configuration' else "nav-button"
+        config_class = "nav-button-active" if current_page == "configuration" else "nav-button"
         st.markdown(f'<div class="{config_class}">', unsafe_allow_html=True)
         config_btn = st.button("⚙️ Configuration", key="nav_config", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
 
     # Handle navigation after rendering
-    _nav_log(f"buttons: chat={chat_btn} analysis={analysis_btn} metrics={metrics_btn} config={config_btn}")
+    _nav_log(
+        f"buttons: chat={chat_btn} analysis={analysis_btn} metrics={metrics_btn} config={config_btn}"
+    )
     if chat_btn:
         _nav_log("CLICK chat")
-        st.session_state.current_nav_page = 'chat'
+        st.session_state.current_nav_page = "chat"
         st.switch_page("app.py")
     elif analysis_btn:
         _nav_log("CLICK analysis")
-        st.session_state.current_nav_page = 'analysis'
+        st.session_state.current_nav_page = "analysis"
         st.switch_page("pages/analysis_panel.py")
     elif metrics_btn:
         _nav_log("CLICK metrics")
-        st.session_state.current_nav_page = 'metrics'
+        st.session_state.current_nav_page = "metrics"
         st.switch_page("pages/metrics_dashboard.py")
     elif config_btn:
         _nav_log("CLICK config")
-        st.session_state.current_nav_page = 'configuration'
+        st.session_state.current_nav_page = "configuration"
         st.switch_page("pages/configuration_panel.py")

@@ -1,7 +1,7 @@
 """Session state initialization for RLMKit Chat UI."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import streamlit as st
@@ -52,7 +52,9 @@ def init_session_state() -> dict[str, Any]:
         st.session_state.active_model = None
         st.session_state.rag_config = None  # Uses RAGConfig defaults when None
         st.session_state.execution_plan = None  # None = legacy single-provider mode
-        st.session_state.selected_strategies = ["direct"]  # List of active strategies: "rlm", "direct", "rag"
+        st.session_state.selected_strategies = [
+            "direct"
+        ]  # List of active strategies: "rlm", "direct", "rag"
         st.session_state.key_policy = "file"  # SecretStore policy: "env", "file", or "keyring"
 
         # System prompt
@@ -63,7 +65,7 @@ def init_session_state() -> dict[str, Any]:
         # Session metrics
         st.session_state.session_metrics = SessionMetrics()
 
-    return st.session_state
+    return cast(dict[str, Any], st.session_state)
 
 
 def reset_session() -> None:
