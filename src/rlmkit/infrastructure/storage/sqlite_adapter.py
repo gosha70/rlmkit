@@ -80,13 +80,16 @@ class SQLiteStorageAdapter:
         metadata: dict[str, Any] | None = None,
     ) -> int:
         """Store text chunks with their embeddings."""
-        return cast(int, self._vectors.add_chunks(
-            collection=collection,
-            chunks=chunks,
-            embeddings=embeddings,
-            source_id=source_id,
-            metadata=metadata,
-        ))
+        return cast(
+            int,
+            self._vectors.add_chunks(
+                collection=collection,
+                chunks=chunks,
+                embeddings=embeddings,
+                source_id=source_id,
+                metadata=metadata,
+            ),
+        )
 
     def search_chunks(
         self,
@@ -95,11 +98,14 @@ class SQLiteStorageAdapter:
         top_k: int = 5,
     ) -> list[tuple[float, str, str]]:
         """Search for similar chunks by cosine similarity."""
-        return cast("list[tuple[float, str, str]]", self._vectors.search(
-            collection=collection,
-            query_embedding=query_embedding,
-            top_k=top_k,
-        ))
+        return cast(
+            "list[tuple[float, str, str]]",
+            self._vectors.search(
+                collection=collection,
+                query_embedding=query_embedding,
+                top_k=top_k,
+            ),
+        )
 
     def close(self) -> None:
         """Close the underlying database connection."""

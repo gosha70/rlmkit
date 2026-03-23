@@ -245,6 +245,10 @@ def _update_env_file(key: str, value: str) -> None:
     if not found:
         lines.append(f"{key}={value}\n")
     env_path.write_text("".join(lines))
+    try:
+        env_path.chmod(0o600)
+    except OSError:
+        pass  # Windows
 
 
 @router.put("/api/providers/{provider_name}")

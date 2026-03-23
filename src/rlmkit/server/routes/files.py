@@ -94,7 +94,7 @@ def _extract_text(raw: bytes, ext: str) -> str:
         try:
             import io
 
-            from PyPDF2 import PdfReader
+            from pypdf import PdfReader
 
             reader = PdfReader(io.BytesIO(raw))
             return "\n".join(page.extract_text() or "" for page in reader.pages)

@@ -218,32 +218,20 @@ class FileProcessor:
         Requires: PyPDF2 or pypdf
         """
         try:
-            import PyPDF2
+            import pypdf
 
             pdf_file = io.BytesIO(file_bytes)
-            reader = PyPDF2.PdfReader(pdf_file)
+            reader = pypdf.PdfReader(pdf_file)
 
             text_parts = []
             for page in reader.pages:
                 text_parts.append(page.extract_text())
 
             return "\n\n".join(text_parts)
-        except ImportError:
-            try:
-                import pypdf
-
-                pdf_file = io.BytesIO(file_bytes)
-                reader = pypdf.PdfReader(pdf_file)
-
-                text_parts = []
-                for page in reader.pages:
-                    text_parts.append(page.extract_text())
-
-                return "\n\n".join(text_parts)
-            except ImportError as exc:
-                raise ImportError(
-                    "PDF support requires 'PyPDF2' or 'pypdf'. Install with: pip install PyPDF2"
-                ) from exc
+        except ImportError as exc:
+            raise ImportError(
+                "PDF support requires 'pypdf'. Install with: pip install pypdf"
+            ) from exc
 
     @staticmethod
     def _process_docx(file_bytes: bytes) -> str:
