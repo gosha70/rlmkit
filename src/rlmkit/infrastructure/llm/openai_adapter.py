@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from rlmkit.application.dto import LLMResponseDTO
@@ -51,6 +52,21 @@ class OpenAIAdapter:
         if hasattr(self._client, "estimate_tokens"):
             return int(self._client.estimate_tokens(text))
         return max(1, len(text) // 4)
+
+    async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        """Async completion delegating to the sync method."""
+        return await asyncio.to_thread(self.complete, messages)
+
+    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+        """Non-blocking streaming: delegates to complete_async (asyncio.to_thread).
+
+        The legacy OpenAI client does not support native streaming, so this
+        method yields a single chunk from the thread-offloaded complete_async
+        call rather than looping over the sync complete_stream(), which would
+        block the event loop and bypass complete_with_metadata token accounting.
+        """
+        response = await self.complete_async(messages)
+        yield response.content
 
     def get_pricing(self) -> dict[str, float]:
         """Return pricing for the configured model."""

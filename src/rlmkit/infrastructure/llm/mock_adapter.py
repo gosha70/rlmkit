@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator, Iterator
 
 from rlmkit.application.dto import LLMResponseDTO
 
@@ -51,6 +52,15 @@ class MockLLMAdapter:
     def get_pricing(self) -> dict[str, float]:
         """Mock pricing (free)."""
         return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
+
+    async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        """Async completion delegating to the sync method."""
+        return await asyncio.to_thread(self.complete, messages)
+
+    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+        """Async streaming delegating to the sync method."""
+        for chunk in self.complete_stream(messages):
+            yield chunk
 
     def reset(self) -> None:
         """Reset call count and history."""
