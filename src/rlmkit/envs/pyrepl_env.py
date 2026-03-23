@@ -50,7 +50,7 @@ class PyReplEnv:
             max_stdout_chars: Maximum characters in stdout/stderr
         """
         self.safe_mode = safe_mode
-        self.allowed_imports = allowed_imports or ['json', 're', 'math', 'datetime']
+        self.allowed_imports = allowed_imports or ["json", "re", "math", "datetime"]
         self.max_exec_time_s = max_exec_time_s
         self.max_stdout_chars = max_stdout_chars
 
@@ -64,15 +64,15 @@ class PyReplEnv:
         else:
             # Use full builtins in unsafe mode
             self.env_globals = {
-                '__builtins__': __builtins__,
-                '__name__': '__rlm__',
+                "__builtins__": __builtins__,
+                "__name__": "__rlm__",
             }
 
         # Add content navigation tools
-        self.env_globals['peek'] = peek
-        self.env_globals['grep'] = grep
-        self.env_globals['chunk'] = chunk
-        self.env_globals['select'] = select
+        self.env_globals["peek"] = peek
+        self.env_globals["grep"] = grep
+        self.env_globals["chunk"] = chunk
+        self.env_globals["select"] = select
 
     def set_content(self, content: str) -> None:
         """
@@ -82,15 +82,15 @@ class PyReplEnv:
             content: The large text content to analyze
         """
         self._content = content
-        self.env_globals['P'] = content
+        self.env_globals["P"] = content
 
         # Create wrapper functions that automatically pass content as first arg
         # This allows LLM to call peek(0, 10) instead of peek(P, 0, 10)
         # Use functools.partial instead of lambdas to avoid pickling issues
-        self.env_globals['peek'] = partial(peek, content)
-        self.env_globals['grep'] = partial(grep, content)
-        self.env_globals['chunk'] = partial(chunk, content)
-        self.env_globals['select'] = partial(select, content)
+        self.env_globals["peek"] = partial(peek, content)
+        self.env_globals["grep"] = partial(grep, content)
+        self.env_globals["chunk"] = partial(chunk, content)
+        self.env_globals["select"] = partial(select, content)
 
     def get_var(self, name: str) -> Any:
         """
@@ -136,7 +136,7 @@ class PyReplEnv:
             import threading
 
             # Check if SIGALRM is available (Unix-like systems)
-            has_sigalrm = hasattr(signal, 'SIGALRM')
+            has_sigalrm = hasattr(signal, "SIGALRM")
 
             # Check if we're in the main thread
             is_main_thread = threading.current_thread() == threading.main_thread()
@@ -181,19 +181,19 @@ class PyReplEnv:
 
         # Truncate if needed
         if len(stdout) > self.max_stdout_chars:
-            stdout = stdout[:self.max_stdout_chars] + "\n... (truncated)"
+            stdout = stdout[: self.max_stdout_chars] + "\n... (truncated)"
             truncated = True
 
         if len(stderr) > self.max_stdout_chars:
-            stderr = stderr[:self.max_stdout_chars] + "\n... (truncated)"
+            stderr = stderr[: self.max_stdout_chars] + "\n... (truncated)"
             truncated = True
 
         return {
-            'stdout': stdout,
-            'stderr': stderr,
-            'exception': exception_msg,
-            'timeout': timeout_occurred,
-            'truncated': truncated,
+            "stdout": stdout,
+            "stderr": stderr,
+            "exception": exception_msg,
+            "timeout": timeout_occurred,
+            "truncated": truncated,
         }
 
     def reset(self) -> None:
@@ -204,21 +204,21 @@ class PyReplEnv:
         if self.safe_mode:
             self.env_globals.update(create_safe_globals(allowed_imports=self.allowed_imports))
         else:
-            self.env_globals['__builtins__'] = __builtins__
-            self.env_globals['__name__'] = '__rlm__'
+            self.env_globals["__builtins__"] = __builtins__
+            self.env_globals["__name__"] = "__rlm__"
 
         # Restore content if set
         if self._content is not None:
             content = self._content
-            self.env_globals['P'] = content
+            self.env_globals["P"] = content
             # Bind tools to content using functools.partial (avoids pickling issues)
-            self.env_globals['peek'] = partial(peek, content)
-            self.env_globals['grep'] = partial(grep, content)
-            self.env_globals['chunk'] = partial(chunk, content)
-            self.env_globals['select'] = partial(select, content)
+            self.env_globals["peek"] = partial(peek, content)
+            self.env_globals["grep"] = partial(grep, content)
+            self.env_globals["chunk"] = partial(chunk, content)
+            self.env_globals["select"] = partial(select, content)
         else:
             # No content set, use unbound tools
-            self.env_globals['peek'] = peek
-            self.env_globals['grep'] = grep
-            self.env_globals['chunk'] = chunk
-            self.env_globals['select'] = select
+            self.env_globals["peek"] = peek
+            self.env_globals["grep"] = grep
+            self.env_globals["chunk"] = chunk
+            self.env_globals["select"] = select

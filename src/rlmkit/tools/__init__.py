@@ -5,4 +5,4 @@
 
 from rlmkit.tools.content import chunk, grep, peek, select
 
-__all__ = ['peek', 'grep', 'chunk', 'select']
+__all__ = ["peek", "grep", "chunk", "select"]

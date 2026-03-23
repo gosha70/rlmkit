@@ -16,7 +16,7 @@ def render_chat_message(
     trace: list | None = None,
     comparison: dict[str, Any] | None = None,
     show_actions: bool = True,
-    key_suffix: str = ""
+    key_suffix: str = "",
 ) -> None:
     """
     Render a chat message with optional metrics, trace, and actions.
@@ -73,24 +73,24 @@ def render_metrics(metrics: dict[str, Any], key_suffix: str = "") -> None:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        steps = metrics.get('steps_taken', 0)
+        steps = metrics.get("steps_taken", 0)
         st.metric("Steps", steps)
 
     with col2:
-        tokens = metrics.get('total_tokens', 0)
+        tokens = metrics.get("total_tokens", 0)
         st.metric("Total Tokens", f"{tokens:,}")
 
     with col3:
-        time = metrics.get('execution_time_seconds', 0)
+        time = metrics.get("execution_time_seconds", 0)
         st.metric("Time", f"{time:.2f}s")
 
     with col4:
-        cost = metrics.get('cost_usd', 0)
+        cost = metrics.get("cost_usd", 0)
         st.metric("Total Cost", f"${cost:.4f}")
 
     # Show cost breakdown if available
-    if metrics.get('cost_breakdown'):
-        breakdown = metrics['cost_breakdown']
+    if metrics.get("cost_breakdown"):
+        breakdown = metrics["cost_breakdown"]
         with st.expander("💰 Cost Breakdown"):
             col1, col2 = st.columns(2)
             with col1:
@@ -115,27 +115,27 @@ def render_trace(trace: list, key_suffix: str = "") -> None:
                 st.write(f"**Step {i}**")
 
             with col2:
-                description = step.get('description', step.get('type', 'Unknown'))
+                description = step.get("description", step.get("type", "Unknown"))
                 st.write(f"**{description}**")
 
                 # Show step metrics
                 metrics_text = []
-                if step.get('input_tokens') or step.get('output_tokens'):
+                if step.get("input_tokens") or step.get("output_tokens"):
                     metrics_text.append(
                         f"Tokens: {step.get('input_tokens', 0)} → {step.get('output_tokens', 0)}"
                     )
-                if step.get('duration_ms'):
+                if step.get("duration_ms"):
                     metrics_text.append(f"Time: {step.get('duration_ms')}ms")
-                if step.get('cost'):
+                if step.get("cost"):
                     metrics_text.append(f"Cost: ${step.get('cost'):.4f}")
 
                 if metrics_text:
                     st.caption(" | ".join(metrics_text))
 
                 # Show step content if available
-                if step.get('content'):
+                if step.get("content"):
                     with st.expander("View step output", key=f"trace_{i}{key_suffix}"):
-                        st.code(step['content'], language="text")
+                        st.code(step["content"], language="text")
 
 
 def render_comparison(comparison: dict[str, Any], key_suffix: str = "") -> None:
@@ -151,35 +151,35 @@ def render_comparison(comparison: dict[str, Any], key_suffix: str = "") -> None:
         st.metric("Total Tokens", f"{comparison.get('rlm_tokens', 0):,}")
         st.metric("Total Cost", f"${comparison.get('rlm_cost_usd', 0):.4f}")
         st.metric("Time", f"{comparison.get('rlm_time_seconds', 0):.2f}s")
-        st.metric("Steps", comparison.get('rlm_steps', 0))
+        st.metric("Steps", comparison.get("rlm_steps", 0))
 
     with col2:
         st.write("**📋 Direct (Single)**")
         st.metric("Total Tokens", f"{comparison.get('direct_tokens', 0):,}")
         st.metric("Total Cost", f"${comparison.get('direct_cost_usd', 0):.4f}")
         st.metric("Time", f"{comparison.get('direct_time_seconds', 0):.2f}s")
-        st.metric("Steps", comparison.get('direct_steps', 0))
+        st.metric("Steps", comparison.get("direct_steps", 0))
 
     with col3:
         st.write("**📈 Deltas**")
 
-        token_delta = comparison.get('token_delta', 0)
-        token_pct = comparison.get('token_delta_percent', 0)
+        token_delta = comparison.get("token_delta", 0)
+        token_pct = comparison.get("token_delta_percent", 0)
         st.metric("Token Diff", f"{token_delta:+,}", delta=f"{token_pct:+.1f}%")
 
-        cost_delta = comparison.get('cost_delta_usd', 0)
-        cost_pct = comparison.get('cost_delta_percent', 0)
+        cost_delta = comparison.get("cost_delta_usd", 0)
+        cost_pct = comparison.get("cost_delta_percent", 0)
         st.metric("Cost Diff", f"${cost_delta:+.4f}", delta=f"{cost_pct:+.1f}%")
 
-        time_delta = comparison.get('time_delta_seconds', 0)
-        time_pct = comparison.get('time_delta_percent', 0)
+        time_delta = comparison.get("time_delta_seconds", 0)
+        time_pct = comparison.get("time_delta_percent", 0)
         st.metric("Time", f"{time_delta:+.2f}s", delta=f"{time_pct:+.1f}%")
 
-        quality_delta = comparison.get('quality_delta', 0)
+        quality_delta = comparison.get("quality_delta", 0)
         st.metric("Quality", f"{quality_delta:+.2f}", delta="points")
 
     # Show recommendation
-    if comparison.get('recommendation'):
+    if comparison.get("recommendation"):
         st.success(f"💡 **Recommendation:** {comparison['recommendation']}")
 
 

@@ -12,4 +12,4 @@ This package provides:
 
 from rlmkit.ui.file_processor import FileProcessor, process_file
 
-__all__ = ['FileProcessor', 'process_file']
+__all__ = ["FileProcessor", "process_file"]

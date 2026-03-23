@@ -9,9 +9,10 @@ trajectory of RLM agents, including all actions, results, and metadata.
 """
 
 import json
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Iterator, Literal
+from typing import Any, Literal
 
 ActionType = Literal["inspect", "subcall", "final", "error"]
 

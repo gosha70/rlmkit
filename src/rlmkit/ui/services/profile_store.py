@@ -8,6 +8,7 @@ A RunProfile captures "how I want the system to behave":
 
 Profiles are persisted as a JSON array in ``~/.rlmkit/profiles.json``.
 """
+
 from __future__ import annotations
 
 import importlib.resources

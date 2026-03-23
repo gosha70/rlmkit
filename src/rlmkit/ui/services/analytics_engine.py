@@ -8,6 +8,7 @@ chat message dicts (as stored in st.session_state.chat_messages) and
 produces a SessionAnalytics dataclass with all aggregated data needed
 by the Metrics Dashboard and sidebar summary.
 """
+
 from __future__ import annotations
 
 import math
@@ -68,9 +69,7 @@ class AnalyticsEngine:
 
     def __init__(self, messages: list[dict]) -> None:
         # Keep only assistant messages (user messages have no metrics)
-        self._messages = [
-            m for m in messages if m.get("role") == "assistant"
-        ]
+        self._messages = [m for m in messages if m.get("role") == "assistant"]
 
     # ------------------------------------------------------------------
     # Public API
@@ -168,43 +167,53 @@ class AnalyticsEngine:
             all_tokens.append(msg_tokens)
 
             # --- Time series ---
-            a.token_trends.append({
-                "index": idx + 1,
-                "rlm_tokens": rlm_tokens,
-                "direct_tokens": direct_tokens,
-                "rag_tokens": rag_tokens,
-            })
-            a.cost_trends.append({
-                "index": idx + 1,
-                "rlm_cost": rlm_cost,
-                "direct_cost": direct_cost,
-                "rag_cost": rag_cost,
-            })
-            a.memory_timeline.append({
-                "index": idx + 1,
-                "memory_peak": msg_memory_peak,
-            })
-            a.time_trends.append({
-                "index": idx + 1,
-                "rlm_time": rlm_time,
-                "direct_time": direct_time,
-                "rag_time": rag_time,
-            })
+            a.token_trends.append(
+                {
+                    "index": idx + 1,
+                    "rlm_tokens": rlm_tokens,
+                    "direct_tokens": direct_tokens,
+                    "rag_tokens": rag_tokens,
+                }
+            )
+            a.cost_trends.append(
+                {
+                    "index": idx + 1,
+                    "rlm_cost": rlm_cost,
+                    "direct_cost": direct_cost,
+                    "rag_cost": rag_cost,
+                }
+            )
+            a.memory_timeline.append(
+                {
+                    "index": idx + 1,
+                    "memory_peak": msg_memory_peak,
+                }
+            )
+            a.time_trends.append(
+                {
+                    "index": idx + 1,
+                    "rlm_time": rlm_time,
+                    "direct_time": direct_time,
+                    "rag_time": rag_time,
+                }
+            )
 
             # --- Query details row ---
             # Try to find the user query from the preceding user message
             query_text = msg.get("content", "")
             mode = msg.get("mode", "unknown")
-            a.query_details.append({
-                "query": query_text,
-                "mode": mode,
-                "status": msg_status,
-                "tokens": msg_tokens,
-                "cost": msg_cost,
-                "time": msg_time,
-                "steps": msg_steps,
-                "memory": msg_memory_peak,
-            })
+            a.query_details.append(
+                {
+                    "query": query_text,
+                    "mode": mode,
+                    "status": msg_status,
+                    "tokens": msg_tokens,
+                    "cost": msg_cost,
+                    "time": msg_time,
+                    "steps": msg_steps,
+                    "memory": msg_memory_peak,
+                }
+            )
 
         # --- Derived totals ---
         a.total_requests = len(self._messages)
@@ -268,9 +277,7 @@ class AnalyticsEngine:
             score -= min(10, (avg_time - 5) / 5 * 5)
 
         # Error penalty
-        error_count = sum(
-            1 for d in a.query_details if d.get("status") == "error"
-        )
+        error_count = sum(1 for d in a.query_details if d.get("status") == "error")
         if error_count > 0:
             score -= min(10, error_count * 5)
 

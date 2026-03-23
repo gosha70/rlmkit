@@ -7,7 +7,8 @@ Based on the RLM paper, allows spawning sub-RLM instances to handle
 complex subtasks within the main RLM execution.
 """
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.rlm import RLM

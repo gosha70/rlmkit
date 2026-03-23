@@ -51,6 +51,7 @@ class ModelConfig:
         ...     sub_provider="ollama"
         ... )
     """
+
     root_model: str
     sub_model: str
     root_provider: str | None = None
@@ -67,6 +68,7 @@ class ModelConfig:
         """
         if self.root_provider is None:
             from ..llm.auto import auto_detect_provider
+
             self.root_provider = auto_detect_provider()
             if self.root_provider is None:
                 raise ValueError(
@@ -75,9 +77,7 @@ class ModelConfig:
                 )
 
         return get_llm_client(
-            provider=self.root_provider,
-            model=self.root_model,
-            api_key=self.root_api_key
+            provider=self.root_provider, model=self.root_model, api_key=self.root_api_key
         )
 
     def get_sub_client(self) -> BaseLLMProvider:
@@ -91,6 +91,7 @@ class ModelConfig:
             # If no sub provider specified, use same as root
             if self.root_provider is None:
                 from ..llm.auto import auto_detect_provider
+
                 self.sub_provider = auto_detect_provider()
                 if self.sub_provider is None:
                     raise ValueError(
@@ -101,14 +102,13 @@ class ModelConfig:
                 self.sub_provider = self.root_provider
 
         return get_llm_client(
-            provider=self.sub_provider,
-            model=self.sub_model,
-            api_key=self.sub_api_key
+            provider=self.sub_provider, model=self.sub_model, api_key=self.sub_api_key
         )
 
     @classmethod
-    def from_single_model(cls, model: str, provider: str | None = None,
-                         api_key: str | None = None) -> 'ModelConfig':
+    def from_single_model(
+        cls, model: str, provider: str | None = None, api_key: str | None = None
+    ) -> "ModelConfig":
         """
         Create ModelConfig using same model for both root and sub-agents.
 
@@ -128,11 +128,11 @@ class ModelConfig:
             root_provider=provider,
             sub_provider=provider,
             root_api_key=api_key,
-            sub_api_key=api_key
+            sub_api_key=api_key,
         )
 
     @classmethod
-    def cost_optimized(cls, provider: str = "openai") -> 'ModelConfig':
+    def cost_optimized(cls, provider: str = "openai") -> "ModelConfig":
         """
         Create a cost-optimized configuration for common providers.
 
@@ -159,14 +159,14 @@ class ModelConfig:
                 root_model="gpt-4o",
                 sub_model="gpt-4o-mini",
                 root_provider="openai",
-                sub_provider="openai"
+                sub_provider="openai",
             )
         elif provider == "anthropic":
             return cls(
                 root_model="claude-3-5-sonnet-20241022",
                 sub_model="claude-3-5-haiku-20241022",
                 root_provider="anthropic",
-                sub_provider="anthropic"
+                sub_provider="anthropic",
             )
         elif provider == "mixed":
             # Use Claude Opus for quality, local Llama for cost
@@ -174,12 +174,11 @@ class ModelConfig:
                 root_model="claude-3-opus-20240229",
                 sub_model="llama3",
                 root_provider="anthropic",
-                sub_provider="ollama"
+                sub_provider="ollama",
             )
         else:
             raise ValueError(
-                f"Unknown provider '{provider}'. "
-                "Supported: 'openai', 'anthropic', 'mixed'"
+                f"Unknown provider '{provider}'. Supported: 'openai', 'anthropic', 'mixed'"
             )
 
     def __str__(self) -> str:
@@ -206,6 +205,7 @@ class ModelMetrics:
         sub_tokens: Total tokens used by sub-agent model
         sub_cost: Total cost for sub-agent model
     """
+
     root_calls: int = 0
     root_tokens: int = 0
     root_cost: float = 0.0

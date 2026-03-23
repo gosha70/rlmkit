@@ -54,21 +54,24 @@ def extract_python_code(text: str) -> str | None:
         None
     """
     # Try python-specific code block first
-    python_pattern = r'```python\s*\n(.*?)\n```'
+    python_pattern = r"```python\s*\n(.*?)\n```"
     match = re.search(python_pattern, text, re.DOTALL | re.IGNORECASE)
 
     if match:
         return match.group(1).strip()
 
     # Fall back to generic code block
-    generic_pattern = r'```\s*\n(.*?)\n```'
+    generic_pattern = r"```\s*\n(.*?)\n```"
     match = re.search(generic_pattern, text, re.DOTALL)
 
     if match:
         code = match.group(1).strip()
         # Make sure it's not another language
-        first_line = code.split('\n')[0].lower()
-        if not any(first_line.startswith(lang) for lang in ['javascript', 'java', 'c++', 'rust', 'go', 'sql']):
+        first_line = code.split("\n")[0].lower()
+        if not any(
+            first_line.startswith(lang)
+            for lang in ["javascript", "java", "c++", "rust", "go", "sql"]
+        ):
             return code
 
     return None
@@ -100,7 +103,7 @@ def extract_final_answer(text: str) -> str | None:
     """
     # Match FINAL: at start of line and capture everything after to end of text
     # Uses DOTALL so .* matches newlines for multi-line answers
-    pattern = r'^FINAL:\s*(.*)'
+    pattern = r"^FINAL:\s*(.*)"
     match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE | re.DOTALL)
 
     if match:
@@ -131,7 +134,7 @@ def extract_final_var(text: str) -> str | None:
         None
     """
     # Match FINAL_VAR: with variable name, case-insensitive
-    pattern = r'^FINAL_VAR:\s*([a-zA-Z_][a-zA-Z0-9_]*)$'
+    pattern = r"^FINAL_VAR:\s*([a-zA-Z_][a-zA-Z0-9_]*)$"
     match = re.search(pattern, text, re.MULTILINE | re.IGNORECASE)
 
     if match:
@@ -179,6 +182,7 @@ def parse_response(text: str) -> ParsedResponse:
         raw_text=text,
     )
 
+
 def format_code_for_display(code: str, max_lines: int = 10) -> str:
     """
     Format code for display in logs/traces, with truncation if needed.
@@ -190,12 +194,12 @@ def format_code_for_display(code: str, max_lines: int = 10) -> str:
     Returns:
         Formatted code string, possibly truncated
     """
-    lines = code.split('\n')
+    lines = code.split("\n")
 
     if len(lines) <= max_lines:
         return code
 
-    truncated = '\n'.join(lines[:max_lines])
+    truncated = "\n".join(lines[:max_lines])
     remaining = len(lines) - max_lines
     return f"{truncated}\n... ({remaining} more lines)"
 
@@ -215,27 +219,27 @@ def format_result_for_llm(result: dict) -> str:
     parts = []
 
     # Show stdout if present
-    if result.get('stdout'):
-        stdout = result['stdout'].strip()
+    if result.get("stdout"):
+        stdout = result["stdout"].strip()
         if stdout:
             parts.append(f"Output:\n{stdout}")
 
     # Show stderr if present
-    if result.get('stderr'):
-        stderr = result['stderr'].strip()
+    if result.get("stderr"):
+        stderr = result["stderr"].strip()
         if stderr:
             parts.append(f"Errors:\n{stderr}")
 
     # Show exception if present
-    if result.get('exception'):
+    if result.get("exception"):
         parts.append(f"Exception:\n{result['exception']}")
 
     # Show timeout if occurred
-    if result.get('timeout'):
+    if result.get("timeout"):
         parts.append("⚠️  Execution timed out")
 
     # If nothing to show, indicate success
     if not parts:
         parts.append("✓ Code executed successfully (no output)")
 
-    return '\n\n'.join(parts)
+    return "\n\n".join(parts)

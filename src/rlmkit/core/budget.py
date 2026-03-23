@@ -62,9 +62,9 @@ class TokenUsage:
     def to_dict(self) -> dict[str, int]:
         """Convert to dictionary."""
         return {
-            'input_tokens': self.input_tokens,
-            'output_tokens': self.output_tokens,
-            'total_tokens': self.total_tokens,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
         }
 
 
@@ -102,9 +102,9 @@ class CostTracker:
     def to_dict(self) -> dict[str, float]:
         """Convert to dictionary."""
         return {
-            'input_cost_per_1k': self.input_cost_per_1k,
-            'output_cost_per_1k': self.output_cost_per_1k,
-            'total_cost': self.total_cost,
+            "input_cost_per_1k": self.input_cost_per_1k,
+            "output_cost_per_1k": self.output_cost_per_1k,
+            "total_cost": self.total_cost,
         }
 
 
@@ -130,11 +130,11 @@ class BudgetLimits:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'max_steps': self.max_steps,
-            'max_tokens': self.max_tokens,
-            'max_cost': self.max_cost,
-            'max_time_seconds': self.max_time_seconds,
-            'max_recursion_depth': self.max_recursion_depth,
+            "max_steps": self.max_steps,
+            "max_tokens": self.max_tokens,
+            "max_cost": self.max_cost,
+            "max_time_seconds": self.max_time_seconds,
+            "max_recursion_depth": self.max_recursion_depth,
         }
 
 
@@ -237,13 +237,15 @@ class BudgetTracker:
         cost = self.cost_tracker.add_usage(input_tokens, output_tokens)
 
         # Record in history
-        self.step_history.append({
-            'step': self.steps,
-            'input_tokens': input_tokens,
-            'output_tokens': output_tokens,
-            'cost': cost,
-            'timestamp': time.time() if self.start_time else None,
-        })
+        self.step_history.append(
+            {
+                "step": self.steps,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost": cost,
+                "timestamp": time.time() if self.start_time else None,
+            }
+        )
 
     def enter_recursion(self) -> None:
         """Increment recursion depth."""
@@ -265,8 +267,7 @@ class BudgetTracker:
         # Check step limit
         if limits.max_steps is not None and self.steps >= limits.max_steps:
             raise BudgetExceeded(
-                f"Maximum steps ({limits.max_steps}) exceeded. "
-                f"Current: {self.steps}"
+                f"Maximum steps ({limits.max_steps}) exceeded. Current: {self.steps}"
             )
 
         # Check token limit
@@ -288,12 +289,14 @@ class BudgetTracker:
             elapsed = self.elapsed_time
             if elapsed is not None and elapsed >= limits.max_time_seconds:
                 raise BudgetExceeded(
-                    f"Maximum time ({limits.max_time_seconds}s) exceeded. "
-                    f"Current: {elapsed:.2f}s"
+                    f"Maximum time ({limits.max_time_seconds}s) exceeded. Current: {elapsed:.2f}s"
                 )
 
         # Check recursion depth
-        if limits.max_recursion_depth is not None and self.recursion_depth >= limits.max_recursion_depth:
+        if (
+            limits.max_recursion_depth is not None
+            and self.recursion_depth >= limits.max_recursion_depth
+        ):
             raise BudgetExceeded(
                 f"Maximum recursion depth ({limits.max_recursion_depth}) exceeded. "
                 f"Current: {self.recursion_depth}"
@@ -307,12 +310,12 @@ class BudgetTracker:
             Dictionary with usage stats
         """
         return {
-            'steps': self.steps,
-            'tokens': self.tokens.to_dict(),
-            'cost': self.cost_tracker.to_dict(),
-            'elapsed_time': self.elapsed_time,
-            'recursion_depth': self.recursion_depth,
-            'limits': self.limits.to_dict(),
+            "steps": self.steps,
+            "tokens": self.tokens.to_dict(),
+            "cost": self.cost_tracker.to_dict(),
+            "elapsed_time": self.elapsed_time,
+            "recursion_depth": self.recursion_depth,
+            "limits": self.limits.to_dict(),
         }
 
     def get_utilization(self) -> dict[str, float | None]:
@@ -325,11 +328,17 @@ class BudgetTracker:
         limits = self.limits
 
         return {
-            'steps': self.steps / limits.max_steps if limits.max_steps else None,
-            'tokens': self.tokens.total_tokens / limits.max_tokens if limits.max_tokens else None,
-            'cost': self.cost_tracker.total_cost / limits.max_cost if limits.max_cost else None,
-            'time': (self.elapsed_time / limits.max_time_seconds
-                    if limits.max_time_seconds and self.elapsed_time else None),
-            'recursion': (self.recursion_depth / limits.max_recursion_depth
-                         if limits.max_recursion_depth else None),
+            "steps": self.steps / limits.max_steps if limits.max_steps else None,
+            "tokens": self.tokens.total_tokens / limits.max_tokens if limits.max_tokens else None,
+            "cost": self.cost_tracker.total_cost / limits.max_cost if limits.max_cost else None,
+            "time": (
+                self.elapsed_time / limits.max_time_seconds
+                if limits.max_time_seconds and self.elapsed_time
+                else None
+            ),
+            "recursion": (
+                self.recursion_depth / limits.max_recursion_depth
+                if limits.max_recursion_depth
+                else None
+            ),
         }

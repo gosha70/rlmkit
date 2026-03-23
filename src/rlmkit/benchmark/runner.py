@@ -96,9 +96,7 @@ class BenchmarkRun:
             "case_count": self.case_count,
             "total_elapsed_time": self.total_elapsed_time,
             "success_rates": self.success_rate,
-            "per_strategy": {
-                name: self.get_strategy_metrics(name) for name in self.strategy_names
-            },
+            "per_strategy": {name: self.get_strategy_metrics(name) for name in self.strategy_names},
             "cases": [cr.to_dict() for cr in self.case_results],
             "metadata": self.metadata,
         }

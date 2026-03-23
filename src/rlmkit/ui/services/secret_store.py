@@ -8,6 +8,7 @@ Three implementations:
   - FileSecretStore:    reads/writes ~/.rlmkit/api_keys.json  (chmod 600)
   - KeyringSecretStore: uses the `keyring` library (optional dependency)
 """
+
 from __future__ import annotations
 
 import json
@@ -21,6 +22,7 @@ from rlmkit.ui.data.providers_catalog import get_env_var
 # ---------------------------------------------------------------------------
 # Abstract interface
 # ---------------------------------------------------------------------------
+
 
 class SecretStore(ABC):
     """Interface for API-key storage backends."""
@@ -48,6 +50,7 @@ class SecretStore(ABC):
 # ---------------------------------------------------------------------------
 # 1. Environment variables only (read-only, recommended)
 # ---------------------------------------------------------------------------
+
 
 class EnvSecretStore(SecretStore):
     """Read API keys from environment variables.  Never writes anything."""
@@ -146,17 +149,20 @@ class KeyringSecretStore(SecretStore):
         """Return True if the ``keyring`` package is importable."""
         try:
             import keyring  # noqa: F401
+
             return True
         except ImportError:
             return False
 
     def get(self, provider: str) -> str | None:
         import keyring
+
         result = keyring.get_password(_KEYRING_SERVICE, provider)
         return str(result) if result is not None else None
 
     def set(self, provider: str, key: str) -> None:
         import keyring
+
         keyring.set_password(_KEYRING_SERVICE, provider, key)
         # Also inject into process env so current session can use it
         env_var = get_env_var(provider)
@@ -165,6 +171,7 @@ class KeyringSecretStore(SecretStore):
 
     def delete(self, provider: str) -> None:
         import keyring
+
         try:
             keyring.delete_password(_KEYRING_SERVICE, provider)
         except keyring.errors.PasswordDeleteError:
@@ -198,8 +205,7 @@ def create_secret_store(policy: str, **kwargs: Any) -> SecretStore:
     if policy == "keyring":
         if not KeyringSecretStore.is_available():
             raise RuntimeError(
-                "The 'keyring' package is not installed. "
-                "Install it with: pip install keyring"
+                "The 'keyring' package is not installed. Install it with: pip install keyring"
             )
         return KeyringSecretStore()
     raise ValueError(f"Unknown key policy: {policy!r}")

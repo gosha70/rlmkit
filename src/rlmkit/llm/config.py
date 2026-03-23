@@ -20,16 +20,16 @@ class ModelPricing:
     def to_dict(self) -> dict[str, float]:
         """Convert to dictionary."""
         return {
-            'input_cost_per_1m': self.input_cost_per_1m,
-            'output_cost_per_1m': self.output_cost_per_1m,
+            "input_cost_per_1m": self.input_cost_per_1m,
+            "output_cost_per_1m": self.output_cost_per_1m,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, float]) -> 'ModelPricing':
+    def from_dict(cls, data: dict[str, float]) -> "ModelPricing":
         """Create from dictionary."""
         return cls(
-            input_cost_per_1m=data['input_cost_per_1m'],
-            output_cost_per_1m=data['output_cost_per_1m'],
+            input_cost_per_1m=data["input_cost_per_1m"],
+            output_cost_per_1m=data["output_cost_per_1m"],
         )
 
 
@@ -64,28 +64,28 @@ class LLMProviderConfig:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'provider': self.provider,
-            'model': self.model,
-            'api_key': self.api_key,
-            'base_url': self.base_url,
-            'temperature': self.temperature,
-            'max_tokens': self.max_tokens,
-            'organization': self.organization,
-            'extra_params': self.extra_params,
+            "provider": self.provider,
+            "model": self.model,
+            "api_key": self.api_key,
+            "base_url": self.base_url,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "organization": self.organization,
+            "extra_params": self.extra_params,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'LLMProviderConfig':
+    def from_dict(cls, data: dict[str, Any]) -> "LLMProviderConfig":
         """Create from dictionary."""
         return cls(
-            provider=data['provider'],
-            model=data['model'],
-            api_key=data.get('api_key'),
-            base_url=data.get('base_url'),
-            temperature=data.get('temperature', 0.7),
-            max_tokens=data.get('max_tokens'),
-            organization=data.get('organization'),
-            extra_params=data.get('extra_params', {}),
+            provider=data["provider"],
+            model=data["model"],
+            api_key=data.get("api_key"),
+            base_url=data.get("base_url"),
+            temperature=data.get("temperature", 0.7),
+            max_tokens=data.get("max_tokens"),
+            organization=data.get("organization"),
+            extra_params=data.get("extra_params", {}),
         )
 
 
@@ -102,25 +102,22 @@ class LLMConfig:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'default_provider': self.default_provider.to_dict() if self.default_provider else None,
-            'pricing': {
-                model: pricing.to_dict()
-                for model, pricing in self.pricing.items()
-            },
+            "default_provider": self.default_provider.to_dict() if self.default_provider else None,
+            "pricing": {model: pricing.to_dict() for model, pricing in self.pricing.items()},
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'LLMConfig':
+    def from_dict(cls, data: dict[str, Any]) -> "LLMConfig":
         """Create from dictionary."""
         default_provider = None
-        if data.get('default_provider'):
-            default_provider = LLMProviderConfig.from_dict(data['default_provider'])
+        if data.get("default_provider"):
+            default_provider = LLMProviderConfig.from_dict(data["default_provider"])
 
         pricing = {}
-        if 'pricing' in data:
+        if "pricing" in data:
             pricing = {
                 model: ModelPricing.from_dict(price_data)
-                for model, price_data in data['pricing'].items()
+                for model, price_data in data["pricing"].items()
             }
 
         return cls(

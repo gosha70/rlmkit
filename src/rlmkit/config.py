@@ -19,47 +19,175 @@ class SecurityConfig:
     """Security configuration for sandbox execution."""
 
     # Module-level security
-    blocked_modules: set[str] = field(default_factory=lambda: {
-        'os', 'sys', 'subprocess', 'socket', 'socketserver',
-        'http', 'urllib', 'ftplib', 'telnetlib', 'smtplib',
-        'pathlib', 'shutil', 'tempfile', 'glob', 'fnmatch',
-        'pty', 'tty', 'pipes', 'resource', 'syslog',
-        'ctypes', 'cffi', 'mmap', 'signal', 'fcntl',
-        'pickle', 'shelve', 'dbm', 'sqlite3',
-        'importlib', 'pkgutil', 'modulefinder', 'runpy',
-        '__builtin__', '__builtins__', 'builtins',
-    })
+    blocked_modules: set[str] = field(
+        default_factory=lambda: {
+            "os",
+            "sys",
+            "subprocess",
+            "socket",
+            "socketserver",
+            "http",
+            "urllib",
+            "ftplib",
+            "telnetlib",
+            "smtplib",
+            "pathlib",
+            "shutil",
+            "tempfile",
+            "glob",
+            "fnmatch",
+            "pty",
+            "tty",
+            "pipes",
+            "resource",
+            "syslog",
+            "ctypes",
+            "cffi",
+            "mmap",
+            "signal",
+            "fcntl",
+            "pickle",
+            "shelve",
+            "dbm",
+            "sqlite3",
+            "importlib",
+            "pkgutil",
+            "modulefinder",
+            "runpy",
+            "__builtin__",
+            "__builtins__",
+            "builtins",
+        }
+    )
 
-    safe_modules: set[str] = field(default_factory=lambda: {
-        'json', 're', 'math', 'datetime', 'time', 'calendar',
-        'decimal', 'fractions', 'statistics', 'random',
-        'string', 'textwrap', 'unicodedata',
-        'itertools', 'functools', 'operator', 'collections',
-        'heapq', 'bisect', 'array', 'copy', 'pprint',
-        'enum', 'dataclasses', 'typing',
-    })
+    safe_modules: set[str] = field(
+        default_factory=lambda: {
+            "json",
+            "re",
+            "math",
+            "datetime",
+            "time",
+            "calendar",
+            "decimal",
+            "fractions",
+            "statistics",
+            "random",
+            "string",
+            "textwrap",
+            "unicodedata",
+            "itertools",
+            "functools",
+            "operator",
+            "collections",
+            "heapq",
+            "bisect",
+            "array",
+            "copy",
+            "pprint",
+            "enum",
+            "dataclasses",
+            "typing",
+        }
+    )
 
     # Builtin-level security
-    blocked_builtins: set[str] = field(default_factory=lambda: {
-        'open', 'input', 'compile', 'eval', 'exec',
-        '__import__', 'breakpoint', 'exit', 'quit', 'help',
-    })
+    blocked_builtins: set[str] = field(
+        default_factory=lambda: {
+            "open",
+            "input",
+            "compile",
+            "eval",
+            "exec",
+            "__import__",
+            "breakpoint",
+            "exit",
+            "quit",
+            "help",
+        }
+    )
 
-    safe_builtins: set[str] = field(default_factory=lambda: {
-        'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes',
-        'callable', 'chr', 'classmethod', 'complex', 'delattr', 'dict',
-        'dir', 'divmod', 'enumerate', 'filter', 'float', 'format',
-        'frozenset', 'getattr', 'hasattr', 'hash', 'hex', 'id', 'int',
-        'isinstance', 'issubclass', 'iter', 'len', 'list', 'locals',
-        'map', 'max', 'min', 'next', 'object', 'oct', 'ord', 'pow',
-        'print', 'property', 'range', 'repr', 'reversed', 'round',
-        'set', 'setattr', 'slice', 'sorted', 'staticmethod', 'str',
-        'sum', 'super', 'tuple', 'type', 'vars', 'zip',
-        'Exception', 'ValueError', 'TypeError', 'KeyError', 'IndexError',
-        'AttributeError', 'RuntimeError', 'StopIteration', 'AssertionError',
-        'True', 'False', 'None', 'NotImplemented', 'Ellipsis',
-        '__name__', '__doc__', '__package__', '__loader__', '__spec__',
-    })
+    safe_builtins: set[str] = field(
+        default_factory=lambda: {
+            "abs",
+            "all",
+            "any",
+            "ascii",
+            "bin",
+            "bool",
+            "bytearray",
+            "bytes",
+            "callable",
+            "chr",
+            "classmethod",
+            "complex",
+            "delattr",
+            "dict",
+            "dir",
+            "divmod",
+            "enumerate",
+            "filter",
+            "float",
+            "format",
+            "frozenset",
+            "getattr",
+            "hasattr",
+            "hash",
+            "hex",
+            "id",
+            "int",
+            "isinstance",
+            "issubclass",
+            "iter",
+            "len",
+            "list",
+            "locals",
+            "map",
+            "max",
+            "min",
+            "next",
+            "object",
+            "oct",
+            "ord",
+            "pow",
+            "print",
+            "property",
+            "range",
+            "repr",
+            "reversed",
+            "round",
+            "set",
+            "setattr",
+            "slice",
+            "sorted",
+            "staticmethod",
+            "str",
+            "sum",
+            "super",
+            "tuple",
+            "type",
+            "vars",
+            "zip",
+            "Exception",
+            "ValueError",
+            "TypeError",
+            "KeyError",
+            "IndexError",
+            "AttributeError",
+            "RuntimeError",
+            "StopIteration",
+            "AssertionError",
+            "True",
+            "False",
+            "None",
+            "NotImplemented",
+            "Ellipsis",
+            "__name__",
+            "__doc__",
+            "__package__",
+            "__loader__",
+            "__spec__",
+        }
+    )
 
     def add_safe_module(self, module: str) -> None:
         """Add a module to the safe list."""
@@ -81,7 +209,7 @@ class SecurityConfig:
 
     def is_module_allowed(self, module: str) -> bool:
         """Check if a module is allowed."""
-        base_module = module.split('.')[0]
+        base_module = module.split(".")[0]
         if base_module in self.blocked_modules:
             return False
         return base_module in self.safe_modules
@@ -89,20 +217,20 @@ class SecurityConfig:
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
-            'blocked_modules': sorted(self.blocked_modules),
-            'safe_modules': sorted(self.safe_modules),
-            'blocked_builtins': sorted(self.blocked_builtins),
-            'safe_builtins': sorted(self.safe_builtins),
+            "blocked_modules": sorted(self.blocked_modules),
+            "safe_modules": sorted(self.safe_modules),
+            "blocked_builtins": sorted(self.blocked_builtins),
+            "safe_builtins": sorted(self.safe_builtins),
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'SecurityConfig':
+    def from_dict(cls, data: dict[str, Any]) -> "SecurityConfig":
         """Create config from dictionary."""
         return cls(
-            blocked_modules=set(data.get('blocked_modules', [])),
-            safe_modules=set(data.get('safe_modules', [])),
-            blocked_builtins=set(data.get('blocked_builtins', [])),
-            safe_builtins=set(data.get('safe_builtins', [])),
+            blocked_modules=set(data.get("blocked_modules", [])),
+            safe_modules=set(data.get("safe_modules", [])),
+            blocked_builtins=set(data.get("blocked_builtins", [])),
+            safe_builtins=set(data.get("safe_builtins", [])),
         )
 
 
@@ -122,24 +250,24 @@ class ExecutionConfig:
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
-            'default_timeout': self.default_timeout,
-            'max_output_chars': self.max_output_chars,
-            'default_safe_mode': self.default_safe_mode,
-            'max_steps': self.max_steps,
-            'enable_rlm': self.enable_rlm,
-            'track_comparison_metrics': self.track_comparison_metrics,
+            "default_timeout": self.default_timeout,
+            "max_output_chars": self.max_output_chars,
+            "default_safe_mode": self.default_safe_mode,
+            "max_steps": self.max_steps,
+            "enable_rlm": self.enable_rlm,
+            "track_comparison_metrics": self.track_comparison_metrics,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'ExecutionConfig':
+    def from_dict(cls, data: dict[str, Any]) -> "ExecutionConfig":
         """Create config from dictionary."""
         return cls(
-            default_timeout=data.get('default_timeout', 5.0),
-            max_output_chars=data.get('max_output_chars', 10000),
-            default_safe_mode=data.get('default_safe_mode', False),
-            max_steps=data.get('max_steps', 16),
-            enable_rlm=data.get('enable_rlm', True),
-            track_comparison_metrics=data.get('track_comparison_metrics', True),
+            default_timeout=data.get("default_timeout", 5.0),
+            max_output_chars=data.get("max_output_chars", 10000),
+            default_safe_mode=data.get("default_safe_mode", False),
+            max_steps=data.get("max_steps", 16),
+            enable_rlm=data.get("enable_rlm", True),
+            track_comparison_metrics=data.get("track_comparison_metrics", True),
         )
 
 
@@ -148,24 +276,24 @@ class MonitoringConfig:
     """Monitoring and telemetry configuration."""
 
     enable_telemetry: bool = False
-    log_level: str = 'INFO'
-    export_format: str = 'json'
+    log_level: str = "INFO"
+    export_format: str = "json"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
-            'enable_telemetry': self.enable_telemetry,
-            'log_level': self.log_level,
-            'export_format': self.export_format,
+            "enable_telemetry": self.enable_telemetry,
+            "log_level": self.log_level,
+            "export_format": self.export_format,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'MonitoringConfig':
+    def from_dict(cls, data: dict[str, Any]) -> "MonitoringConfig":
         """Create config from dictionary."""
         return cls(
-            enable_telemetry=data.get('enable_telemetry', False),
-            log_level=data.get('log_level', 'INFO'),
-            export_format=data.get('export_format', 'json'),
+            enable_telemetry=data.get("enable_telemetry", False),
+            log_level=data.get("log_level", "INFO"),
+            export_format=data.get("export_format", "json"),
         )
 
 
@@ -174,12 +302,12 @@ class RLMConfig:
 
     # Default config file locations (in priority order)
     CONFIG_SEARCH_PATHS = [
-        './rlmkit_config.yaml',
-        './rlmkit_config.json',
-        '~/.rlmkit/config.yaml',
-        '~/.rlmkit/config.json',
-        '/etc/rlmkit/config.yaml',
-        '/etc/rlmkit/config.json',
+        "./rlmkit_config.yaml",
+        "./rlmkit_config.json",
+        "~/.rlmkit/config.yaml",
+        "~/.rlmkit/config.json",
+        "/etc/rlmkit/config.yaml",
+        "/etc/rlmkit/config.json",
     ]
 
     def __init__(
@@ -204,7 +332,7 @@ class RLMConfig:
         self.llm = llm or LLMConfig()
 
     @classmethod
-    def load(cls, config_path: str | None = None) -> 'RLMConfig':
+    def load(cls, config_path: str | None = None) -> "RLMConfig":
         """
         Load configuration from file.
 
@@ -224,7 +352,7 @@ class RLMConfig:
             return cls._load_from_file(config_path)
 
         # Try environment variable
-        env_path = os.getenv('RLMKIT_CONFIG_PATH')
+        env_path = os.getenv("RLMKIT_CONFIG_PATH")
         if env_path and Path(env_path).exists():
             return cls._load_from_file(env_path)
 
@@ -238,7 +366,7 @@ class RLMConfig:
         return cls()
 
     @classmethod
-    def _load_from_file(cls, filepath: str) -> 'RLMConfig':
+    def _load_from_file(cls, filepath: str) -> "RLMConfig":
         """Load configuration from a specific file."""
         path = Path(filepath)
 
@@ -250,9 +378,9 @@ class RLMConfig:
             content = f.read()
 
         # Parse based on extension
-        if path.suffix in ['.yaml', '.yml']:
+        if path.suffix in [".yaml", ".yml"]:
             data = yaml.safe_load(content)
-        elif path.suffix == '.json':
+        elif path.suffix == ".json":
             data = json.loads(content)
         else:
             raise ValueError(f"Unsupported config format: {path.suffix}")
@@ -261,27 +389,22 @@ class RLMConfig:
         return cls.from_dict(data)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'RLMConfig':
+    def from_dict(cls, data: dict[str, Any]) -> "RLMConfig":
         """Create config from dictionary."""
-        security = SecurityConfig.from_dict(data.get('security', {}))
-        execution = ExecutionConfig.from_dict(data.get('execution', {}))
-        monitoring = MonitoringConfig.from_dict(data.get('monitoring', {}))
-        llm = LLMConfig.from_dict(data.get('llm', {}))
+        security = SecurityConfig.from_dict(data.get("security", {}))
+        execution = ExecutionConfig.from_dict(data.get("execution", {}))
+        monitoring = MonitoringConfig.from_dict(data.get("monitoring", {}))
+        llm = LLMConfig.from_dict(data.get("llm", {}))
 
-        return cls(
-            security=security,
-            execution=execution,
-            monitoring=monitoring,
-            llm=llm
-        )
+        return cls(security=security, execution=execution, monitoring=monitoring, llm=llm)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
         return {
-            'security': self.security.to_dict(),
-            'execution': self.execution.to_dict(),
-            'monitoring': self.monitoring.to_dict(),
-            'llm': self.llm.to_dict(),
+            "security": self.security.to_dict(),
+            "execution": self.execution.to_dict(),
+            "monitoring": self.monitoring.to_dict(),
+            "llm": self.llm.to_dict(),
         }
 
     def save(self, filepath: str) -> None:
@@ -295,11 +418,11 @@ class RLMConfig:
         data = self.to_dict()
 
         # Save based on extension
-        if path.suffix in ['.yaml', '.yml']:
-            with open(path, 'w') as f:
+        if path.suffix in [".yaml", ".yml"]:
+            with open(path, "w") as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-        elif path.suffix == '.json':
-            with open(path, 'w') as f:
+        elif path.suffix == ".json":
+            with open(path, "w") as f:
                 json.dump(data, f, indent=2)
         else:
             raise ValueError(f"Unsupported config format: {path.suffix}")

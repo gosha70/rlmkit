@@ -23,10 +23,10 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --extra dev
-      - name: Ruff check (server + tests)
-        run: uv run ruff check src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ src/rlmkit/prompts/ tests/
+      - name: Ruff check
+        run: uv run ruff check src/rlmkit/ tests/
       - name: Ruff format check
-        run: uv run ruff format --check src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ tests/
+        run: uv run ruff format --check src/rlmkit/ tests/
 
   typecheck:
     name: Type Check

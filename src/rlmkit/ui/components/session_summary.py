@@ -5,6 +5,7 @@
 Renders a compact summary of session-wide metrics in the sidebar.
 Designed to be called from every page's sidebar rendering code.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

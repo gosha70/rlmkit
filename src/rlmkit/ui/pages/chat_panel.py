@@ -4,7 +4,6 @@
 Chat Panel - Main interactive chat interface
 """
 
-
 # Import all the chat functions from app module
 import sys
 from pathlib import Path

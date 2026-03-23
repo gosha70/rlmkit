@@ -51,9 +51,7 @@ class RecursiveController:
         self.max_depth = max_depth
 
         if budget_tracker is None:
-            budget_tracker = BudgetTracker(
-                BudgetLimits(max_recursion_depth=max_depth)
-            )
+            budget_tracker = BudgetTracker(BudgetLimits(max_recursion_depth=max_depth))
         self.budget_tracker = budget_tracker
 
         # Trace of recursive calls: list of dicts capturing each subcall
@@ -89,8 +87,7 @@ class RecursiveController:
 
         if child_depth > self.max_depth:
             raise BudgetExceeded(
-                f"Maximum recursion depth ({self.max_depth}) exceeded. "
-                f"Current depth: {child_depth}"
+                f"Maximum recursion depth ({self.max_depth}) exceeded. Current depth: {child_depth}"
             )
 
         # Track recursion in the shared budget tracker
@@ -108,15 +105,17 @@ class RecursiveController:
             result: RLMResult = child.run(prompt=content, query=query)
 
             # Record in the recursion trace
-            self.recursion_trace.append({
-                "depth": child_depth,
-                "query": query,
-                "content_length": len(content),
-                "success": result.success,
-                "answer": result.answer if result.success else None,
-                "error": result.error,
-                "steps": result.steps,
-            })
+            self.recursion_trace.append(
+                {
+                    "depth": child_depth,
+                    "query": query,
+                    "content_length": len(content),
+                    "success": result.success,
+                    "answer": result.answer if result.success else None,
+                    "error": result.error,
+                    "steps": result.steps,
+                }
+            )
 
             if result.success:
                 return result.answer

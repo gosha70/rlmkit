@@ -32,8 +32,7 @@ class BenchmarkReport:
     def summary(self) -> dict[str, Any]:
         """High-level summary of the benchmark run."""
         per_strategy = {
-            name: self.run.get_strategy_metrics(name)
-            for name in self.run.strategy_names
+            name: self.run.get_strategy_metrics(name) for name in self.run.strategy_names
         }
 
         # Find winners
@@ -112,22 +111,24 @@ class BenchmarkReport:
                 sr = cr.evaluation.results.get(name)
                 if sr is None:
                     continue
-                rows.append({
-                    "case_id": cr.case.id,
-                    "category": cr.case.category,
-                    "difficulty": cr.case.difficulty,
-                    "content_length": cr.case.content_length,
-                    "strategy": name,
-                    "success": sr.success,
-                    "answer_length": len(sr.answer),
-                    "steps": sr.steps,
-                    "tokens_input": sr.tokens.input_tokens,
-                    "tokens_output": sr.tokens.output_tokens,
-                    "tokens_total": sr.tokens.total_tokens,
-                    "cost": sr.cost,
-                    "elapsed_time": sr.elapsed_time,
-                    "error": sr.error or "",
-                })
+                rows.append(
+                    {
+                        "case_id": cr.case.id,
+                        "category": cr.case.category,
+                        "difficulty": cr.case.difficulty,
+                        "content_length": cr.case.content_length,
+                        "strategy": name,
+                        "success": sr.success,
+                        "answer_length": len(sr.answer),
+                        "steps": sr.steps,
+                        "tokens_input": sr.tokens.input_tokens,
+                        "tokens_output": sr.tokens.output_tokens,
+                        "tokens_total": sr.tokens.total_tokens,
+                        "cost": sr.cost,
+                        "elapsed_time": sr.elapsed_time,
+                        "error": sr.error or "",
+                    }
+                )
         return rows
 
     def save_json(self, path: str) -> None:
