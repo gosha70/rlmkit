@@ -27,7 +27,7 @@ assigned a priority level:
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Clone the repository and run `pip install -e ".[all]"` | Installation succeeds without errors |
-| 2 | Run `python -c "import rlmkit; print(rlmkit.__version__)"` | Prints version string (e.g. `0.1.0`) |
+| 2 | Run `python -c "import rlmkit; print(rlmkit.__version__)"` | Prints version string (e.g. `1.0.0`) |
 | 3 | Set `OPENAI_API_KEY` environment variable to a valid key | Variable is set |
 | 4 | Run `python -c "from rlmkit.llm import auto_detect_provider; print(auto_detect_provider())"` | Prints `openai` |
 | 5 | Run `pytest tests/ -x --timeout=60` | All existing tests pass |
