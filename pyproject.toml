@@ -44,6 +44,7 @@ dev = [
     "pre-commit>=3.7.0",
     "types-pyyaml>=6.0.12.20250915",
     "nest-asyncio>=1.6.0",
+    "pip-audit>=2.7.0",
 ]
 
 server = [
