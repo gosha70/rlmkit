@@ -12,18 +12,18 @@ def demo_basic_execution():
     print("=" * 60)
     print("Demo 1: Basic Docker Execution")
     print("=" * 60)
-    
+
     # Check if Docker is available
     if not DockerExecutor.is_available():
         print("⚠️  Docker not available. Install Docker to run this demo.")
         print("   https://docs.docker.com/get-docker/")
         return
-    
+
     print("✅ Docker is available\n")
-    
+
     # Create executor
     executor = DockerExecutor()
-    
+
     # Execute simple code
     code = """
 import numpy as np
@@ -33,10 +33,10 @@ print(f"Data: {data}")
 print(f"Mean: {data.mean()}")
 print(f"Sum: {data.sum()}")
 """
-    
+
     print("Executing code in isolated Docker container...")
     result = executor.execute(code)
-    
+
     if result["result"]:
         print("\n✅ Execution successful!")
         print("Output:")
@@ -51,13 +51,13 @@ def demo_security_isolation():
     print("=" * 60)
     print("Demo 2: Network Isolation (Security)")
     print("=" * 60)
-    
+
     if not DockerExecutor.is_available():
         print("⚠️  Docker not available")
         return
-    
+
     executor = DockerExecutor(network_mode="none")
-    
+
     # Try to access network (should fail)
     code = """
 import socket
@@ -69,10 +69,10 @@ try:
 except Exception as e:
     print(f"Network access: BLOCKED ✅ ({type(e).__name__})")
 """
-    
+
     print("Testing network isolation...")
     result = executor.execute(code)
-    
+
     if result["result"]:
         print("\nOutput:")
         print(result["output"])
@@ -84,18 +84,18 @@ def demo_resource_limits():
     print("=" * 60)
     print("Demo 3: Resource Limits")
     print("=" * 60)
-    
+
     if not DockerExecutor.is_available():
         print("⚠️  Docker not available")
         return
-    
+
     # Create executor with strict limits
     executor = DockerExecutor(
         memory_limit="256m",  # Only 256MB
         cpu_limit="0.5",  # Half a CPU
         timeout=5  # 5 second timeout
     )
-    
+
     code = """
 import sys
 import numpy as np
@@ -109,10 +109,10 @@ print(f"Array shape: {data.shape}")
 print(f"Memory usage: ~{data.nbytes / 1024 / 1024:.2f} MB")
 print("✅ Execution within resource limits")
 """
-    
+
     print("Executing with resource limits (256MB RAM, 0.5 CPU, 5s timeout)...")
     result = executor.execute(code)
-    
+
     if result["result"]:
         print("\nOutput:")
         print(result["output"])
@@ -126,13 +126,13 @@ def demo_timeout_protection():
     print("=" * 60)
     print("Demo 4: Timeout Protection")
     print("=" * 60)
-    
+
     if not DockerExecutor.is_available():
         print("⚠️  Docker not available")
         return
-    
+
     executor = DockerExecutor(timeout=3)  # 3 second timeout
-    
+
     code = """
 import time
 
@@ -140,10 +140,10 @@ print("Starting long computation...")
 time.sleep(10)  # This will be killed
 print("This won't print")
 """
-    
+
     print("Executing code that exceeds timeout...")
     result = executor.execute(code)
-    
+
     if not result["result"]:
         print(f"\n✅ Timeout protection working: {result['error']}")
     print()
@@ -154,7 +154,7 @@ def demo_comparison():
     print("=" * 60)
     print("Demo 5: Security Level Comparison")
     print("=" * 60)
-    
+
     print("""
 RLMKit provides multiple security levels:
 
@@ -189,13 +189,13 @@ When restricted builtins are enough:
 
 if __name__ == "__main__":
     print("\n🔒 RLMKit Docker Sandbox Demo\n")
-    
+
     demo_basic_execution()
     demo_security_isolation()
     demo_resource_limits()
     demo_timeout_protection()
     demo_comparison()
-    
+
     print("=" * 60)
     print("Key Features:")
     print("=" * 60)

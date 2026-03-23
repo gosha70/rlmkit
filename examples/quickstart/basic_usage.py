@@ -59,7 +59,7 @@ def example_1_direct_mode():
     print("=" * 70)
     print("Example 1: Direct Mode (Small Content)")
     print("=" * 70)
-    
+
     result = interact(
         content=SHORT_CONTENT,
         query="What is RLMKit?",
@@ -67,7 +67,7 @@ def example_1_direct_mode():
         provider="openai",
         model="gpt-4o-mini"  # Using mini for cost savings
     )
-    
+
     print(f"\nMode Used: {result.mode_used}")
     print(f"Answer: {result.answer}")
     print(f"\nMetrics:")
@@ -81,7 +81,7 @@ def example_2_rag_mode():
     print("\n" + "=" * 70)
     print("Example 2: RAG Mode (Medium Content)")
     print("=" * 70)
-    
+
     result = interact(
         content=MEDIUM_CONTENT,
         query="What are the main features of RLMKit?",
@@ -90,7 +90,7 @@ def example_2_rag_mode():
         model="gpt-4o-mini",
         top_k=3  # Retrieve top 3 chunks
     )
-    
+
     print(f"\nMode Used: {result.mode_used}")
     print(f"Answer: {result.answer}")
     print(f"\nMetrics:")
@@ -104,7 +104,7 @@ def example_3_rlm_mode():
     print("\n" + "=" * 70)
     print("Example 3: RLM Mode (Recursive Exploration)")
     print("=" * 70)
-    
+
     result = interact(
         content=MEDIUM_CONTENT,
         query="How do I install and use RLMKit?",
@@ -113,7 +113,7 @@ def example_3_rlm_mode():
         model="gpt-4o-mini",
         verbose=True  # Show execution steps
     )
-    
+
     print(f"\nMode Used: {result.mode_used}")
     print(f"Answer: {result.answer}")
     print(f"\nMetrics:")
@@ -128,7 +128,7 @@ def example_4_auto_mode():
     print("\n" + "=" * 70)
     print("Example 4: Auto Mode (Automatic Selection)")
     print("=" * 70)
-    
+
     # Will automatically choose based on content size
     result = interact(
         content=SHORT_CONTENT,
@@ -138,7 +138,7 @@ def example_4_auto_mode():
         model="gpt-4o-mini",
         verbose=True
     )
-    
+
     print(f"\nAuto-selected Mode: {result.mode_used}")
     print(f"Answer: {result.answer}")
     print(f"\nMetrics:")
@@ -151,16 +151,16 @@ def example_5_simple_completion():
     print("\n" + "=" * 70)
     print("Example 5: Simple complete() Function")
     print("=" * 70)
-    
+
     from rlmkit import complete
-    
+
     # Just get the answer string
     answer = complete(
         content=SHORT_CONTENT,
         query="List the interaction modes",
         mode="direct"
     )
-    
+
     print(f"Answer: {answer}")
 
 
@@ -169,19 +169,19 @@ def example_6_accessing_raw_result():
     print("\n" + "=" * 70)
     print("Example 6: Accessing Raw Strategy Result")
     print("=" * 70)
-    
+
     result = interact(
         content=SHORT_CONTENT,
         query="What is RLMKit?",
         mode="direct"
     )
-    
+
     # Access the underlying StrategyResult
     raw = result.raw_result
     print(f"Strategy Name: {raw.strategy_name}")
     print(f"Success: {raw.success}")
     print(f"Answer Length: {len(raw.answer)} characters")
-    
+
     # Convert result to dict
     result_dict = result.to_dict()
     print(f"\nResult as Dict: {result_dict}")
@@ -192,7 +192,7 @@ def example_7_error_handling():
     print("\n" + "=" * 70)
     print("Example 7: Error Handling")
     print("=" * 70)
-    
+
     try:
         # Empty content should raise ValueError
         result = interact(
@@ -202,7 +202,7 @@ def example_7_error_handling():
         )
     except ValueError as e:
         print(f"Caught expected error: {e}")
-    
+
     try:
         # Invalid mode should raise ValueError
         result = interact(
@@ -221,10 +221,10 @@ if __name__ == "__main__":
     print("\nNote: These examples require OPENAI_API_KEY environment variable")
     print("Set it with: export OPENAI_API_KEY=sk-...")
     print("\n")
-    
+
     # Run all examples
     # Comment out examples you don't want to run
-    
+
     try:
         example_1_direct_mode()
         example_2_rag_mode()
@@ -233,16 +233,16 @@ if __name__ == "__main__":
         example_5_simple_completion()
         example_6_accessing_raw_result()
         example_7_error_handling()
-        
+
         print("\n" + "=" * 70)
         print("All examples completed successfully!")
         print("=" * 70)
-        
+
     except ImportError as e:
         print(f"\n❌ Import Error: {e}")
         print("Make sure to install RLMKit and dependencies:")
         print("  pip install -e '.[dev]'")
-        
+
     except Exception as e:
         print(f"\n❌ Error running examples: {e}")
         print("Make sure OPENAI_API_KEY is set and valid.")

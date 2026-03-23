@@ -609,4 +609,3 @@ export const triggerJudge = (req: JudgeRequest) =>
     method: "POST",
     body: JSON.stringify(req),
   });
-

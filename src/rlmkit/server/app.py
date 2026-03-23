@@ -76,9 +76,11 @@ def create_app() -> FastAPI:
     # Set rlmkit loggers to DEBUG so detailed traces are visible
     logging.getLogger("rlmkit").setLevel(logging.DEBUG)
 
+    from rlmkit import __version__
+
     app = FastAPI(
         title="RLMKit API",
-        version="0.1.0",
+        version=__version__,
         description="Recursive Language Model toolkit API server",
     )
 
@@ -136,9 +138,11 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check() -> HealthResponse:
         state = get_state()
+        from rlmkit import __version__
+
         return HealthResponse(
             status="ok",
-            version="0.1.0",
+            version=__version__,
             uptime_seconds=round(time.time() - state.start_time, 1),
         )
 

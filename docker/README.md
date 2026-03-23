@@ -19,14 +19,14 @@ from rlmkit.envs.sandbox import DockerExecutor
 # Check if Docker is available
 if DockerExecutor.is_available():
     executor = DockerExecutor()
-    
+
     # Execute code in isolated container
     result = executor.execute("""
 import numpy as np
 data = np.array([1, 2, 3, 4, 5])
 print(f"Mean: {data.mean()}")
 """)
-    
+
     print(result["output"])
 else:
     print("Docker not available - falling back to restricted execution")

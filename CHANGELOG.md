@@ -3,18 +3,30 @@
 All notable changes to RLMKit are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [1.0.0] - 2026-03-23
+
+Cycle 3 (Quality, DevOps & Release) + Cool-down 3.
 
 ### Added
+- CI pipeline: Codecov coverage upload, pip-audit vulnerability scan, Docker sandbox build + smoke-test job
+- Coverage gate raised to 80%; omit list scoped to Streamlit-bound files only — pure-Python `ui/data/` and `ui/services/` remain measured
+- Pre-commit mypy hook (`uv run mypy src/rlmkit/ --ignore-missing-imports`); ruff scope expanded to all of `src/rlmkit/`
+- `execute_async()` on all three sandbox adapters (`LocalSandboxAdapter`, `RestrictedSandboxAdapter`, `DockerSandboxAdapter`) — satisfies `SandboxPort` protocol
+- `complete_async()` and `complete_stream_async()` on all legacy LLM adapters (`MockLLMAdapter`, `OpenAIAdapter`, `AnthropicAdapter`, `OllamaAdapter`) — satisfies `LLMPort` protocol; streaming wrappers delegate to `complete_async` via `asyncio.to_thread` to remain non-blocking
 - Async API variants: `interact_async()`, `complete_async()` with `api_base` and `timeout` parameters
-- Storybook 10 with 27 component stories across 7 components (Badge, StatusIndicator, ProviderBadge, MetricCard, TypingIndicator, MessageBubble, Timeline)
-- Frontend test suite: 134 passing tests covering chat, settings, dashboard, traces, and accessibility
-- Node.js >= 22 requirement for frontend (`.nvmrc` + `engines` field)
+- Storybook 10 with 27 component stories across 7 components
+- Frontend test suite: 175 passing + 21 skipped tests (vitest, Node ≥ 22)
+- D1: Unified `interact()` / `interact_async()` API consolidation
+- D2: Dashboard charts polished (chart types, color palette, tooltips)
+- D3: Frontend cleanup — dead chat components removed, dead API functions removed, error toasts added (`sonner`), Dashboard→Traces deep-link, Traces "Load more" pagination
 
 ### Fixed
+- Security (CodeQL `py/clear-text-storage-sensitive-data`): replaced bespoke `_update_env_file()` with `SecretStore` dispatch — OS keyring when available, JSON file (`~/.rlmkit/api_keys.json`, chmod 600) as fallback; startup `_reload_stored_api_keys()` restores persisted keys with correct precedence (real env > SecretStore > legacy `.env`)
+- `_create_llm_adapter()` return type narrowed from `object` to `LLMPort`; branch-local variable names fixed to prevent mypy incompatible-assignment errors
+- `ExecutionSlot.mode` cast to `Literal["rlm","direct","rag"]` in configuration panel
 - Anthropic default model aligned across `api.py` and `RLMKitClient` (`claude-sonnet-4-5-20250514`)
 - Ollama default model aligned (`llama3`)
-- ESLint `globalIgnores` includes `storybook-static/` to prevent lint failures after Storybook builds
+- ESLint `globalIgnores` includes `storybook-static/`
 
 ## [0.2.0-alpha.3] - 2026-02-11
 
