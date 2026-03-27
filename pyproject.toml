@@ -45,6 +45,7 @@ dev = [
     "types-pyyaml>=6.0.12.20250915",
     "nest-asyncio>=1.6.0",
     "pip-audit>=2.7.0",
+    "requests>=2.33.0",  # CVE-2026-25645 fix; transitive via pip-audit/tiktoken
 ]
 
 server = [
