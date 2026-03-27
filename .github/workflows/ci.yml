@@ -92,7 +92,9 @@ jobs:
       - name: Bandit security scan
         run: uv run bandit -r src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ -c pyproject.toml
       - name: pip-audit vulnerability scan
-        run: uv run pip-audit --skip-editable
+        run: |
+          # CVE-2026-4539 (pygments): no fix version published yet; ignored pending upstream release
+          uv run pip-audit --skip-editable --ignore-vuln CVE-2026-4539
 
   docker-sandbox:
     name: Docker Sandbox
