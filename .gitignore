@@ -11,6 +11,10 @@ build/
 .coverage
 htmlcov/
 .pytest_cache/
+coverage.xml
+
+# Playwright CLI artifacts
+.playwright-cli/
 
 # IDE
 .vscode/
