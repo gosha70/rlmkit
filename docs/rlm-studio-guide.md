@@ -12,7 +12,7 @@ RLM Studio is a web application for experimenting with, tuning, and monitoring R
 
 ```bash
 # Terminal 1: Backend API
-uv run uvicorn src.rlmkit.server.app:app --reload
+uv run uvicorn rlmkit.server.app:app --reload
 
 # Terminal 2: Frontend
 cd frontend && npm run dev
@@ -300,7 +300,7 @@ When you select an execution, the trace detail shows:
 The backend defaults to port 8000. To change it:
 
 ```bash
-uv run uvicorn src.rlmkit.server.app:app --reload --port 8002
+uv run uvicorn rlmkit.server.app:app --reload --port 8002
 ```
 
 Then set the frontend to point at the new port. Create or edit `frontend/.env.local`:

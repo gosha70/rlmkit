@@ -12,6 +12,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
+[![CI](https://github.com/gosha70/rlmkit/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/gosha70/rlmkit/actions/workflows/ci.yml)
 
 ## What is RLMKit?
 
@@ -51,8 +52,8 @@ result = interact(
 )
 
 print(result.answer)
-print(f"Tokens: {result.metrics['total_tokens']:,}")
-print(f"Cost: ${result.metrics['total_cost']:.4f}")
+print(f"Tokens: {result.total_tokens:,}")
+print(f"Cost: ${result.total_cost:.4f}")
 print(f"Mode used: {result.mode_used}")
 ```
 
@@ -119,7 +120,7 @@ RLM Studio is a web application for experimenting with RLMKit interactively. Use
 
 ```bash
 # Terminal 1: Backend API server
-uv run uvicorn src.rlmkit.server.app:app --reload
+uv run uvicorn rlmkit.server.app:app --reload
 
 # Terminal 2: Frontend
 cd frontend && npm run dev

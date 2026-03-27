@@ -42,6 +42,22 @@ class InteractResult:
     trace: list[dict[str, Any]] | None = None
     raw_result: RunResultDTO | None = None
 
+    @property
+    def total_tokens(self) -> int:
+        return int(self.metrics.get("total_tokens", 0))
+
+    @property
+    def total_cost(self) -> float:
+        return float(self.metrics.get("total_cost", 0.0))
+
+    @property
+    def elapsed_time(self) -> float:
+        return float(self.metrics.get("execution_time", 0.0))
+
+    @property
+    def steps(self) -> int:
+        return int(self.metrics.get("llm_calls", 0))
+
     def __str__(self) -> str:
         return self.answer
 

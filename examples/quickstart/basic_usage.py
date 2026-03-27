@@ -3,7 +3,7 @@ Basic usage examples for RLMKit's unified interact() API.
 
 This demonstrates the three main interaction modes:
 1. Direct - Full context in one call
-2. RAG - Retrieval-augmented generation
+2. Direct (larger document) - Same mode, bigger content
 3. RLM - Recursive exploration with code generation
 4. Auto - Automatically chooses the best mode
 """
@@ -17,7 +17,8 @@ arbitrarily large contexts through code generation and recursive exploration.
 It provides three interaction modes: Direct, RAG, and RLM.
 """
 
-MEDIUM_CONTENT = """
+MEDIUM_CONTENT = (
+    """
 # RLMKit Documentation
 
 ## Introduction
@@ -51,10 +52,12 @@ The toolkit supports multiple LLM providers:
 2. Code repository analysis
 3. Research paper summarization
 4. Multi-document synthesis
-""" * 50  # Repeat to make it larger
+"""
+    * 50
+)  # Repeat to make it larger
 
 
-def example_1_direct_mode():
+def example_1_direct_mode() -> None:
     """Example 1: Direct mode for small content."""
     print("=" * 70)
     print("Example 1: Direct Mode (Small Content)")
@@ -65,41 +68,40 @@ def example_1_direct_mode():
         query="What is RLMKit?",
         mode="direct",
         provider="openai",
-        model="gpt-4o-mini"  # Using mini for cost savings
+        model="gpt-4o-mini",  # Using mini for cost savings
     )
 
     print(f"\nMode Used: {result.mode_used}")
     print(f"Answer: {result.answer}")
-    print(f"\nMetrics:")
-    print(f"  Tokens: {result.metrics['total_tokens']:,}")
-    print(f"  Cost: ${result.metrics['total_cost']:.4f}")
-    print(f"  Time: {result.metrics['execution_time']:.2f}s")
+    print("\nMetrics:")
+    print(f"  Tokens: {result.total_tokens:,}")
+    print(f"  Cost: ${result.total_cost:.4f}")
+    print(f"  Time: {result.elapsed_time:.2f}s")
 
 
-def example_2_rag_mode():
-    """Example 2: RAG mode for medium-sized content."""
+def example_2_direct_mode_large() -> None:
+    """Example 2: Direct mode with a larger document."""
     print("\n" + "=" * 70)
-    print("Example 2: RAG Mode (Medium Content)")
+    print("Example 2: Direct mode with a larger document")
     print("=" * 70)
 
     result = interact(
         content=MEDIUM_CONTENT,
         query="What are the main features of RLMKit?",
-        mode="rag",
+        mode="direct",
         provider="openai",
         model="gpt-4o-mini",
-        top_k=3  # Retrieve top 3 chunks
     )
 
     print(f"\nMode Used: {result.mode_used}")
     print(f"Answer: {result.answer}")
-    print(f"\nMetrics:")
-    print(f"  Tokens: {result.metrics['total_tokens']:,}")
-    print(f"  Cost: ${result.metrics['total_cost']:.4f}")
-    print(f"  Time: {result.metrics['execution_time']:.2f}s")
+    print("\nMetrics:")
+    print(f"  Tokens: {result.total_tokens:,}")
+    print(f"  Cost: ${result.total_cost:.4f}")
+    print(f"  Time: {result.elapsed_time:.2f}s")
 
 
-def example_3_rlm_mode():
+def example_3_rlm_mode() -> None:
     """Example 3: RLM mode for exploration."""
     print("\n" + "=" * 70)
     print("Example 3: RLM Mode (Recursive Exploration)")
@@ -111,19 +113,19 @@ def example_3_rlm_mode():
         mode="rlm",
         provider="openai",
         model="gpt-4o-mini",
-        verbose=True  # Show execution steps
+        verbose=True,  # Show execution steps
     )
 
     print(f"\nMode Used: {result.mode_used}")
     print(f"Answer: {result.answer}")
-    print(f"\nMetrics:")
-    print(f"  Tokens: {result.metrics['total_tokens']:,}")
-    print(f"  Cost: ${result.metrics['total_cost']:.4f}")
-    print(f"  LLM Calls: {result.metrics['llm_calls']}")
-    print(f"  Time: {result.metrics['execution_time']:.2f}s")
+    print("\nMetrics:")
+    print(f"  Tokens: {result.total_tokens:,}")
+    print(f"  Cost: ${result.total_cost:.4f}")
+    print(f"  Steps: {result.steps}")
+    print(f"  Time: {result.elapsed_time:.2f}s")
 
 
-def example_4_auto_mode():
+def example_4_auto_mode() -> None:
     """Example 4: Auto mode - let RLMKit choose."""
     print("\n" + "=" * 70)
     print("Example 4: Auto Mode (Automatic Selection)")
@@ -136,17 +138,17 @@ def example_4_auto_mode():
         mode="auto",  # Let RLMKit decide
         provider="openai",
         model="gpt-4o-mini",
-        verbose=True
+        verbose=True,
     )
 
     print(f"\nAuto-selected Mode: {result.mode_used}")
     print(f"Answer: {result.answer}")
-    print(f"\nMetrics:")
-    print(f"  Tokens: {result.metrics['total_tokens']:,}")
-    print(f"  Cost: ${result.metrics['total_cost']:.4f}")
+    print("\nMetrics:")
+    print(f"  Tokens: {result.total_tokens:,}")
+    print(f"  Cost: ${result.total_cost:.4f}")
 
 
-def example_5_simple_completion():
+def example_5_simple_completion() -> None:
     """Example 5: Simple complete() wrapper."""
     print("\n" + "=" * 70)
     print("Example 5: Simple complete() Function")
@@ -155,61 +157,26 @@ def example_5_simple_completion():
     from rlmkit import complete
 
     # Just get the answer string
-    answer = complete(
-        content=SHORT_CONTENT,
-        query="List the interaction modes",
-        mode="direct"
-    )
+    answer = complete(content=SHORT_CONTENT, query="List the interaction modes", mode="direct")
 
     print(f"Answer: {answer}")
 
 
-def example_6_accessing_raw_result():
-    """Example 6: Accessing the underlying strategy result."""
+def example_6_error_handling() -> None:
+    """Example 6: Error handling."""
     print("\n" + "=" * 70)
-    print("Example 6: Accessing Raw Strategy Result")
-    print("=" * 70)
-
-    result = interact(
-        content=SHORT_CONTENT,
-        query="What is RLMKit?",
-        mode="direct"
-    )
-
-    # Access the underlying StrategyResult
-    raw = result.raw_result
-    print(f"Strategy Name: {raw.strategy_name}")
-    print(f"Success: {raw.success}")
-    print(f"Answer Length: {len(raw.answer)} characters")
-
-    # Convert result to dict
-    result_dict = result.to_dict()
-    print(f"\nResult as Dict: {result_dict}")
-
-
-def example_7_error_handling():
-    """Example 7: Error handling."""
-    print("\n" + "=" * 70)
-    print("Example 7: Error Handling")
+    print("Example 6: Error Handling")
     print("=" * 70)
 
     try:
         # Empty content should raise ValueError
-        result = interact(
-            content="",
-            query="What is this?",
-            mode="direct"
-        )
+        interact(content="", query="What is this?", mode="direct")
     except ValueError as e:
         print(f"Caught expected error: {e}")
 
     try:
         # Invalid mode should raise ValueError
-        result = interact(
-            content="Some content",
-            query="What is this?",
-            mode="invalid_mode"
-        )
+        interact(content="Some content", query="What is this?", mode="invalid_mode")
     except ValueError as e:
         print(f"Caught expected error: {e}")
 
@@ -227,22 +194,21 @@ if __name__ == "__main__":
 
     try:
         example_1_direct_mode()
-        example_2_rag_mode()
+        example_2_direct_mode_large()
         example_3_rlm_mode()
         example_4_auto_mode()
         example_5_simple_completion()
-        example_6_accessing_raw_result()
-        example_7_error_handling()
+        example_6_error_handling()
 
         print("\n" + "=" * 70)
         print("All examples completed successfully!")
         print("=" * 70)
 
     except ImportError as e:
-        print(f"\n❌ Import Error: {e}")
+        print(f"\n Import Error: {e}")
         print("Make sure to install RLMKit and dependencies:")
         print("  pip install -e '.[dev]'")
 
     except Exception as e:
-        print(f"\n❌ Error running examples: {e}")
+        print(f"\n Error running examples: {e}")
         print("Make sure OPENAI_API_KEY is set and valid.")
