@@ -26,6 +26,10 @@ from rlmkit.public.errors import (
 )
 from rlmkit.public.types import PublicRunResult
 
+# RLMKitClient is intentionally deprecated; these tests verify the deprecated
+# API still works correctly. Suppress the expected deprecation warning.
+pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
+
 # ---------------------------------------------------------------------------
 # Client construction
 # ---------------------------------------------------------------------------

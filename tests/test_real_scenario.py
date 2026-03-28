@@ -87,8 +87,6 @@ def test_user_scenario():
     print("[PASS] RLM completed execution successfully")
     print("=" * 70 + "\n")
 
-    return result
-
 
 if __name__ == "__main__":
     try:

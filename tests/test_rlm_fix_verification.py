@@ -66,8 +66,6 @@ def test_rejects_final_after_error():
     print("TEST 1 PASSED")
     print("=" * 70 + "\n")
 
-    return result
-
 
 def test_accepts_final_after_success():
     """
@@ -112,8 +110,6 @@ def test_accepts_final_after_success():
     print("TEST 2 PASSED")
     print("=" * 70 + "\n")
 
-    return result
-
 
 def test_accepts_final_with_reasoning_after_error():
     """
@@ -153,8 +149,6 @@ def test_accepts_final_with_reasoning_after_error():
     print("\n" + "=" * 70)
     print("TEST 3 PASSED")
     print("=" * 70 + "\n")
-
-    return result
 
 
 def run_all_tests():

@@ -94,6 +94,14 @@ addopts = [
     "--verbose",
     "--strict-markers",
 ]
+filterwarnings = [
+    # aiohttp: fixed in Python 3.13.2 but aiohttp hasn't caught up yet
+    "ignore::DeprecationWarning:aiohttp",
+    # litellm: accesses Pydantic model fields on instances (their internal issue)
+    "ignore::pydantic.warnings.PydanticDeprecatedSince211:litellm",
+    # RestrictedPython: warns about 'printed' variable in sandbox test code
+    "ignore::SyntaxWarning:RestrictedPython",
+]
 markers = [
     "integration: Integration tests requiring multi-component setup",
     "e2e: End-to-end tests requiring full stack",

@@ -40,7 +40,6 @@ def test_load_env_file():
         assert os.getenv("TEST_KEY_3") == "value3", "TEST_KEY_3 not loaded"
 
         print("[PASS] load_env_file() correctly loads environment variables from .env file")
-        return True
 
     finally:
         # Clean up
@@ -73,7 +72,6 @@ def test_update_env_file():
         assert os.getenv("NEW_KEY") == "new_value", "NEW_KEY not added"
 
         print("[PASS] update_env_file() correctly updates and adds keys to .env file")
-        return True
 
     finally:
         # Clean up
@@ -119,7 +117,6 @@ def test_integration():
         print("\n[PASS] Integration test: API key flow works correctly")
         print("       The original error 'Provider openai is configured but API key is missing'")
         print("       should now be FIXED!")
-        return True
 
     finally:
         # Clean up

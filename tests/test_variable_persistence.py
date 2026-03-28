@@ -40,12 +40,10 @@ def test_variable_persistence():
         print(f"  {role}: {content}")
 
     # Check if error about variable not found
-    if "not found" in result.answer.lower():
-        print("\n[FAIL] Variable persistence broken!")
-        return False
-    else:
-        print("\n[PASS] Variable persistence working!")
-        return True
+    assert "not found" not in result.answer.lower(), (
+        f"Variable persistence broken — answer: {result.answer}"
+    )
+    print("\n[PASS] Variable persistence working!")
 
 
 if __name__ == "__main__":

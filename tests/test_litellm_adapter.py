@@ -487,6 +487,7 @@ class TestLiteLLMAdapterProtocol:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 class TestPublicClientLiteLLM:
     """Test that the public client correctly wires up the LiteLLM adapter."""
 

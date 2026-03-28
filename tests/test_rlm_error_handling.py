@@ -49,12 +49,10 @@ def test_error_then_final_answer():
             content = content[:200] + "..."
         print(content)
 
-    # The bug is that result.success is True even though:
-    # 1. Code execution failed
-    # 2. LLM never successfully computed the result
-    # 3. Answer is based on imagination, not execution
-
-    return result
+    # Documents the original bug scenario: LLM provides FINAL after failed execution.
+    # RLM now accepts FINAL with a warning rather than hard-rejecting it.
+    assert result is not None
+    assert result.answer  # some answer was produced
 
 
 if __name__ == "__main__":
