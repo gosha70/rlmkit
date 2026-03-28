@@ -10,12 +10,12 @@ from contextlib import redirect_stderr, redirect_stdout
 from functools import partial
 from typing import Any
 
-logger = logging.getLogger("rlmkit.envs")
-
 from rlmkit.envs.sandbox import create_safe_globals
 from rlmkit.envs.timeout import TimeoutError as ExecTimeoutError
 from rlmkit.envs.timeout import create_timeout
 from rlmkit.tools import chunk, grep, peek, select
+
+logger = logging.getLogger("rlmkit.envs")
 
 
 class PyReplEnv:
