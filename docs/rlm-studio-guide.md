@@ -18,7 +18,7 @@ uv run uvicorn rlmkit.server.app:app --reload
 cd frontend && npm run dev
 ```
 
-The frontend runs on `http://localhost:3001`. The backend runs on `http://localhost:8000`. The frontend proxies API calls to the backend automatically (configured in `next.config.ts`).
+The frontend runs on `http://localhost:3000`. The backend runs on `http://localhost:8000`. The frontend proxies API calls to the backend automatically (configured in `next.config.ts`).
 
 ## Pages Overview
 
@@ -327,7 +327,7 @@ Or enter them in **Settings > Providers** in the UI (saved to `.env`).
 When accessing RLM Studio from inside a Docker container (e.g., Playwright MCP for UI testing), use `host.docker.internal` instead of `localhost`:
 
 ```
-http://host.docker.internal:3001
+http://host.docker.internal:3000
 ```
 
 The Next.js frontend proxies all API calls through its own server, so the Docker browser never needs direct access to the backend port.

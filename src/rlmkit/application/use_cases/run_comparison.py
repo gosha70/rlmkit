@@ -1,12 +1,16 @@
-"""Use case: run multiple strategies and compare results.
+"""Use case: run multiple strategies in parallel and compare results.
 
 Executes the same query using different modes (direct, rlm, optionally rag)
-and returns all results for comparison.
+concurrently and returns all results for comparison.
 """
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import time
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from rlmkit.application.dto import RunConfigDTO, RunResultDTO
@@ -22,7 +26,7 @@ class ComparisonResultDTO:
 
     Attributes:
         results: Mapping of mode name to its RunResultDTO.
-        total_elapsed: Total wall-clock time for the entire comparison.
+        total_elapsed: Wall-clock time from first start to last finish.
     """
 
     results: dict[str, RunResultDTO] = field(default_factory=dict)
@@ -39,7 +43,7 @@ class ComparisonResultDTO:
 
 
 class RunComparisonUseCase:
-    """Orchestrates running multiple strategies and comparing them.
+    """Orchestrates running multiple strategies in parallel and comparing them.
 
     Args:
         llm: LLM port adapter.
@@ -50,6 +54,18 @@ class RunComparisonUseCase:
         self._llm = llm
         self._sandbox = sandbox
 
+    def _run_direct(
+        self, content: str, query: str, config: RunConfigDTO
+    ) -> tuple[str, RunResultDTO]:
+        # Shallow-copy the adapter so each branch has an independent _active_model.
+        return "direct", RunDirectUseCase(copy.copy(self._llm)).execute(content, query, config)
+
+    def _run_rlm(self, content: str, query: str, config: RunConfigDTO) -> tuple[str, RunResultDTO]:
+        # Shallow-copy the adapter so RLM's use_recursive_model() doesn't affect direct.
+        return "rlm", RunRLMUseCase(copy.copy(self._llm), self._sandbox).execute(
+            content, query, config
+        )
+
     def execute(
         self,
         content: str,
@@ -57,7 +73,7 @@ class RunComparisonUseCase:
         config: RunConfigDTO | None = None,
         modes: list[str] | None = None,
     ) -> ComparisonResultDTO:
-        """Run the query using multiple modes and compare results.
+        """Run the query using multiple modes in parallel threads and compare results.
 
         Args:
             content: Document text to analyze.
@@ -69,21 +85,78 @@ class RunComparisonUseCase:
             ComparisonResultDTO with results from each mode.
         """
         config = config or RunConfigDTO(mode="compare")
-        modes = modes or ["direct", "rlm"]
+        if modes is None:
+            modes = ["direct", "rlm"]
         start = time.time()
+
+        runners: dict[str, Callable[[], tuple[str, RunResultDTO]]] = {
+            "direct": lambda: self._run_direct(content, query, config),
+            "rlm": lambda: self._run_rlm(content, query, config),
+        }
 
         comparison = ComparisonResultDTO()
 
-        for mode in modes:
+        active = [m for m in modes if m in runners]
+        if not active:
+            comparison.total_elapsed = time.time() - start
+            return comparison
+
+        with ThreadPoolExecutor(max_workers=len(active)) as executor:
+            futures: dict[Future[tuple[str, RunResultDTO]], str] = {
+                executor.submit(runners[m]): m for m in active
+            }
+            for future in as_completed(futures):
+                mode_label, result = future.result()
+                comparison.results[mode_label] = result
+
+        comparison.total_elapsed = time.time() - start
+        return comparison
+
+    async def execute_async(
+        self,
+        content: str,
+        query: str,
+        config: RunConfigDTO | None = None,
+        modes: list[str] | None = None,
+    ) -> ComparisonResultDTO:
+        """Run the query using multiple modes concurrently and compare results.
+
+        Uses asyncio.gather so strategies run in parallel rather than sequentially.
+
+        Args:
+            content: Document text to analyze.
+            query: User question.
+            config: Optional run configuration.
+            modes: List of modes to run. Defaults to ["direct", "rlm"].
+
+        Returns:
+            ComparisonResultDTO with results from each mode.
+        """
+        config = config or RunConfigDTO(mode="compare")
+        if modes is None:
+            modes = ["direct", "rlm"]
+        start = time.time()
+
+        async def _run(mode: str) -> tuple[str, RunResultDTO]:
             if mode == "direct":
-                uc = RunDirectUseCase(self._llm)
-                result = uc.execute(content, query, config)
-                comparison.results["direct"] = result
-
+                # Shallow-copy so each branch has an independent _active_model.
+                result = await RunDirectUseCase(copy.copy(self._llm)).execute_async(
+                    content, query, config
+                )
+                return "direct", result
             elif mode == "rlm":
-                uc_rlm = RunRLMUseCase(self._llm, self._sandbox)
-                result = uc_rlm.execute(content, query, config)
-                comparison.results["rlm"] = result
+                # Shallow-copy so RLM's use_recursive_model() doesn't affect direct.
+                result = await RunRLMUseCase(copy.copy(self._llm), self._sandbox).execute_async(
+                    content, query, config
+                )
+                return "rlm", result
+            else:
+                raise ValueError(f"Unsupported comparison mode: {mode!r}")
 
+        pairs = await asyncio.gather(*[_run(m) for m in modes if m in ("direct", "rlm")])
+
+        comparison = ComparisonResultDTO()
+        for mode_label, result in pairs:
+            comparison.results[mode_label] = result
         comparison.total_elapsed = time.time() - start
         return comparison

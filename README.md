@@ -20,8 +20,8 @@ LLMs have fixed context windows. When your document is too large to fit in a sin
 
 RLMKit provides:
 
-- **Three execution modes** — Direct (full context), RAG (retrieval), and RLM (recursive code generation)
-- **Auto mode** — selects the best strategy based on content size
+- **Three execution modes** — Direct (full context), RLM (recursive code generation), and Compare (side-by-side benchmarking)
+- **Auto mode** — selects Direct or RLM based on content size (< 8K tokens → Direct, ≥ 8K → RLM)
 - **100+ LLM providers** — via LiteLLM (OpenAI, Anthropic, Ollama, LM Studio, and more)
 - **Budget controls** — cap tokens, cost, steps, and time
 - **Sandboxed execution** — RestrictedPython prevents file/network/system access
@@ -63,9 +63,6 @@ print(f"Mode used: {result.mode_used}")
 # Direct — send full content in one LLM call (small documents)
 result = interact(content, query, mode="direct")
 
-# RAG — retrieval-augmented generation (medium documents)
-result = interact(content, query, mode="rag")
-
 # RLM — LLM writes Python to explore content recursively (large documents)
 result = interact(content, query, mode="rlm")
 
@@ -79,10 +76,9 @@ result = interact(content, query, mode="compare")
 | Mode | Best For | How It Works |
 |------|----------|--------------|
 | `direct` | < 8K tokens | Full context in single LLM call |
-| `rag` | 8K-100K tokens | Chunk, embed, retrieve relevant pieces |
-| `rlm` | > 100K tokens | LLM writes code to navigate content via `peek()`, `grep()`, `chunk()` |
-| `auto` | Any size | Selects direct/rag/rlm based on token count |
-| `compare` | Benchmarking | Runs both RLM and Direct, compares metrics |
+| `rlm` | Any size | LLM writes code to navigate content via `peek()`, `grep()`, `chunk()` |
+| `auto` | Any size | Selects `direct` (< 8K tokens) or `rlm` (≥ 8K tokens) automatically |
+| `compare` | Benchmarking | Runs RLM and Direct concurrently, returns metrics for both side by side |
 
 ### Configuration
 
@@ -92,7 +88,7 @@ result = interact(
     query="Summarize the key findings",
     mode="auto",
     provider="anthropic",
-    model="claude-sonnet-4-5",
+    model="claude-sonnet-4-6",
     max_steps=16,          # RLM loop budget
     temperature=0.7,
     verbose=True           # Print progress
@@ -106,7 +102,7 @@ Set the API key as an environment variable, then pass the provider name:
 | Provider | Env Variable | Example Model |
 |----------|-------------|---------------|
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | Ollama | (local, no key) | `llama3` |
 | LM Studio | (local, no key) | Any served model |
 | Google | `GOOGLE_API_KEY` | `gemini-pro` |
@@ -126,7 +122,7 @@ uv run uvicorn rlmkit.server.app:app --reload
 cd frontend && npm run dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### What You Can Do
 

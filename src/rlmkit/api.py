@@ -301,12 +301,9 @@ async def _dispatch_async(
 ) -> RunResultDTO | ComparisonResultDTO:
     """Run the appropriate use case asynchronously."""
     if actual_mode == "compare":
-        # RunComparisonUseCase has no execute_async; run sync in thread
-        import asyncio
-
         sandbox = create_sandbox()
         uc_cmp = RunComparisonUseCase(llm, sandbox)
-        return await asyncio.to_thread(uc_cmp.execute, content, query, config)
+        return await uc_cmp.execute_async(content, query, config)
     elif actual_mode == "rlm":
         sandbox = create_sandbox()
         uc = RunRLMUseCase(llm, sandbox)
