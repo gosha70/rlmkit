@@ -274,4 +274,4 @@ class TestDTOs:
         cfg = RunConfigDTO()
         assert cfg.mode == "auto"
         assert cfg.max_steps == 16
-        assert cfg.max_recursion_depth == 5
+        assert cfg.max_recursion_depth == 1

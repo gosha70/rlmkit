@@ -65,9 +65,9 @@ class RLMKitClient:
         api_key: str | None = None,
         api_base: str | None = None,
         sandbox_type: str = "local",
-        safe_mode: bool = False,
+        safe_mode: bool = True,
         max_steps: int = 16,
-        max_recursion_depth: int = 5,
+        max_recursion_depth: int = 1,
     ) -> None:
         warnings.warn(
             "RLMKitClient is deprecated. Use rlmkit.interact() instead.",

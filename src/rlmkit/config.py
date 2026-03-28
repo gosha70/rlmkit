@@ -240,7 +240,7 @@ class ExecutionConfig:
 
     default_timeout: float = 5.0
     max_output_chars: int = 10000
-    default_safe_mode: bool = False
+    default_safe_mode: bool = True
     max_steps: int = 16  # Maximum execution steps for RLM loop
     enable_rlm: bool = True  # Enable RLM exploration mode (vs direct LLM queries)
     track_comparison_metrics: bool = True  # Track metrics for mode comparison
@@ -264,7 +264,7 @@ class ExecutionConfig:
         return cls(
             default_timeout=data.get("default_timeout", 5.0),
             max_output_chars=data.get("max_output_chars", 10000),
-            default_safe_mode=data.get("default_safe_mode", False),
+            default_safe_mode=data.get("default_safe_mode", True),
             max_steps=data.get("max_steps", 16),
             enable_rlm=data.get("enable_rlm", True),
             track_comparison_metrics=data.get("track_comparison_metrics", True),

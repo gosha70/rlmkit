@@ -96,7 +96,7 @@ class RunConfigDTO:
     max_tokens: int | None = None
     max_cost: float | None = None
     max_time_seconds: float | None = None
-    max_recursion_depth: int = 5
+    max_recursion_depth: int = 1
     verbose: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 

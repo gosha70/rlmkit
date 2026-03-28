@@ -200,7 +200,7 @@ execution:
   max_output_chars: 10000
 
   # Default safe mode setting
-  default_safe_mode: false
+  default_safe_mode: true
 
 # Monitoring Configuration
 monitoring:

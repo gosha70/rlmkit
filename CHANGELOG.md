@@ -3,9 +3,13 @@
 All notable changes to RLMKit are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [1.0.0] - 2026-03-23
+## [1.0.0] - 2026-03-28
 
 Cycle 3 (Quality, DevOps & Release) + Cool-down 3.
+
+### Changed
+- **BREAKING:** `ExecutionConfig.default_safe_mode` now defaults to `True` — sandbox restrictions (blocked modules, restricted builtins via RestrictedPython) are active by default. Pass `safe_mode=False` explicitly to opt into unrestricted execution.
+- **BREAKING:** `RecursiveController.max_depth` now defaults to `1` (aligned with the RLM paper's evaluated regime). Deeper recursion remains fully supported — pass `max_depth=N` explicitly. Previous default was `5`.
 
 ### Added
 - CI pipeline: Codecov coverage upload, pip-audit vulnerability scan, Docker sandbox build + smoke-test job
@@ -27,6 +31,9 @@ Cycle 3 (Quality, DevOps & Release) + Cool-down 3.
 - Anthropic default model aligned across `api.py` and `RLMKitClient` (`claude-sonnet-4-5-20250514`)
 - Ollama default model aligned (`llama3`)
 - ESLint `globalIgnores` includes `storybook-static/`
+
+### Known Limitations
+- **No timeout enforcement in non-main threads (e.g., Streamlit):** When the REPL environment runs outside the main thread, signal-based timeouts are unavailable and process-based timeouts would break variable persistence. Code execution proceeds without a timeout guard in these contexts. A warning is now logged when this path is taken. Out-of-process sandbox execution is planned for v1.1.0.
 
 ## [0.2.0-alpha.3] - 2026-02-11
 

@@ -112,7 +112,7 @@ class TestExecutionConfig:
 
         assert config.default_timeout == 5.0
         assert config.max_output_chars == 10000
-        assert config.default_safe_mode is False
+        assert config.default_safe_mode is True
 
     def test_custom_config(self):
         """Test custom execution configuration."""

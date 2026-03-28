@@ -4,10 +4,13 @@
 """Python REPL execution environment for RLM."""
 
 import io
+import logging
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from functools import partial
 from typing import Any
+
+logger = logging.getLogger("rlmkit.envs")
 
 from rlmkit.envs.sandbox import create_safe_globals
 from rlmkit.envs.timeout import TimeoutError as ExecTimeoutError
@@ -56,6 +59,7 @@ class PyReplEnv:
 
         # Content storage (set via set_content)
         self._content: str | None = None
+        self._timeout_warning_emitted: bool = False
 
         # Persistent environment globals
         if safe_mode:
@@ -165,6 +169,13 @@ class PyReplEnv:
                     # Non-main thread OR no SIGALRM: Execute without timeout
                     # This preserves variable state across executions
                     # Trade-off: No timeout protection, but RLM remains functional
+                    if not self._timeout_warning_emitted:
+                        logger.warning(
+                            "Executing code without timeout protection "
+                            "(non-main thread or no SIGALRM). "
+                            "Long-running code may hang the process."
+                        )
+                        self._timeout_warning_emitted = True
                     exec(code, self.env_globals)
 
         except ExecTimeoutError as e:

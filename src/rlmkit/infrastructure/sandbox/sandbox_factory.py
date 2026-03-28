@@ -9,7 +9,7 @@ from .local_sandbox import LocalSandboxAdapter
 
 def create_sandbox(
     sandbox_type: str = "local",
-    safe_mode: bool = False,
+    safe_mode: bool = True,
     allowed_imports: list[str] | None = None,
     max_exec_time_s: float = 5.0,
     max_stdout_chars: int = 10000,

@@ -28,7 +28,7 @@ class RecursiveController:
     Args:
         controller_factory: Callable that produces a new :class:`RLM` instance
             for a given depth.  Receives ``depth`` as keyword argument.
-        max_depth: Maximum recursion depth (default 5, matching the paper).
+        max_depth: Maximum recursion depth (default 1, matching the paper's evaluated regime).
         budget_tracker: Shared budget tracker across all recursion levels.
             Created automatically if not provided.
 
@@ -44,7 +44,7 @@ class RecursiveController:
     def __init__(
         self,
         controller_factory: Any,  # Callable[[int], RLM] — Any to avoid import
-        max_depth: int = 5,
+        max_depth: int = 1,
         budget_tracker: BudgetTracker | None = None,
     ) -> None:
         self.controller_factory = controller_factory
