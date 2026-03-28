@@ -44,9 +44,9 @@ class TestDetermineAutoMode:
     def test_short_selects_direct(self):
         assert _determine_auto_mode("a" * 1000) == "direct"
 
-    def test_medium_selects_rlm(self):
-        # RAG tier removed — medium content goes to rlm
-        assert _determine_auto_mode("a" * 40_000) == "rlm"
+    def test_medium_selects_rag(self):
+        # 40K chars ≈ 10K tokens — in the 8K–100K RAG tier
+        assert _determine_auto_mode("a" * 40_000) == "rag"
 
     def test_large_selects_rlm(self):
         assert _determine_auto_mode("a" * 500_000) == "rlm"
@@ -516,9 +516,13 @@ class TestRLMKitClientDeprecation:
 
 
 class TestExplicitRagMode:
-    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.SQLiteStorageAdapter")
+    @patch("rlmkit.api.LiteLLMEmbeddingAdapter")
+    @patch("rlmkit.api.RunRAGUseCase")
     @patch("rlmkit.api.LiteLLMAdapter")
-    def test_rag_mode_returns_result(self, mock_adapter_cls, mock_uc_cls):
+    def test_rag_mode_returns_result(
+        self, mock_adapter_cls, mock_uc_cls, mock_embedder_cls, mock_storage_cls
+    ):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="rag", provider="openai")
         assert result.mode_used == "rag"

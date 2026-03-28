@@ -19,17 +19,19 @@ from rlmkit.application.use_cases.run_comparison import (
     RunComparisonUseCase,
 )
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.infrastructure.embedding.litellm_embedding_adapter import LiteLLMEmbeddingAdapter
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
 
 # Type alias for interaction modes
 InteractionMode = Literal["direct", "rag", "rlm", "compare", "auto"]
 
-# Token-count threshold for auto mode selection.
-# RAG tier removed — auto-mode skips it until EmbeddingPort/StoragePort
-# adapters are wired into the public API.
-_DIRECT_THRESHOLD = 8_000
+# Token-count thresholds for auto mode selection.
+_DIRECT_THRESHOLD = 8_000  # below → direct
+_RAG_THRESHOLD = 100_000  # between direct and rlm thresholds → rag
 
 
 @dataclass
@@ -78,14 +80,15 @@ def _estimate_tokens(text: str) -> int:
 def _determine_auto_mode(content: str) -> str:
     """Pick the best mode based on content size.
 
-    - < 8K tokens  -> direct
-    - >= 8K        -> rlm
-
-    RAG tier removed until EmbeddingPort/StoragePort adapters are wired.
+    - < 8K tokens    -> direct  (full context fits comfortably)
+    - 8K–100K tokens -> rag     (too large for direct; retrieval beats full scan)
+    - > 100K tokens  -> rlm     (recursive exploration scales to millions of tokens)
     """
     token_count = _estimate_tokens(content)
     if token_count < _DIRECT_THRESHOLD:
         return "direct"
+    if token_count < _RAG_THRESHOLD:
+        return "rag"
     return "rlm"
 
 
@@ -281,12 +284,10 @@ def _dispatch_sync(
         uc = RunRLMUseCase(llm, sandbox)
         return uc.execute(content, query, config)
     elif actual_mode == "rag":
-        # RAG use case requires embedder + storage; fall back to direct
-        # until those adapters are wired up in the public API.
-        uc_direct = RunDirectUseCase(llm)
-        result = uc_direct.execute(content, query, config)
-        result.mode_used = "rag"
-        return result
+        embedder = LiteLLMEmbeddingAdapter(api_key=llm._api_key, api_base=llm._api_base)
+        storage = SQLiteStorageAdapter()
+        uc_rag = RunRAGUseCase(llm, embedder, storage)
+        return uc_rag.execute(content, query, config)
     else:
         uc_direct = RunDirectUseCase(llm)
         return uc_direct.execute(content, query, config)
@@ -309,10 +310,12 @@ async def _dispatch_async(
         uc = RunRLMUseCase(llm, sandbox)
         return await uc.execute_async(content, query, config)
     elif actual_mode == "rag":
-        uc_direct = RunDirectUseCase(llm)
-        result = await uc_direct.execute_async(content, query, config)
-        result.mode_used = "rag"
-        return result
+        import asyncio
+
+        embedder = LiteLLMEmbeddingAdapter(api_key=llm._api_key, api_base=llm._api_base)
+        storage = SQLiteStorageAdapter()
+        uc_rag = RunRAGUseCase(llm, embedder, storage)
+        return await asyncio.to_thread(uc_rag.execute, content, query, config)
     else:
         uc_direct = RunDirectUseCase(llm)
         return await uc_direct.execute_async(content, query, config)

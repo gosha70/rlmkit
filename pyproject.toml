@@ -119,6 +119,16 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+# Force CWD as the package-resolution base so that tests/test_api.py resolves
+# to "tests.test_api" (not "dev.repo.rlmkit.tests.test_api") even when a
+# parent directory happens to contain an __init__.py.
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+# Tests are not checked by CI mypy (which runs only on src/rlmkit/).
+# Relax annotations requirement to match that scope.
+module = "tests.*"
+disallow_untyped_defs = false
 
 [tool.coverage.run]
 omit = [
