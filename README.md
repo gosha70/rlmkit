@@ -115,10 +115,14 @@ RLM Studio is a web application for experimenting with RLMKit interactively. Use
 ### Starting RLM Studio
 
 ```bash
-# Terminal 1: Backend API server
-uv run uvicorn rlmkit.server.app:app --reload
+# Terminal 1: Backend API server (default port 8000)
+uv run python -m rlmkit.server --reload
 
-# Terminal 2: Frontend
+# Custom port — set RLMKIT_PORT and point the frontend at the same address
+RLMKIT_PORT=8080 uv run python -m rlmkit.server --reload
+NEXT_PUBLIC_API_URL=http://localhost:8080 npm run dev  # Terminal 2
+
+# Terminal 2: Frontend (default, connects to port 8000)
 cd frontend && npm run dev
 ```
 
