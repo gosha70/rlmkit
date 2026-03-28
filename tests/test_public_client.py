@@ -99,10 +99,18 @@ class TestRLMKitClientInteract:
         assert result.success is True
         assert result.mode_used == "direct"
 
+    def test_auto_mode_medium_content_uses_rag(self) -> None:
+        client = RLMKitClient(provider="mock")
+        # Medium content (8K–100K tokens = 32K–400K chars) -> rag
+        medium_text = "x" * 40000
+        result = client.interact(medium_text, "question", mode="auto")
+        assert result.success is True
+        assert result.mode_used == "rag"
+
     def test_auto_mode_long_content(self) -> None:
         client = RLMKitClient(provider="mock")
-        # Long content (>8000 tokens ~32000 chars) -> rlm
-        long_text = "x" * 40000
+        # Very long content (>100K tokens ~400K chars) -> rlm
+        long_text = "x" * 500000
         result = client.interact(long_text, "question", mode="auto")
         assert result.success is True
         assert result.mode_used == "rlm"
@@ -159,10 +167,10 @@ class TestAutoMode:
     def test_short_content_selects_direct(self) -> None:
         assert RLMKitClient._determine_auto_mode("short text") == "direct"
 
-    def test_medium_content_selects_rlm(self) -> None:
+    def test_medium_content_selects_rag(self) -> None:
         # > 8000 tokens = > 32000 chars
         content = "x" * 40000
-        assert RLMKitClient._determine_auto_mode(content) == "rlm"
+        assert RLMKitClient._determine_auto_mode(content) == "rag"
 
     def test_very_long_content_selects_rlm(self) -> None:
         content = "x" * 500000

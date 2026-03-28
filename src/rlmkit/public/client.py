@@ -15,9 +15,12 @@ from rlmkit.application.use_cases.run_comparison import (
     RunComparisonUseCase,
 )
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.infrastructure.embedding import LiteLLMEmbeddingAdapter, MockEmbeddingAdapter
 from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
 
 from .errors import ConfigError
 from .types import PublicRunResult
@@ -112,7 +115,7 @@ class RLMKitClient:
         Args:
             content: Document text to analyze.
             query: User question.
-            mode: Execution mode ("direct", "rlm", "auto", "compare").
+            mode: Execution mode ("direct", "rag", "rlm", "auto", "compare").
             verbose: Print progress output.
             **kwargs: Additional configuration.
 
@@ -152,6 +155,23 @@ class RLMKitClient:
         elif actual_mode == "rlm":
             uc_rlm = RunRLMUseCase(self._llm, self._sandbox)
             result = uc_rlm.execute(content, query, config)
+        elif actual_mode == "rag":
+            import uuid
+
+            collection = f"rag_{uuid.uuid4().hex}"
+            config.extra["collection"] = collection
+            if self._provider == "mock":
+                embedder: LiteLLMEmbeddingAdapter | MockEmbeddingAdapter = MockEmbeddingAdapter()
+            else:
+                from rlmkit.api import _resolve_embedding_key
+
+                emb_key = _resolve_embedding_key(
+                    self._provider, self._api_key, kwargs.get("embedding_api_key")
+                )
+                embedder = LiteLLMEmbeddingAdapter(api_key=emb_key)
+            storage = SQLiteStorageAdapter(":memory:")
+            uc_rag = RunRAGUseCase(self._llm, embedder, storage)
+            result = uc_rag.execute(content, query, config)
         elif actual_mode == "compare":
             uc_cmp = RunComparisonUseCase(self._llm, self._sandbox)
             cmp_result = uc_cmp.execute(content, query, config)
@@ -163,7 +183,7 @@ class RLMKitClient:
             )
         else:
             raise ValueError(
-                f"Unsupported mode: {actual_mode!r}. Use 'direct', 'rlm', 'auto', or 'compare'."
+                f"Unsupported mode: {actual_mode!r}. Use 'direct', 'rag', 'rlm', 'auto', or 'compare'."
             )
 
         return self._to_public_result(result)
@@ -186,12 +206,12 @@ class RLMKitClient:
 
     @staticmethod
     def _determine_auto_mode(content: str) -> str:
-        """Pick mode based on content size."""
+        """Pick mode based on content size (mirrors api._determine_auto_mode)."""
         token_count = max(1, len(content) // 4)
         if token_count < 8000:
             return "direct"
         elif token_count < 100000:
-            return "rlm"
+            return "rag"
         else:
             return "rlm"
 

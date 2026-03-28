@@ -511,7 +511,7 @@ class TestRLMKitClientDeprecation:
 
 
 # ---------------------------------------------------------------------------
-# Explicit rag mode still works (falls back to direct)
+# Explicit rag mode
 # ---------------------------------------------------------------------------
 
 
@@ -520,13 +520,46 @@ class TestExplicitRagMode:
     @patch("rlmkit.api.LiteLLMEmbeddingAdapter")
     @patch("rlmkit.api.RunRAGUseCase")
     @patch("rlmkit.api.LiteLLMAdapter")
-    def test_rag_mode_returns_result(
+    def test_rag_mode_openai_returns_result(
         self, mock_adapter_cls, mock_uc_cls, mock_embedder_cls, mock_storage_cls
     ):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="rag", provider="openai")
         assert result.mode_used == "rag"
         assert result.answer == "Test answer"
+
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_rag_non_openai_no_embedding_key_raises(self, mock_adapter_cls):
+        """Non-OpenAI provider without OPENAI_API_KEY must raise ValueError."""
+        import os
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OPENAI_API_KEY", None)
+            with pytest.raises(ValueError, match="embedding_api_key"):
+                interact(
+                    "content", "question", mode="rag", provider="anthropic", api_key="sk-ant-key"
+                )
+
+    @patch("rlmkit.api.SQLiteStorageAdapter")
+    @patch("rlmkit.api.LiteLLMEmbeddingAdapter")
+    @patch("rlmkit.api.RunRAGUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_rag_non_openai_explicit_embedding_key_works(
+        self, mock_adapter_cls, mock_uc_cls, mock_embedder_cls, mock_storage_cls
+    ):
+        """Non-OpenAI provider with explicit embedding_api_key succeeds."""
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        result = interact(
+            "content",
+            "question",
+            mode="rag",
+            provider="anthropic",
+            api_key="sk-ant-key",
+            embedding_api_key="sk-openai-key",
+        )
+        assert result.mode_used == "rag"
+        # Embedder must be constructed with the OpenAI key, not the Anthropic key
+        mock_embedder_cls.assert_called_once_with(api_key="sk-openai-key")
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ Under the hood these delegate to Clean Architecture use cases
 from __future__ import annotations
 
 import os
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -110,6 +111,35 @@ def _auto_detect_provider() -> str | None:
     return None
 
 
+def _resolve_embedding_key(
+    provider: str,
+    chat_api_key: str | None,
+    embedding_api_key: str | None,
+) -> str | None:
+    """Return the API key to use for the embedding call, or raise ValueError.
+
+    RAG mode uses OpenAI's ``text-embedding-3-small`` by default.
+    - OpenAI chat provider: the same ``api_key`` covers embeddings.
+    - Any other provider: embeddings need a separate OpenAI key.
+      Resolution order: ``embedding_api_key`` arg → ``OPENAI_API_KEY`` env var.
+      Raises ``ValueError`` if neither is available so the caller gets a
+      clear error rather than silently passing the wrong credentials.
+    """
+    if embedding_api_key:
+        return embedding_api_key
+    if provider == "openai":
+        return chat_api_key  # same key covers both chat and embeddings
+    # Non-OpenAI provider: require an explicit OpenAI key for embeddings.
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        return openai_key
+    raise ValueError(
+        f"RAG mode requires an OpenAI API key for embeddings "
+        f"(provider={provider!r} has no native embedding API). "
+        "Set OPENAI_API_KEY in the environment or pass embedding_api_key= explicitly."
+    )
+
+
 def _resolve_model(provider: str, model: str | None) -> str:
     """Apply LiteLLM provider prefix and default model if needed."""
     _defaults: dict[str, str] = {
@@ -139,10 +169,11 @@ def _setup(
     verbose: bool,
     root_model: str | None = None,
     recursive_model: str | None = None,
-) -> tuple[str, str, LiteLLMAdapter, RunConfigDTO]:
+    embedding_api_key: str | None = None,
+) -> tuple[str, str, LiteLLMAdapter, RunConfigDTO, str | None]:
     """Validate inputs, resolve mode/provider/model, build adapter and config.
 
-    Returns (actual_mode, provider, llm_adapter, run_config).
+    Returns (actual_mode, provider, llm_adapter, run_config, resolved_embedding_key).
     """
     if not content:
         raise ValueError("content cannot be empty")
@@ -201,7 +232,12 @@ def _setup(
         max_steps=max_steps,
     )
 
-    return actual_mode, provider, llm, config
+    resolved_emb_key = (
+        _resolve_embedding_key(provider, api_key, embedding_api_key)
+        if actual_mode == "rag"
+        else None
+    )
+    return actual_mode, provider, llm, config, resolved_emb_key
 
 
 def _build_result(
@@ -273,6 +309,7 @@ def _dispatch_sync(
     config: RunConfigDTO,
     content: str,
     query: str,
+    embedding_api_key: str | None = None,
 ) -> RunResultDTO | ComparisonResultDTO:
     """Run the appropriate use case synchronously."""
     if actual_mode == "compare":
@@ -284,8 +321,10 @@ def _dispatch_sync(
         uc = RunRLMUseCase(llm, sandbox)
         return uc.execute(content, query, config)
     elif actual_mode == "rag":
-        embedder = LiteLLMEmbeddingAdapter(api_key=llm._api_key, api_base=llm._api_base)
-        storage = SQLiteStorageAdapter()
+        collection = f"rag_{uuid.uuid4().hex}"
+        config.extra["collection"] = collection
+        embedder = LiteLLMEmbeddingAdapter(api_key=embedding_api_key)
+        storage = SQLiteStorageAdapter(":memory:")
         uc_rag = RunRAGUseCase(llm, embedder, storage)
         return uc_rag.execute(content, query, config)
     else:
@@ -299,6 +338,7 @@ async def _dispatch_async(
     config: RunConfigDTO,
     content: str,
     query: str,
+    embedding_api_key: str | None = None,
 ) -> RunResultDTO | ComparisonResultDTO:
     """Run the appropriate use case asynchronously."""
     if actual_mode == "compare":
@@ -312,8 +352,10 @@ async def _dispatch_async(
     elif actual_mode == "rag":
         import asyncio
 
-        embedder = LiteLLMEmbeddingAdapter(api_key=llm._api_key, api_base=llm._api_base)
-        storage = SQLiteStorageAdapter()
+        collection = f"rag_{uuid.uuid4().hex}"
+        config.extra["collection"] = collection
+        embedder = LiteLLMEmbeddingAdapter(api_key=embedding_api_key)
+        storage = SQLiteStorageAdapter(":memory:")
         uc_rag = RunRAGUseCase(llm, embedder, storage)
         return await asyncio.to_thread(uc_rag.execute, content, query, config)
     else:
@@ -336,6 +378,7 @@ def interact(
     verbose: bool = False,
     root_model: str | None = None,
     recursive_model: str | None = None,
+    embedding_api_key: str | None = None,
     **kwargs: Any,
 ) -> InteractResult:
     """Interact with content using an LLM through Direct, RLM, or Compare mode.
@@ -359,6 +402,9 @@ def interact(
         verbose: Print progress to stdout.
         root_model: Model for root-level reasoning (paper's two-model optimization).
         recursive_model: Cheaper model for RLM exploration subcalls.
+        embedding_api_key: API key for the embedding model used in RAG mode.
+            Defaults to ``api_key`` when ``provider="openai"``, otherwise falls
+            back to ``OPENAI_API_KEY`` from the environment.
 
     Returns:
         :class:`InteractResult` with answer, mode used, and metrics.
@@ -366,7 +412,7 @@ def interact(
     Raises:
         ValueError: If inputs are invalid or no provider can be resolved.
     """
-    actual_mode, _provider, llm, config = _setup(
+    actual_mode, _provider, llm, config, emb_key = _setup(
         content,
         query,
         mode,
@@ -381,12 +427,13 @@ def interact(
         verbose,
         root_model=root_model,
         recursive_model=recursive_model,
+        embedding_api_key=embedding_api_key,
     )
 
     if verbose:
         print(f"[Execution] Running in '{actual_mode}' mode ...")
 
-    result = _dispatch_sync(actual_mode, llm, config, content, query)
+    result = _dispatch_sync(actual_mode, llm, config, content, query, emb_key)
     return _build_result(actual_mode, result, verbose)
 
 
@@ -405,6 +452,7 @@ async def interact_async(
     verbose: bool = False,
     root_model: str | None = None,
     recursive_model: str | None = None,
+    embedding_api_key: str | None = None,
     **kwargs: Any,
 ) -> InteractResult:
     """Async version of :func:`interact`.
@@ -413,7 +461,7 @@ async def interact_async(
     of each use case (``execute_async``), which enables true async
     LLM calls via ``litellm.acompletion``.
     """
-    actual_mode, _provider, llm, config = _setup(
+    actual_mode, _provider, llm, config, emb_key = _setup(
         content,
         query,
         mode,
@@ -428,12 +476,13 @@ async def interact_async(
         verbose,
         root_model=root_model,
         recursive_model=recursive_model,
+        embedding_api_key=embedding_api_key,
     )
 
     if verbose:
         print(f"[Execution] Running in '{actual_mode}' mode (async) ...")
 
-    result = await _dispatch_async(actual_mode, llm, config, content, query)
+    result = await _dispatch_async(actual_mode, llm, config, content, query, emb_key)
     return _build_result(actual_mode, result, verbose)
 
 
