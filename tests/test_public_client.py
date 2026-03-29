@@ -269,15 +269,8 @@ class TestClientDefaultModels:
     ) -> None:
         mock_client_cls.return_value = MagicMock()
         RLMKitClient._create_llm_adapter("anthropic", model=None, api_key="k")
-        mock_client_cls.assert_called_once_with(model="claude-sonnet-4-5-20250514", api_key="k")
+        mock_client_cls.assert_called_once_with(model="claude-sonnet-4-6", api_key="k")
 
-    @patch("rlmkit.llm.ollama_client.OllamaClient", create=True)
-    @patch("rlmkit.infrastructure.llm.ollama_adapter.OllamaAdapter", create=True)
-    def test_ollama_default_model(
-        self,
-        _adapter_cls: MagicMock,  # noqa: PT019
-        mock_client_cls: MagicMock,
-    ) -> None:
-        mock_client_cls.return_value = MagicMock()
-        RLMKitClient._create_llm_adapter("ollama", model=None, api_key=None)
-        mock_client_cls.assert_called_once_with(model="llama3")
+    def test_ollama_requires_explicit_model(self) -> None:
+        with pytest.raises(ConfigError, match="requires an explicit model="):
+            RLMKitClient._create_llm_adapter("ollama", model=None, api_key=None)

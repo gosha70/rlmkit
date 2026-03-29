@@ -255,6 +255,21 @@ class TestRunRLMUseCase:
         assert result.success is False
         assert "exceeded" in result.error.lower() or "budget" in result.error.lower()
 
+    def test_stall_detection_terminates_early(self):
+        # LLM never produces code or FINAL — just conversational filler.
+        # Should terminate after _STALL_LIMIT (3) consecutive no-progress steps,
+        # not burn all max_steps.
+        filler = "I need more context to answer your question."
+        llm = FakeLLM([filler])  # repeats same response indefinitely
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=20)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is False
+        assert "did not make progress" in result.error.lower()
+        assert result.steps < 10  # terminated well before max_steps=20
+
     def test_sandbox_receives_content(self):
         llm = FakeLLM(["FINAL: done"])
         sandbox = FakeSandbox()
@@ -566,6 +581,21 @@ class TestRunRLMAsync:
 
         assert result.success is False
         assert "exceeded" in result.error.lower() or "budget" in result.error.lower()
+
+    def test_async_stall_detection_terminates_early(self):
+        """execute_async stall detection mirrors sync: exits after 3 no-progress steps."""
+        filler = "I need more context to answer your question."
+        llm = FakeLLM([filler])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=20)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "question", config=config)
+        )
+
+        assert result.success is False
+        assert "did not make progress" in result.error.lower()
+        assert result.steps < 10
 
 
 # ---------------------------------------------------------------------------

@@ -77,6 +77,8 @@ class RunRLMUseCase:
         cumulative_input = 0
         cumulative_output = 0
         step_start = start
+        consecutive_no_progress = 0
+        _STALL_LIMIT = 3
 
         # Use root model for the initial reasoning call
         if hasattr(self._llm, "use_root_model"):
@@ -140,6 +142,7 @@ class RunRLMUseCase:
 
                 # Check for code to execute
                 if code:
+                    consecutive_no_progress = 0
                     exec_result = self._sandbox.execute(code)
                     formatted = self._format_execution(exec_result)
 
@@ -161,6 +164,12 @@ class RunRLMUseCase:
                     )
                 else:
                     # No code and no FINAL -- nudge the LLM
+                    consecutive_no_progress += 1
+                    if consecutive_no_progress >= _STALL_LIMIT:
+                        raise BudgetExceededError(
+                            f"LLM did not make progress after {consecutive_no_progress} "
+                            "consecutive steps without code or a FINAL answer"
+                        )
                     messages.append({"role": "assistant", "content": text})
                     messages.append(
                         {
@@ -247,6 +256,8 @@ class RunRLMUseCase:
         cumulative_input = 0
         cumulative_output = 0
         step_start = start
+        consecutive_no_progress = 0
+        _STALL_LIMIT = 3
 
         if hasattr(self._llm, "use_root_model"):
             self._llm.use_root_model()
@@ -336,6 +347,7 @@ class RunRLMUseCase:
 
                 # Check for code to execute
                 if code:
+                    consecutive_no_progress = 0
                     exec_result = await asyncio.to_thread(self._sandbox.execute, code)
                     formatted = self._format_execution(exec_result)
 
@@ -356,6 +368,12 @@ class RunRLMUseCase:
                         }
                     )
                 else:
+                    consecutive_no_progress += 1
+                    if consecutive_no_progress >= _STALL_LIMIT:
+                        raise BudgetExceededError(
+                            f"LLM did not make progress after {consecutive_no_progress} "
+                            "consecutive steps without code or a FINAL answer"
+                        )
                     messages.append({"role": "assistant", "content": text})
                     messages.append(
                         {

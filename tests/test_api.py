@@ -259,7 +259,7 @@ class TestComplete:
 class TestDefaultModels:
     def test_default_anthropic_model(self):
         result = _resolve_model("anthropic", None)
-        assert result == "anthropic/claude-sonnet-4-5-20250514"
+        assert result == "anthropic/claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +277,7 @@ class TestApiBaseAndTimeout:
             "question",
             mode="direct",
             provider="ollama",
+            model="llama3.2",
             api_base="http://localhost:11434",
         )
         _, kwargs = mock_adapter_cls.call_args
@@ -366,6 +367,7 @@ class TestInteractAsync:
             "question",
             mode="direct",
             provider="ollama",
+            model="llama3.2",
             api_base="http://myhost:8080",
             timeout=15.0,
         )
@@ -634,9 +636,9 @@ class TestTwoModelNormalization:
             "question",
             mode="direct",
             provider="anthropic",
-            root_model="claude-sonnet-4-5-20250514",
+            root_model="claude-sonnet-4-6",
             recursive_model="claude-haiku-4-5-20251001",
         )
         _, kwargs = mock_adapter_cls.call_args
-        assert kwargs["root_model"] == "anthropic/claude-sonnet-4-5-20250514"
+        assert kwargs["root_model"] == "anthropic/claude-sonnet-4-6"
         assert kwargs["recursive_model"] == "anthropic/claude-haiku-4-5-20251001"

@@ -256,9 +256,7 @@ class RLMKitClient:
                 from rlmkit.infrastructure.llm.anthropic_adapter import AnthropicAdapter
                 from rlmkit.llm.anthropic_client import ClaudeClient
 
-                anthropic_client = ClaudeClient(
-                    model=model or "claude-sonnet-4-5-20250514", api_key=api_key
-                )
+                anthropic_client = ClaudeClient(model=model or "claude-sonnet-4-6", api_key=api_key)
                 return AnthropicAdapter(anthropic_client)
             except ImportError as exc:
                 raise ConfigError(f"Anthropic not available: {exc}") from exc
@@ -268,7 +266,12 @@ class RLMKitClient:
                 from rlmkit.infrastructure.llm.ollama_adapter import OllamaAdapter
                 from rlmkit.llm.ollama_client import OllamaClient
 
-                ollama_client = OllamaClient(model=model or "llama3")
+                if model is None:
+                    raise ConfigError(
+                        "provider='ollama' requires an explicit model= argument "
+                        "(e.g. model='llama3.2'). Local providers have no universal default."
+                    )
+                ollama_client = OllamaClient(model=model)
                 return OllamaAdapter(ollama_client)
             except ImportError as exc:
                 raise ConfigError(f"Ollama not available: {exc}") from exc

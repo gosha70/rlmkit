@@ -103,8 +103,8 @@ Set the API key as an environment variable, then pass the provider name:
 |----------|-------------|---------------|
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
-| Ollama | (local, no key) | `llama3` |
-| LM Studio | (local, no key) | Any served model |
+| Ollama | (local, no key) | `llama3.2` (must specify `model=`) |
+| LM Studio | (local, no key) | Any served model (must specify `model=`) |
 | Google | `GOOGLE_API_KEY` | `gemini-pro` |
 | 100+ more | via LiteLLM | See [LiteLLM docs](https://docs.litellm.ai/) |
 

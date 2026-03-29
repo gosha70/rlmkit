@@ -140,14 +140,27 @@ def _resolve_embedding_key(
     )
 
 
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio"})
+
+_DEFAULT_MODELS: dict[str, str] = {
+    "openai": "gpt-4o",
+    "anthropic": "claude-sonnet-4-6",
+}
+
+
 def _resolve_model(provider: str, model: str | None) -> str:
-    """Apply LiteLLM provider prefix and default model if needed."""
-    _defaults: dict[str, str] = {
-        "openai": "gpt-4o",
-        "anthropic": "claude-sonnet-4-5-20250514",
-        "ollama": "llama3",
-    }
-    m = model or _defaults.get(provider, "gpt-4o")
+    """Apply LiteLLM provider prefix and default model if needed.
+
+    Local providers (ollama, lmstudio) have no universal default — the caller
+    must pass an explicit ``model=`` argument.
+    """
+    if model is None and provider in _LOCAL_PROVIDERS:
+        raise ValueError(
+            f"provider={provider!r} requires an explicit model= argument "
+            f"(e.g. model='llama3.2'). "
+            f"Local providers have no universal default."
+        )
+    m = model or _DEFAULT_MODELS.get(provider, "gpt-4o")
     if "/" not in m:
         prefix = _PROVIDER_PREFIXES.get(provider, "")
         m = f"{prefix}{m}"

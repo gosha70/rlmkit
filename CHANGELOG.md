@@ -28,8 +28,8 @@ Cycle 3 (Quality, DevOps & Release) + Cool-down 3.
 - Security (CodeQL `py/clear-text-storage-sensitive-data`): replaced bespoke `_update_env_file()` with `SecretStore` dispatch — OS keyring when available, JSON file (`~/.rlmkit/api_keys.json`, chmod 600) as fallback; startup `_reload_stored_api_keys()` restores persisted keys with correct precedence (real env > SecretStore > legacy `.env`)
 - `_create_llm_adapter()` return type narrowed from `object` to `LLMPort`; branch-local variable names fixed to prevent mypy incompatible-assignment errors
 - `ExecutionSlot.mode` cast to `Literal["rlm","direct","rag"]` in configuration panel
-- Anthropic default model aligned across `api.py` and `RLMKitClient` (`claude-sonnet-4-5-20250514`)
-- Ollama default model aligned (`llama3`)
+- Anthropic default model updated to `claude-sonnet-4-6` across `api.py` and `RLMKitClient`
+- Local providers (`ollama`, `lmstudio`) now require an explicit `model=` argument; no silent default (avoids "model not found" errors on deployments with different models pulled)
 - ESLint `globalIgnores` includes `storybook-static/`
 
 ### Known Limitations
