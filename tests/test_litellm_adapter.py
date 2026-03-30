@@ -349,9 +349,9 @@ class TestLiteLLMAdapterPricing:
 class TestLiteLLMAdapterCost:
     """Test cost estimation."""
 
-    @patch("litellm.completion_cost")
+    @patch("litellm.cost_per_token")
     def test_get_completion_cost(self, mock_cost):
-        mock_cost.return_value = 0.0025
+        mock_cost.return_value = (0.0015, 0.0010)  # (prompt_cost, completion_cost)
 
         adapter = LiteLLMAdapter(model="gpt-4o")
         cost = adapter.get_completion_cost(input_tokens=1000, output_tokens=500)
@@ -363,7 +363,7 @@ class TestLiteLLMAdapterCost:
             completion_tokens=500,
         )
 
-    @patch("litellm.completion_cost")
+    @patch("litellm.cost_per_token")
     def test_get_completion_cost_fallback_on_error(self, mock_cost):
         mock_cost.side_effect = Exception("Cost lookup failed")
 

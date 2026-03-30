@@ -78,7 +78,7 @@ class RunRLMUseCase:
         cumulative_output = 0
         step_start = start
         consecutive_no_progress = 0
-        _STALL_LIMIT = 3
+        stall_limit = 3
 
         # Use root model for the initial reasoning call
         if hasattr(self._llm, "use_root_model"):
@@ -165,7 +165,7 @@ class RunRLMUseCase:
                 else:
                     # No code and no FINAL -- nudge the LLM
                     consecutive_no_progress += 1
-                    if consecutive_no_progress >= _STALL_LIMIT:
+                    if consecutive_no_progress >= stall_limit:
                         raise BudgetExceededError(
                             f"LLM did not make progress after {consecutive_no_progress} "
                             "consecutive steps without code or a FINAL answer"
@@ -257,7 +257,7 @@ class RunRLMUseCase:
         cumulative_output = 0
         step_start = start
         consecutive_no_progress = 0
-        _STALL_LIMIT = 3
+        stall_limit = 3
 
         if hasattr(self._llm, "use_root_model"):
             self._llm.use_root_model()
@@ -369,7 +369,7 @@ class RunRLMUseCase:
                     )
                 else:
                     consecutive_no_progress += 1
-                    if consecutive_no_progress >= _STALL_LIMIT:
+                    if consecutive_no_progress >= stall_limit:
                         raise BudgetExceededError(
                             f"LLM did not make progress after {consecutive_no_progress} "
                             "consecutive steps without code or a FINAL answer"

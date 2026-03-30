@@ -293,11 +293,12 @@ class LiteLLMAdapter:
         import litellm
 
         try:
-            return litellm.completion_cost(
+            prompt_cost, completion_cost = litellm.cost_per_token(
                 model=self._active_model,
                 prompt_tokens=input_tokens,
                 completion_tokens=output_tokens,
             )
+            return prompt_cost + completion_cost
         except Exception as exc:
             logger.debug("Cost lookup failed for model=%s: %s", self._active_model, exc)
             return 0.0
