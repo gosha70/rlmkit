@@ -443,9 +443,6 @@ def interact(
         embedding_api_key=embedding_api_key,
     )
 
-    if verbose:
-        print(f"[Execution] Running in '{actual_mode}' mode ...")
-
     result = _dispatch_sync(actual_mode, llm, config, content, query, emb_key)
     return _build_result(actual_mode, result, verbose)
 
@@ -491,9 +488,6 @@ async def interact_async(
         recursive_model=recursive_model,
         embedding_api_key=embedding_api_key,
     )
-
-    if verbose:
-        print(f"[Execution] Running in '{actual_mode}' mode (async) ...")
 
     result = await _dispatch_async(actual_mode, llm, config, content, query, emb_key)
     return _build_result(actual_mode, result, verbose)
