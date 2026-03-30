@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     model: str | None = None
     session_id: str | None = None
     chat_provider_id: str | None = None  # NEW: reference a Chat Provider
+    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
 
 
 class ChatResponse(BaseModel):
@@ -363,6 +364,7 @@ class ChatProviderConfig(BaseModel):
     rag_config: RAGConfig | None = None  # only for RAG mode
     rlm_max_steps: int = 16  # only for RLM mode
     rlm_timeout_seconds: int = 60  # only for RLM mode
+    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -377,6 +379,7 @@ class ChatProviderCreateRequest(BaseModel):
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
     rlm_timeout_seconds: int | None = None
+    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
 
 
 class ChatProviderUpdateRequest(BaseModel):
@@ -388,6 +391,7 @@ class ChatProviderUpdateRequest(BaseModel):
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
     rlm_timeout_seconds: int | None = None
+    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
 
 
 class ConfigResponse(BaseModel):

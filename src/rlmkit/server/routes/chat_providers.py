@@ -82,6 +82,7 @@ async def create_chat_provider(
         rag_config=req.rag_config,
         rlm_max_steps=req.rlm_max_steps or 16,
         rlm_timeout_seconds=req.rlm_timeout_seconds or 60,
+        num_retries=req.num_retries,
         created_at=now,
         updated_at=now,
     )
@@ -134,6 +135,8 @@ async def update_chat_provider(
         cp.rlm_max_steps = req.rlm_max_steps
     if req.rlm_timeout_seconds is not None:
         cp.rlm_timeout_seconds = req.rlm_timeout_seconds
+    if "num_retries" in req.model_fields_set:
+        cp.num_retries = req.num_retries  # None clears back to provider-default chain
     cp.updated_at = datetime.now(timezone.utc)
 
     state.save_config()

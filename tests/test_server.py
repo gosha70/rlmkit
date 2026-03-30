@@ -823,3 +823,212 @@ class TestTrajectoryLogging:
         step = json.loads(lines[1])
         assert step["action_type"] == "final"
         assert step["tokens_used"] == 15
+
+
+# ---------------------------------------------------------------------------
+# num_retries — model fields and adapter creation
+# ---------------------------------------------------------------------------
+
+
+class TestNumRetriesModel:
+    """ChatRequest and ChatProviderConfig accept num_retries field."""
+
+    def test_chat_request_accepts_num_retries(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat",
+            json={
+                "query": "test",
+                "content": "content",
+                "mode": "direct",
+                "num_retries": 0,
+            },
+        )
+        # 202 means the field was accepted and parsed correctly
+        assert resp.status_code == 202
+
+    def test_chat_request_num_retries_defaults_none(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat",
+            json={"query": "test", "content": "content", "mode": "direct"},
+        )
+        assert resp.status_code == 202
+
+    def test_chat_provider_create_accepts_num_retries(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "no-retry-provider",
+                "llm_provider": "ollama",
+                "llm_model": "llama3.2",
+                "num_retries": 0,
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["num_retries"] == 0
+
+    def test_chat_provider_update_accepts_num_retries(self, client: TestClient) -> None:
+        create_resp = client.post(
+            "/api/chat-providers",
+            json={"name": "updatable", "llm_provider": "openai", "llm_model": "gpt-4o"},
+        )
+        assert create_resp.status_code == 201
+        cp_id = create_resp.json()["id"]
+
+        update_resp = client.put(f"/api/chat-providers/{cp_id}", json={"num_retries": 5})
+        assert update_resp.status_code == 200
+        assert update_resp.json()["num_retries"] == 5
+
+    def test_chat_provider_num_retries_cleared_with_explicit_null(self, client: TestClient) -> None:
+        """Sending num_retries=null explicitly resets the override to None (automatic defaults)."""
+        # Create with an override
+        create_resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "clearable",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "num_retries": 5,
+            },
+        )
+        assert create_resp.status_code == 201
+        cp_id = create_resp.json()["id"]
+        assert create_resp.json()["num_retries"] == 5
+
+        # Clear the override by explicitly sending null
+        clear_resp = client.put(f"/api/chat-providers/{cp_id}", json={"num_retries": None})
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["num_retries"] is None
+
+    def test_chat_provider_num_retries_unchanged_when_field_omitted(
+        self, client: TestClient
+    ) -> None:
+        """Omitting num_retries from the update body leaves the stored value untouched."""
+        create_resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "sticky",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "num_retries": 3,
+            },
+        )
+        assert create_resp.status_code == 201
+        cp_id = create_resp.json()["id"]
+
+        # Update an unrelated field — num_retries must stay at 3
+        update_resp = client.put(f"/api/chat-providers/{cp_id}", json={"llm_model": "gpt-4o-mini"})
+        assert update_resp.status_code == 200
+        assert update_resp.json()["num_retries"] == 3
+
+    def test_negative_num_retries_rejected_in_chat_request(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat",
+            json={"query": "test", "content": "content", "num_retries": -1},
+        )
+        assert resp.status_code == 422
+
+    def test_negative_num_retries_rejected_in_provider_create(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "bad",
+                "llm_provider": "openai",
+                "llm_model": "gpt-4o",
+                "num_retries": -1,
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_negative_num_retries_rejected_in_provider_update(self, client: TestClient) -> None:
+        create_resp = client.post(
+            "/api/chat-providers",
+            json={"name": "valid", "llm_provider": "openai", "llm_model": "gpt-4o"},
+        )
+        cp_id = create_resp.json()["id"]
+        resp = client.put(f"/api/chat-providers/{cp_id}", json={"num_retries": -2})
+        assert resp.status_code == 422
+
+
+class TestNumRetriesAdapterCreation:
+    """AppState.create_llm_adapter* respects num_retries priority chain."""
+
+    def test_ollama_provider_defaults_to_0_retries(self) -> None:
+        from unittest.mock import patch
+
+        state = get_state()
+        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+            mock_cls.return_value = object()
+            state.config.active_provider = "ollama"
+            state.config.active_model = "llama3.2"
+            state.create_llm_adapter()
+        _, kwargs = mock_cls.call_args
+        assert kwargs["num_retries"] == 0
+
+    def test_openai_provider_defaults_to_2_retries(self) -> None:
+        from unittest.mock import patch
+
+        state = get_state()
+        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+            mock_cls.return_value = object()
+            state.config.active_provider = "openai"
+            state.config.active_model = "gpt-4o"
+            state.create_llm_adapter()
+        _, kwargs = mock_cls.call_args
+        assert kwargs["num_retries"] == 2
+
+    def test_explicit_num_retries_overrides_default(self) -> None:
+        from unittest.mock import patch
+
+        state = get_state()
+        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+            mock_cls.return_value = object()
+            state.config.active_provider = "openai"
+            state.config.active_model = "gpt-4o"
+            state.create_llm_adapter(num_retries=0)
+        _, kwargs = mock_cls.call_args
+        assert kwargs["num_retries"] == 0
+
+    def test_chat_provider_config_num_retries_used(self) -> None:
+        from unittest.mock import patch
+
+        from rlmkit.server.models import ChatProviderConfig, RuntimeSettings
+
+        state = get_state()
+        cp = ChatProviderConfig(
+            id="cp-test",
+            name="TestCP",
+            llm_provider="openai",
+            llm_model="gpt-4o",
+            runtime_settings=RuntimeSettings(),
+            num_retries=1,
+        )
+        state.config.chat_providers = [cp]
+
+        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+            mock_cls.return_value = object()
+            state.create_llm_adapter_for_chat_provider("cp-test")
+        _, kwargs = mock_cls.call_args
+        assert kwargs["num_retries"] == 1
+
+    def test_per_request_num_retries_beats_chat_provider_config(self) -> None:
+        from unittest.mock import patch
+
+        from rlmkit.server.models import ChatProviderConfig, RuntimeSettings
+
+        state = get_state()
+        cp = ChatProviderConfig(
+            id="cp-test2",
+            name="TestCP2",
+            llm_provider="openai",
+            llm_model="gpt-4o",
+            runtime_settings=RuntimeSettings(),
+            num_retries=1,
+        )
+        state.config.chat_providers = [cp]
+
+        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+            mock_cls.return_value = object()
+            state.create_llm_adapter_for_chat_provider("cp-test2", num_retries=7)
+        _, kwargs = mock_cls.call_args
+        assert kwargs["num_retries"] == 7

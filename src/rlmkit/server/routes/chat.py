@@ -137,7 +137,9 @@ async def submit_chat(
 
     # Execute in background
     asyncio.create_task(
-        _run_execution(state, execution, content, req.query, mode, chat_provider_id)
+        _run_execution(
+            state, execution, content, req.query, mode, chat_provider_id, req.num_retries
+        )
     )
 
     return ChatResponse(
@@ -155,18 +157,19 @@ async def _run_execution(
     query: str,
     mode: str,
     chat_provider_id: str | None = None,
+    num_retries: int | None = None,
 ) -> None:
     """Run the use case in the background and store results."""
     try:
         # Use Chat Provider-specific adapter if available, otherwise global
         if chat_provider_id:
-            llm = state.create_llm_adapter_for_chat_provider(chat_provider_id)
+            llm = state.create_llm_adapter_for_chat_provider(chat_provider_id, num_retries)
             cp = state.get_chat_provider(chat_provider_id)
             if cp:
                 cp = state.resolve_chat_provider(cp)
             provider_label = f"{cp.llm_provider}/{cp.llm_model}" if cp else "unknown"
         else:
-            llm = state.create_llm_adapter()
+            llm = state.create_llm_adapter(num_retries)
             cp = None
             provider_label = f"{state.config.active_provider}/{state.config.active_model}"
         logger.info(

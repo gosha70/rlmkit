@@ -25,6 +25,9 @@ from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
 logger = logging.getLogger(__name__)
 
+# Providers that default to zero retries (local servers; retries multiply hangs)
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio"})
+
 _CONFIG_FILE = Path(".rlmkit_config.json")
 _SESSIONS_FILE = Path(".rlmkit_sessions.json")
 _EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
@@ -385,7 +388,11 @@ class AppState:
                 session.conversations[chat_provider_id] = []
             session.conversations[chat_provider_id].append(message)
 
-    def create_llm_adapter_for_chat_provider(self, chat_provider_id: str) -> LiteLLMAdapter:
+    def create_llm_adapter_for_chat_provider(
+        self,
+        chat_provider_id: str,
+        num_retries: int | None = None,
+    ) -> LiteLLMAdapter:
         """Create an LLM adapter configured for a specific Chat Provider."""
         cp = self.get_chat_provider(chat_provider_id)
         if not cp:
@@ -412,13 +419,24 @@ class AppState:
 
         runtime = cp.runtime_settings
 
+        # Priority: per-request > Chat Provider config > local-provider default > 2
+        effective_retries = (
+            num_retries
+            if num_retries is not None
+            else cp.num_retries
+            if cp.num_retries is not None
+            else 0
+            if provider_key in _LOCAL_PROVIDERS
+            else 2
+        )
+
         return LiteLLMAdapter(
             model=prefixed_model,
             api_base=api_base,
             temperature=runtime.temperature,
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),
-            num_retries=2,
+            num_retries=effective_retries,
         )
 
     def save_config(self) -> None:
@@ -529,7 +547,7 @@ class AppState:
         self.sessions[sid] = session
         return session
 
-    def create_llm_adapter(self) -> LiteLLMAdapter:
+    def create_llm_adapter(self, num_retries: int | None = None) -> LiteLLMAdapter:
         provider_key = self.config.active_provider
         model = self.config.active_model
 
@@ -552,13 +570,18 @@ class AppState:
         if not api_base and entry and entry.default_endpoint:
             api_base = entry.default_endpoint
 
+        # Priority: per-request > local-provider default > 2
+        effective_retries = (
+            num_retries if num_retries is not None else 0 if provider_key in _LOCAL_PROVIDERS else 2
+        )
+
         return LiteLLMAdapter(
             model=prefixed_model,
             api_base=api_base,
             temperature=runtime.temperature,
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),
-            num_retries=2,
+            num_retries=effective_retries,
         )
 
     @staticmethod

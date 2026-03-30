@@ -352,6 +352,91 @@ class TestInteractAsync:
         assert result.answer == "Async RLM"
         mock_sandbox_fn.assert_called_once()
 
+
+# ---------------------------------------------------------------------------
+# num_retries pass-through
+# ---------------------------------------------------------------------------
+
+
+class TestNumRetries:
+    """num_retries is passed to LiteLLMAdapter with correct defaults."""
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_cloud_provider_defaults_to_2(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="openai")
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 2
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_ollama_defaults_to_0(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="ollama", model="llama3.2")
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 0
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_lmstudio_defaults_to_0(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="lmstudio", model="lmstudio/model")
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 0
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_explicit_num_retries_overrides_default(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="openai", num_retries=5)
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 5
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_num_retries_zero_disables_retries(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact("content", "question", mode="direct", provider="openai", num_retries=0)
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 0
+
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    def test_explicit_overrides_local_provider_default(self, mock_adapter_cls, mock_uc_cls):
+        """Explicit num_retries=3 beats the ollama default of 0."""
+        mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
+        interact(
+            "content",
+            "question",
+            mode="direct",
+            provider="ollama",
+            model="llama3.2",
+            num_retries=3,
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 3
+
+    @pytest.mark.asyncio
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    async def test_async_cloud_defaults_to_2(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
+        await interact_async("content", "question", mode="direct", provider="openai")
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 2
+
+    @pytest.mark.asyncio
+    @patch("rlmkit.api.RunDirectUseCase")
+    @patch("rlmkit.api.LiteLLMAdapter")
+    async def test_async_ollama_defaults_to_0(self, mock_adapter_cls, mock_uc_cls):
+        mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
+        await interact_async(
+            "content", "question", mode="direct", provider="ollama", model="llama3.2"
+        )
+        _, kwargs = mock_adapter_cls.call_args
+        assert kwargs["num_retries"] == 0
+
     @pytest.mark.asyncio
     async def test_async_validation(self):
         with pytest.raises(ValueError, match="content cannot be empty"):

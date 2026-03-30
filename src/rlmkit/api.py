@@ -423,6 +423,11 @@ def interact(
         embedding_api_key: API key for the embedding model used in RAG mode.
             Defaults to ``api_key`` when ``provider="openai"``, otherwise falls
             back to ``OPENAI_API_KEY`` from the environment.
+        num_retries: Number of retry attempts on transient LLM errors.
+            ``None`` (default) applies automatic defaults: ``0`` for local
+            providers (``ollama``, ``lmstudio``) to avoid multiplying hangs,
+            ``2`` for cloud providers.  Pass ``0`` to disable retries entirely,
+            or a positive integer to override.
 
     Returns:
         :class:`InteractResult` with answer, mode used, and metrics.
