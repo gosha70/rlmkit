@@ -115,6 +115,50 @@ docker logs --tail=50 open-webui
 curl http://127.0.0.1:8080
 ```
 
+## Unified memory — check before running large models
+
+DGX Spark uses **unified memory**: system RAM and GPU VRAM are the same 128 GB pool.
+If memory is nearly full, Ollama cannot load a model and inference requests will hang
+indefinitely at the HTTP layer (no timeout fires because the TCP connection succeeds
+but the model never starts generating).
+
+**Check before running:**
+
+```bash
+# Memory overview
+free -h
+
+# What models are currently loaded (consuming memory)
+ollama ps
+
+# Dashboard at http://localhost:11000/ — check System Memory gauge
+```
+
+**Free up memory if needed:**
+
+```bash
+# Stop a specific loaded model
+ollama stop <model-name>
+
+# Or restart Ollama to unload everything
+sudo systemctl restart ollama
+
+# Verify free memory after
+free -h
+ollama ps   # should show nothing loaded
+```
+
+**Rule of thumb for model memory requirements:**
+
+| Model size | FP16 | INT4/Q4 |
+|-----------|------|---------|
+| 7B  | ~14 GB | ~5 GB  |
+| 14B | ~28 GB | ~10 GB |
+| 20B | ~40 GB | ~14 GB |
+| 32B | ~64 GB | ~22 GB |
+
+Leave at least 10-15 GB headroom for the OS and Ollama overhead.
+
 ## Recommendation
 
 For apps like **RLMKit** and **document-assistant**, prefer:

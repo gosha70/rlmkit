@@ -40,26 +40,47 @@ bash test-vllm-dgx.sh
 ```
 
 ### `serve-vllm-dgx.sh`
-Starts the OpenAI-compatible vLLM server.
+Starts the OpenAI-compatible vLLM server with DGX Spark memory workarounds.
+
+DGX Spark uses Unified Memory Architecture (UMA). vLLM's default memory-profiling
+step can trigger an assertion during startup when free memory fluctuates. This script
+works around that by flushing the OS page cache before launch and using conservative
+memory defaults.
 
 Usage:
 
 ```bash
-bash serve-vllm-dgx.sh [MODEL] [HOST] [PORT]
+bash serve-vllm-dgx.sh [MODEL] [HOST] [PORT] [GPU_MEM_UTIL] [MAX_MODEL_LEN] [KV_CACHE_BYTES]
 ```
 
 Defaults:
 - model: `Qwen/Qwen2.5-7B-Instruct`
 - host: `0.0.0.0`
 - port: `8000`
+- gpu_mem_util: `0.3` (conservative; ignored when `KV_CACHE_BYTES` is set)
+- max_model_len: `8192`
+- kv_cache_bytes: *(empty — use `GPU_MEM_UTIL` auto mode)*
 
 Examples:
 
 ```bash
+# Default (conservative auto mode — try this first)
 bash serve-vllm-dgx.sh
-bash serve-vllm-dgx.sh facebook/opt-125m 0.0.0.0 8000
-bash serve-vllm-dgx.sh Qwen/Qwen2.5-7B-Instruct 0.0.0.0 8000
+
+# Explicit model
+bash serve-vllm-dgx.sh Qwen/Qwen2.5-7B-Instruct
+
+# Explicit KV cache — bypasses profiling assertion entirely
+bash serve-vllm-dgx.sh Qwen/Qwen2.5-7B-Instruct 0.0.0.0 8000 "" 8192 8G
+
+# Larger KV cache once 8G is confirmed working
+bash serve-vllm-dgx.sh Qwen/Qwen2.5-7B-Instruct 0.0.0.0 8000 "" 8192 16G
 ```
+
+**Retry order if startup fails with a memory-profiling assertion:**
+1. Conservative auto (default): `bash serve-vllm-dgx.sh`
+2. Explicit KV cache (bypasses profiling): `bash serve-vllm-dgx.sh <model> 0.0.0.0 8000 "" 8192 8G`
+3. If still flaky, close desktop apps or connect via SSH only before running.
 
 ### `verify-vllm-api-dgx.sh`
 Verifies the running vLLM server by calling:

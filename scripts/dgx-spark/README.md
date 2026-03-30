@@ -52,4 +52,33 @@ r = interact(content, query, mode="rlm",
 - **Ollama**: easier setup, good for models already in `ollama pull` format, direct RLMKit `provider="ollama"` support.
 - **vLLM**: OpenAI-compatible API, better throughput for large models, required for HuggingFace models not packaged for Ollama.
 
+## ⚠ Run only one backend at a time
+
+DGX Spark has **128 GB unified memory** shared between the ARM CPU and the Blackwell GPU.
+Ollama and vLLM each claim a large slice of this pool when a model is loaded.
+
+**Running both simultaneously causes:**
+- The second backend to spill model layers onto the CPU (→ 10–50× slower inference)
+- Requests to hang at the HTTP layer because the model never gets enough GPU compute
+- Apparent timeouts that are actually just extremely slow CPU-side generation
+
+**Before starting Ollama, stop vLLM:**
+```bash
+# Kill the vLLM server process
+pkill -f "vllm.entrypoints.openai.api_server" || true
+# Confirm memory is free
+free -h          # expect >100 GB available
+ollama ps        # confirm no models loaded
+```
+
+**Before starting vLLM, stop Ollama models:**
+```bash
+ollama stop <model-name>     # or: sudo systemctl stop ollama
+free -h
+```
+
+**Quick memory check** (DGX Dashboard at `http://localhost:11000/`):
+- System Memory gauge should read < 20 GB used before loading any model
+- GPU Utilization should jump to > 80% once inference starts — if it stays near 0%, memory is likely exhausted and layers have fallen back to CPU
+
 See each subdirectory's README for full script details.

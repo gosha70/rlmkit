@@ -183,6 +183,7 @@ def _setup(
     root_model: str | None = None,
     recursive_model: str | None = None,
     embedding_api_key: str | None = None,
+    num_retries: int | None = None,
 ) -> tuple[str, str, LiteLLMAdapter, RunConfigDTO, str | None]:
     """Validate inputs, resolve mode/provider/model, build adapter and config.
 
@@ -236,6 +237,9 @@ def _setup(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout if timeout is not None else 120.0,
+        num_retries=(
+            num_retries if num_retries is not None else 0 if provider in _LOCAL_PROVIDERS else 2
+        ),
     )
 
     config = RunConfigDTO(
@@ -392,6 +396,7 @@ def interact(
     root_model: str | None = None,
     recursive_model: str | None = None,
     embedding_api_key: str | None = None,
+    num_retries: int | None = None,
     **kwargs: Any,
 ) -> InteractResult:
     """Interact with content using an LLM through Direct, RLM, or Compare mode.
@@ -441,6 +446,7 @@ def interact(
         root_model=root_model,
         recursive_model=recursive_model,
         embedding_api_key=embedding_api_key,
+        num_retries=num_retries,
     )
 
     result = _dispatch_sync(actual_mode, llm, config, content, query, emb_key)
@@ -463,6 +469,7 @@ async def interact_async(
     root_model: str | None = None,
     recursive_model: str | None = None,
     embedding_api_key: str | None = None,
+    num_retries: int | None = None,
     **kwargs: Any,
 ) -> InteractResult:
     """Async version of :func:`interact`.
@@ -487,6 +494,7 @@ async def interact_async(
         root_model=root_model,
         recursive_model=recursive_model,
         embedding_api_key=embedding_api_key,
+        num_retries=num_retries,
     )
 
     result = await _dispatch_async(actual_mode, llm, config, content, query, emb_key)
