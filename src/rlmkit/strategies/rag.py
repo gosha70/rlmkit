@@ -8,6 +8,7 @@ import time
 
 from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.core.rlm import LLMClient
+from rlmkit.prompts import get_mode_system_prompt
 from rlmkit.tools.content import chunk as chunk_content
 
 from .base import StrategyResult
@@ -31,11 +32,7 @@ class RAGStrategy:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.top_k = top_k
-        self.system_prompt = (
-            system_prompt
-            or "You are a helpful assistant. Answer the user's question based on the provided context chunks. "
-            "If the context doesn't contain enough information, say so."
-        )
+        self.system_prompt = system_prompt or get_mode_system_prompt("rag")
 
     @property
     def name(self) -> str:

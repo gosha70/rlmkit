@@ -1,0 +1,20 @@
+---
+# Operational messages sent to the LLM during an RLM execution loop.
+# Edit here to customise re-prompt wording or quality-gate feedback
+# without touching Python source.
+
+reprompt: |
+  Please provide either:
+  1. Python code to execute (in a ```python code block), OR
+  2. A FINAL answer (using FINAL: prefix)
+
+  Remember: If the question is self-contained and doesn't require
+  inspecting P, you can answer directly with FINAL.
+
+quality_gate_impossibility: >-
+  Quality gate: Answer contains impossibility claim without workaround.
+  Please provide at least one alternative approach or solution.
+
+quality_gate_api_existence: >-
+  Quality gate: Claiming API doesn't exist for known framework.
+  Please verify or provide workaround solutions.

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal, cast
 
+from rlmkit.prompts import get_rlm_message
+
 
 class ActionType(str, Enum):
     """Valid action types in the protocol."""
@@ -314,18 +316,12 @@ def validate_final_answer_quality(answer: str, query: str) -> str | None:
         has_workaround = any(pattern in answer_lower for pattern in workaround_patterns)
 
         if not has_workaround:
-            return (
-                "Quality gate: Answer contains impossibility claim without workaround. "
-                "Please provide at least one alternative approach or solution."
-            )
+            return str(get_rlm_message("quality_gate_impossibility"))
 
     # Check for API existence claims when query mentions known frameworks
     if "st." in query_lower or "streamlit" in query_lower:
         if "doesn't exist" in answer_lower or "does not exist" in answer_lower:
             if "api" in answer_lower or "function" in answer_lower or "method" in answer_lower:
-                return (
-                    "Quality gate: Claiming API doesn't exist for known framework. "
-                    "Please verify or provide workaround solutions."
-                )
+                return str(get_rlm_message("quality_gate_api_existence"))
 
     return None

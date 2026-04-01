@@ -8,11 +8,13 @@ and versioned. Prompts are loaded from YAML files for easy editing and
 version control.
 """
 
+import json
 from pathlib import Path
 from typing import Any
 
 # Cache for loaded templates
 _template_cache: dict[str, str] = {}
+_yaml_doc_cache: dict[str, Any] = {}
 
 
 def get_default_system_prompt(version: str = "2.0") -> str:
@@ -42,29 +44,31 @@ def get_default_system_prompt(version: str = "2.0") -> str:
 
     # Convert version to filename format: "1.0" -> "v1_0"
     version_str = version.replace(".", "_")
-    filename = f"system_prompt_v{version_str}.txt"
 
-    # Try to load from package resources
-    try:
-        import importlib.resources as pkg_resources
+    # All versioned prompt files use YAML — the single canonical format.
+    import importlib.resources as pkg_resources
 
+    import yaml
+
+    pkg = pkg_resources.files("rlmkit.prompts")
+    for ext in (".yaml", ".yml"):
+        filename = f"system_prompt_v{version_str}{ext}"
         try:
-            # Python 3.9+
-            files = pkg_resources.files("rlmkit.prompts")
-            template_file = files / filename
-            template = template_file.read_text()
-        except AttributeError:
-            # Python 3.7-3.8 fallback
-            template = pkg_resources.read_text("rlmkit.prompts", filename)
+            raw = (pkg / filename).read_text(encoding="utf-8")
+        except (FileNotFoundError, TypeError):
+            continue
 
-        # Cache it
+        data = yaml.safe_load(raw)
+        if not isinstance(data, dict) or "template" not in data:
+            raise ValueError(f"YAML prompt file must have a 'template' key: {filename}")
+        template = str(data["template"])
         _template_cache[cache_key] = template
         return template
 
-    except (FileNotFoundError, ModuleNotFoundError) as exc:
-        raise ValueError(
-            f"Unsupported system prompt version: {version}. Template file not found: {filename}"
-        ) from exc
+    raise ValueError(
+        f"Unsupported system prompt version: {version}. "
+        f"No template file found (tried system_prompt_v{version_str}{{.yaml,.yml}})."
+    )
 
 
 def format_system_prompt(
@@ -100,6 +104,82 @@ def format_system_prompt(
         return template.format(**format_vars)
     except KeyError as e:
         raise ValueError(f"Missing template variable: {e}") from e
+
+
+def get_mode_system_prompt(mode: str, template_name: str = "Default") -> str:
+    """Get the default system prompt for a given execution mode.
+
+    Loads from ``system_prompt_templates.json`` (the named profile).
+
+    Args:
+        mode: Execution mode — ``"direct"``, ``"rag"``, or ``"rlm"``.
+        template_name: Profile name in the templates JSON (default ``"Default"``).
+
+    Returns:
+        System prompt string.
+
+    Raises:
+        ValueError: If the mode or template name is not found.
+
+    Example:
+        >>> prompt = get_mode_system_prompt("direct")
+        >>> assert "helpful" in prompt
+    """
+    cache_key = f"mode_prompt_{template_name}_{mode}"
+    if cache_key in _template_cache:
+        return _template_cache[cache_key]
+
+    import importlib.resources as pkg_resources
+
+    pkg = pkg_resources.files("rlmkit.prompts")
+    raw = (pkg / "system_prompt_templates.json").read_text(encoding="utf-8")
+    data: dict[str, Any] = json.loads(raw)
+
+    tpl = data.get(template_name)
+    if tpl is None:
+        raise ValueError(
+            f"System prompt template '{template_name}' not found in system_prompt_templates.json"
+        )
+    prompt = tpl.get(mode)
+    if not prompt:
+        raise ValueError(f"No system prompt for mode='{mode}' in template '{template_name}'")
+    _template_cache[cache_key] = str(prompt)
+    return str(prompt)
+
+
+def get_rlm_message(key: str) -> str:
+    """Get a named operational message from ``rlm_messages.yaml``.
+
+    Covers re-prompt messages and quality-gate feedback strings.
+
+    Args:
+        key: Message key, e.g. ``"reprompt"``, ``"quality_gate_impossibility"``,
+             ``"quality_gate_api_existence"``.
+
+    Returns:
+        Message string.
+
+    Raises:
+        ValueError: If the key is not found in the YAML file.
+
+    Example:
+        >>> msg = get_rlm_message("reprompt")
+        >>> assert "FINAL" in msg
+    """
+    if "rlm_messages" not in _yaml_doc_cache:
+        import importlib.resources as pkg_resources
+
+        import yaml
+
+        pkg = pkg_resources.files("rlmkit.prompts")
+        raw = (pkg / "rlm_messages.yaml").read_text(encoding="utf-8")
+        _yaml_doc_cache["rlm_messages"] = yaml.safe_load(raw)
+
+    doc: dict[str, str] = _yaml_doc_cache["rlm_messages"]
+    msg = doc.get(key)
+    if not msg:
+        raise ValueError(f"RLM message key '{key}' not found in rlm_messages.yaml")
+    return str(msg).rstrip("\n")
 
 
 def load_prompt_from_file(filepath: Path) -> str:

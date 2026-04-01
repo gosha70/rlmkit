@@ -12,6 +12,7 @@ import time
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
+from rlmkit.prompts import get_mode_system_prompt
 
 
 class RunDirectUseCase:
@@ -55,9 +56,7 @@ class RunDirectUseCase:
         config = config or RunConfigDTO(mode="direct")
         start = time.time()
 
-        system_prompt = (
-            "You are a helpful assistant. Answer the user's question based on the provided content."
-        )
+        system_prompt = get_mode_system_prompt("direct")
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
@@ -116,9 +115,7 @@ class RunDirectUseCase:
         config = config or RunConfigDTO(mode="direct")
         start = time.time()
 
-        system_prompt = (
-            "You are a helpful assistant. Answer the user's question based on the provided content."
-        )
+        system_prompt = get_mode_system_prompt("direct")
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},

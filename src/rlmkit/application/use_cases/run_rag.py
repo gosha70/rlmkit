@@ -12,6 +12,7 @@ from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.embedding_port import EmbeddingPort
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.storage_port import StoragePort
+from rlmkit.prompts import get_mode_system_prompt
 
 
 class RunRAGUseCase:
@@ -85,11 +86,7 @@ class RunRAGUseCase:
             messages = [
                 {
                     "role": "system",
-                    "content": (
-                        "You are a helpful assistant. Answer the user's question "
-                        "based on the provided context passages. If the context "
-                        "doesn't contain enough information, say so."
-                    ),
+                    "content": get_mode_system_prompt("rag"),
                 },
                 {
                     "role": "user",

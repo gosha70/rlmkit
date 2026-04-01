@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rlmkit.application.dto import (
     LLMResponseDTO,
@@ -21,6 +21,10 @@ from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.sandbox_port import SandboxPort
 from rlmkit.domain.entities import BudgetConfig, BudgetState
 from rlmkit.domain.exceptions import BudgetExceededError
+from rlmkit.prompts import get_rlm_message
+
+if TYPE_CHECKING:
+    from rlmkit.core.parsing import ParsedResponse
 
 
 class RunRLMUseCase:
@@ -59,12 +63,25 @@ class RunRLMUseCase:
             max_tokens=config.max_tokens,
             max_cost=config.max_cost,
             max_time_seconds=config.max_time_seconds,
-            max_recursion_depth=config.max_recursion_depth,
+            # max_recursion_depth is enforced by the _make_subcall closure, not BudgetConfig,
+            # to avoid is_within() failing at depth 0 when max_recursion_depth=0.
         )
         budget_state = BudgetState()
 
-        # Initialize sandbox with content
+        # Initialize sandbox with content and bind subcall for recursive use
+        subcall_usage: list[dict[str, Any]] = []
+        # Mutable snapshot updated before each code execution so the subcall closure
+        # can guard against multiple subcalls within one block jointly exceeding the budget.
+        parent_budget_snapshot: dict[str, float] = {
+            "cost": 0.0,
+            "tokens": 0.0,
+            "steps": 0.0,
+            "time_start": start,  # fixed: the parent's wall-clock start time
+        }
         self._sandbox.set_variable("P", content)
+        self._sandbox.set_variable(
+            "subcall", self._make_subcall(config, subcall_usage, parent_budget_snapshot)
+        )
 
         # Build initial messages
         system_prompt = self._build_system_prompt(len(content))
@@ -76,9 +93,13 @@ class RunRLMUseCase:
         trace: list[dict[str, Any]] = []
         cumulative_input = 0
         cumulative_output = 0
+        cumulative_cost = 0.0
         step_start = start
         consecutive_no_progress = 0
-        stall_limit = 3
+        stall_limit = config.stall_limit
+        last_plain_answer: str = ""  # circuit-breaker: best non-FINAL text seen so far
+        last_execution_failed = False  # track if previous code execution had errors
+        input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
         # Use root model for the initial reasoning call
         if hasattr(self._llm, "use_root_model"):
@@ -103,11 +124,21 @@ class RunRLMUseCase:
                 cumulative_output += response.output_tokens
                 budget_state.input_tokens = cumulative_input
                 budget_state.output_tokens = cumulative_output
+                cumulative_cost += (
+                    response.input_tokens * input_cost_per_1m
+                    + response.output_tokens * output_cost_per_1m
+                ) / 1_000_000
+                budget_state.cost = cumulative_cost
+
+                # Re-check budget immediately after consuming tokens — a single
+                # expensive LLM call can push cost past max_cost.
+                if not budget_state.is_within(budget_config):
+                    raise BudgetExceededError(f"Budget exceeded after step {budget_state.steps}")
 
                 text = response.content
 
-                # Extract code if present
-                code = self._extract_code(text)
+                # Parse response: try JSON v2.0 first, fall back to markdown v1.0
+                parsed = self._parse_rlm_response(text)
 
                 trace.append(
                     {
@@ -116,34 +147,61 @@ class RunRLMUseCase:
                         "content": response.content,
                         "input_tokens": response.input_tokens,
                         "output_tokens": response.output_tokens,
-                        "code": code,
+                        "code": parsed.code,
                         "model": getattr(self._llm, "active_model", None) or response.model,
                         "elapsed_seconds": time.time() - step_start,
                     }
                 )
 
-                # Check for FINAL answer
-                final = self._extract_final(text)
-                if final is not None:
+                # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
+                if parsed.is_complete:
+                    if last_execution_failed:
+                        trace.append(
+                            {
+                                "step": budget_state.steps,
+                                "role": "system",
+                                "content": (
+                                    "⚠️ Warning: FINAL provided after execution failure. "
+                                    "Model may have used direct reasoning instead of code execution."
+                                ),
+                            }
+                        )
                     # Restore root model for any subsequent use of the adapter
                     if hasattr(self._llm, "use_root_model"):
                         self._llm.use_root_model()
                     elapsed = time.time() - start
                     return RunResultDTO(
-                        answer=final,
+                        answer=self._extract_final_answer(parsed),
                         mode_used="rlm",
                         success=True,
                         steps=budget_state.steps,
                         input_tokens=cumulative_input,
                         output_tokens=cumulative_output,
+                        total_cost=cumulative_cost,
                         elapsed_time=elapsed,
                         trace=trace,
                     )
 
                 # Check for code to execute
-                if code:
+                if parsed.has_code and parsed.code:
                     consecutive_no_progress = 0
-                    exec_result = self._sandbox.execute(code)
+                    # Snapshot current spend so the subcall closure can guard against
+                    # multiple subcalls within one block jointly exceeding the budget.
+                    parent_budget_snapshot["cost"] = cumulative_cost
+                    parent_budget_snapshot["tokens"] = float(cumulative_input + cumulative_output)
+                    parent_budget_snapshot["steps"] = float(budget_state.steps)
+                    exec_result = self._sandbox.execute(parsed.code)
+                    last_execution_failed = exec_result.exception is not None or exec_result.timeout
+                    # Fold subcall token/cost/step usage back into parent accumulators
+                    for _u in subcall_usage:
+                        cumulative_input += _u.get("input_tokens", 0)
+                        cumulative_output += _u.get("output_tokens", 0)
+                        cumulative_cost += _u.get("total_cost", 0.0)
+                        budget_state.steps += _u.get("steps", 0)
+                    subcall_usage.clear()
+                    budget_state.input_tokens = cumulative_input
+                    budget_state.output_tokens = cumulative_output
+                    budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
 
                     trace.append(
@@ -151,7 +209,7 @@ class RunRLMUseCase:
                             "step": budget_state.steps,
                             "role": "execution",
                             "content": formatted,
-                            "code": code,
+                            "code": parsed.code,
                         }
                     )
 
@@ -163,9 +221,29 @@ class RunRLMUseCase:
                         }
                     )
                 else:
-                    # No code and no FINAL -- nudge the LLM
+                    # No code and no FINAL -- track the best plain-text response seen
+                    stripped = text.strip()
+                    if stripped:
+                        last_plain_answer = stripped
                     consecutive_no_progress += 1
                     if consecutive_no_progress >= stall_limit:
+                        # Circuit breaker: if the model wrote a real answer but skipped
+                        # the FINAL: format, accept it rather than discarding it.
+                        if last_plain_answer:
+                            if hasattr(self._llm, "use_root_model"):
+                                self._llm.use_root_model()
+                            elapsed = time.time() - start
+                            return RunResultDTO(
+                                answer=last_plain_answer,
+                                mode_used="rlm",
+                                success=True,
+                                steps=budget_state.steps,
+                                input_tokens=cumulative_input,
+                                output_tokens=cumulative_output,
+                                total_cost=cumulative_cost,
+                                elapsed_time=elapsed,
+                                trace=trace,
+                            )
                         raise BudgetExceededError(
                             f"LLM did not make progress after {consecutive_no_progress} "
                             "consecutive steps without code or a FINAL answer"
@@ -174,15 +252,26 @@ class RunRLMUseCase:
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "Please provide either:\n"
-                                "1. Python code to execute (in a ```python code block), OR\n"
-                                "2. A FINAL answer (using FINAL: prefix)"
-                            ),
+                            "content": get_rlm_message("reprompt"),
                         }
                     )
 
-            # Max steps exhausted
+            # Max steps exhausted — use plain-text circuit breaker before failing
+            if last_plain_answer:
+                if hasattr(self._llm, "use_root_model"):
+                    self._llm.use_root_model()
+                elapsed = time.time() - start
+                return RunResultDTO(
+                    answer=last_plain_answer,
+                    mode_used="rlm",
+                    success=True,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
             raise BudgetExceededError(
                 f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
                 "without finding final answer"
@@ -200,6 +289,7 @@ class RunRLMUseCase:
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
+                total_cost=cumulative_cost,
                 elapsed_time=elapsed,
                 trace=trace,
             )
@@ -215,6 +305,7 @@ class RunRLMUseCase:
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
+                total_cost=cumulative_cost,
                 elapsed_time=elapsed,
                 trace=trace,
             )
@@ -240,11 +331,22 @@ class RunRLMUseCase:
             max_tokens=config.max_tokens,
             max_cost=config.max_cost,
             max_time_seconds=config.max_time_seconds,
-            max_recursion_depth=config.max_recursion_depth,
+            # max_recursion_depth is enforced by the _make_subcall closure, not BudgetConfig,
+            # to avoid is_within() failing at depth 0 when max_recursion_depth=0.
         )
         budget_state = BudgetState()
 
+        subcall_usage: list[dict[str, Any]] = []
+        parent_budget_snapshot: dict[str, float] = {
+            "cost": 0.0,
+            "tokens": 0.0,
+            "steps": 0.0,
+            "time_start": start,  # fixed: the parent's wall-clock start time
+        }
         self._sandbox.set_variable("P", content)
+        self._sandbox.set_variable(
+            "subcall", self._make_subcall(config, subcall_usage, parent_budget_snapshot)
+        )
 
         system_prompt = self._build_system_prompt(len(content))
         messages: list[dict[str, str]] = [
@@ -255,9 +357,13 @@ class RunRLMUseCase:
         trace: list[dict[str, Any]] = []
         cumulative_input = 0
         cumulative_output = 0
+        cumulative_cost = 0.0
         step_start = start
         consecutive_no_progress = 0
-        stall_limit = 3
+        stall_limit = config.stall_limit
+        last_plain_answer: str = ""  # circuit-breaker: best non-FINAL text seen so far
+        last_execution_failed = False  # track if previous code execution had errors
+        input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
         if hasattr(self._llm, "use_root_model"):
             self._llm.use_root_model()
@@ -299,9 +405,20 @@ class RunRLMUseCase:
                 cumulative_output += response.output_tokens
                 budget_state.input_tokens = cumulative_input
                 budget_state.output_tokens = cumulative_output
+                cumulative_cost += (
+                    response.input_tokens * input_cost_per_1m
+                    + response.output_tokens * output_cost_per_1m
+                ) / 1_000_000
+                budget_state.cost = cumulative_cost
+
+                # Re-check budget immediately after consuming tokens
+                if not budget_state.is_within(budget_config):
+                    raise BudgetExceededError(f"Budget exceeded after step {budget_state.steps}")
 
                 text = response.content
-                code = self._extract_code(text)
+
+                # Parse response: try JSON v2.0 first, fall back to markdown v1.0
+                parsed = self._parse_rlm_response(text)
 
                 step_entry: dict[str, Any] = {
                     "step": budget_state.steps,
@@ -309,7 +426,7 @@ class RunRLMUseCase:
                     "content": response.content,
                     "input_tokens": response.input_tokens,
                     "output_tokens": response.output_tokens,
-                    "code": code,
+                    "code": parsed.code,
                     "model": getattr(self._llm, "active_model", None) or response.model,
                     "elapsed_seconds": time.time() - step_start,
                 }
@@ -328,27 +445,52 @@ class RunRLMUseCase:
                         }
                     )
 
-                # Check for FINAL answer
-                final = self._extract_final(text)
-                if final is not None:
+                # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
+                if parsed.is_complete:
+                    if last_execution_failed:
+                        trace.append(
+                            {
+                                "step": budget_state.steps,
+                                "role": "system",
+                                "content": (
+                                    "⚠️ Warning: FINAL provided after execution failure. "
+                                    "Model may have used direct reasoning instead of code execution."
+                                ),
+                            }
+                        )
                     if hasattr(self._llm, "use_root_model"):
                         self._llm.use_root_model()
                     elapsed = time.time() - start
                     return RunResultDTO(
-                        answer=final,
+                        answer=self._extract_final_answer(parsed),
                         mode_used="rlm",
                         success=True,
                         steps=budget_state.steps,
                         input_tokens=cumulative_input,
                         output_tokens=cumulative_output,
+                        total_cost=cumulative_cost,
                         elapsed_time=elapsed,
                         trace=trace,
                     )
 
                 # Check for code to execute
-                if code:
+                if parsed.has_code and parsed.code:
                     consecutive_no_progress = 0
-                    exec_result = await asyncio.to_thread(self._sandbox.execute, code)
+                    parent_budget_snapshot["cost"] = cumulative_cost
+                    parent_budget_snapshot["tokens"] = float(cumulative_input + cumulative_output)
+                    parent_budget_snapshot["steps"] = float(budget_state.steps)
+                    exec_result = await asyncio.to_thread(self._sandbox.execute, parsed.code)
+                    last_execution_failed = exec_result.exception is not None or exec_result.timeout
+                    # Fold subcall token/cost/step usage back into parent accumulators
+                    for _u in subcall_usage:
+                        cumulative_input += _u.get("input_tokens", 0)
+                        cumulative_output += _u.get("output_tokens", 0)
+                        cumulative_cost += _u.get("total_cost", 0.0)
+                        budget_state.steps += _u.get("steps", 0)
+                    subcall_usage.clear()
+                    budget_state.input_tokens = cumulative_input
+                    budget_state.output_tokens = cumulative_output
+                    budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
 
                     trace.append(
@@ -356,7 +498,7 @@ class RunRLMUseCase:
                             "step": budget_state.steps,
                             "role": "execution",
                             "content": formatted,
-                            "code": code,
+                            "code": parsed.code,
                         }
                     )
 
@@ -368,8 +510,26 @@ class RunRLMUseCase:
                         }
                     )
                 else:
+                    stripped = text.strip()
+                    if stripped:
+                        last_plain_answer = stripped
                     consecutive_no_progress += 1
                     if consecutive_no_progress >= stall_limit:
+                        if last_plain_answer:
+                            if hasattr(self._llm, "use_root_model"):
+                                self._llm.use_root_model()
+                            elapsed = time.time() - start
+                            return RunResultDTO(
+                                answer=last_plain_answer,
+                                mode_used="rlm",
+                                success=True,
+                                steps=budget_state.steps,
+                                input_tokens=cumulative_input,
+                                output_tokens=cumulative_output,
+                                total_cost=cumulative_cost,
+                                elapsed_time=elapsed,
+                                trace=trace,
+                            )
                         raise BudgetExceededError(
                             f"LLM did not make progress after {consecutive_no_progress} "
                             "consecutive steps without code or a FINAL answer"
@@ -378,14 +538,25 @@ class RunRLMUseCase:
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "Please provide either:\n"
-                                "1. Python code to execute (in a ```python code block), OR\n"
-                                "2. A FINAL answer (using FINAL: prefix)"
-                            ),
+                            "content": get_rlm_message("reprompt"),
                         }
                     )
 
+            if last_plain_answer:
+                if hasattr(self._llm, "use_root_model"):
+                    self._llm.use_root_model()
+                elapsed = time.time() - start
+                return RunResultDTO(
+                    answer=last_plain_answer,
+                    mode_used="rlm",
+                    success=True,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
             raise BudgetExceededError(
                 f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
                 "without finding final answer"
@@ -403,6 +574,7 @@ class RunRLMUseCase:
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
+                total_cost=cumulative_cost,
                 elapsed_time=elapsed,
                 trace=trace,
             )
@@ -418,15 +590,228 @@ class RunRLMUseCase:
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
+                total_cost=cumulative_cost,
                 elapsed_time=elapsed,
                 trace=trace,
             )
 
     # -- Private helpers --
 
+    def _make_subcall(
+        self,
+        config: RunConfigDTO,
+        subcall_usage: list[dict[str, Any]],
+        parent_budget_snapshot: dict[str, float],
+    ) -> Any:
+        """Create a subcall closure for LLM-generated code to call recursively.
+
+        *subcall_usage* is a mutable list that the closure appends to after each
+        child execution so the parent loop can fold the child's token and cost
+        usage back into its own accumulators.
+        """
+        import copy
+
+        parent_llm = self._llm
+        parent_sandbox = self._sandbox
+
+        def subcall(content: str, query: str, max_steps: int | None = None) -> str:
+            if config.max_recursion_depth <= 0:
+                return "Error: Maximum recursion depth exceeded"
+
+            # Compute usage already accumulated by earlier subcalls in this block.
+            # parent_budget_snapshot holds the parent's totals at the start of this
+            # code block; subcall_usage accumulates each prior sibling subcall's usage.
+            block_cost = sum(u.get("total_cost", 0.0) for u in subcall_usage)
+            block_tokens = sum(
+                u.get("input_tokens", 0) + u.get("output_tokens", 0) for u in subcall_usage
+            )
+            block_steps = sum(u.get("steps", 0) for u in subcall_usage)
+
+            # Guard: don't spawn when earlier siblings have already consumed the headroom.
+            if config.max_cost is not None:
+                if parent_budget_snapshot["cost"] + block_cost >= config.max_cost:
+                    return (
+                        f"Error: max_cost={config.max_cost} budget exhausted; "
+                        "no further subcalls permitted in this code block"
+                    )
+            if config.max_tokens is not None:
+                if parent_budget_snapshot["tokens"] + block_tokens >= config.max_tokens:
+                    return (
+                        f"Error: max_tokens={config.max_tokens} budget exhausted; "
+                        "no further subcalls permitted in this code block"
+                    )
+            if config.max_steps is not None:
+                if int(parent_budget_snapshot["steps"]) + block_steps >= config.max_steps:
+                    return (
+                        f"Error: max_steps={config.max_steps} budget exhausted; "
+                        "no further subcalls permitted in this code block"
+                    )
+            # Time is measured via the real clock, so we call time.time() here rather
+            # than accumulating a block_time: any time spent by previous siblings in
+            # this block is already reflected in the elapsed reading.
+            if config.max_time_seconds is not None:
+                elapsed = time.time() - parent_budget_snapshot["time_start"]
+                if elapsed >= config.max_time_seconds:
+                    return (
+                        f"Error: max_time_seconds={config.max_time_seconds} budget exhausted; "
+                        "no further subcalls permitted in this code block"
+                    )
+
+            try:
+                sub_sandbox = copy.deepcopy(parent_sandbox)
+                sub_sandbox.reset()
+            except Exception as exc:
+                return f"Error: Cannot create subcall environment: {exc}"
+
+            # Give each child only the remaining headroom so it cannot spend beyond
+            # what the parent's global budget still allows.
+            remaining_cost = (
+                config.max_cost - parent_budget_snapshot["cost"] - block_cost
+                if config.max_cost is not None
+                else None
+            )
+            remaining_tokens = (
+                int(config.max_tokens - parent_budget_snapshot["tokens"] - block_tokens)
+                if config.max_tokens is not None
+                else None
+            )
+            # max_steps=N allows N-1 LLM calls (step N increments the counter and hits
+            # is_within before the LLM call).  So to allow R remaining calls, the child
+            # needs max_steps=R+1.
+            remaining_steps = (
+                config.max_steps - int(parent_budget_snapshot["steps"]) - block_steps
+                if config.max_steps is not None
+                else None
+            )
+            child_remaining = remaining_steps + 1 if remaining_steps is not None else None
+            # Explicit max_steps arg further constrains the child; take the tighter bound.
+            if max_steps is not None:
+                child_max_steps = (
+                    max_steps if child_remaining is None else min(max_steps, child_remaining)
+                )
+            else:
+                child_max_steps = child_remaining
+            # Remaining wall-clock headroom: measured via the real clock so it
+            # automatically accounts for time spent by previous siblings in this block.
+            remaining_time = (
+                config.max_time_seconds - (time.time() - parent_budget_snapshot["time_start"])
+                if config.max_time_seconds is not None
+                else None
+            )
+            sub_config = RunConfigDTO(
+                mode="rlm",
+                max_steps=child_max_steps,
+                max_recursion_depth=config.max_recursion_depth - 1,
+                stall_limit=config.stall_limit,
+                max_tokens=remaining_tokens,
+                max_cost=remaining_cost,
+                max_time_seconds=remaining_time,
+            )
+            sub_uc = RunRLMUseCase(parent_llm, sub_sandbox)
+            sub_result = sub_uc.execute(content, query, config=sub_config)
+            # Report child usage to the parent so it can be folded back in
+            subcall_usage.append(
+                {
+                    "input_tokens": sub_result.input_tokens,
+                    "output_tokens": sub_result.output_tokens,
+                    "total_cost": sub_result.total_cost,
+                    "steps": sub_result.steps,
+                }
+            )
+            return (
+                sub_result.answer if sub_result.success else f"Error in subcall: {sub_result.error}"
+            )
+
+        return subcall
+
+    @staticmethod
+    def _get_pricing(llm: LLMPort) -> tuple[float, float]:
+        """Return (input_cost_per_1m, output_cost_per_1m) USD, defaulting to 0.0."""
+        try:
+            pricing = llm.get_pricing()
+            return (
+                float(pricing.get("input_cost_per_1m", 0.0)),
+                float(pricing.get("output_cost_per_1m", 0.0)),
+            )
+        except Exception:
+            return (0.0, 0.0)
+
+    def _parse_rlm_response(self, text: str) -> ParsedResponse:
+        """Parse LLM response: try JSON v2.0 first, fall back to markdown v1.0."""
+        from rlmkit.core.actions import ParseError, parse_action
+        from rlmkit.core.parsing import ParsedResponse, parse_response
+
+        try:
+            action_type, action_obj = parse_action(text)
+            if action_type == "final":
+                return ParsedResponse(final_answer=action_obj.answer, raw_text=text)
+            elif action_type == "inspect":
+                code = self._inspect_to_code(action_obj)
+                if code:
+                    return ParsedResponse(code=code, raw_text=text)
+                return ParsedResponse(raw_text=text)
+            elif action_type == "subcall":
+                # Translate to executable Python; subcall() is bound in sandbox globals
+                code = (
+                    f"_sub_result = subcall("
+                    f"content={repr(action_obj.prompt)}, "
+                    f"query={repr(action_obj.query)})\n"
+                    f"print(_sub_result)"
+                )
+                return ParsedResponse(code=code, raw_text=text)
+            # unknown action type: fall through to markdown
+        except (ParseError, Exception):
+            pass
+
+        return parse_response(text)
+
+    @staticmethod
+    def _inspect_to_code(action_obj: Any) -> str | None:
+        """Convert a JSON inspect action to executable Python code."""
+        tool: str = action_obj.tool
+        args: dict[str, Any] = action_obj.args
+        if tool == "grep":
+            return (
+                f"print(grep("
+                f"pattern={repr(args.get('pattern'))}, "
+                f"context_lines={args.get('context_lines', 2)}, "
+                f"max_matches={args.get('max_matches', 100)}, "
+                f"ignore_case={args.get('ignore_case', False)}, "
+                f"use_regex={args.get('use_regex', False)}))"
+            )
+        elif tool == "peek":
+            return (
+                f"print(peek("
+                f"start={args.get('start', 0)}, "
+                f"end={args.get('end')}, "
+                f"max_chars={args.get('max_chars', 10000)}))"
+            )
+        elif tool == "select":
+            return f"print(select(ranges={args.get('ranges')}))"
+        elif tool == "chunk":
+            return (
+                f"print(chunk("
+                f"size={args.get('size', 1000)}, "
+                f"overlap={args.get('overlap', 0)}, "
+                f"by={repr(args.get('by', 'chars'))}, "
+                f"max_chunks={args.get('max_chunks', 100)}))"
+            )
+        return None
+
+    def _extract_final_answer(self, parsed: ParsedResponse) -> str:
+        """Extract final answer, resolving FINAL_VAR: references via the sandbox."""
+        if parsed.final_answer:
+            return str(parsed.final_answer)
+        if parsed.final_var:
+            var_value = self._sandbox.get_variable(parsed.final_var)
+            if var_value is not None:
+                return str(var_value)
+            return f"Error: Variable '{parsed.final_var}' not found in environment"
+        return "Error: No final answer found"
+
     @staticmethod
     def _extract_final(text: str) -> str | None:
-        """Extract FINAL: answer from LLM response."""
+        """Extract FINAL: answer from LLM response (used by tests and as fallback)."""
         import re
 
         match = re.search(r"^FINAL:\s*(.*)", text, re.MULTILINE | re.IGNORECASE | re.DOTALL)
@@ -436,7 +821,7 @@ class RunRLMUseCase:
 
     @staticmethod
     def _extract_code(text: str) -> str | None:
-        """Extract Python code block from LLM response."""
+        """Extract Python code block from LLM response (used by tests and as fallback)."""
         import re
 
         # Try python-specific block first
@@ -467,14 +852,13 @@ class RunRLMUseCase:
 
     @staticmethod
     def _build_system_prompt(content_length: int) -> str:
-        """Build the RLM system prompt."""
-        return (
-            "You are a Recursive Language Model (RLM) agent. "
-            "A large document has been loaded into variable P "
-            f"({content_length:,} characters). "
-            "You have access to tools: peek(start, end), grep(pattern), "
-            "chunk(size), select(ranges). "
-            "Write Python code in ```python blocks to explore P and "
-            "answer the user's question. "
-            "When you have the answer, respond with FINAL: <answer>."
-        )
+        """Build the RLM system prompt from the versioned template file.
+
+        Template files live in ``src/rlmkit/prompts/`` and are easy to discover
+        and customize without touching Python source. The default is v2.0
+        (``system_prompt_v2_0.yaml``); switch to v1.0 (``system_prompt_v1_0.yaml``)
+        by passing ``version="1.0"`` to ``format_system_prompt``.
+        """
+        from rlmkit.prompts import format_system_prompt
+
+        return str(format_system_prompt(prompt_length=content_length))

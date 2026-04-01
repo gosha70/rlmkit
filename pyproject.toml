@@ -85,6 +85,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 rlmkit = ["rlmkit_config.default.yaml"]
+"rlmkit.prompts" = ["*.yaml", "*.yml", "*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -97,6 +97,7 @@ class RunConfigDTO:
     max_cost: float | None = None
     max_time_seconds: float | None = None
     max_recursion_depth: int = 1
+    stall_limit: int = 3  # consecutive no-progress steps before circuit-breaker fires
     verbose: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 

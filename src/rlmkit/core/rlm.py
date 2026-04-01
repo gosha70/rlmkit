@@ -18,7 +18,7 @@ from typing import Any, Protocol
 
 from ..config import RLMConfig
 from ..envs.pyrepl_env import PyReplEnv
-from ..prompts import format_system_prompt
+from ..prompts import format_system_prompt, get_mode_system_prompt, get_rlm_message
 from ..tools.recursion import create_subcall
 from .actions import ParseError, parse_action
 from .budget import BudgetTracker, TokenUsage, estimate_tokens
@@ -269,11 +269,7 @@ class RLM:
                     messages.append(
                         {
                             "role": "user",
-                            "content": "Please provide either:\n"
-                            "1. Python code to execute (in a ```python code block), OR\n"
-                            "2. A FINAL answer (using FINAL: prefix)\n\n"
-                            "Remember: If the question is self-contained and doesn't require "
-                            "inspecting P, you can answer directly with FINAL.",
+                            "content": get_rlm_message("reprompt"),
                         }
                     )
 
@@ -428,7 +424,7 @@ class RLM:
         messages = []
 
         if system_prompt is None:
-            system_prompt = "You are a helpful assistant. Answer the user's question based on the provided content."
+            system_prompt = get_mode_system_prompt("direct")
 
         messages.append({"role": "system", "content": system_prompt})
 

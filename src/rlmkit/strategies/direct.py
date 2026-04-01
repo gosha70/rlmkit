@@ -7,6 +7,7 @@ import time
 
 from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.core.rlm import LLMClient
+from rlmkit.prompts import get_mode_system_prompt
 
 from .base import StrategyResult
 
@@ -20,10 +21,7 @@ class DirectStrategy:
         system_prompt: str | None = None,
     ):
         self.client = client
-        self.system_prompt = (
-            system_prompt
-            or "You are a helpful assistant. Answer the user's question based on the provided content."
-        )
+        self.system_prompt = system_prompt or get_mode_system_prompt("direct")
 
     @property
     def name(self) -> str:

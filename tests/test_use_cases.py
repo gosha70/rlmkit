@@ -255,10 +255,9 @@ class TestRunRLMUseCase:
         assert result.success is False
         assert "exceeded" in result.error.lower() or "budget" in result.error.lower()
 
-    def test_stall_detection_terminates_early(self):
-        # LLM never produces code or FINAL — just conversational filler.
-        # Should terminate after _STALL_LIMIT (3) consecutive no-progress steps,
-        # not burn all max_steps.
+    def test_stall_detection_circuit_breaker_returns_plain_text(self):
+        # LLM produces plain-text answers without FINAL: prefix (common with small models).
+        # Circuit breaker should accept the text as the answer instead of discarding it.
         filler = "I need more context to answer your question."
         llm = FakeLLM([filler])  # repeats same response indefinitely
         sandbox = FakeSandbox()
@@ -266,9 +265,21 @@ class TestRunRLMUseCase:
         uc = RunRLMUseCase(llm, sandbox)
         result = uc.execute("content", "question", config=config)
 
+        assert result.success is True
+        assert result.answer == filler
+        assert result.steps < 10  # terminated well before max_steps=20
+
+    def test_stall_with_empty_responses_fails(self):
+        # LLM produces only whitespace — no usable answer to fall back to.
+        llm = FakeLLM(["   "])  # whitespace-only, stripped to empty
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=20)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
         assert result.success is False
         assert "did not make progress" in result.error.lower()
-        assert result.steps < 10  # terminated well before max_steps=20
+        assert result.steps < 10
 
     def test_sandbox_receives_content(self):
         llm = FakeLLM(["FINAL: done"])
@@ -582,10 +593,24 @@ class TestRunRLMAsync:
         assert result.success is False
         assert "exceeded" in result.error.lower() or "budget" in result.error.lower()
 
-    def test_async_stall_detection_terminates_early(self):
-        """execute_async stall detection mirrors sync: exits after 3 no-progress steps."""
+    def test_async_stall_circuit_breaker_returns_plain_text(self):
+        """execute_async circuit breaker accepts plain-text answer on stall."""
         filler = "I need more context to answer your question."
         llm = FakeLLM([filler])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=20)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "question", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == filler
+        assert result.steps < 10
+
+    def test_async_stall_with_empty_responses_fails(self):
+        """execute_async fails when stalled responses are all empty."""
+        llm = FakeLLM(["   "])
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=20)
         uc = RunRLMUseCase(llm, sandbox)
@@ -663,3 +688,516 @@ class TestRLMDeepExploration:
         assert result.success is False
         assert result.steps == 4
         assert "exceeded" in result.error.lower() or "steps" in result.error.lower()
+
+
+# ---------------------------------------------------------------------------
+# FINAL_VAR: variable lookup via sandbox
+# ---------------------------------------------------------------------------
+
+
+class TestFinalVar:
+    """FINAL_VAR: directive reads the named variable from the sandbox."""
+
+    def test_final_var_sync(self):
+        """LLM outputs FINAL_VAR: result — value is read from sandbox."""
+        # Step 1: code sets variable; step 2: LLM declares FINAL_VAR
+        llm = FakeLLM(
+            [
+                "```python\nresult = 'computed answer'\n```",
+                "FINAL_VAR: result",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        assert result.answer == "computed answer"
+
+    def test_final_var_missing_variable(self):
+        """FINAL_VAR pointing to an undefined variable returns an error message."""
+        llm = FakeLLM(["FINAL_VAR: nonexistent"])
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        assert "not found" in result.answer.lower()
+
+    def test_final_var_numeric_value(self):
+        """FINAL_VAR works when the variable holds a non-string value."""
+        llm = FakeLLM(
+            [
+                "```python\ncount = 42\n```",
+                "FINAL_VAR: count",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        assert result.answer == "42"
+
+    @staticmethod
+    def test_final_var_async():
+        """Async execute also resolves FINAL_VAR from the sandbox."""
+
+        async def run():
+            llm = FakeLLM(
+                [
+                    "```python\nmsg = 'async result'\n```",
+                    "FINAL_VAR: msg",
+                ]
+            )
+            sandbox = FakeSandbox()
+            uc = RunRLMUseCase(llm, sandbox)
+            return await uc.execute_async("content", "query")
+
+        result = asyncio.get_event_loop().run_until_complete(run())
+        assert result.success is True
+        assert result.answer == "async result"
+
+
+# ---------------------------------------------------------------------------
+# last_execution_failed warning trace entry
+# ---------------------------------------------------------------------------
+
+
+class TestLastExecutionFailedWarning:
+    """FINAL after a failed execution step adds a warning to the trace."""
+
+    def test_warning_added_when_final_follows_failure(self):
+        """Trace contains a system warning when FINAL follows an exception."""
+        llm = FakeLLM(
+            [
+                "```python\nraise ValueError('oops')\n```",
+                "FINAL: I reasoned it out directly.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        assert result.answer == "I reasoned it out directly."
+        system_entries = [t for t in result.trace if t.get("role") == "system"]
+        assert len(system_entries) == 1
+        assert "Warning" in system_entries[0]["content"]
+        assert "execution failure" in system_entries[0]["content"].lower()
+
+    def test_no_warning_when_execution_succeeds_then_final(self):
+        """No warning when execution succeeds before FINAL."""
+        llm = FakeLLM(
+            [
+                "```python\nprint('ok')\n```",
+                "FINAL: The answer.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        system_entries = [t for t in result.trace if t.get("role") == "system"]
+        assert len(system_entries) == 0
+
+    def test_warning_clears_after_successful_execution(self):
+        """Warning not emitted if a later execution succeeds before FINAL."""
+        llm = FakeLLM(
+            [
+                "```python\nraise ValueError('fail')\n```",
+                "```python\nprint('ok')\n```",
+                "FINAL: Recovered.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        system_entries = [t for t in result.trace if t.get("role") == "system"]
+        assert len(system_entries) == 0
+
+
+# ---------------------------------------------------------------------------
+# JSON v2.0 protocol parsing
+# ---------------------------------------------------------------------------
+
+
+class TestJsonProtocolParsing:
+    """_parse_rlm_response handles both JSON v2.0 and markdown v1.0 formats."""
+
+    def test_json_final_action(self):
+        """JSON {"type": "final", "answer": "..."} is parsed as a complete response."""
+        llm = FakeLLM(['{"type": "final", "answer": "The JSON answer"}'])
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        assert result.answer == "The JSON answer"
+
+    def test_json_inspect_grep_generates_code(self):
+        """JSON inspect/grep action is converted to executable Python code."""
+        from rlmkit.core.parsing import ParsedResponse
+
+        llm = FakeLLM([])  # unused; we call the method directly
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        text = '{"type": "inspect", "tool": "grep", "args": {"pattern": "def foo"}}'
+        parsed = uc._parse_rlm_response(text)
+
+        assert isinstance(parsed, ParsedResponse)
+        assert parsed.code is not None
+        assert "grep(" in parsed.code
+        assert "'def foo'" in parsed.code
+
+    def test_json_inspect_peek_generates_code(self):
+        """JSON inspect/peek action is converted to peek() call."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 500}}'
+        parsed = uc._parse_rlm_response(text)
+
+        assert parsed.code is not None
+        assert "peek(" in parsed.code
+        assert "500" in parsed.code
+
+    def test_json_inspect_via_execute_loop(self):
+        """Full execute loop with JSON inspect then JSON final."""
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "grep", "args": {"pattern": "hello"}}',
+                '{"type": "final", "answer": "Found it"}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("hello world content", "find hello")
+
+        assert result.success is True
+        assert result.answer == "Found it"
+
+    def test_markdown_fallback_still_works(self):
+        """Markdown v1.0 responses are still parsed when JSON parsing fails."""
+        llm = FakeLLM(
+            [
+                "```python\nprint('hello')\n```",
+                "FINAL: Done via markdown",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        assert result.answer == "Done via markdown"
+
+
+# ---------------------------------------------------------------------------
+# System prompt uses v2.0 template
+# ---------------------------------------------------------------------------
+
+
+class TestSystemPromptV2:
+    """_build_system_prompt uses the versioned v2.0 template."""
+
+    def test_system_prompt_contains_json_instructions(self):
+        """v2.0 template includes JSON action protocol instructions."""
+        prompt = RunRLMUseCase._build_system_prompt(10000)
+        # v2.0 template contains JSON action type keywords
+        assert '"type"' in prompt or "type" in prompt
+        assert "final" in prompt.lower()
+
+    def test_system_prompt_includes_content_length(self):
+        """Content length is formatted into the prompt."""
+        prompt = RunRLMUseCase._build_system_prompt(12345)
+        assert "12,345" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Subcall / recursion wiring
+# ---------------------------------------------------------------------------
+
+
+class TestSubcall:
+    """subcall() is bound in sandbox globals and callable from LLM-generated code."""
+
+    def test_subcall_bound_in_sandbox(self):
+        """After execute(), sandbox has 'subcall' variable."""
+        llm = FakeLLM(["FINAL: done"])
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        uc.execute("content", "query")
+        assert callable(sandbox.get_variable("subcall"))
+
+    def test_subcall_callable_from_llm_code(self):
+        """LLM code that calls subcall() completes without NameError."""
+        # The sub-RLM uses the same FakeLLM; it will immediately return FINAL.
+        llm = FakeLLM(
+            [
+                # Step 1 (main): call subcall — sub-RLM immediately returns FINAL below
+                "```python\nresult = subcall(content='hi', query='q')\nprint(result)\n```",
+                # Step 2 (main): after seeing subcall result, provide final answer
+                "FINAL: all done",
+                # Step 1 (sub-RLM): immediate final
+                "FINAL: sub answer",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("main content", "query")
+
+        assert result.success is True
+        # main RLM should finish with its own FINAL answer
+        assert result.answer in ("all done", "sub answer")
+
+    def test_subcall_respects_recursion_depth_zero(self):
+        """subcall() returns an error when max_recursion_depth is 0."""
+        llm = FakeLLM(
+            [
+                "```python\nresult = subcall(content='c', query='q')\nprint(result)\n```",
+                "FINAL: done",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        config = RunConfigDTO(mode="rlm", max_recursion_depth=0)
+        result = uc.execute("content", "query", config=config)
+
+        # Should complete; subcall error gets printed and fed back
+        assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# Cost accounting
+# ---------------------------------------------------------------------------
+
+
+class TestCostAccounting:
+    """total_cost is computed from token counts and pricing, and enforced."""
+
+    def test_zero_cost_when_pricing_unavailable(self):
+        """total_cost is 0.0 when LLM has no get_pricing method."""
+        llm = FakeLLM(["FINAL: answer"])  # FakeLLM returns 0.0 pricing
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.total_cost == 0.0
+
+    def test_cost_accumulates_across_steps(self):
+        """total_cost grows with each LLM call when pricing > 0."""
+
+        class PricedLLM(FakeLLM):
+            def get_pricing(self) -> dict:
+                # $1 per 1M input, $2 per 1M output
+                return {"input_cost_per_1m": 1.0, "output_cost_per_1m": 2.0}
+
+        # FakeLLM returns 10 input + 5 output tokens per call
+        # Step 1: code; step 2: FINAL — 2 LLM calls
+        # Each call cost: (10*1 + 5*2) / 1_000_000 = 20 / 1_000_000 = 0.00002
+        llm = PricedLLM(
+            [
+                "```python\nprint('x')\n```",
+                "FINAL: done",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "query")
+
+        assert result.total_cost > 0.0
+        expected = 2 * (10 * 1.0 + 5 * 2.0) / 1_000_000
+        assert abs(result.total_cost - expected) < 1e-10
+
+    def test_max_cost_enforced(self):
+        """Execution stops when cumulative cost exceeds max_cost."""
+
+        class ExpensiveLLM(FakeLLM):
+            def get_pricing(self) -> dict:
+                # Very expensive: $1000 per 1M tokens
+                return {"input_cost_per_1m": 1000.0, "output_cost_per_1m": 1000.0}
+
+        llm = ExpensiveLLM(['```python\nprint("step")\n```'])
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        # max_cost so small that even one step exceeds it
+        config = RunConfigDTO(mode="rlm", max_cost=0.000001)
+        result = uc.execute("content", "query", config=config)
+
+        assert result.success is False
+        assert "budget" in result.error.lower() or "exceeded" in result.error.lower()
+
+    def test_max_cost_enforced_on_immediate_final(self):
+        """A single FINAL response that exceeds max_cost must not return success."""
+
+        class ExpensiveLLM(FakeLLM):
+            def get_pricing(self) -> dict:
+                return {"input_cost_per_1m": 1000.0, "output_cost_per_1m": 1000.0}
+
+        # LLM immediately returns FINAL — only one LLM call occurs
+        llm = ExpensiveLLM(["FINAL: done"])
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        config = RunConfigDTO(mode="rlm", max_cost=0.000001)
+        result = uc.execute("content", "query", config=config)
+
+        assert result.success is False
+        assert "budget" in result.error.lower() or "exceeded" in result.error.lower()
+
+    def test_subcall_cost_folded_into_parent(self):
+        """Parent total_cost includes child RLM token usage."""
+
+        class PricedLLM(FakeLLM):
+            def get_pricing(self) -> dict:
+                return {"input_cost_per_1m": 1.0, "output_cost_per_1m": 2.0}
+
+        # FakeLLM: 10 input + 5 output tokens per call → 0.00002 per call.
+        # FakeSandbox executes code twice (silent pass + stdout-capture pass), so
+        # subcall() fires twice per code block — the sub-RLM accumulates 2 LLM
+        # calls worth of cost.  The key assertion is simply that total_cost is
+        # strictly greater than 2 × per_call (the parent-only floor), proving
+        # child usage was folded back in.
+        llm = PricedLLM(
+            [
+                "```python\nresult = subcall(content='hi', query='q')\nprint(result)\n```",
+                "FINAL: sub answer",
+                "FINAL: all done",
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("main content", "query")
+
+        assert result.success is True
+        per_call = (10 * 1.0 + 5 * 2.0) / 1_000_000  # 0.00002
+        parent_only = 2 * per_call  # at minimum: step-1 code + step-2 final
+        assert result.total_cost > parent_only  # sub-RLM cost was folded in
+
+    def test_subcall_inherits_budget_caps(self):
+        """Child RLM receives the parent's max_cost so it cannot overspend internally."""
+
+        class ExpensiveLLM(FakeLLM):
+            def get_pricing(self) -> dict:
+                return {"input_cost_per_1m": 1000.0, "output_cost_per_1m": 1000.0}
+
+        # Parent max_cost is tiny. The child should self-terminate quickly
+        # because it inherits max_cost from the parent config.
+        llm = ExpensiveLLM(
+            [
+                "```python\nresult = subcall(content='c', query='q')\nprint(result)\n```",
+                "FINAL: done",
+                # sub-RLM responses — it must stop before burning through many steps
+                '```python\nprint("child step")\n```',
+                '```python\nprint("child step 2")\n```',
+                '```python\nprint("child step 3")\n```',
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        # max_cost tight enough that the child cannot complete even 2 LLM calls
+        config = RunConfigDTO(mode="rlm", max_cost=0.02, max_steps=20)
+        result = uc.execute("main content", "query", config=config)
+
+        # The run must fail (budget exceeded before a FINAL is reached),
+        # or if the child fails and the parent reaches FINAL, total_cost <= max_cost
+        # is NOT guaranteed (one call can exceed), but total_cost must be much less
+        # than it would be without the child cap (which was 0.075 in the reproduction).
+        # Just verify child did not run 3+ expensive steps uncapped.
+        per_call = (10 * 1000.0 + 5 * 1000.0) / 1_000_000  # 0.015 per call
+        # Without child cap: 5+ LLM calls → > 0.075; with cap: ≤ 3 LLM calls → ≤ 0.045
+        assert result.total_cost < 5 * per_call
+
+    def test_multi_subcall_block_does_not_exceed_global_budget(self):
+        """Two subcalls in one code block: the second is blocked once the first has spent the budget."""
+
+        class ExpensiveLLM(FakeLLM):
+            def get_pricing(self) -> dict:
+                return {"input_cost_per_1m": 1000.0, "output_cost_per_1m": 1000.0}
+
+        # Code block has two subcalls. max_cost=0.02; each individual call costs 0.015
+        # (fine on its own) but combined they exceed the 0.02 cap.
+        llm = ExpensiveLLM(
+            [
+                "```python\nr1 = subcall('c', 'q1')\nr2 = subcall('c', 'q2')\nprint(r1, r2)\n```",
+                "FINAL: first answer",  # first child's LLM response
+                "FINAL: second answer",  # second child (should never be reached)
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        per_call = (10 * 1000.0 + 5 * 1000.0) / 1_000_000  # 0.015 per call
+        config = RunConfigDTO(mode="rlm", max_cost=0.02, max_steps=20)
+        result = uc.execute("content", "query", config=config)
+
+        # Without the fix: 5 LLM calls (parent + 2×first + 2×second) = 0.075 ≥ 3×per_call.
+        # With the fix: second subcall is blocked; at most parent + first = 2 calls = 0.030.
+        assert result.total_cost < 3 * per_call
+
+    def test_subcall_steps_folded_into_parent(self):
+        """Child RLM steps are counted against the parent's max_steps budget."""
+        # max_steps=2: parent step 1 (code block + child step 1) = 2 total; no spare step
+        # for the parent to make another LLM call.
+        llm = FakeLLM(
+            [
+                "```python\nresult = subcall('c', 'q')\nprint(result)\n```",  # parent step 1
+                "FINAL: child answer",  # child step 1
+                "FINAL: parent done",  # parent step 2 — must never be reached
+            ]
+        )
+        sandbox = FakeSandbox()
+        uc = RunRLMUseCase(llm, sandbox)
+        config = RunConfigDTO(mode="rlm", max_steps=2, max_recursion_depth=1)
+        result = uc.execute("content", "query", config=config)
+
+        # Without folding: parent step 2 runs ("FINAL: parent done") → 3 LLM calls, input_tokens=30.
+        # With folding: child step folds back; while condition fails; result has only 2 calls.
+        # FakeSandbox double-executes code, but the second subcall is blocked by the steps guard,
+        # so exactly 2 LLM calls fire: parent step 1 + child step 1.
+        assert result.input_tokens == 2 * 10  # 2 calls × 10 input tokens
+
+    def test_subcall_receives_remaining_time(self):
+        """Child receives remaining wall-clock headroom, not the full max_time_seconds."""
+        import time as time_module
+        from unittest.mock import patch
+
+        class SlowLLM(FakeLLM):
+            def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+                time_module.sleep(0.01)  # 10 ms per call ensures measurable elapsed time
+                return super().complete(messages)
+
+        child_configs: list[RunConfigDTO] = []
+        original_execute = RunRLMUseCase.execute
+        call_count = [0]
+
+        def tracking_execute(
+            self_inner: RunRLMUseCase, content: str, query: str, config: RunConfigDTO | None = None
+        ) -> RunResultDTO:
+            call_count[0] += 1
+            if call_count[0] > 1 and config is not None:
+                child_configs.append(config)
+            return original_execute(self_inner, content, query, config=config)
+
+        with patch.object(RunRLMUseCase, "execute", tracking_execute):
+            llm = SlowLLM(
+                [
+                    "```python\nresult = subcall('c', 'q')\nprint(result)\n```",
+                    "FINAL: child answer",
+                    "FINAL: done",
+                ]
+            )
+            sandbox = FakeSandbox()
+            uc = RunRLMUseCase(llm, sandbox)
+            uc.execute(
+                "content",
+                "query",
+                config=RunConfigDTO(mode="rlm", max_time_seconds=10.0, max_recursion_depth=1),
+            )
+
+        # Every child call must receive less than the full 10.0 s, because the parent
+        # step (≥10 ms from SlowLLM) consumed measurable time before spawning the child.
+        assert len(child_configs) >= 1
+        for cfg in child_configs:
+            assert cfg.max_time_seconds is not None
+            assert cfg.max_time_seconds < 10.0

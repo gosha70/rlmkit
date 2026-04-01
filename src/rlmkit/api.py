@@ -148,21 +148,52 @@ _DEFAULT_MODELS: dict[str, str] = {
 }
 
 
-def _resolve_model(provider: str, model: str | None) -> str:
+def _fetch_lmstudio_model(api_base: str, timeout: float = 5.0) -> str | None:
+    """Query LM Studio's /v1/models and return the first loaded model ID, or None."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = api_base.rstrip("/") + "/models"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+            data = json.loads(resp.read())
+        models = data.get("data", [])
+        if models:
+            model_id = models[0].get("id")
+            return str(model_id) if model_id is not None else None
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_model(
+    provider: str,
+    model: str | None,
+    api_base: str | None = None,
+) -> str:
     """Apply LiteLLM provider prefix and default model if needed.
 
-    Local providers (ollama, lmstudio) have no universal default — the caller
-    must pass an explicit ``model=`` argument.
+    For ``lmstudio`` without an explicit ``model=``, the loaded model is
+    auto-detected from the ``/v1/models`` endpoint when ``api_base`` is given.
+    For ``ollama`` a model name is always required.
     """
-    if model is None and provider in _LOCAL_PROVIDERS:
+    if model is None and provider == "lmstudio":
+        if api_base:
+            model = _fetch_lmstudio_model(api_base)
+        if model is None:
+            raise ValueError(
+                "provider='lmstudio' requires either model= or a reachable api_base "
+                "so the loaded model can be detected automatically."
+            )
+    if model is None and provider == "ollama":
         raise ValueError(
-            f"provider={provider!r} requires an explicit model= argument "
-            f"(e.g. model='llama3.2'). "
-            f"Local providers have no universal default."
+            "provider='ollama' requires an explicit model= argument (e.g. model='llama3.2'). "
+            "Ollama can serve many models simultaneously so there is no safe default."
         )
     m = model or _DEFAULT_MODELS.get(provider, "gpt-4o")
-    if "/" not in m:
-        prefix = _PROVIDER_PREFIXES.get(provider, "")
+    prefix = _PROVIDER_PREFIXES.get(provider, "")
+    if prefix and not m.startswith(prefix):
         m = f"{prefix}{m}"
     return m
 
@@ -184,6 +215,7 @@ def _setup(
     recursive_model: str | None = None,
     embedding_api_key: str | None = None,
     num_retries: int | None = None,
+    stall_limit: int = 3,
 ) -> tuple[str, str, LiteLLMAdapter, RunConfigDTO, str | None]:
     """Validate inputs, resolve mode/provider/model, build adapter and config.
 
@@ -221,7 +253,7 @@ def _setup(
         if verbose:
             print(f"[Auto-Detect] Using '{provider}' provider from environment")
 
-    prefixed_model = _resolve_model(provider, model)
+    prefixed_model = _resolve_model(provider, model, api_base)
     resolved_root = _resolve_model(provider, root_model) if root_model else None
     resolved_recursive = _resolve_model(provider, recursive_model) if recursive_model else None
 
@@ -247,6 +279,7 @@ def _setup(
         provider=provider,
         model=prefixed_model,
         max_steps=max_steps,
+        stall_limit=stall_limit,
     )
 
     resolved_emb_key = (
@@ -397,6 +430,7 @@ def interact(
     recursive_model: str | None = None,
     embedding_api_key: str | None = None,
     num_retries: int | None = None,
+    stall_limit: int = 3,
     **kwargs: Any,
 ) -> InteractResult:
     """Interact with content using an LLM through Direct, RLM, or Compare mode.
@@ -428,6 +462,13 @@ def interact(
             providers (``ollama``, ``lmstudio``) to avoid multiplying hangs,
             ``2`` for cloud providers.  Pass ``0`` to disable retries entirely,
             or a positive integer to override.
+        stall_limit: Consecutive no-progress steps before the circuit breaker
+            fires (default ``3``).  When the limit is reached, if the model
+            produced any plain-text response (without using the ``FINAL:``
+            prefix), that text is returned as the answer.  Lower values (e.g.
+            ``1``) make RLM exit sooner on models that answer directly without
+            following the protocol; higher values give the model more chances to
+            produce code before giving up.
 
     Returns:
         :class:`InteractResult` with answer, mode used, and metrics.
@@ -452,6 +493,7 @@ def interact(
         recursive_model=recursive_model,
         embedding_api_key=embedding_api_key,
         num_retries=num_retries,
+        stall_limit=stall_limit,
     )
 
     result = _dispatch_sync(actual_mode, llm, config, content, query, emb_key)
@@ -475,6 +517,7 @@ async def interact_async(
     recursive_model: str | None = None,
     embedding_api_key: str | None = None,
     num_retries: int | None = None,
+    stall_limit: int = 3,
     **kwargs: Any,
 ) -> InteractResult:
     """Async version of :func:`interact`.
@@ -500,6 +543,7 @@ async def interact_async(
         recursive_model=recursive_model,
         embedding_api_key=embedding_api_key,
         num_retries=num_retries,
+        stall_limit=stall_limit,
     )
 
     result = await _dispatch_async(actual_mode, llm, config, content, query, emb_key)
