@@ -59,7 +59,7 @@ class InteractResult:
 
     @property
     def steps(self) -> int:
-        return int(self.metrics.get("llm_calls", 0))
+        return int(self.metrics.get("steps", self.metrics.get("llm_calls", 0)))
 
     def __str__(self) -> str:
         return self.answer
@@ -337,7 +337,7 @@ def _build_result(
         "output_tokens": result.output_tokens,
         "total_cost": result.total_cost,
         "execution_time": result.elapsed_time,
-        "llm_calls": result.steps,
+        "steps": result.steps,
     }
 
     if verbose:

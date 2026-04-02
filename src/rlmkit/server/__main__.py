@@ -1,37 +1,54 @@
 """Entry point for ``python -m rlmkit.server``.
 
-Reads RLMKIT_HOST and RLMKIT_PORT environment variables so the server
-can be started on a non-default address without modifying source code.
+CLI flags take precedence over environment variables.
 
 Usage::
 
     # default: 127.0.0.1:8000
     uv run python -m rlmkit.server
 
-    # custom port
-    RLMKIT_PORT=8080 uv run python -m rlmkit.server
+    # CLI flags
+    uv run python -m rlmkit.server --port 8080
+    uv run python -m rlmkit.server --host 0.0.0.0 --port 9000 --reload
 
-    # custom host + port
+    # env vars (overridden by CLI flags if both are given)
+    RLMKIT_PORT=8080 uv run python -m rlmkit.server
     RLMKIT_HOST=0.0.0.0 RLMKIT_PORT=9000 uv run python -m rlmkit.server --reload
 """
 
 from __future__ import annotations
 
+import argparse
 import os
-import sys
 
 import uvicorn
 
-HOST = os.environ.get("RLMKIT_HOST", "127.0.0.1")
-PORT = int(os.environ.get("RLMKIT_PORT", "8000"))
+_parser = argparse.ArgumentParser(
+    prog="python -m rlmkit.server",
+    description="Start the RLMKit API server.",
+)
+_parser.add_argument(
+    "--host",
+    default=os.environ.get("RLMKIT_HOST", "127.0.0.1"),
+    help="Bind host (default: 127.0.0.1, env: RLMKIT_HOST)",
+)
+_parser.add_argument(
+    "--port",
+    type=int,
+    default=int(os.environ.get("RLMKIT_PORT", "8000")),
+    help="Bind port (default: 8000, env: RLMKIT_PORT)",
+)
+_parser.add_argument(
+    "--reload",
+    action="store_true",
+    help="Enable auto-reload on source changes (development only)",
+)
 
-# Pass any extra CLI args (e.g. --reload) straight through to uvicorn.
-extra_args = sys.argv[1:]
+args = _parser.parse_args()
 
 uvicorn.run(
     "rlmkit.server.app:app",
-    host=HOST,
-    port=PORT,
-    # --reload is the most common extra arg; uvicorn handles the rest.
-    reload="--reload" in extra_args,
+    host=args.host,
+    port=args.port,
+    reload=args.reload,
 )

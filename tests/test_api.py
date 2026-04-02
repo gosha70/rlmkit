@@ -185,7 +185,7 @@ class TestInteract:
         assert "output_tokens" in result.metrics
         assert "total_cost" in result.metrics
         assert "execution_time" in result.metrics
-        assert "llm_calls" in result.metrics
+        assert "steps" in result.metrics
 
     @patch("rlmkit.api.RunDirectUseCase")
     @patch("rlmkit.api.LiteLLMAdapter")

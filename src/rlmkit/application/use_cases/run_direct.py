@@ -72,7 +72,7 @@ class RunDirectUseCase:
                 answer=response.content,
                 mode_used="direct",
                 success=True,
-                steps=0,
+                steps=1,
                 input_tokens=response.input_tokens,
                 output_tokens=response.output_tokens,
                 total_cost=total_cost,
@@ -166,7 +166,7 @@ class RunDirectUseCase:
                         "output_tokens": output_tokens,
                         "total_tokens": input_tokens + output_tokens,
                         "cost_usd": total_cost,
-                        "steps": 0,
+                        "steps": 1,
                         "elapsed_seconds": elapsed,
                     }
                 )
@@ -175,7 +175,7 @@ class RunDirectUseCase:
                 answer=answer,
                 mode_used="direct",
                 success=True,
-                steps=0,
+                steps=1,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 total_cost=total_cost,
