@@ -13,13 +13,13 @@ Modern LLMs have finite context windows. Even within those limits, quality degra
 | Summarization / compaction | Iteratively compress the input | Lossy — assumes details can be safely forgotten; fails on dense multi-hop tasks |
 | RAG / tool-use agents | Load snippets into the context window | Still bounded by context size; cannot express loops or recursive decomposition |
 
-The RLM paper (Zhang, Kraska, Khattab — MIT CSAIL, arXiv:2512.24601, December 31, 2025) asks: *Can the effective context size of any LLM be scaled by orders of magnitude at inference time, without retraining?*
+The RLM paper (Zhang, Kraska, Khattab — MIT CSAIL, [arXiv:2512.24601](https://arxiv.org/pdf/2512.24601), December 31, 2025) asks: *Can the effective context size of any LLM be scaled by orders of magnitude at inference time, without retraining?*
 
 ---
 
 ## 2. The Core Insight: Prompt-as-Variable
 
-Instead of passing the user document into the LLM context, RLM loads it into a **persistent Python REPL** as a variable. The LLM never sees the raw document — it only sees constant-size metadata (length, short prefix, available navigation functions). It then writes Python code to explore the document:
+Instead of passing the user document into the LLM context, RLM loads it into a persistent Python [REPL](https://realpython.com/ref/glossary/repl/) as a variable. The LLM never sees the raw document — it only sees constant-size metadata (length, short prefix, available navigation functions). It then writes Python code to explore the document:
 
 ```python
 # The LLM generates code like this to navigate content
