@@ -194,7 +194,7 @@ class BudgetState:
 
     def is_within(self, config: BudgetConfig) -> bool:
         """Check whether the current state is within the given budget limits."""
-        if config.max_steps is not None and self.steps >= config.max_steps:
+        if config.max_steps is not None and self.steps > config.max_steps:
             return False
         if config.max_tokens is not None and self.total_tokens >= config.max_tokens:
             return False

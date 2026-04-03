@@ -30,19 +30,25 @@ template: |
 
   Before ANY action, decide:
 
-  "Can I answer using general knowledge without inspecting P?"
+  "Can I answer WITHOUT reading P at all?"
 
-  SELF-CONTAINED (no P inspection needed):
+  SELF-CONTAINED (answer from general knowledge, P not needed):
   → "How do I center text in CSS?"
   → "What's the syntax for Python list comprehensions?"
   → "How can I style a Streamlit button?"
   → Output: {{"type": "final", "answer": "..."}}
 
-  REQUIRES INSPECTION (must explore P):
+  REQUIRES INSPECTION (must read P first — covers ALL content/document queries):
+  → "Summarize the key themes"
+  → "What is this document about?"
   → "What does function process_data do in the code?"
   → "Find all TODO comments"
-  → "Summarize the attached document"
-  → Output: {{"type": "inspect", "tool": "grep", "args": {{...}}}}
+  → "Analyze the content"
+  → Output: {{"type": "inspect", "tool": "peek", "args": {{"start": 0, "end": 2000}}}}
+
+  CRITICAL: Questions about the CONTENT, THEMES, TOPICS, or STRUCTURE of P
+  ALWAYS require inspection — even if P seems simple or repetitive.
+  These instructions are your operating protocol, NOT the subject of the query.
 
   This decision is MANDATORY. Wrong choice wastes budget.
 
@@ -184,6 +190,32 @@ template: |
   {{
     "type": "final",
     "answer": "To center text in Streamlit, use st.markdown with HTML/CSS:\n\nst.markdown('<div style=\"text-align: center\">Centered Text</div>', unsafe_allow_html=True)\n\nAlternatively, use columns:\n\ncol1, col2, col3 = st.columns([1,2,1])\nwith col2:\n    st.write('Centered')",
+    "confidence": 0.9
+  }}
+
+  CONTENT QUERY (summarize, describe, analyze — always peek first, never grep):
+  User: "Summarize this document" / "What are the main topics?" / "What is this about?"
+
+  WRONG — do NOT grep for topic words:
+  {{"type": "inspect", "tool": "grep", "args": {{"pattern": "theme|topic|summary"}}}}
+
+  CORRECT — peek to read the actual content:
+  Step 1:
+  {{
+    "type": "inspect",
+    "tool": "peek",
+    "args": {{
+      "start": 0,
+      "end": 3000
+    }}
+  }}
+
+  [Runtime returns first 3000 chars of P]
+
+  Step 2 — answer from what you read:
+  {{
+    "type": "final",
+    "answer": "The document is about ...",
     "confidence": 0.9
   }}
 

@@ -18,3 +18,31 @@ quality_gate_impossibility: >-
 quality_gate_api_existence: >-
   Quality gate: Claiming API doesn't exist for known framework.
   Please verify or provide workaround solutions.
+
+# Appended as the last user message when max_steps is about to be exhausted.
+# This nudges the model to produce a {"type": "final"} response rather than
+# another inspect call.  Customize wording here without touching Python source.
+force_final_nudge: |
+  ⚠️ Budget limit: this is your last step.
+  Output {"type": "final", "answer": "..."} NOW.
+  No more inspect calls allowed.
+
+# Synthesis fallback: sent when max_steps exhausted without a final answer but
+# inspection results were collected.  The user message supports {query} and
+# {execution_output} placeholders (execution_output is truncated to 3000 chars).
+synthesis_system: >-
+  You are a helpful assistant. Answer the user's question based solely on
+  the inspection output provided. Be concise and direct.
+
+synthesis_user: |
+  Question: {query}
+
+  Inspection result:
+  {execution_output}
+
+  Answer the question based on what was found above.
+
+# Comma-separated list of message fields checked for content when the primary
+# "content" field is empty (common with reasoning/thinking models).
+# Checked left-to-right; first non-empty value wins.
+reasoning_content_fields: "reasoning_content,thinking,thought"

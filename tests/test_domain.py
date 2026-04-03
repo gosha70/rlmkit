@@ -218,7 +218,9 @@ class TestBudgetState:
     def test_is_within_steps_limit(self):
         config = BudgetConfig(max_steps=5)
         assert BudgetState(steps=4).is_within(config) is True
-        assert BudgetState(steps=5).is_within(config) is False
+        # steps == max_steps is still within budget: the counter is incremented
+        # before the LLM call, so steps=5 is the 5th call in-flight.
+        assert BudgetState(steps=5).is_within(config) is True
         assert BudgetState(steps=6).is_within(config) is False
 
     def test_is_within_tokens_limit(self):
@@ -244,7 +246,8 @@ class TestBudgetState:
     def test_is_within_multiple_limits(self):
         config = BudgetConfig(max_steps=10, max_cost=2.0)
         assert BudgetState(steps=5, cost=1.0).is_within(config) is True
-        assert BudgetState(steps=10, cost=1.0).is_within(config) is False
+        assert BudgetState(steps=10, cost=1.0).is_within(config) is True  # 10th call in-flight
+        assert BudgetState(steps=11, cost=1.0).is_within(config) is False
         assert BudgetState(steps=5, cost=2.0).is_within(config) is False
 
 

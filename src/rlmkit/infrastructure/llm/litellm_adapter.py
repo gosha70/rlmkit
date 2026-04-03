@@ -94,9 +94,10 @@ class LiteLLMAdapter:
 
         choice = response.choices[0]
         usage = response.usage
+        content = self._extract_content(choice.message)
 
         return LLMResponseDTO(
-            content=choice.message.content or "",
+            content=content,
             model=response.model or self._active_model,
             input_tokens=usage.prompt_tokens if usage else 0,
             output_tokens=usage.completion_tokens if usage else 0,
@@ -196,7 +197,7 @@ class LiteLLMAdapter:
         usage = response.usage
 
         return LLMResponseDTO(
-            content=choice.message.content or "",
+            content=self._extract_content(choice.message),
             model=response.model or self._active_model,
             input_tokens=usage.prompt_tokens if usage else 0,
             output_tokens=usage.completion_tokens if usage else 0,
@@ -304,6 +305,35 @@ class LiteLLMAdapter:
             return 0.0
 
     # -- Private helpers --
+
+    def _extract_content(self, message: Any) -> str:
+        """Extract text content from an LLM response message.
+
+        Some reasoning/thinking models (DeepSeek-R1, Phi-4-reasoning, Ollama
+        thinking models) place all output tokens in a side channel
+        (``reasoning_content`` or ``thinking``) while leaving ``content``
+        empty.  Fall back through known field names so callers always receive
+        a non-empty string when the model did produce output.
+        """
+        content = getattr(message, "content", None) or ""
+        if content:
+            return content
+        from rlmkit.prompts import get_rlm_message
+
+        fallback_fields = [
+            f.strip() for f in get_rlm_message("reasoning_content_fields").split(",") if f.strip()
+        ]
+        for field in fallback_fields:
+            val = getattr(message, field, None)
+            if val:
+                logger.debug(
+                    "model=%s: content empty, using %s (%d chars)",
+                    self._active_model,
+                    field,
+                    len(str(val)),
+                )
+                return str(val)
+        return ""
 
     def _build_params(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         """Build the parameter dict for litellm.completion().

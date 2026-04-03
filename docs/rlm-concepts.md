@@ -90,13 +90,15 @@ RLM imposes hard limits per run:
 
 | Budget dimension | What it caps |
 |-----------------|-------------|
-| `max_iterations` | Number of LLM calls in the loop |
+| `max_steps` | Number of LLM calls in the loop |
 | `max_tokens` | Total tokens across all calls |
 | `max_cost` | Total spend in USD |
-| `max_timeout` | Wall-clock time |
-| `max_errors` | Consecutive execution failures |
+| `max_time_seconds` | Wall-clock time |
+| `stall_limit` | Consecutive steps with no code and no FINAL answer (default 3) |
 
 When any limit is hit, the system returns the best partial answer accumulated so far rather than raising an unhandled exception. This is essential for production: a long-running trace should degrade gracefully, not crash.
+
+> **Model compatibility note:** models that don't follow the `FINAL:` protocol (e.g. some Ollama models) are handled by the stall circuit-breaker, which accepts the last substantive prose response when `stall_limit` is reached.
 
 ---
 
@@ -185,6 +187,7 @@ RLMKit adds strategies the original paper does not implement:
 |------|-------------|
 | `direct` | Full context in a single LLM call (optimal for small inputs) |
 | `rlm` | Full recursive loop per the paper |
+| `rag` | Embed content into an in-memory vector store; retrieve relevant chunks per query |
 | `compare` | Run RLM and Direct **concurrently** (parallel threads / async gather), return metrics for both |
 | `auto` | Select Direct (< 8K tokens) or RLM (≥ 8K) automatically |
 
@@ -200,7 +203,7 @@ from rlmkit import interact
 result = interact(
     content=document,
     query="What is the main finding?",
-    mode="auto",            # direct / rlm / compare / auto
+    mode="auto",            # direct / rlm / rag / compare / auto
     provider="anthropic",
     model="claude-sonnet-4-6",
     max_steps=16,           # RLM iteration budget
@@ -210,9 +213,9 @@ result = interact(
 )
 
 print(result.answer)
-print(f"Tokens: {result.total_tokens:,}")
+print(f"Tokens: {result.total_tokens:,}")   # input + output
 print(f"Cost:   ${result.total_cost:.4f}")
-print(f"Steps:  {result.steps}")
+print(f"Steps:  {result.steps}")            # LLM calls made
 ```
 
 A single function call selects the right strategy, runs it, and returns a typed result with flat metric accessors. The `metrics` dict remains accessible for backward compatibility.
@@ -250,7 +253,7 @@ Items from the paper not yet addressed in RLMKit, or areas for future developmen
 
 | Item | Status |
 |------|--------|
-| RAG mode (EmbeddingPort + StoragePort wired to public API) | Planned — falls back to Direct currently |
+| RAG mode | Available in v1.0.0 (lightweight in-memory: `LiteLLMEmbeddingAdapter` + `SQLiteStorageAdapter`); `rag-core` package integration planned for v1.1.0 |
 | Recursion depth > 1 in public API | Depth is configurable in core; not exposed in `interact()` |
 | Asynchronous / parallel sub-calls | Sequential only (paper limitation acknowledged) |
 | Fine-tuned RLM model support | Architecture is model-agnostic; fine-tuned model can be passed as `model=` |

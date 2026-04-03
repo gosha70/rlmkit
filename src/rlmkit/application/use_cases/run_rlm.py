@@ -99,6 +99,8 @@ class RunRLMUseCase:
         consecutive_no_progress = 0
         stall_limit = config.stall_limit
         last_plain_answer: str = ""  # circuit-breaker: best non-FINAL text seen so far
+        last_assistant_text: str = ""  # fallback: last raw LLM response (including code steps)
+        last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
@@ -119,8 +121,26 @@ class RunRLMUseCase:
                 if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
                     self._llm.use_recursive_model()
 
+                # On the last allowed step, nudge the model to produce a final
+                # answer instead of another inspect call.
+                is_last_step = (
+                    budget_config.max_steps is not None
+                    and budget_state.steps >= budget_config.max_steps
+                )
+                call_messages = (
+                    messages
+                    + [
+                        {
+                            "role": "user",
+                            "content": get_rlm_message("force_final_nudge"),
+                        }
+                    ]
+                    if is_last_step
+                    else messages
+                )
+
                 # Call LLM
-                response: LLMResponseDTO = self._llm.complete(messages)
+                response: LLMResponseDTO = self._llm.complete(call_messages)
                 cumulative_input += response.input_tokens
                 cumulative_output += response.output_tokens
                 budget_state.input_tokens = cumulative_input
@@ -140,6 +160,12 @@ class RunRLMUseCase:
 
                 # Parse response: try JSON v2.0 first, fall back to markdown v1.0
                 parsed = self._parse_rlm_response(text)
+
+                # Track non-code responses as a last-resort fallback answer.
+                # Code-only responses are excluded: a bare code block is not a
+                # useful answer to return when max_steps is exhausted.
+                if text.strip() and not parsed.has_code:
+                    last_assistant_text = text.strip()
 
                 trace_seq += 1
                 trace.append(
@@ -208,6 +234,14 @@ class RunRLMUseCase:
                     budget_state.output_tokens = cumulative_output
                     budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
+                    # Only track output from inspect actions (they all generate print() calls).
+                    # Arbitrary Python code executions are not useful for synthesis fallback.
+                    _code = (parsed.code or "").strip()
+                    if any(
+                        _code.startswith(p)
+                        for p in ("print(peek(", "print(grep(", "print(chunk(", "print(select(")
+                    ):
+                        last_inspect_output = formatted
 
                     trace_seq += 1
                     trace.append(
@@ -240,8 +274,9 @@ class RunRLMUseCase:
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
                             elapsed = time.time() - start
+                            answer = self._extract_final(last_plain_answer) or last_plain_answer
                             return RunResultDTO(
-                                answer=last_plain_answer,
+                                answer=answer,
                                 mode_used="rlm",
                                 success=True,
                                 steps=budget_state.steps,
@@ -263,13 +298,50 @@ class RunRLMUseCase:
                         }
                     )
 
-            # Max steps exhausted — use plain-text circuit breaker before failing
-            if last_plain_answer:
+            # Max steps exhausted — use best available text before failing.
+            # Prefer an explicit plain-text answer; fall back to last raw LLM
+            # response (covers models that always generate code but never FINAL:).
+            best_fallback = last_plain_answer or last_assistant_text
+            if best_fallback:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
                 elapsed = time.time() - start
+                # Strip FINAL: prefix if the model included it in plain text
+                # but the parser missed it (e.g. not at line start, bold markup).
+                answer = self._extract_final(best_fallback) or best_fallback
                 return RunResultDTO(
-                    answer=last_plain_answer,
+                    answer=answer,
+                    mode_used="rlm",
+                    success=True,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
+            # Synthesis fallback: model exhausted steps without a final answer but
+            # we have inspection output. Make one extra call (outside the step budget)
+            # asking the model to summarize what it found.
+            if last_inspect_output:
+                if hasattr(self._llm, "use_root_model"):
+                    self._llm.use_root_model()
+                synth_response = self._llm.complete(
+                    self._build_synthesis_messages(query, last_inspect_output)
+                )
+                budget_state.steps += 1
+                cumulative_input += synth_response.input_tokens
+                cumulative_output += synth_response.output_tokens
+                cumulative_cost += (
+                    synth_response.input_tokens * input_cost_per_1m
+                    + synth_response.output_tokens * output_cost_per_1m
+                ) / 1_000_000
+                answer = synth_response.content.strip() or (
+                    "The content was inspected but contained no extractable themes."
+                )
+                elapsed = time.time() - start
+                return RunResultDTO(
+                    answer=answer,
                     mode_used="rlm",
                     success=True,
                     steps=budget_state.steps,
@@ -370,6 +442,8 @@ class RunRLMUseCase:
         consecutive_no_progress = 0
         stall_limit = config.stall_limit
         last_plain_answer: str = ""  # circuit-breaker: best non-FINAL text seen so far
+        last_assistant_text: str = ""  # fallback: last raw LLM response (including code steps)
+        last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
@@ -388,15 +462,32 @@ class RunRLMUseCase:
                 if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
                     self._llm.use_recursive_model()
 
+                # On the last allowed step, nudge the model to produce a final answer.
+                is_last_step = (
+                    budget_config.max_steps is not None
+                    and budget_state.steps >= budget_config.max_steps
+                )
+                call_messages = (
+                    messages
+                    + [
+                        {
+                            "role": "user",
+                            "content": get_rlm_message("force_final_nudge"),
+                        }
+                    ]
+                    if is_last_step
+                    else messages
+                )
+
                 # Stream tokens if emitter and async streaming are available
                 if event_emitter and hasattr(self._llm, "complete_stream_async"):
                     collected: list[str] = []
-                    async for token in self._llm.complete_stream_async(messages):
+                    async for token in self._llm.complete_stream_async(call_messages):
                         collected.append(token)
                         await event_emitter.on_token(token)
                     text = "".join(collected)
                     # Approximate token counts for streamed responses
-                    approx_input = max(1, sum(len(m["content"]) for m in messages) // 4)
+                    approx_input = max(1, sum(len(m["content"]) for m in call_messages) // 4)
                     approx_output = max(1, len(text) // 4)
                     response = LLMResponseDTO(
                         content=text,
@@ -405,9 +496,9 @@ class RunRLMUseCase:
                         output_tokens=approx_output,
                     )
                 elif hasattr(self._llm, "complete_async"):
-                    response = await self._llm.complete_async(messages)
+                    response = await self._llm.complete_async(call_messages)
                 else:
-                    response = await asyncio.to_thread(self._llm.complete, messages)
+                    response = await asyncio.to_thread(self._llm.complete, call_messages)
 
                 cumulative_input += response.input_tokens
                 cumulative_output += response.output_tokens
@@ -427,6 +518,10 @@ class RunRLMUseCase:
 
                 # Parse response: try JSON v2.0 first, fall back to markdown v1.0
                 parsed = self._parse_rlm_response(text)
+
+                # Track non-code responses as a last-resort fallback answer.
+                if text.strip() and not parsed.has_code:
+                    last_assistant_text = text.strip()
 
                 trace_seq += 1
                 step_entry: dict[str, Any] = {
@@ -504,6 +599,12 @@ class RunRLMUseCase:
                     budget_state.output_tokens = cumulative_output
                     budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
+                    _code = (parsed.code or "").strip()
+                    if any(
+                        _code.startswith(p)
+                        for p in ("print(peek(", "print(grep(", "print(chunk(", "print(select(")
+                    ):
+                        last_inspect_output = formatted
 
                     trace_seq += 1
                     trace.append(
@@ -533,8 +634,9 @@ class RunRLMUseCase:
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
                             elapsed = time.time() - start
+                            answer = self._extract_final(last_plain_answer) or last_plain_answer
                             return RunResultDTO(
-                                answer=last_plain_answer,
+                                answer=answer,
                                 mode_used="rlm",
                                 success=True,
                                 steps=budget_state.steps,
@@ -556,12 +658,48 @@ class RunRLMUseCase:
                         }
                     )
 
-            if last_plain_answer:
+            best_fallback = last_plain_answer or last_assistant_text
+            if best_fallback:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
                 elapsed = time.time() - start
+                answer = self._extract_final(best_fallback) or best_fallback
                 return RunResultDTO(
-                    answer=last_plain_answer,
+                    answer=answer,
+                    mode_used="rlm",
+                    success=True,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
+            if last_inspect_output:
+                if hasattr(self._llm, "use_root_model"):
+                    self._llm.use_root_model()
+                if hasattr(self._llm, "complete_async"):
+                    synth_response = await self._llm.complete_async(
+                        self._build_synthesis_messages(query, last_inspect_output)
+                    )
+                else:
+                    synth_response = await asyncio.to_thread(
+                        self._llm.complete,
+                        self._build_synthesis_messages(query, last_inspect_output),
+                    )
+                budget_state.steps += 1
+                cumulative_input += synth_response.input_tokens
+                cumulative_output += synth_response.output_tokens
+                cumulative_cost += (
+                    synth_response.input_tokens * input_cost_per_1m
+                    + synth_response.output_tokens * output_cost_per_1m
+                ) / 1_000_000
+                answer = synth_response.content.strip() or (
+                    "The content was inspected but contained no extractable themes."
+                )
+                elapsed = time.time() - start
+                return RunResultDTO(
+                    answer=answer,
                     mode_used="rlm",
                     success=True,
                     steps=budget_state.steps,
@@ -822,6 +960,23 @@ class RunRLMUseCase:
                 return str(var_value)
             return f"Error: Variable '{parsed.final_var}' not found in environment"
         return "Error: No final answer found"
+
+    @staticmethod
+    def _build_synthesis_messages(query: str, execution_output: str) -> list[dict[str, str]]:
+        """Build messages for a synthesis call when max steps exhausted without a final answer."""
+        return [
+            {
+                "role": "system",
+                "content": get_rlm_message("synthesis_system"),
+            },
+            {
+                "role": "user",
+                "content": get_rlm_message("synthesis_user").format(
+                    query=query,
+                    execution_output=execution_output[:3000],
+                ),
+            },
+        ]
 
     @staticmethod
     def _extract_final(text: str) -> str | None:
