@@ -91,6 +91,7 @@ class RunRLMUseCase:
         ]
 
         trace: list[dict[str, Any]] = []
+        trace_seq = 0  # sequential index across all trace entries (assistant + execution)
         cumulative_input = 0
         cumulative_output = 0
         cumulative_cost = 0.0
@@ -140,9 +141,11 @@ class RunRLMUseCase:
                 # Parse response: try JSON v2.0 first, fall back to markdown v1.0
                 parsed = self._parse_rlm_response(text)
 
+                trace_seq += 1
                 trace.append(
                     {
                         "step": budget_state.steps,
+                        "seq": trace_seq,
                         "role": "assistant",
                         "content": response.content,
                         "input_tokens": response.input_tokens,
@@ -156,9 +159,11 @@ class RunRLMUseCase:
                 # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
                 if parsed.is_complete:
                     if last_execution_failed:
+                        trace_seq += 1
                         trace.append(
                             {
                                 "step": budget_state.steps,
+                                "seq": trace_seq,
                                 "role": "system",
                                 "content": (
                                     "⚠️ Warning: FINAL provided after execution failure. "
@@ -204,9 +209,11 @@ class RunRLMUseCase:
                     budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
 
+                    trace_seq += 1
                     trace.append(
                         {
                             "step": budget_state.steps,
+                            "seq": trace_seq,
                             "role": "execution",
                             "content": formatted,
                             "code": parsed.code,
@@ -355,6 +362,7 @@ class RunRLMUseCase:
         ]
 
         trace: list[dict[str, Any]] = []
+        trace_seq = 0  # sequential index across all trace entries (assistant + execution)
         cumulative_input = 0
         cumulative_output = 0
         cumulative_cost = 0.0
@@ -420,8 +428,10 @@ class RunRLMUseCase:
                 # Parse response: try JSON v2.0 first, fall back to markdown v1.0
                 parsed = self._parse_rlm_response(text)
 
+                trace_seq += 1
                 step_entry: dict[str, Any] = {
                     "step": budget_state.steps,
+                    "seq": trace_seq,
                     "role": "assistant",
                     "content": response.content,
                     "input_tokens": response.input_tokens,
@@ -448,9 +458,11 @@ class RunRLMUseCase:
                 # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
                 if parsed.is_complete:
                     if last_execution_failed:
+                        trace_seq += 1
                         trace.append(
                             {
                                 "step": budget_state.steps,
+                                "seq": trace_seq,
                                 "role": "system",
                                 "content": (
                                     "⚠️ Warning: FINAL provided after execution failure. "
@@ -493,9 +505,11 @@ class RunRLMUseCase:
                     budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
 
+                    trace_seq += 1
                     trace.append(
                         {
                             "step": budget_state.steps,
+                            "seq": trace_seq,
                             "role": "execution",
                             "content": formatted,
                             "code": parsed.code,
