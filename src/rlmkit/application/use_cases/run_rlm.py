@@ -236,11 +236,7 @@ class RunRLMUseCase:
                     formatted = self._format_execution(exec_result)
                     # Only track output from inspect actions (they all generate print() calls).
                     # Arbitrary Python code executions are not useful for synthesis fallback.
-                    _code = (parsed.code or "").strip()
-                    if any(
-                        _code.startswith(p)
-                        for p in ("print(peek(", "print(grep(", "print(chunk(", "print(select(")
-                    ):
+                    if parsed.is_inspect:
                         last_inspect_output = formatted
 
                     trace_seq += 1
@@ -326,6 +322,11 @@ class RunRLMUseCase:
             if last_inspect_output:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
+                # Honour non-step budgets before making the synthesis call.
+                budget_state.elapsed_seconds = time.time() - start
+                if not budget_state.is_within(budget_config):
+                    raise BudgetExceededError("Budget exceeded before synthesis call")
+                synth_step_start = time.time()
                 synth_response = self._llm.complete(
                     self._build_synthesis_messages(query, last_inspect_output)
                 )
@@ -336,6 +337,33 @@ class RunRLMUseCase:
                     synth_response.input_tokens * input_cost_per_1m
                     + synth_response.output_tokens * output_cost_per_1m
                 ) / 1_000_000
+                budget_state.input_tokens = cumulative_input
+                budget_state.output_tokens = cumulative_output
+                budget_state.cost = cumulative_cost
+                budget_state.elapsed_seconds = time.time() - start
+                # Synthesis is intentionally one step past max_steps, so only
+                # re-check non-step budgets (cost, tokens, time) here.
+                _non_step_config = BudgetConfig(
+                    max_tokens=budget_config.max_tokens,
+                    max_cost=budget_config.max_cost,
+                    max_time_seconds=budget_config.max_time_seconds,
+                )
+                if not budget_state.is_within(_non_step_config):
+                    raise BudgetExceededError("Budget exceeded after synthesis call")
+                trace_seq += 1
+                trace.append(
+                    {
+                        "step": budget_state.steps,
+                        "seq": trace_seq,
+                        "role": "assistant",
+                        "content": synth_response.content,
+                        "input_tokens": synth_response.input_tokens,
+                        "output_tokens": synth_response.output_tokens,
+                        "model": getattr(self._llm, "active_model", None) or synth_response.model,
+                        "elapsed_seconds": time.time() - synth_step_start,
+                        "note": "synthesis fallback",
+                    }
+                )
                 answer = synth_response.content.strip() or (
                     "The content was inspected but contained no extractable themes."
                 )
@@ -599,11 +627,7 @@ class RunRLMUseCase:
                     budget_state.output_tokens = cumulative_output
                     budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
-                    _code = (parsed.code or "").strip()
-                    if any(
-                        _code.startswith(p)
-                        for p in ("print(peek(", "print(grep(", "print(chunk(", "print(select(")
-                    ):
+                    if parsed.is_inspect:
                         last_inspect_output = formatted
 
                     trace_seq += 1
@@ -678,6 +702,10 @@ class RunRLMUseCase:
             if last_inspect_output:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
+                budget_state.elapsed_seconds = time.time() - start
+                if not budget_state.is_within(budget_config):
+                    raise BudgetExceededError("Budget exceeded before synthesis call")
+                synth_step_start = time.time()
                 if hasattr(self._llm, "complete_async"):
                     synth_response = await self._llm.complete_async(
                         self._build_synthesis_messages(query, last_inspect_output)
@@ -694,6 +722,31 @@ class RunRLMUseCase:
                     synth_response.input_tokens * input_cost_per_1m
                     + synth_response.output_tokens * output_cost_per_1m
                 ) / 1_000_000
+                budget_state.input_tokens = cumulative_input
+                budget_state.output_tokens = cumulative_output
+                budget_state.cost = cumulative_cost
+                budget_state.elapsed_seconds = time.time() - start
+                _non_step_config = BudgetConfig(
+                    max_tokens=budget_config.max_tokens,
+                    max_cost=budget_config.max_cost,
+                    max_time_seconds=budget_config.max_time_seconds,
+                )
+                if not budget_state.is_within(_non_step_config):
+                    raise BudgetExceededError("Budget exceeded after synthesis call")
+                trace_seq += 1
+                trace.append(
+                    {
+                        "step": budget_state.steps,
+                        "seq": trace_seq,
+                        "role": "assistant",
+                        "content": synth_response.content,
+                        "input_tokens": synth_response.input_tokens,
+                        "output_tokens": synth_response.output_tokens,
+                        "model": getattr(self._llm, "active_model", None) or synth_response.model,
+                        "elapsed_seconds": time.time() - synth_step_start,
+                        "note": "synthesis fallback",
+                    }
+                )
                 answer = synth_response.content.strip() or (
                     "The content was inspected but contained no extractable themes."
                 )
@@ -900,7 +953,7 @@ class RunRLMUseCase:
             elif action_type == "inspect":
                 code = self._inspect_to_code(action_obj)
                 if code:
-                    return ParsedResponse(code=code, raw_text=text)
+                    return ParsedResponse(code=code, raw_text=text, is_inspect=True)
                 return ParsedResponse(raw_text=text)
             elif action_type == "subcall":
                 # Translate to executable Python; subcall() is bound in sandbox globals
@@ -915,7 +968,17 @@ class RunRLMUseCase:
         except (ParseError, Exception):
             pass
 
-        return parse_response(text)
+        # v1.0 markdown / plain-text fallback.
+        # Re-use is_inspect so the synthesis fallback works for models that
+        # emit raw Python with peek/grep/chunk/select instead of JSON actions.
+        result = parse_response(text)
+        if (
+            result.has_code
+            and result.code
+            and any(f"{tool}(" in result.code for tool in ("peek", "grep", "chunk", "select"))
+        ):
+            result.is_inspect = True
+        return result
 
     @staticmethod
     def _inspect_to_code(action_obj: Any) -> str | None:

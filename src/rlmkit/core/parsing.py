@@ -15,6 +15,7 @@ class ParsedResponse:
     final_answer: str | None = None
     final_var: str | None = None
     raw_text: str = ""
+    is_inspect: bool = False  # True when code was generated from a v2.0 inspect action
 
     @property
     def has_code(self) -> bool:

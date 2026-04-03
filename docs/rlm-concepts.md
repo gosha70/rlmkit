@@ -189,7 +189,7 @@ RLMKit adds strategies the original paper does not implement:
 | `rlm` | Full recursive loop per the paper |
 | `rag` | Embed content into an in-memory vector store; retrieve relevant chunks per query |
 | `compare` | Run RLM and Direct **concurrently** (parallel threads / async gather), return metrics for both |
-| `auto` | Select Direct (< 8K tokens) or RLM (≥ 8K) automatically |
+| `auto` | Select Direct (< 8K tokens), RAG (8K–100K), or RLM (> 100K) automatically |
 
 ### 9.4 Security-First Sandbox
 

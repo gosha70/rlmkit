@@ -608,6 +608,28 @@ class TestRunRLMAsync:
         assert result.answer == filler
         assert result.steps < 10
 
+    def test_async_synthesis_fallback_on_inspect_exhaustion(self):
+        """execute_async returns synthesized answer when inspect-only run exhausts max_steps."""
+        # Step 1: JSON inspect action; step 2 (synthesis): plain answer
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 3000}}',
+                "The content is repetitive placeholder text.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=1)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("word " * 100, "Summarize", config=config)
+        )
+
+        assert result.success is True
+        assert result.steps == 2  # main step + synthesis
+        assert "repetitive" in result.answer
+        # Synthesis call must appear in trace
+        assert any(t.get("note") == "synthesis fallback" for t in result.trace)
+
     def test_async_stall_with_empty_responses_fails(self):
         """execute_async fails when stalled responses are all empty."""
         llm = FakeLLM(["   "])
