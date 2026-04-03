@@ -141,7 +141,7 @@ Key observations:
 
 ---
 
-## 8. The Reference Implementation (alexzhang13/rlm)
+## 8. The Reference Implementation ([alexzhang13/rlm](https://github.com/alexzhang13/rlm))
 
 The paper's authors published a reference implementation (`pip install rlms`). It faithfully implements the algorithm with:
 
