@@ -137,12 +137,34 @@ export default function ChatPage() {
     localStorage.setItem("rlmkit-cp-order", JSON.stringify(chatProviderOrder));
   }, [chatProviderOrder]);
 
-  // Auto-select first available chat provider if none selected
+  // Auto-select / clean up selected providers when the provider list loads.
+  // Removes stale IDs (deleted/renamed providers persisted in localStorage) and
+  // IDs whose backing LLM provider is now offline/unconfigured (mirrors the
+  // availability filter in ChatProviderSelector).
   useEffect(() => {
-    if (selectedChatProviderIds.length === 0 && chatProviders.length > 0) {
-      setSelectedChatProviderIds([chatProviders[0].id]);
+    if (chatProviders.length === 0) return;
+    let availableIds: Set<string>;
+    if (providers.length > 0) {
+      const providerMap = new Map(providers.map((p) => [p.name, p]));
+      availableIds = new Set(
+        chatProviders
+          .filter((cp) => {
+            const info = providerMap.get(cp.llm_provider);
+            return info && (info.status === "connected" || info.status === "configured");
+          })
+          .map((cp) => cp.id),
+      );
+    } else {
+      // providers not yet loaded — fall back to checking by chat-provider ID only
+      availableIds = new Set(chatProviders.map((cp) => cp.id));
     }
-  }, [chatProviders, selectedChatProviderIds.length]);
+    const filtered = selectedChatProviderIds.filter((id) => availableIds.has(id));
+    if (filtered.length !== selectedChatProviderIds.length || filtered.length === 0) {
+      const first = [...availableIds][0];
+      setSelectedChatProviderIds(filtered.length > 0 ? filtered : first ? [first] : []);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatProviders, providers]);
 
   // Load session messages and reconstruct turns
   useEffect(() => {
@@ -478,6 +500,8 @@ export default function ChatPage() {
 
   const handleSend = useCallback(
     async (text: string) => {
+      if (selectedChatProviderIds.length === 0) return;
+
       // Capture generation at send-time so stale callbacks can bail out
       const sendGen = sessionGenRef.current;
 
@@ -696,7 +720,7 @@ export default function ChatPage() {
               </p>
             </div>
             <div className="w-full max-w-3xl">
-              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming} />
+              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0} />
             </div>
           </div>
         ) : (
@@ -888,7 +912,7 @@ export default function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming} />
+            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0} />
           </>
         )}
       </div>

@@ -28,9 +28,15 @@ logger = logging.getLogger(__name__)
 # Providers that default to zero retries (local servers; retries multiply hangs)
 _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio"})
 
-_CONFIG_FILE = Path(".rlmkit_config.json")
-_SESSIONS_FILE = Path(".rlmkit_sessions.json")
-_EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
+# Config lives in ~/.rlmkit/ so the path is stable regardless of CWD.
+# Migrate from legacy .rlmkit_config.json in CWD on first run if present.
+_RLMKIT_DIR = Path.home() / ".rlmkit"
+_CONFIG_FILE = _RLMKIT_DIR / "config.json"
+_SESSIONS_FILE = _RLMKIT_DIR / "sessions.json"
+_EVALUATIONS_FILE = _RLMKIT_DIR / "evaluations.json"
+_LEGACY_CONFIG_FILE = Path(".rlmkit_config.json")
+_LEGACY_SESSIONS_FILE = Path(".rlmkit_sessions.json")
+_LEGACY_EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
 _MAX_PERSISTED_SESSIONS = 50
 
 # ---------------------------------------------------------------------------
@@ -105,11 +111,27 @@ class AppState:
     # ------------------------------------------------------------------
 
     def _load_config(self) -> None:
-        """Load persisted config from disk if available."""
-        if not _CONFIG_FILE.exists():
+        """Load persisted config from disk if available.
+
+        Checks ~/.rlmkit/config.json first.  If absent, migrates from the
+        legacy CWD-relative .rlmkit_config.json (created by older versions).
+        """
+        config_path = _CONFIG_FILE
+        if not config_path.exists() and _LEGACY_CONFIG_FILE.exists():
+            # Migrate: copy legacy file to the new home-dir location and remove it
+            try:
+                _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(_LEGACY_CONFIG_FILE.read_text())
+                _LEGACY_CONFIG_FILE.unlink()
+                logger.info("Migrated config from %s to %s", _LEGACY_CONFIG_FILE, config_path)
+            except Exception as exc:
+                logger.warning("Migration failed, falling back to legacy path: %s", exc)
+                config_path = _LEGACY_CONFIG_FILE
+
+        if not config_path.exists():
             return
         try:
-            raw = json.loads(_CONFIG_FILE.read_text())
+            raw = json.loads(config_path.read_text())
             self.config = ConfigResponse.model_validate(raw.get("config", {}))
             self.system_prompts = SystemPrompts.model_validate(raw.get("system_prompts", {}))
             self.user_profiles = [
@@ -442,6 +464,7 @@ class AppState:
     def save_config(self) -> None:
         """Persist current config, profiles, and prompts to disk."""
         try:
+            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
             data = {
                 "config": self.config.model_dump(),
                 "system_prompts": self.system_prompts.model_dump(),
@@ -463,10 +486,20 @@ class AppState:
 
     def _load_sessions(self) -> None:
         """Load persisted sessions from disk if available."""
-        if not _SESSIONS_FILE.exists():
+        sessions_path = _SESSIONS_FILE
+        if not sessions_path.exists() and _LEGACY_SESSIONS_FILE.exists():
+            try:
+                _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+                sessions_path.write_text(_LEGACY_SESSIONS_FILE.read_text())
+                _LEGACY_SESSIONS_FILE.unlink()
+                logger.info("Migrated sessions from %s to %s", _LEGACY_SESSIONS_FILE, sessions_path)
+            except Exception as exc:
+                logger.warning("Sessions migration failed: %s", exc)
+                sessions_path = _LEGACY_SESSIONS_FILE
+        if not sessions_path.exists():
             return
         try:
-            raw = json.loads(_SESSIONS_FILE.read_text())
+            raw = json.loads(sessions_path.read_text())
             for s in raw:
                 rec = SessionRecord(
                     id=s["id"],
@@ -484,6 +517,7 @@ class AppState:
     def save_sessions(self) -> None:
         """Persist sessions to disk (most recent N only)."""
         try:
+            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
             # Sort by updated_at descending and cap
             sorted_sessions = sorted(
                 self.sessions.values(),
@@ -511,10 +545,22 @@ class AppState:
 
     def _load_evaluations(self) -> None:
         """Load persisted evaluations from disk if available."""
-        if not _EVALUATIONS_FILE.exists():
+        evals_path = _EVALUATIONS_FILE
+        if not evals_path.exists() and _LEGACY_EVALUATIONS_FILE.exists():
+            try:
+                _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+                evals_path.write_text(_LEGACY_EVALUATIONS_FILE.read_text())
+                _LEGACY_EVALUATIONS_FILE.unlink()
+                logger.info(
+                    "Migrated evaluations from %s to %s", _LEGACY_EVALUATIONS_FILE, evals_path
+                )
+            except Exception as exc:
+                logger.warning("Evaluations migration failed: %s", exc)
+                evals_path = _LEGACY_EVALUATIONS_FILE
+        if not evals_path.exists():
             return
         try:
-            raw = json.loads(_EVALUATIONS_FILE.read_text())
+            raw = json.loads(evals_path.read_text())
             self.evaluations = {
                 "thumb_ratings": raw.get("thumb_ratings", []),
                 "best_picks": raw.get("best_picks", []),
@@ -529,6 +575,7 @@ class AppState:
     def save_evaluations(self) -> None:
         """Persist evaluations to disk."""
         try:
+            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
             _EVALUATIONS_FILE.write_text(json.dumps(self.evaluations, indent=2, default=str))
         except Exception as exc:
             logger.warning("Failed to save evaluations: %s", exc)

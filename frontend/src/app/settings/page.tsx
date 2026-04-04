@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { useTheme } from "next-themes";
 import { AppShell } from "@/components/shared/app-shell";
@@ -251,14 +251,14 @@ export default function SettingsPage() {
     e.target.value = "";
   };
 
-  const handleRefreshModels = async () => {
-    if (!formData.llm_provider) return;
+  const fetchModelsForProvider = async (providerName: string) => {
+    if (!providerName) return;
     setRefreshingModels(true);
     try {
       // Pass the provider's endpoint so local providers on non-default ports work
-      const providerInfo = providers.find((p) => p.name === formData.llm_provider);
+      const providerInfo = providers.find((p) => p.name === providerName);
       const models = await getProviderModels(
-        formData.llm_provider,
+        providerName,
         providerInfo?.default_endpoint ?? undefined,
       );
       setDynamicModels(models);
@@ -268,6 +268,21 @@ export default function SettingsPage() {
       setRefreshingModels(false);
     }
   };
+
+  const handleRefreshModels = () => fetchModelsForProvider(formData.llm_provider);
+
+  // Auto-fetch models when a provider is selected that has no static model list
+  // (local providers like Ollama/LMStudio whose models vary per installation).
+  useEffect(() => {
+    if (!formData.llm_provider || providers.length === 0) return;
+    const providerInfo = providers.find((p) => p.name === formData.llm_provider);
+    if (!providerInfo) return;
+    // Auto-fetch for local providers (no API key) or providers with no static models
+    if (!providerInfo.requires_api_key || providerInfo.models.length === 0) {
+      fetchModelsForProvider(formData.llm_provider);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.llm_provider, providers.length]);
 
   // Resolve the selected profile for the form
   const selectedProfile = profiles.find((p) => p.id === formData.profile_id);

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --background: #fafafa;
@@ -96,8 +97,42 @@ body {
   border-color: var(--border);
 }
 
-/* Prose for markdown */
-.prose code {
+/* Prose for markdown — compact chat layout overrides */
+.prose {
+  font-size: 0.875rem; /* 14px — matches chat body text */
+  line-height: 1.6;
+  color: inherit;
+}
+
+/* Tighten vertical rhythm for chat bubbles */
+.prose :where(p):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.prose :where(p:first-child):not(:where([class~="not-prose"] *)) {
+  margin-top: 0;
+}
+.prose :where(p:last-child):not(:where([class~="not-prose"] *)) {
+  margin-bottom: 0;
+}
+
+.prose :where(h1, h2, h3, h4):not(:where([class~="not-prose"] *)) {
+  margin-top: 1em;
+  margin-bottom: 0.25em;
+}
+
+.prose :where(ul, ol):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+  padding-left: 1.5em;
+}
+
+.prose :where(li):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.125em;
+  margin-bottom: 0.125em;
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *)):not(pre code) {
   font-family: var(--font-mono);
   font-size: 0.875em;
   background: var(--muted);
@@ -105,16 +140,42 @@ body {
   border-radius: 0.25rem;
 }
 
-.prose pre {
+.prose :where(pre):not(:where([class~="not-prose"] *)) {
   background: var(--muted);
   border-radius: 0.5rem;
   padding: 1rem;
   overflow-x: auto;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
 }
 
-.prose pre code {
+.prose :where(pre code):not(:where([class~="not-prose"] *)) {
   background: transparent;
   padding: 0;
+}
+
+.prose :where(blockquote):not(:where([class~="not-prose"] *)) {
+  border-left: 3px solid var(--border);
+  padding-left: 0.75em;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.prose :where(hr):not(:where([class~="not-prose"] *)) {
+  border-color: var(--border);
+  margin: 0.75em 0;
+}
+
+.prose :where(table):not(:where([class~="not-prose"] *)) {
+  font-size: 0.875em;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.prose :where(th, td):not(:where([class~="not-prose"] *)) {
+  border: 1px solid var(--border);
+  padding: 0.375em 0.625em;
+  text-align: left;
 }
 
 /* Focus-visible styles for keyboard navigation */

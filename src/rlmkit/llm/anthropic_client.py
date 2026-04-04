@@ -77,7 +77,7 @@ class ClaudeClient(BaseLLMProvider):
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
 
-        self._client = self._anthropic.Anthropic(**client_kwargs)
+        self._client = self._anthropic.Anthropic(**client_kwargs)  # type: ignore[arg-type]
 
     def _convert_messages(
         self, messages: list[dict[str, str]]
@@ -143,7 +143,7 @@ class ClaudeClient(BaseLLMProvider):
 
         # Make API call
         try:
-            response = self._client.messages.create(**params)
+            response = self._client.messages.create(**params)  # type: ignore[call-overload]
             # Claude returns content as a list of blocks
             return str(response.content[0].text)
         except Exception as e:
@@ -184,7 +184,7 @@ class ClaudeClient(BaseLLMProvider):
 
         # Make API call
         try:
-            response = self._client.messages.create(**params)
+            response = self._client.messages.create(**params)  # type: ignore[call-overload]
             usage = response.usage
 
             return LLMResponse(

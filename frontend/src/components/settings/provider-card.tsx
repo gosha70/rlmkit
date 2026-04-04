@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Collapsible,
   CollapsibleContent,
@@ -17,10 +24,13 @@ import { ModelSelector } from "./model-selector";
 import { ConnectionTester } from "./connection-tester";
 import {
   saveProvider,
+  getProviderModels,
   type ProviderInfo,
   type RuntimeSettings,
+  type ModelInfo,
 } from "@/lib/api";
-import { Save, ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { Save, ChevronDown, ChevronRight, Settings2, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type ProviderStatus = "connected" | "configured" | "offline" | "not_configured";
 
@@ -55,18 +65,45 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
   );
   const [runtimeOpen, setRuntimeOpen] = useState(false);
   const [runtime, setRuntime] = useState<RuntimeSettings>(savedConfig?.runtime_settings ?? { ...DEFAULT_RUNTIME });
+  const [dynamicModels, setDynamicModels] = useState<ModelInfo[]>([]);
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const fetchSeqRef = useRef(0);
 
-  // Sync state when savedConfig loads asynchronously from SWR
+  const isLocal = !provider.requires_api_key;
+
+  const fetchModels = async (ep?: string) => {
+    if (!isLocal) return;
+    const seq = ++fetchSeqRef.current;
+    setRefreshingModels(true);
+    try {
+      const models = await getProviderModels(provider.name, ep ?? endpoint ?? undefined);
+      if (seq === fetchSeqRef.current) setDynamicModels(models);
+    } catch {
+      if (seq === fetchSeqRef.current) setDynamicModels([]);
+    } finally {
+      if (seq === fetchSeqRef.current) setRefreshingModels(false);
+    }
+  };
+
+  // Sync state when savedConfig loads asynchronously from SWR.
+  // Also re-fetch models with the persisted endpoint, which may differ from the
+  // default used during the mount-time fetch.
   useEffect(() => {
     if (savedConfig) {
       setSelectedModel(savedConfig.model);
       setEnabled(savedConfig.enabled);
       setRuntime(savedConfig.runtime_settings);
       if (savedConfig.endpoint) setEndpoint(savedConfig.endpoint);
+      if (isLocal) fetchModels(savedConfig.endpoint ?? undefined);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedConfig]);
 
-  const isLocal = !provider.requires_api_key;
+  // Auto-fetch models for local providers on mount
+  useEffect(() => {
+    if (isLocal) fetchModels();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -115,13 +152,60 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
         {/* Model Selection */}
         <div className="space-y-2">
           <Label>Model</Label>
-          <ModelSelector
-            models={provider.models}
-            value={selectedModel}
-            onChange={setSelectedModel}
-            freeText={isLocal}
-            placeholder={provider.model_input_hint || "Select model"}
-          />
+          {isLocal && dynamicModels.length > 0 ? (
+            <div className="flex gap-2">
+              <Select value={selectedModel ?? undefined} onValueChange={setSelectedModel}>
+                <SelectTrigger className="flex-1" aria-label="Select model">
+                  <SelectValue placeholder={provider.model_input_hint || "Select model"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {dynamicModels.map((m) => (
+                    <SelectItem key={m.name} value={m.name}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchModels()}
+                disabled={refreshingModels}
+                aria-label="Refresh model list"
+                className="shrink-0"
+              >
+                <RefreshCw className={cn("h-4 w-4", refreshingModels && "animate-spin")} aria-hidden="true" />
+              </Button>
+            </div>
+          ) : isLocal ? (
+            <div className="flex gap-2">
+              <Input
+                value={selectedModel ?? ""}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                placeholder={provider.model_input_hint || "e.g. llama3.2"}
+                aria-label="Model name"
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchModels()}
+                disabled={refreshingModels}
+                aria-label="Fetch available models"
+                className="shrink-0"
+              >
+                <RefreshCw className={cn("h-4 w-4", refreshingModels && "animate-spin")} aria-hidden="true" />
+              </Button>
+            </div>
+          ) : (
+            <ModelSelector
+              models={provider.models}
+              value={selectedModel}
+              onChange={setSelectedModel}
+              freeText={false}
+              placeholder={provider.model_input_hint || "Select model"}
+            />
+          )}
         </div>
 
         {/* API Key (only for cloud providers) */}
@@ -177,6 +261,7 @@ export function ProviderCard({ provider, savedConfig, onProviderSaved }: Provide
               id={`endpoint-${provider.name}`}
               value={endpoint}
               onChange={(e) => setEndpoint(e.target.value)}
+              onBlur={(e) => fetchModels(e.target.value)}
               placeholder={provider.default_endpoint}
               aria-label={`Endpoint for ${provider.display_name}`}
             />
