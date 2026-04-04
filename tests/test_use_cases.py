@@ -255,6 +255,42 @@ class TestRunRLMUseCase:
         assert result.success is False
         assert "exceeded" in result.error.lower() or "budget" in result.error.lower()
 
+    def test_synthesis_fallback_on_inspect_exhaustion(self):
+        """Sync execute returns synthesized answer when inspect-only run exhausts max_steps."""
+        # Step 1: JSON inspect action; step 2 (synthesis extra call): plain answer
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 3000}}',
+                "The content is repetitive placeholder text with no themes.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=1)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("word " * 100, "Summarize the key themes", config=config)
+
+        assert result.success is True
+        assert result.steps == 2  # main inspect step + synthesis call
+        assert "repetitive" in result.answer
+        # Synthesis call must appear in trace with the dedicated note
+        assert any(t.get("note") == "synthesis fallback" for t in result.trace)
+
+    def test_synthesis_fallback_empty_response_uses_default_message(self):
+        """Sync: empty synthesis response falls back to a descriptive message."""
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 3000}}',
+                "",  # synthesis returns empty string
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=1)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("word " * 100, "Summarize", config=config)
+
+        assert result.success is True
+        assert result.answer  # non-empty fallback message
+
     def test_stall_detection_circuit_breaker_returns_plain_text(self):
         # LLM produces plain-text answers without FINAL: prefix (common with small models).
         # Circuit breaker should accept the text as the answer instead of discarding it.

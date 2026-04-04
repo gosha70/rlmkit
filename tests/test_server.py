@@ -1032,3 +1032,117 @@ class TestNumRetriesAdapterCreation:
             state.create_llm_adapter_for_chat_provider("cp-test2", num_retries=7)
         _, kwargs = mock_cls.call_args
         assert kwargs["num_retries"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Profiles CRUD
+# ---------------------------------------------------------------------------
+
+
+class TestProfiles:
+    def test_list_profiles_includes_builtins(self, client: TestClient) -> None:
+        resp = client.get("/api/profiles")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) >= 4  # 4 builtins
+        builtin_ids = {p["id"] for p in data}
+        assert "builtin-fast" in builtin_ids
+        assert "builtin-accurate" in builtin_ids
+        assert "builtin-rlm-deep" in builtin_ids
+        assert "builtin-rag" in builtin_ids
+
+    def test_create_profile(self, client: TestClient) -> None:
+        payload = {"name": "My Profile", "strategy": "rlm"}
+        resp = client.post("/api/profiles", json=payload)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "My Profile"
+        assert data["strategy"] == "rlm"
+        assert data["is_builtin"] is False
+        assert "id" in data
+
+    def test_create_profile_duplicate_name_returns_409(self, client: TestClient) -> None:
+        payload = {"name": "Dup Profile", "strategy": "direct"}
+        client.post("/api/profiles", json=payload)
+        resp = client.post("/api/profiles", json=payload)
+        assert resp.status_code == 409
+
+    def test_create_profile_duplicate_builtin_name_returns_409(
+        self, client: TestClient
+    ) -> None:
+        payload = {"name": "Fast & cheap", "strategy": "direct"}
+        resp = client.post("/api/profiles", json=payload)
+        assert resp.status_code == 409
+
+    def test_update_profile(self, client: TestClient) -> None:
+        create_resp = client.post(
+            "/api/profiles", json={"name": "ToUpdate", "strategy": "direct"}
+        )
+        profile_id = create_resp.json()["id"]
+        resp = client.put(
+            f"/api/profiles/{profile_id}", json={"name": "Updated", "strategy": "rlm"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Updated"
+        assert resp.json()["strategy"] == "rlm"
+
+    def test_update_builtin_returns_400(self, client: TestClient) -> None:
+        resp = client.put("/api/profiles/builtin-fast", json={"name": "X"})
+        assert resp.status_code == 400
+
+    def test_update_profile_duplicate_name_returns_409(self, client: TestClient) -> None:
+        client.post("/api/profiles", json={"name": "P1", "strategy": "direct"})
+        r2 = client.post("/api/profiles", json={"name": "P2", "strategy": "direct"})
+        pid2 = r2.json()["id"]
+        resp = client.put(f"/api/profiles/{pid2}", json={"name": "P1"})
+        assert resp.status_code == 409
+
+    def test_update_profile_not_found_returns_404(self, client: TestClient) -> None:
+        resp = client.put("/api/profiles/nonexistent", json={"name": "X"})
+        assert resp.status_code == 404
+
+    def test_delete_profile(self, client: TestClient) -> None:
+        create_resp = client.post(
+            "/api/profiles", json={"name": "ToDel", "strategy": "rlm"}
+        )
+        profile_id = create_resp.json()["id"]
+        resp = client.delete(f"/api/profiles/{profile_id}")
+        assert resp.status_code == 204
+        # Should no longer appear in listing
+        listing = client.get("/api/profiles").json()
+        assert all(p["id"] != profile_id for p in listing)
+
+    def test_delete_builtin_returns_400(self, client: TestClient) -> None:
+        resp = client.delete("/api/profiles/builtin-rag")
+        assert resp.status_code == 400
+
+    def test_delete_profile_not_found_returns_404(self, client: TestClient) -> None:
+        resp = client.delete("/api/profiles/nonexistent")
+        assert resp.status_code == 404
+
+    def test_activate_builtin_profile(self, client: TestClient) -> None:
+        resp = client.post("/api/profiles/builtin-accurate/activate")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "builtin-accurate"
+
+    def test_activate_user_profile(self, client: TestClient) -> None:
+        from rlmkit.server.models import BudgetConfig, RuntimeSettings
+
+        create_resp = client.post(
+            "/api/profiles",
+            json={
+                "name": "MyActivate",
+                "strategy": "rlm",
+                "runtime_settings": {"temperature": 0.7},
+                "budget": {"max_steps": 5},
+            },
+        )
+        profile_id = create_resp.json()["id"]
+        resp = client.post(f"/api/profiles/{profile_id}/activate")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == profile_id
+
+    def test_activate_nonexistent_profile_returns_404(self, client: TestClient) -> None:
+        resp = client.post("/api/profiles/nonexistent/activate")
+        assert resp.status_code == 404
