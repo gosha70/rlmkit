@@ -160,11 +160,11 @@ class LiteLLMAdapter:
         for model_name in models_to_try:
             try:
                 info = litellm.get_model_info(model=model_name)
-                input_per_token = info.get("input_cost_per_token", 0.0)
-                output_per_token = info.get("output_cost_per_token", 0.0)
+                input_per_token = info.get("input_cost_per_token") or 0.0
+                output_per_token = info.get("output_cost_per_token") or 0.0
                 return {
-                    "input_cost_per_1m": input_per_token * 1_000_000,
-                    "output_cost_per_1m": output_per_token * 1_000_000,
+                    "input_cost_per_1m": float(input_per_token) * 1_000_000,
+                    "output_cost_per_1m": float(output_per_token) * 1_000_000,
                 }
             except Exception:
                 continue

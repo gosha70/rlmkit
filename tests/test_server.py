@@ -1067,17 +1067,13 @@ class TestProfiles:
         resp = client.post("/api/profiles", json=payload)
         assert resp.status_code == 409
 
-    def test_create_profile_duplicate_builtin_name_returns_409(
-        self, client: TestClient
-    ) -> None:
+    def test_create_profile_duplicate_builtin_name_returns_409(self, client: TestClient) -> None:
         payload = {"name": "Fast & cheap", "strategy": "direct"}
         resp = client.post("/api/profiles", json=payload)
         assert resp.status_code == 409
 
     def test_update_profile(self, client: TestClient) -> None:
-        create_resp = client.post(
-            "/api/profiles", json={"name": "ToUpdate", "strategy": "direct"}
-        )
+        create_resp = client.post("/api/profiles", json={"name": "ToUpdate", "strategy": "direct"})
         profile_id = create_resp.json()["id"]
         resp = client.put(
             f"/api/profiles/{profile_id}", json={"name": "Updated", "strategy": "rlm"}
@@ -1102,9 +1098,7 @@ class TestProfiles:
         assert resp.status_code == 404
 
     def test_delete_profile(self, client: TestClient) -> None:
-        create_resp = client.post(
-            "/api/profiles", json={"name": "ToDel", "strategy": "rlm"}
-        )
+        create_resp = client.post("/api/profiles", json={"name": "ToDel", "strategy": "rlm"})
         profile_id = create_resp.json()["id"]
         resp = client.delete(f"/api/profiles/{profile_id}")
         assert resp.status_code == 204
@@ -1127,8 +1121,6 @@ class TestProfiles:
         assert data["id"] == "builtin-accurate"
 
     def test_activate_user_profile(self, client: TestClient) -> None:
-        from rlmkit.server.models import BudgetConfig, RuntimeSettings
-
         create_resp = client.post(
             "/api/profiles",
             json={
