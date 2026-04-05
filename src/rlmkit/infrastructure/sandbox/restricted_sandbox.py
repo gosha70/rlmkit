@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 from contextlib import redirect_stderr, redirect_stdout
+from functools import partial
 from typing import Any
 
 from RestrictedPython import compile_restricted, safe_builtins, safe_globals
@@ -24,6 +25,7 @@ from RestrictedPython.PrintCollector import PrintCollector
 
 from rlmkit.application.dto import ExecutionResultDTO
 from rlmkit.domain.exceptions import SecurityViolationError
+from rlmkit.tools import chunk, grep, peek, select
 
 # Modules considered safe for LLM-generated code (subset of rlmkit defaults)
 _DEFAULT_ALLOWED_MODULES = frozenset(
@@ -160,15 +162,6 @@ class RestrictedSandboxAdapter:
         """The restricted sandbox is always healthy if RestrictedPython is importable."""
         return True
 
-    def set_variable(self, name: str, value: Any) -> None:
-        """Inject a variable into the sandbox namespace.
-
-        Args:
-            name: Variable name.
-            value: Variable value.
-        """
-        self._namespace[name] = value
-
     def get_variable(self, name: str) -> Any | None:
         """Retrieve a variable from the sandbox namespace.
 
@@ -190,6 +183,26 @@ class RestrictedSandboxAdapter:
     # Internals
     # ------------------------------------------------------------------
 
+    def set_variable(self, name: str, value: Any) -> None:
+        """Inject a variable into the sandbox namespace.
+
+        When ``name`` is ``"P"`` (the content variable), also rebinds the
+        content-navigation tools (``peek``, ``grep``, ``chunk``, ``select``)
+        as ``partial`` functions so that LLM-generated code can call them
+        without passing content explicitly.
+
+        Args:
+            name: Variable name.
+            value: Variable value.
+        """
+        self._namespace[name] = value
+        if name == "P" and isinstance(value, str):
+            content = value
+            self._globals["peek"] = partial(peek, content)
+            self._globals["grep"] = partial(grep, content)
+            self._globals["chunk"] = partial(chunk, content)
+            self._globals["select"] = partial(select, content)
+
     def _build_globals(self) -> None:
         """(Re)build the restricted globals dict."""
         self._globals = safe_globals.copy()
@@ -205,3 +218,9 @@ class RestrictedSandboxAdapter:
         builtins_dict = dict(safe_builtins)
         builtins_dict["__import__"] = _make_safe_import(self._allowed_modules)
         self._globals["__builtins__"] = builtins_dict
+
+        # Content-navigation tools (unbound; rebound to P in set_variable)
+        self._globals["peek"] = peek
+        self._globals["grep"] = grep
+        self._globals["chunk"] = chunk
+        self._globals["select"] = select

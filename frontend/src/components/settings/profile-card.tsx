@@ -15,20 +15,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  activateProfile,
   createProfile,
   deleteProfile,
   updateProfile,
   type RunProfile,
   type ChatProviderConfig,
 } from "@/lib/api";
-import { Play, Trash2, Lock, Edit2, Copy, Download } from "lucide-react";
+import { Trash2, Lock, Edit2, Copy, Download } from "lucide-react";
 
 interface ProfileCardProps {
   profile: RunProfile;
   chatProviders?: ChatProviderConfig[];
-  isActive?: boolean;
-  onActivated?: () => void;
   onDeleted?: () => void;
   onUpdated?: () => void;
   onCloned?: () => void;
@@ -37,19 +34,17 @@ interface ProfileCardProps {
 export function ProfileCard({
   profile,
   chatProviders = [],
-  isActive = false,
-  onActivated,
   onDeleted,
   onUpdated,
   onCloned,
 }: ProfileCardProps) {
-  const [activating, setActivating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editData, setEditData] = useState({
+    name: profile.name,
     strategy: profile.strategy,
     description: profile.description,
     temperature: profile.runtime_settings.temperature,
@@ -65,20 +60,6 @@ export function ProfileCard({
   });
 
   const usedBy = chatProviders.filter((cp) => cp.profile_id === profile.id);
-
-  const handleActivate = async () => {
-    setActivating(true);
-    setMessage(null);
-    try {
-      await activateProfile(profile.id);
-      setMessage("Profile activated");
-      onActivated?.();
-    } catch {
-      setMessage("Failed to activate profile");
-    } finally {
-      setActivating(false);
-    }
-  };
 
   const handleDelete = async () => {
     if (usedBy.length > 0) {
@@ -108,7 +89,6 @@ export function ProfileCard({
         runtime_settings: { ...profile.runtime_settings },
         budget: { ...profile.budget },
       });
-      setMessage("Profile cloned");
       onCloned?.();
     } catch {
       setMessage("Failed to clone profile");
@@ -119,6 +99,7 @@ export function ProfileCard({
 
   const handleStartEdit = () => {
     setEditData({
+      name: profile.name,
       strategy: profile.strategy,
       description: profile.description,
       temperature: profile.runtime_settings.temperature,
@@ -159,6 +140,7 @@ export function ProfileCard({
     setMessage(null);
     try {
       await updateProfile(profile.id, {
+        name: editData.name.trim() || profile.name,
         strategy: editData.strategy,
         description: editData.description,
         runtime_settings: {
@@ -177,7 +159,6 @@ export function ProfileCard({
         system_prompts: editData.system_prompts,
       });
       setEditing(false);
-      setMessage("Profile updated");
       onUpdated?.();
     } catch {
       setMessage("Failed to update profile");
@@ -201,11 +182,6 @@ export function ProfileCard({
             <Badge variant="outline" className="text-xs capitalize">
               {profile.strategy}
             </Badge>
-            {isActive && (
-              <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs border-0">
-                Active
-              </Badge>
-            )}
           </div>
           <div className="flex gap-1">
             {!profile.is_builtin && (
@@ -235,15 +211,6 @@ export function ProfileCard({
               aria-label={`Clone ${profile.name} profile`}
             >
               <Copy className="h-4 w-4" aria-hidden="true" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleActivate}
-              disabled={activating}
-              aria-label={`Activate ${profile.name} profile`}
-            >
-              <Play className="h-4 w-4" aria-hidden="true" />
             </Button>
             {!profile.is_builtin && (
               <Button
@@ -282,6 +249,15 @@ export function ProfileCard({
 
         {editing && (
           <div className="mt-4 space-y-3 rounded-lg border border-muted p-3">
+            <div className="space-y-1">
+              <Label htmlFor={`edit-name-${profile.id}`} className="text-xs">Name</Label>
+              <Input
+                id={`edit-name-${profile.id}`}
+                className="h-8 text-xs"
+                value={editData.name}
+                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+              />
+            </div>
             <div className="space-y-1">
               <Label htmlFor={`edit-strategy-${profile.id}`} className="text-xs">Strategy</Label>
               <Select
@@ -416,7 +392,7 @@ export function ProfileCard({
         )}
 
         {message && (
-          <p className="text-xs text-green-600 dark:text-green-400 mt-2" role="status">
+          <p className="text-xs text-destructive mt-2" role="status">
             {message}
           </p>
         )}

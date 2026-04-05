@@ -21,6 +21,7 @@ from rlmkit.server.routes import (
     config,
     evaluations,
     files,
+    llm_providers,
     metrics,
     profiles,
     prompts,
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(profiles.router)
     app.include_router(prompts.router)
     app.include_router(config.router)
+    app.include_router(llm_providers.router)
     app.include_router(chat_providers.router)
     app.include_router(evaluations.router)
 

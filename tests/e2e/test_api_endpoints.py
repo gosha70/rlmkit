@@ -417,13 +417,20 @@ class TestProfileEndpoints:
         resp = client.post("/api/profiles", json={"name": "Referenced"})
         profile_id = resp.json()["id"]
 
+        # Create an LLM Provider first
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         # Create a Chat Provider referencing it
         client.post(
             "/api/chat-providers",
             json={
                 "name": "CP-Ref",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "profile_id": profile_id,
             },
         )
@@ -461,12 +468,18 @@ class TestChatProviderProfileIntegration:
     """Chat Provider CRUD with profile resolution."""
 
     def test_create_chat_provider_with_profile(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "Test CP",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "profile_id": "builtin-rlm-deep",
             },
         )
@@ -479,12 +492,18 @@ class TestChatProviderProfileIntegration:
         assert data["rlm_max_steps"] == 32
 
     def test_create_chat_provider_with_invalid_profile(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "Bad CP",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "profile_id": "nonexistent",
             },
         )
@@ -492,12 +511,18 @@ class TestChatProviderProfileIntegration:
         assert "Profile not found" in resp.json()["error"]["message"]
 
     def test_list_chat_providers_resolves_profiles(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         client.post(
             "/api/chat-providers",
             json={
                 "name": "Resolved CP",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "profile_id": "builtin-accurate",
             },
         )

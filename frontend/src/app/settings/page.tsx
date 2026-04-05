@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { useTheme } from "next-themes";
 import { AppShell } from "@/components/shared/app-shell";
-import { ProviderCard } from "@/components/settings/provider-card";
+import { Badge } from "@/components/ui/badge";
 import { BudgetConfig } from "@/components/settings/budget-config";
 import { ProfileCard } from "@/components/settings/profile-card";
 import { SystemPromptEditor } from "@/components/settings/system-prompt-editor";
@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import {
   getConfig,
-  getProviders,
   getProfiles,
   createProfile,
   updateConfig,
@@ -31,16 +30,20 @@ import {
   createChatProvider,
   updateChatProvider,
   deleteChatProvider,
-  getProviderModels,
+  getLLMProviders,
+  createLLMProvider,
+  updateLLMProvider,
+  deleteLLMProvider,
+  testLLMProvider,
   type AppConfig,
-  type ProviderInfo,
-  type ModelInfo,
   type RunProfile,
   type ChatProviderConfig,
   type ChatProviderCreateRequest,
   type RAGConfig,
+  type LLMProviderConfig,
+  type LLMProviderCreateRequest,
 } from "@/lib/api";
-import { Plus, Edit2, Trash2, Upload, RefreshCw } from "lucide-react";
+import { Plus, Edit2, Trash2, Upload, Check, X, Wifi } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -59,14 +62,12 @@ export default function SettingsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<{
     name: string;
-    llm_provider: string;
-    llm_model: string;
+    llm_provider_id: string;
     profile_id: string;
     rag_config: RAGConfig;
   }>({
     name: "",
-    llm_provider: "",
-    llm_model: "",
+    llm_provider_id: "",
     profile_id: "",
     rag_config: {
       chunk_size: 512,
@@ -77,15 +78,37 @@ export default function SettingsPage() {
   });
   const [savingProvider, setSavingProvider] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [dynamicModels, setDynamicModels] = useState<ModelInfo[]>([]);
-  const [refreshingModels, setRefreshingModels] = useState(false);
+
+  // LLM Providers state
+  const [showLLMProviderForm, setShowLLMProviderForm] = useState(false);
+  const [editingLLMProviderId, setEditingLLMProviderId] = useState<string | null>(null);
+  const [llmProviderForm, setLLMProviderForm] = useState<{
+    name: string;
+    backend: string;
+    model: string;
+    api_key: string;
+    endpoint: string;
+  }>({
+    name: "",
+    backend: "openai",
+    model: "",
+    api_key: "",
+    endpoint: "",
+  });
+  const [savingLLMProvider, setSavingLLMProvider] = useState(false);
+  const [deletingLLMProviderId, setDeletingLLMProviderId] = useState<string | null>(null);
+  const [testingLLMProviderId, setTestingLLMProviderId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { connected: boolean; error?: string | null; latency_ms?: number | null }>>({});
 
   const { data: config, mutate: mutateConfig } = useSWR<AppConfig>("config", getConfig);
-  const { data: providers = [], mutate: mutateProviders } = useSWR<ProviderInfo[]>("providers", getProviders);
   const { data: profiles = [], mutate: mutateProfiles } = useSWR<RunProfile[]>("profiles", getProfiles);
   const { data: chatProviders = [], mutate: mutateChatProviders } = useSWR<ChatProviderConfig[]>(
     "chat-providers",
     getChatProviders
+  );
+  const { data: llmProviders = [], mutate: mutateLLMProviders } = useSWR<LLMProviderConfig[]>(
+    "llm-providers",
+    getLLMProviders
   );
 
   const handleSaveBudget = async (budget: AppConfig["budget"]) => {
@@ -99,11 +122,6 @@ export default function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleProviderSaved = () => {
-    mutateProviders();
-    mutateConfig();
   };
 
   const handleThemeChange = async (newTheme: string) => {
@@ -148,8 +166,7 @@ export default function SettingsPage() {
     setEditingId(provider.id);
     setFormData({
       name: provider.name,
-      llm_provider: provider.llm_provider,
-      llm_model: provider.llm_model,
+      llm_provider_id: provider.llm_provider_id,
       profile_id: provider.profile_id || "",
       rag_config: provider.rag_config || {
         chunk_size: 512,
@@ -161,7 +178,7 @@ export default function SettingsPage() {
   };
 
   const handleSaveChatProvider = async () => {
-    if (!formData.name.trim() || !formData.llm_provider || !formData.llm_model || !formData.profile_id) {
+    if (!formData.name.trim() || !formData.llm_provider_id || !formData.profile_id) {
       console.error("Missing required fields");
       return;
     }
@@ -171,8 +188,7 @@ export default function SettingsPage() {
       const selectedProfile = profiles.find((p) => p.id === formData.profile_id);
       const payload: ChatProviderCreateRequest = {
         name: formData.name,
-        llm_provider: formData.llm_provider,
-        llm_model: formData.llm_model,
+        llm_provider_id: formData.llm_provider_id,
         profile_id: formData.profile_id,
       };
 
@@ -251,47 +267,13 @@ export default function SettingsPage() {
     e.target.value = "";
   };
 
-  const fetchModelsForProvider = async (providerName: string) => {
-    if (!providerName) return;
-    setRefreshingModels(true);
-    try {
-      // Pass the provider's endpoint so local providers on non-default ports work
-      const providerInfo = providers.find((p) => p.name === providerName);
-      const models = await getProviderModels(
-        providerName,
-        providerInfo?.default_endpoint ?? undefined,
-      );
-      setDynamicModels(models);
-    } catch (err) {
-      console.error("Failed to fetch models:", err);
-    } finally {
-      setRefreshingModels(false);
-    }
-  };
-
-  const handleRefreshModels = () => fetchModelsForProvider(formData.llm_provider);
-
-  // Auto-fetch models when a provider is selected that has no static model list
-  // (local providers like Ollama/LMStudio whose models vary per installation).
-  useEffect(() => {
-    if (!formData.llm_provider || providers.length === 0) return;
-    const providerInfo = providers.find((p) => p.name === formData.llm_provider);
-    if (!providerInfo) return;
-    // Auto-fetch for local providers (no API key) or providers with no static models
-    if (!providerInfo.requires_api_key || providerInfo.models.length === 0) {
-      fetchModelsForProvider(formData.llm_provider);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.llm_provider, providers.length]);
-
   // Resolve the selected profile for the form
   const selectedProfile = profiles.find((p) => p.id === formData.profile_id);
 
   const resetForm = () => {
     setFormData({
       name: "",
-      llm_provider: "",
-      llm_model: "",
+      llm_provider_id: "",
       profile_id: "",
       rag_config: {
         chunk_size: 512,
@@ -300,7 +282,101 @@ export default function SettingsPage() {
         embedding_model: "text-embedding-3-small",
       },
     });
-    setDynamicModels([]);
+  };
+
+  const resetLLMProviderForm = () => {
+    setLLMProviderForm({ name: "", backend: "openai", model: "", api_key: "", endpoint: "" });
+    setEditingLLMProviderId(null);
+  };
+
+  const handleEditLLMProvider = (lp: LLMProviderConfig) => {
+    setEditingLLMProviderId(lp.id);
+    setLLMProviderForm({
+      name: lp.name,
+      backend: lp.backend,
+      model: lp.model,
+      api_key: "",
+      endpoint: lp.endpoint || "",
+    });
+    setShowLLMProviderForm(true);
+  };
+
+  const handleSaveLLMProvider = async () => {
+    if (!llmProviderForm.name.trim() || !llmProviderForm.model.trim()) return;
+    setSavingLLMProvider(true);
+    try {
+      const req: LLMProviderCreateRequest = {
+        name: llmProviderForm.name.trim(),
+        backend: llmProviderForm.backend,
+        model: llmProviderForm.model.trim(),
+        api_key: llmProviderForm.api_key.trim() || null,
+        endpoint: llmProviderForm.endpoint.trim() || null,
+      };
+      if (editingLLMProviderId) {
+        await updateLLMProvider(editingLLMProviderId, req);
+      } else {
+        await createLLMProvider(req);
+      }
+      setShowLLMProviderForm(false);
+      resetLLMProviderForm();
+      mutateLLMProviders();
+      toast.success(editingLLMProviderId ? "LLM Provider updated" : "LLM Provider created");
+    } catch (err) {
+      console.error("Failed to save LLM provider:", err);
+      toast.error("Failed to save LLM Provider");
+    } finally {
+      setSavingLLMProvider(false);
+    }
+  };
+
+  const handleDeleteLLMProvider = async (id: string) => {
+    if (!confirm("Delete this LLM Provider? Any Chat Providers referencing it will stop working.")) return;
+    setDeletingLLMProviderId(id);
+    try {
+      await deleteLLMProvider(id);
+      mutateLLMProviders();
+    } catch (err) {
+      console.error("Failed to delete LLM provider:", err);
+      toast.error("Failed to delete LLM Provider");
+    } finally {
+      setDeletingLLMProviderId(null);
+    }
+  };
+
+  const handleTestLLMProvider = async (id: string) => {
+    setTestingLLMProviderId(id);
+    try {
+      const result = await testLLMProvider(id);
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { connected: result.connected, error: result.error, latency_ms: result.latency_ms },
+      }));
+      mutateLLMProviders();
+    } catch (err) {
+      console.error("Test failed:", err);
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { connected: false, error: String(err) },
+      }));
+    } finally {
+      setTestingLLMProviderId(null);
+    }
+  };
+
+  const LOCAL_BACKENDS = ["ollama", "lmstudio"];
+  const CLOUD_BACKENDS = ["openai", "anthropic"];
+  const BACKEND_LABELS: Record<string, string> = {
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    ollama: "Ollama",
+    lmstudio: "LM Studio",
+  };
+
+  const STATUS_COLORS: Record<string, string> = {
+    connected: "bg-emerald-500",
+    configured: "bg-amber-500",
+    offline: "bg-gray-400",
+    not_configured: "bg-gray-400",
   };
 
   return (
@@ -308,9 +384,9 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-[1200px] space-y-6 p-6">
         <h2 className="text-2xl font-semibold">Settings</h2>
 
-        <Tabs defaultValue="providers">
+        <Tabs defaultValue="llm-providers">
           <TabsList>
-            <TabsTrigger value="providers">Providers</TabsTrigger>
+            <TabsTrigger value="llm-providers">LLM Providers</TabsTrigger>
             <TabsTrigger value="chat-providers">Chat Providers</TabsTrigger>
             <TabsTrigger value="budget">Budget</TabsTrigger>
             <TabsTrigger value="profiles">Profiles</TabsTrigger>
@@ -318,24 +394,182 @@ export default function SettingsPage() {
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="providers" className="space-y-4">
-            {providers.map((p) => {
-              const savedConfig = config?.provider_configs?.find(
-                (pc) => pc.provider === p.name,
-              );
+          <TabsContent value="llm-providers" className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-muted-foreground">Named LLM Provider instances</h3>
+              {!showLLMProviderForm && (
+                <Button
+                  size="sm"
+                  onClick={() => { resetLLMProviderForm(); setShowLLMProviderForm(true); }}
+                >
+                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Add LLM Provider
+                </Button>
+              )}
+            </div>
+
+            {showLLMProviderForm && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {editingLLMProviderId ? "Edit LLM Provider" : "Add LLM Provider"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="llmp-name">Name</Label>
+                    <Input
+                      id="llmp-name"
+                      placeholder="e.g., My GPT-4o"
+                      value={llmProviderForm.name}
+                      onChange={(e) => setLLMProviderForm({ ...llmProviderForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="llmp-backend">Backend</Label>
+                    <Select
+                      value={llmProviderForm.backend}
+                      onValueChange={(v) => setLLMProviderForm({ ...llmProviderForm, backend: v, model: "", endpoint: "" })}
+                      disabled={!!editingLLMProviderId}
+                    >
+                      <SelectTrigger id="llmp-backend">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="openai">OpenAI</SelectItem>
+                        <SelectItem value="anthropic">Anthropic</SelectItem>
+                        <SelectItem value="ollama">Ollama</SelectItem>
+                        <SelectItem value="lmstudio">LM Studio</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="llmp-model">Model</Label>
+                    <Input
+                      id="llmp-model"
+                      placeholder={
+                        llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
+                        llmProviderForm.backend === "anthropic" ? "e.g., claude-3-5-sonnet-20241022" :
+                        "e.g., llama3.2"
+                      }
+                      value={llmProviderForm.model}
+                      onChange={(e) => setLLMProviderForm({ ...llmProviderForm, model: e.target.value })}
+                    />
+                  </div>
+                  {LOCAL_BACKENDS.includes(llmProviderForm.backend) && (
+                    <div className="space-y-2">
+                      <Label htmlFor="llmp-endpoint">Endpoint</Label>
+                      <Input
+                        id="llmp-endpoint"
+                        placeholder={llmProviderForm.backend === "ollama" ? "http://localhost:11434" : "http://localhost:1234"}
+                        value={llmProviderForm.endpoint}
+                        onChange={(e) => setLLMProviderForm({ ...llmProviderForm, endpoint: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  {CLOUD_BACKENDS.includes(llmProviderForm.backend) && (
+                    <div className="space-y-2">
+                      <Label htmlFor="llmp-apikey">API Key</Label>
+                      <Input
+                        id="llmp-apikey"
+                        type="password"
+                        placeholder="sk-..."
+                        value={llmProviderForm.api_key}
+                        onChange={(e) => setLLMProviderForm({ ...llmProviderForm, api_key: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleSaveLLMProvider}
+                      disabled={savingLLMProvider || !llmProviderForm.name.trim() || !llmProviderForm.model.trim()}
+                    >
+                      {editingLLMProviderId ? "Save" : "Create"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => { setShowLLMProviderForm(false); resetLLMProviderForm(); }}
+                      disabled={savingLLMProvider}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {llmProviders.map((lp) => {
+              const testResult = testResults[lp.id];
+              const statusColor = STATUS_COLORS[lp.status] || "bg-gray-400";
               return (
-                <ProviderCard
-                  key={p.name}
-                  provider={p}
-                  savedConfig={savedConfig}
-                  onProviderSaved={handleProviderSaved}
-                />
+                <Card key={lp.id}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base">{lp.name}</CardTitle>
+                          <span
+                            className={cn("inline-block h-2 w-2 rounded-full", statusColor)}
+                            title={lp.status}
+                          />
+                          <Badge variant="secondary" className="text-xs capitalize">
+                            {lp.status.replace("_", " ")}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
+                          {lp.endpoint && <> &middot; {lp.endpoint}</>}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTestLLMProvider(lp.id)}
+                          disabled={testingLLMProviderId === lp.id}
+                        >
+                          <Wifi className="mr-1 h-3 w-3" aria-hidden="true" />
+                          {testingLLMProviderId === lp.id ? "Testing..." : "Test"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleEditLLMProvider(lp)}
+                          disabled={showLLMProviderForm && editingLLMProviderId === lp.id}
+                        >
+                          <Edit2 className="h-4 w-4" aria-hidden="true" />
+                          <span className="sr-only">Edit</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteLLMProvider(lp.id)}
+                          disabled={deletingLLMProviderId === lp.id}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  {testResult && (
+                    <CardContent className="pt-0 pb-3">
+                      <div className={cn("flex items-center gap-2 text-xs", testResult.connected ? "text-emerald-600" : "text-destructive")}>
+                        {testResult.connected
+                          ? <><Check className="h-3 w-3" /> Connected{testResult.latency_ms != null && ` (${testResult.latency_ms}ms)`}</>
+                          : <><X className="h-3 w-3" /> {testResult.error || "Connection failed"}</>
+                        }
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
               );
             })}
-            {providers.length === 0 && (
+
+            {llmProviders.length === 0 && !showLLMProviderForm && (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground">
-                  No providers available. Start the backend server first.
+                  No LLM Providers configured yet. Add one to get started.
                 </CardContent>
               </Card>
             )}
@@ -370,7 +604,7 @@ export default function SettingsPage() {
                     <SelectItem value="__none__">None (judging disabled)</SelectItem>
                     {chatProviders.map((cp) => (
                       <SelectItem key={cp.id} value={cp.id}>
-                        {cp.name} ({cp.llm_provider}/{cp.llm_model})
+                        {cp.name} ({cp.llm_provider_name || cp.llm_provider_id})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -410,56 +644,25 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="cp-provider">LLM Provider</Label>
-                    <Select value={formData.llm_provider} onValueChange={(value) => {
-                      setFormData({ ...formData, llm_provider: value, llm_model: "" }); setDynamicModels([]);
-                    }}>
-                      <SelectTrigger id="cp-provider">
-                        <SelectValue placeholder="Select a provider" />
+                    <Label htmlFor="cp-llm-provider">LLM Provider</Label>
+                    <Select
+                      value={formData.llm_provider_id}
+                      onValueChange={(value) => setFormData({ ...formData, llm_provider_id: value })}
+                    >
+                      <SelectTrigger id="cp-llm-provider">
+                        <SelectValue placeholder="Select an LLM Provider" />
                       </SelectTrigger>
                       <SelectContent>
-                        {providers.map((p) => (
-                          <SelectItem key={p.name} value={p.name}>
-                            {p.display_name}
+                        {llmProviders.map((lp) => (
+                          <SelectItem key={lp.id} value={lp.id}>
+                            <span>{lp.name}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="cp-model">Model</Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={formData.llm_model}
-                        onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
-                        disabled={!formData.llm_provider}
-                      >
-                        <SelectTrigger id="cp-model" className="flex-1">
-                          <SelectValue placeholder="Select a model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(dynamicModels.length > 0
-                            ? dynamicModels
-                            : providers.find((p) => p.name === formData.llm_provider)?.models ?? []
-                          ).map((m) => (
-                            <SelectItem key={m.name} value={m.name}>
-                              {m.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        disabled={!formData.llm_provider || refreshingModels}
-                        onClick={handleRefreshModels}
-                        aria-label="Refresh models from provider API"
-                      >
-                        <RefreshCw className={cn("h-4 w-4", refreshingModels && "animate-spin")} aria-hidden="true" />
-                      </Button>
-                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -583,8 +786,7 @@ export default function SettingsPage() {
                       disabled={
                         savingProvider ||
                         !formData.name.trim() ||
-                        !formData.llm_provider ||
-                        !formData.llm_model ||
+                        !formData.llm_provider_id ||
                         !formData.profile_id
                       }
                     >
@@ -617,7 +819,7 @@ export default function SettingsPage() {
                     <div className="space-y-1">
                       <CardTitle className="text-base">{provider.name}</CardTitle>
                       <p className="text-sm text-muted-foreground">
-                        {provider.llm_provider} · {provider.llm_model}
+                        {provider.llm_provider_name || provider.llm_provider_id}
                         {providerProfile && ` · ${providerProfile.name}`}
                       </p>
                     </div>
@@ -651,6 +853,7 @@ export default function SettingsPage() {
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                       <span>Temp: {provider.runtime_settings.temperature}</span>
                       <span>Max tokens: {provider.runtime_settings.max_output_tokens}</span>
+                      <span>Timeout: {provider.runtime_settings.timeout_seconds}s</span>
                       {provider.execution_mode === "rlm" && <span>Steps: {provider.rlm_max_steps}</span>}
                       {provider.execution_mode === "rag" && provider.rag_config && (
                         <span>Top K: {provider.rag_config.top_k}</span>
@@ -668,54 +871,23 @@ export default function SettingsPage() {
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor={`edit-cp-provider-${provider.id}`}>LLM Provider</Label>
-                        <Select value={formData.llm_provider} onValueChange={(value) => {
-                          setFormData({ ...formData, llm_provider: value, llm_model: "" }); setDynamicModels([]);
-                        }}>
-                          <SelectTrigger id={`edit-cp-provider-${provider.id}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {providers.map((p) => (
-                              <SelectItem key={p.name} value={p.name}>{p.display_name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor={`edit-cp-model-${provider.id}`}>Model</Label>
-                        <div className="flex gap-2">
-                          <Select
-                            value={formData.llm_model}
-                            onValueChange={(value) => setFormData({ ...formData, llm_model: value })}
-                            disabled={!formData.llm_provider}
-                          >
-                            <SelectTrigger id={`edit-cp-model-${provider.id}`} className="flex-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {(dynamicModels.length > 0
-                                ? dynamicModels
-                                : providers.find((p) => p.name === formData.llm_provider)?.models ?? []
-                              ).map((m) => (
-                                <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            disabled={!formData.llm_provider || refreshingModels}
-                            onClick={handleRefreshModels}
-                            aria-label="Refresh models from provider API"
-                          >
-                            <RefreshCw className={cn("h-4 w-4", refreshingModels && "animate-spin")} aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`edit-cp-llm-provider-${provider.id}`}>LLM Provider</Label>
+                      <Select
+                        value={formData.llm_provider_id}
+                        onValueChange={(value) => setFormData({ ...formData, llm_provider_id: value })}
+                      >
+                        <SelectTrigger id={`edit-cp-llm-provider-${provider.id}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {llmProviders.map((lp) => (
+                            <SelectItem key={lp.id} value={lp.id}>
+                              {lp.name} &middot; {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor={`edit-cp-profile-${provider.id}`}>Profile</Label>
@@ -780,7 +952,7 @@ export default function SettingsPage() {
                     )}
                     <div className="flex gap-2">
                       <Button size="sm" onClick={handleSaveChatProvider}
-                        disabled={savingProvider || !formData.name.trim() || !formData.llm_provider || !formData.llm_model || !formData.profile_id}
+                        disabled={savingProvider || !formData.name.trim() || !formData.llm_provider_id || !formData.profile_id}
                       >
                         {savingProvider ? "Saving..." : "Save"}
                       </Button>
@@ -897,11 +1069,6 @@ export default function SettingsPage() {
                 key={profile.id}
                 profile={profile}
                 chatProviders={chatProviders}
-                isActive={config?.active_profile_id === profile.id}
-                onActivated={() => {
-                  mutateConfig();
-                  mutateProfiles();
-                }}
                 onDeleted={() => mutateProfiles()}
                 onUpdated={() => {
                   mutateProfiles();

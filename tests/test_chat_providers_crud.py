@@ -3,7 +3,7 @@
 Verifies all acceptance criteria from specs/01-backend-models-crud.md:
   1. GET /api/chat-providers returns [] on fresh install (after reset_state)
   2. POST /api/chat-providers creates/persists; rejects duplicates (409) and
-     invalid provider keys (400)
+     invalid llm_provider_id (400)
   3. PUT /api/chat-providers/{id} updates fields; validates name uniqueness (409);
      returns 404 for missing ID
   4. DELETE /api/chat-providers/{id} removes; returns 404 for missing; 204 on success
@@ -72,16 +72,30 @@ def valid_model(valid_provider_key: str) -> str:
 
 
 @pytest.fixture
-def created_provider(
+def created_llm_provider(
     client: TestClient, valid_provider_key: str, valid_model: str
 ) -> dict[str, Any]:
+    """Create one LLM Provider via the API and return the response JSON."""
+    resp = client.post(
+        "/api/llm-providers",
+        json={
+            "name": "TEST-LLM-PROVIDER",
+            "backend": valid_provider_key,
+            "model": valid_model,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()  # type: ignore[no-any-return]
+
+
+@pytest.fixture
+def created_provider(client: TestClient, created_llm_provider: dict[str, Any]) -> dict[str, Any]:
     """Create one Chat Provider via the API and return the response JSON."""
     resp = client.post(
         "/api/chat-providers",
         json={
             "name": "TEST-PROVIDER",
-            "llm_provider": valid_provider_key,
-            "llm_model": valid_model,
+            "llm_provider_id": created_llm_provider["id"],
             "execution_mode": "direct",
         },
     )
@@ -113,47 +127,43 @@ class TestListEmpty:
 
 class TestCreateChatProvider:
     def test_creates_with_201(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "MY-PROVIDER",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
         assert resp.status_code == 201, resp.text
 
     def test_response_contains_required_fields(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "MY-PROVIDER",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
         data = resp.json()
         assert "id" in data
         assert data["name"] == "MY-PROVIDER"
-        assert data["llm_provider"] == valid_provider_key
-        assert data["llm_model"] == valid_model
+        assert data["llm_provider_id"] == created_llm_provider["id"]
         assert data["execution_mode"] == "direct"
 
     def test_assigns_uuid_id(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "UUID-CHECK",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
@@ -162,15 +172,14 @@ class TestCreateChatProvider:
         uuid.UUID(data["id"])
 
     def test_persists_in_state(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """Created provider must be retrievable from state without another POST."""
         client.post(
             "/api/chat-providers",
             json={
                 "name": "PERSIST-CHECK",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
@@ -188,13 +197,12 @@ class TestCreateChatProvider:
         assert created_provider["id"] in ids
 
     def test_duplicate_name_returns_409(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """Second POST with same name must return 409 CONFLICT."""
         payload = {
             "name": "DUPLICATE",
-            "llm_provider": valid_provider_key,
-            "llm_model": valid_model,
+            "llm_provider_id": created_llm_provider["id"],
             "execution_mode": "direct",
         }
         client.post("/api/chat-providers", json=payload)
@@ -202,15 +210,14 @@ class TestCreateChatProvider:
         assert resp.status_code == 409, resp.text
 
     def test_duplicate_name_case_insensitive(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """Name uniqueness check must be case-insensitive."""
         client.post(
             "/api/chat-providers",
             json={
                 "name": "MyProvider",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
@@ -218,28 +225,26 @@ class TestCreateChatProvider:
             "/api/chat-providers",
             json={
                 "name": "myprovider",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
         assert resp.status_code == 409, resp.text
 
-    def test_invalid_provider_key_returns_400(self, client: TestClient) -> None:
-        """Unknown llm_provider must return 400."""
+    def test_invalid_llm_provider_id_returns_400(self, client: TestClient) -> None:
+        """Non-existent llm_provider_id must return 400."""
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "BAD-PROVIDER",
-                "llm_provider": "not-a-real-provider-xyz",
-                "llm_model": "some-model",
+                "llm_provider_id": str(uuid.uuid4()),
                 "execution_mode": "direct",
             },
         )
         assert resp.status_code == 400, resp.text
 
     def test_all_execution_modes_accepted(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """All three execution modes must be accepted."""
         for mode in ("direct", "rlm", "rag"):
@@ -247,22 +252,20 @@ class TestCreateChatProvider:
                 "/api/chat-providers",
                 json={
                     "name": f"PROVIDER-{mode.upper()}",
-                    "llm_provider": valid_provider_key,
-                    "llm_model": valid_model,
+                    "llm_provider_id": created_llm_provider["id"],
                     "execution_mode": mode,
                 },
             )
             assert resp.status_code == 201, f"mode={mode}: {resp.text}"
 
     def test_timestamps_set_on_create(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "TIMESTAMP-CHECK",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
@@ -286,20 +289,30 @@ class TestUpdateChatProvider:
         assert resp.status_code == 200, resp.text
         assert resp.json()["name"] == "RENAMED"
 
-    def test_update_model(
-        self, client: TestClient, created_provider: dict[str, Any], valid_provider_key: str
+    def test_update_llm_provider_id(
+        self,
+        client: TestClient,
+        created_provider: dict[str, Any],
+        valid_provider_key: str,
     ) -> None:
-        cp_id = created_provider["id"]
+        """Switching to a different LLM Provider by ID must succeed."""
+        # Create a second LLM Provider
         entry = PROVIDERS_BY_KEY[valid_provider_key]
-        if len(entry.models) < 2:
-            pytest.skip("Not enough models in catalog to test model update")
-        new_model = entry.models[1].name
+        model2 = entry.models[1].name if len(entry.models) >= 2 else "gpt-4o-mini"
+        lp2_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "Second LLM Provider", "backend": valid_provider_key, "model": model2},
+        )
+        assert lp2_resp.status_code == 201
+        lp2_id = lp2_resp.json()["id"]
+
+        cp_id = created_provider["id"]
         resp = client.put(
             f"/api/chat-providers/{cp_id}",
-            json={"llm_model": new_model},
+            json={"llm_provider_id": lp2_id},
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["llm_model"] == new_model
+        assert resp.json()["llm_provider_id"] == lp2_id
 
     def test_update_execution_mode(
         self, client: TestClient, created_provider: dict[str, Any]
@@ -311,19 +324,6 @@ class TestUpdateChatProvider:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["execution_mode"] == "rlm"
-
-    def test_update_runtime_settings(
-        self, client: TestClient, created_provider: dict[str, Any]
-    ) -> None:
-        cp_id = created_provider["id"]
-        resp = client.put(
-            f"/api/chat-providers/{cp_id}",
-            json={"runtime_settings": {"temperature": 0.2, "max_output_tokens": 1024}},
-        )
-        assert resp.status_code == 200, resp.text
-        rt = resp.json()["runtime_settings"]
-        assert rt["temperature"] == 0.2
-        assert rt["max_output_tokens"] == 1024
 
     def test_update_updates_timestamp(
         self, client: TestClient, created_provider: dict[str, Any]
@@ -345,15 +345,14 @@ class TestUpdateChatProvider:
         assert resp.status_code == 404, resp.text
 
     def test_update_name_to_duplicate_returns_409(
-        self, client: TestClient, valid_provider_key: str, valid_model: str
+        self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """Renaming to an already-used name must return 409."""
         client.post(
             "/api/chat-providers",
             json={
                 "name": "FIRST",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )
@@ -361,8 +360,7 @@ class TestUpdateChatProvider:
             "/api/chat-providers",
             json={
                 "name": "SECOND",
-                "llm_provider": valid_provider_key,
-                "llm_model": valid_model,
+                "llm_provider_id": created_llm_provider["id"],
                 "execution_mode": "direct",
             },
         )

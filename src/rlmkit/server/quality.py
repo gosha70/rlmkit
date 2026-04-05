@@ -244,8 +244,14 @@ class QualityEngine:
                 f"{_MIN_JUDGE_SCORES} judge score to recommend"
             )
 
-        best = max(scores.values(), key=lambda s: s.combined_score)
-        if best.combined_score <= 0:
+        # Primary key: judge_avg_score (explicit quality signal).
+        # Providers without a judge score sort below those with one.
+        # Secondary key: combined_score (speed/cost tiebreaker).
+        def _sort_key(s: ProviderQualityScore) -> tuple[float, float]:
+            return (s.judge_avg_score if s.judge_avg_score is not None else -1.0, s.combined_score)
+
+        best = max(scores.values(), key=_sort_key)
+        if best.combined_score <= 0 and best.judge_avg_score is None:
             return None, "No positive quality signals yet"
 
         parts: list[str] = []

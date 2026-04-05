@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { type ChatProviderConfig, type ProviderInfo } from "@/lib/api";
+import { type ChatProviderConfig, type LLMProviderConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface ChatProviderSelectorProps {
   chatProviders: ChatProviderConfig[];
-  providers: ProviderInfo[];
+  llmProviders: LLMProviderConfig[];
   selectedIds: string[];
   onSelectionChange: (ids: string[]) => void;
   orderedIds?: string[];
@@ -22,7 +22,7 @@ const MODE_BADGES: Record<string, string> = {
 
 export function ChatProviderSelector({
   chatProviders,
-  providers,
+  llmProviders,
   selectedIds,
   onSelectionChange,
   orderedIds,
@@ -31,16 +31,13 @@ export function ChatProviderSelector({
 }: ChatProviderSelectorProps) {
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
-  // Create a map of provider names to their info for quick lookup
-  const providerMap = new Map(providers.map((p) => [p.name, p]));
+  // Create a map of LLM provider IDs to their info for quick lookup
+  const llmProviderMap = new Map(llmProviders.map((p) => [p.id, p]));
 
   // Filter chat providers to only show those with connected or configured underlying LLM providers
   const availableChatProviders = chatProviders.filter((cp) => {
-    const providerInfo = providerMap.get(cp.llm_provider);
-    return (
-      providerInfo &&
-      (providerInfo.status === "connected" || providerInfo.status === "configured")
-    );
+    const lp = llmProviderMap.get(cp.llm_provider_id);
+    return lp && (lp.status === "connected" || lp.status === "configured");
   });
 
   // Sort by orderedIds if provided
@@ -54,11 +51,11 @@ export function ChatProviderSelector({
     : availableChatProviders;
 
   // Get status and badge for a provider
-  const getProviderStatus = (llmProviderName: string) => {
-    const providerInfo = providerMap.get(llmProviderName);
-    if (!providerInfo) return { status: "unavailable", color: "bg-gray-400" };
-    if (providerInfo.status === "connected") return { status: "connected", color: "bg-emerald-500" };
-    if (providerInfo.status === "configured") return { status: "configured", color: "bg-amber-500" };
+  const getProviderStatus = (llmProviderId: string) => {
+    const lp = llmProviderMap.get(llmProviderId);
+    if (!lp) return { status: "unavailable", color: "bg-gray-400" };
+    if (lp.status === "connected") return { status: "connected", color: "bg-emerald-500" };
+    if (lp.status === "configured") return { status: "configured", color: "bg-amber-500" };
     return { status: "unavailable", color: "bg-gray-400" };
   };
 
@@ -133,7 +130,7 @@ export function ChatProviderSelector({
       )}
       {sortedProviders.map((cp) => {
         const isSelected = selectedIds.includes(cp.id);
-        const { status, color } = getProviderStatus(cp.llm_provider);
+        const { status, color } = getProviderStatus(cp.llm_provider_id);
         const modeBadge = MODE_BADGES[cp.execution_mode] || "?";
         const isDragOver = dragOverId === cp.id;
 

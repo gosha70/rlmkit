@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import useSWR from "swr";
-import { Hash, DollarSign, Clock, Activity } from "lucide-react";
+import useSWR, { useSWRConfig } from "swr";
+import { Hash, DollarSign, Clock, Activity, Star, ThumbsUp, ThumbsDown, Trophy, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/shared/app-shell";
 import { MetricCard } from "@/components/metrics/metric-card";
 import { ComparisonChart } from "@/components/metrics/comparison-chart";
@@ -15,11 +15,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getSessions, getMetrics, type SessionSummary, type MetricsResponse } from "@/lib/api";
+import { getSessions, getMetrics, getEvaluationSummary, getSessionEvaluations, resetSessionEvaluations, type SessionSummary, type MetricsResponse, type EvaluationSummaryResponse, type SessionEvaluations } from "@/lib/api";
+import { JudgeDimensionsChart } from "@/components/metrics/judge-dimensions-chart";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { mutate } = useSWRConfig();
   const [selectedSession, setSelectedSession] = useState<string>("");
+  const [isResetting, setIsResetting] = useState(false);
 
   const { data: sessions = [] } = useSWR<SessionSummary[]>("sessions", () => getSessions());
   // Auto-select the most recent session when none is chosen
@@ -28,6 +31,32 @@ export default function DashboardPage() {
   const { data: metrics, isLoading } = useSWR<MetricsResponse>(
     effectiveSession ? `metrics-${effectiveSession}` : null,
     () => getMetrics(effectiveSession),
+  );
+
+  const { data: evalSummary } = useSWR<EvaluationSummaryResponse>(
+    effectiveSession ? `eval-summary-${effectiveSession}` : null,
+    () => getEvaluationSummary(effectiveSession),
+  );
+
+  const { data: evalDetail } = useSWR<SessionEvaluations>(
+    effectiveSession ? `eval-detail-${effectiveSession}` : null,
+    () => getSessionEvaluations(effectiveSession),
+  );
+
+  const handleResetEvaluations = useCallback(async () => {
+    if (!effectiveSession) return;
+    setIsResetting(true);
+    try {
+      await resetSessionEvaluations(effectiveSession);
+      await mutate(`eval-summary-${effectiveSession}`);
+      await mutate(`eval-detail-${effectiveSession}`);
+    } finally {
+      setIsResetting(false);
+    }
+  }, [effectiveSession, mutate]);
+
+  const providerNames = Object.fromEntries(
+    Object.values(evalSummary?.by_chat_provider ?? {}).map((p) => [p.chat_provider_id, p.chat_provider_name]),
   );
 
   const summary = metrics?.summary;
@@ -155,6 +184,97 @@ export default function DashboardPage() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Judge Dimensions Chart */}
+        {evalDetail && evalDetail.judge_scores.length > 0 && (
+          <JudgeDimensionsChart
+            judgeScores={evalDetail.judge_scores}
+            providerNames={providerNames}
+          />
+        )}
+
+        {/* Judge Quality Scores */}
+        {evalSummary && Object.keys(evalSummary.by_chat_provider).length > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Star className="h-4 w-4" />
+                Judge Quality Scores
+              </CardTitle>
+              <button
+                onClick={handleResetEvaluations}
+                disabled={isResetting}
+                className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                title="Reset all evaluations for this session"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {isResetting ? "Resetting…" : "Reset"}
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {evalSummary.recommendation && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950">
+                  <Trophy className="h-4 w-4 text-amber-500" />
+                  <span className="font-medium">Recommendation:</span>
+                  <span className="text-muted-foreground">{evalSummary.recommendation_reason}</span>
+                </div>
+              )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Provider</TableHead>
+                    <TableHead className="text-right">Judge Score</TableHead>
+                    <TableHead className="text-right">Quality Bar</TableHead>
+                    <TableHead className="text-right">
+                      <ThumbsUp className="ml-auto h-3.5 w-3.5" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <ThumbsDown className="ml-auto h-3.5 w-3.5" />
+                    </TableHead>
+                    <TableHead className="text-right">Best Picks</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {Object.values(evalSummary.by_chat_provider).map((p) => {
+                    const isRecommended = p.chat_provider_id === evalSummary.recommendation;
+                    const score = p.judge_avg_score;
+                    const pct = score != null ? (score / 5) * 100 : null;
+                    return (
+                      <TableRow key={p.chat_provider_id}>
+                        <TableCell className="font-medium">
+                          {p.chat_provider_name}
+                          {isRecommended && (
+                            <Badge variant="outline" className="ml-2 border-amber-400 text-amber-600 text-xs">
+                              Best
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {score != null ? `${score.toFixed(2)} / 5` : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {pct != null ? (
+                            <div className="ml-auto h-2 w-24 rounded-full bg-muted">
+                              <div
+                                className="h-2 rounded-full bg-amber-400"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{p.thumb_up}</TableCell>
+                        <TableCell className="text-right tabular-nums">{p.thumb_down}</TableCell>
+                        <TableCell className="text-right tabular-nums">{p.best_picks}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>

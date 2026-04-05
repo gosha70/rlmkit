@@ -103,7 +103,7 @@ class JudgeService:
             created_at=datetime.now(timezone.utc),
         )
 
-        self.state.evaluations["judge_scores"].append(score.model_dump())
+        self.state.evaluations["judge_scores"].append(score.model_dump(mode="json"))
         self.state.save_evaluations()
         return score
 
@@ -161,6 +161,6 @@ class JudgeService:
             created_at=datetime.now(timezone.utc),
         )
 
-        self.state.evaluations["judge_pairwise"].append(result.model_dump())
+        self.state.evaluations["judge_pairwise"].append(result.model_dump(mode="json"))
         self.state.save_evaluations()
         return result

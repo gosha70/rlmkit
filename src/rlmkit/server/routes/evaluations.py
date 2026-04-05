@@ -95,7 +95,7 @@ async def submit_best_pick(
 async def get_session_evaluations(
     session_id: str,
     state: AppState = Depends(get_state),
-) -> dict[str, list[dict[str, str]]]:
+) -> dict[str, list[dict]]:
     """Get all evaluations for a session."""
     return {
         "thumb_ratings": [
@@ -109,6 +109,19 @@ async def get_session_evaluations(
             p for p in state.evaluations["judge_pairwise"] if p["session_id"] == session_id
         ],
     }
+
+
+@router.delete("/{session_id}", status_code=204)
+async def reset_session_evaluations(
+    session_id: str,
+    state: AppState = Depends(get_state),
+) -> None:
+    """Delete all evaluations (ratings, picks, judge scores) for a session."""
+    for key in ("thumb_ratings", "best_picks", "judge_scores", "judge_pairwise"):
+        state.evaluations[key] = [
+            e for e in state.evaluations[key] if e["session_id"] != session_id
+        ]
+    state.save_evaluations()
 
 
 @router.get("/{session_id}/summary")
@@ -148,7 +161,7 @@ async def get_recommendation(
 async def trigger_judge(
     req: JudgeRequest,
     state: AppState = Depends(get_state),
-) -> dict[str, list[dict[str, str]]]:
+) -> dict[str, list[dict]]:
     """Trigger LLM-as-Judge scoring for the given execution_ids."""
     from rlmkit.server.judge import JudgeService
 
@@ -157,14 +170,14 @@ async def trigger_judge(
 
     service = JudgeService(state)
 
-    pointwise_results: list[dict[str, str]] = []
-    pairwise_results: list[dict[str, str]] = []
+    pointwise_results: list[dict] = []
+    pairwise_results: list[dict] = []
 
     if req.mode in ("pointwise", "both"):
         for eid in req.execution_ids:
             try:
                 score = await service.score_pointwise(eid)
-                pointwise_results.append(score.model_dump())  # type: ignore[union-attr]
+                pointwise_results.append(score.model_dump(mode="json"))
             except Exception as exc:
                 logger.warning("Pointwise judge failed for %s: %s", eid, exc)
 
@@ -175,7 +188,7 @@ async def trigger_judge(
             for j in range(i + 1, len(ids)):
                 try:
                     result = await service.compare_pairwise(ids[i], ids[j])
-                    pairwise_results.append(result.model_dump())  # type: ignore[union-attr]
+                    pairwise_results.append(result.model_dump(mode="json"))
                 except Exception as exc:
                     logger.warning("Pairwise judge failed for %s vs %s: %s", ids[i], ids[j], exc)
 

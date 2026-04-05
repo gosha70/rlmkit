@@ -854,12 +854,18 @@ class TestNumRetriesModel:
         assert resp.status_code == 202
 
     def test_chat_provider_create_accepts_num_retries(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "Ollama llama3.2", "backend": "ollama", "model": "llama3.2"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "no-retry-provider",
-                "llm_provider": "ollama",
-                "llm_model": "llama3.2",
+                "llm_provider_id": lp_id,
                 "num_retries": 0,
             },
         )
@@ -868,9 +874,16 @@ class TestNumRetriesModel:
         assert data["num_retries"] == 0
 
     def test_chat_provider_update_accepts_num_retries(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         create_resp = client.post(
             "/api/chat-providers",
-            json={"name": "updatable", "llm_provider": "openai", "llm_model": "gpt-4o"},
+            json={"name": "updatable", "llm_provider_id": lp_id},
         )
         assert create_resp.status_code == 201
         cp_id = create_resp.json()["id"]
@@ -881,13 +894,19 @@ class TestNumRetriesModel:
 
     def test_chat_provider_num_retries_cleared_with_explicit_null(self, client: TestClient) -> None:
         """Sending num_retries=null explicitly resets the override to None (automatic defaults)."""
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         # Create with an override
         create_resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "clearable",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "num_retries": 5,
             },
         )
@@ -904,12 +923,18 @@ class TestNumRetriesModel:
         self, client: TestClient
     ) -> None:
         """Omitting num_retries from the update body leaves the stored value untouched."""
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         create_resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "sticky",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "num_retries": 3,
             },
         )
@@ -917,7 +942,7 @@ class TestNumRetriesModel:
         cp_id = create_resp.json()["id"]
 
         # Update an unrelated field — num_retries must stay at 3
-        update_resp = client.put(f"/api/chat-providers/{cp_id}", json={"llm_model": "gpt-4o-mini"})
+        update_resp = client.put(f"/api/chat-providers/{cp_id}", json={"execution_mode": "direct"})
         assert update_resp.status_code == 200
         assert update_resp.json()["num_retries"] == 3
 
@@ -929,22 +954,36 @@ class TestNumRetriesModel:
         assert resp.status_code == 422
 
     def test_negative_num_retries_rejected_in_provider_create(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "bad",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
                 "num_retries": -1,
             },
         )
         assert resp.status_code == 422
 
     def test_negative_num_retries_rejected_in_provider_update(self, client: TestClient) -> None:
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         create_resp = client.post(
             "/api/chat-providers",
-            json={"name": "valid", "llm_provider": "openai", "llm_model": "gpt-4o"},
+            json={"name": "valid", "llm_provider_id": lp_id},
         )
+        assert create_resp.status_code == 201
         cp_id = create_resp.json()["id"]
         resp = client.put(f"/api/chat-providers/{cp_id}", json={"num_retries": -2})
         assert resp.status_code == 422
@@ -1114,27 +1153,7 @@ class TestProfiles:
         resp = client.delete("/api/profiles/nonexistent")
         assert resp.status_code == 404
 
-    def test_activate_builtin_profile(self, client: TestClient) -> None:
+    def test_activate_endpoint_removed(self, client: TestClient) -> None:
+        """The /activate endpoint was removed; verify it returns 404/405."""
         resp = client.post("/api/profiles/builtin-accurate/activate")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["id"] == "builtin-accurate"
-
-    def test_activate_user_profile(self, client: TestClient) -> None:
-        create_resp = client.post(
-            "/api/profiles",
-            json={
-                "name": "MyActivate",
-                "strategy": "rlm",
-                "runtime_settings": {"temperature": 0.7},
-                "budget": {"max_steps": 5},
-            },
-        )
-        profile_id = create_resp.json()["id"]
-        resp = client.post(f"/api/profiles/{profile_id}/activate")
-        assert resp.status_code == 200
-        assert resp.json()["id"] == profile_id
-
-    def test_activate_nonexistent_profile_returns_404(self, client: TestClient) -> None:
-        resp = client.post("/api/profiles/nonexistent/activate")
-        assert resp.status_code == 404
+        assert resp.status_code in (404, 405)

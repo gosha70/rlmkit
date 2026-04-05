@@ -14,7 +14,7 @@ import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
 import { ResponseRating } from "@/components/chat/response-rating";
 import { PickWinner } from "@/components/chat/pick-winner";
 import { JudgeScores } from "@/components/chat/judge-scores";
-import type { ChatProviderConfig, ProviderInfo } from "@/lib/api";
+import type { ChatProviderConfig, LLMProviderConfig } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // ChatInput
@@ -250,8 +250,7 @@ describe("FileAttachment", () => {
 const makeCP = (overrides: Partial<ChatProviderConfig> = {}): ChatProviderConfig => ({
   id: "cp-1",
   name: "GPT-4o Direct",
-  llm_provider: "openai",
-  llm_model: "gpt-4o",
+  llm_provider_id: "llmp-1",
   execution_mode: "direct",
   runtime_settings: {
     temperature: 0.7,
@@ -266,27 +265,28 @@ const makeCP = (overrides: Partial<ChatProviderConfig> = {}): ChatProviderConfig
   ...overrides,
 });
 
-const makeProvider = (overrides: Partial<ProviderInfo> = {}): ProviderInfo => ({
-  name: "openai",
-  display_name: "OpenAI",
+const makeLLMProvider = (overrides: Partial<LLMProviderConfig> = {}): LLMProviderConfig => ({
+  id: "llmp-1",
+  name: "My OpenAI",
+  backend: "openai",
+  model: "gpt-4o",
   status: "connected",
-  models: [],
-  default_model: "gpt-4o",
-  configured: true,
-  requires_api_key: true,
-  default_endpoint: null,
-  model_input_hint: "",
-  masked_api_key: "sk-...xxxx",
+  runtime_settings: {
+    temperature: 0.7,
+    top_p: 1,
+    max_output_tokens: 2048,
+    timeout_seconds: 30,
+  },
   ...overrides,
 });
 
 describe("ChatProviderSelector", () => {
   test("shows empty state when no available chat providers", () => {
-    // Provider is not connected → chatProvider filtered out
+    // LLM provider is not connected → chatProvider filtered out
     render(
       <ChatProviderSelector
         chatProviders={[makeCP()]}
-        providers={[makeProvider({ status: "not_configured" })]}
+        llmProviders={[makeLLMProvider({ status: "not_configured" })]}
         selectedIds={[]}
         onSelectionChange={vi.fn()}
       />
@@ -297,15 +297,15 @@ describe("ChatProviderSelector", () => {
   });
 
   test("renders chip for each available provider", () => {
-    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider: "anthropic" });
-    const p1 = makeProvider({ name: "openai" });
-    const p2 = makeProvider({ name: "anthropic" });
+    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct", llm_provider_id: "llmp-1" });
+    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider_id: "llmp-2" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
+    const lp2 = makeLLMProvider({ id: "llmp-2", backend: "anthropic" });
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1, cp2]}
-        providers={[p1, p2]}
+        llmProviders={[lp1, lp2]}
         selectedIds={["cp-1"]}
         onSelectionChange={vi.fn()}
       />
@@ -316,15 +316,15 @@ describe("ChatProviderSelector", () => {
   });
 
   test("shows All/1 toggle when more than one provider", () => {
-    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider: "anthropic" });
-    const p1 = makeProvider({ name: "openai" });
-    const p2 = makeProvider({ name: "anthropic" });
+    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct", llm_provider_id: "llmp-1" });
+    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider_id: "llmp-2" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
+    const lp2 = makeLLMProvider({ id: "llmp-2", backend: "anthropic" });
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1, cp2]}
-        providers={[p1, p2]}
+        llmProviders={[lp1, lp2]}
         selectedIds={["cp-1"]}
         onSelectionChange={vi.fn()}
       />
@@ -335,15 +335,15 @@ describe("ChatProviderSelector", () => {
   });
 
   test("toggle button shows '1' when all selected", () => {
-    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider: "anthropic" });
-    const p1 = makeProvider({ name: "openai" });
-    const p2 = makeProvider({ name: "anthropic" });
+    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct", llm_provider_id: "llmp-1" });
+    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider_id: "llmp-2" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
+    const lp2 = makeLLMProvider({ id: "llmp-2", backend: "anthropic" });
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1, cp2]}
-        providers={[p1, p2]}
+        llmProviders={[lp1, lp2]}
         selectedIds={["cp-1", "cp-2"]}
         onSelectionChange={vi.fn()}
       />
@@ -353,16 +353,16 @@ describe("ChatProviderSelector", () => {
   });
 
   test("calls onSelectionChange when a provider chip is clicked", () => {
-    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider: "anthropic" });
-    const p1 = makeProvider({ name: "openai" });
-    const p2 = makeProvider({ name: "anthropic" });
+    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct", llm_provider_id: "llmp-1" });
+    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider_id: "llmp-2" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
+    const lp2 = makeLLMProvider({ id: "llmp-2", backend: "anthropic" });
     const onSelectionChange = vi.fn();
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1, cp2]}
-        providers={[p1, p2]}
+        llmProviders={[lp1, lp2]}
         selectedIds={["cp-1"]}
         onSelectionChange={onSelectionChange}
       />
@@ -374,13 +374,13 @@ describe("ChatProviderSelector", () => {
 
   test("does not deselect the last selected provider", () => {
     const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const p1 = makeProvider({ name: "openai" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
     const onSelectionChange = vi.fn();
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1]}
-        providers={[p1]}
+        llmProviders={[lp1]}
         selectedIds={["cp-1"]}
         onSelectionChange={onSelectionChange}
       />
@@ -392,16 +392,16 @@ describe("ChatProviderSelector", () => {
   });
 
   test("All toggle selects all providers", () => {
-    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider: "anthropic" });
-    const p1 = makeProvider({ name: "openai" });
-    const p2 = makeProvider({ name: "anthropic" });
+    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct", llm_provider_id: "llmp-1" });
+    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider_id: "llmp-2" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
+    const lp2 = makeLLMProvider({ id: "llmp-2", backend: "anthropic" });
     const onSelectionChange = vi.fn();
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1, cp2]}
-        providers={[p1, p2]}
+        llmProviders={[lp1, lp2]}
         selectedIds={["cp-1"]}
         onSelectionChange={onSelectionChange}
       />
@@ -412,16 +412,16 @@ describe("ChatProviderSelector", () => {
   });
 
   test("1 toggle deselects to first provider only", () => {
-    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider: "anthropic" });
-    const p1 = makeProvider({ name: "openai" });
-    const p2 = makeProvider({ name: "anthropic" });
+    const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct", llm_provider_id: "llmp-1" });
+    const cp2 = makeCP({ id: "cp-2", name: "Claude Direct", llm_provider_id: "llmp-2" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
+    const lp2 = makeLLMProvider({ id: "llmp-2", backend: "anthropic" });
     const onSelectionChange = vi.fn();
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1, cp2]}
-        providers={[p1, p2]}
+        llmProviders={[lp1, lp2]}
         selectedIds={["cp-1", "cp-2"]}
         onSelectionChange={onSelectionChange}
       />
@@ -433,12 +433,12 @@ describe("ChatProviderSelector", () => {
 
   test("does not show All/1 toggle when only one provider available", () => {
     const cp1 = makeCP({ id: "cp-1", name: "GPT-4o Direct" });
-    const p1 = makeProvider({ name: "openai" });
+    const lp1 = makeLLMProvider({ id: "llmp-1" });
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1]}
-        providers={[p1]}
+        llmProviders={[lp1]}
         selectedIds={["cp-1"]}
         onSelectionChange={vi.fn()}
       />
@@ -449,12 +449,12 @@ describe("ChatProviderSelector", () => {
 
   test("has group role with aria-label", () => {
     const cp1 = makeCP();
-    const p1 = makeProvider();
+    const lp1 = makeLLMProvider();
 
     render(
       <ChatProviderSelector
         chatProviders={[cp1]}
-        providers={[p1]}
+        llmProviders={[lp1]}
         selectedIds={["cp-1"]}
         onSelectionChange={vi.fn()}
       />

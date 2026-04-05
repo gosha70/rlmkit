@@ -398,13 +398,20 @@ class TestDeleteJudgeProvider:
     """Regression: deleting the active judge provider clears the config."""
 
     def test_delete_judge_provider_clears_config(self, client: TestClient) -> None:
+        # Create an LLM Provider first
+        lp_resp = client.post(
+            "/api/llm-providers",
+            json={"name": "OpenAI gpt-4o", "backend": "openai", "model": "gpt-4o"},
+        )
+        assert lp_resp.status_code == 201
+        lp_id = lp_resp.json()["id"]
+
         # Create a chat provider
         resp = client.post(
             "/api/chat-providers",
             json={
                 "name": "Judge CP",
-                "llm_provider": "openai",
-                "llm_model": "gpt-4o",
+                "llm_provider_id": lp_id,
             },
         )
         assert resp.status_code == 201

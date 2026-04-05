@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { User, Bot, Sparkles, Loader2 } from "lucide-react";
+import { User, Bot, Sparkles, Loader2, ChevronDown, ChevronRight, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/shared/app-shell";
 import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
@@ -23,7 +23,7 @@ import {
   getTrace,
   submitChat,
   uploadFile,
-  getProviders,
+  getLLMProviders,
   getSessionEvaluations,
   submitThumbRating,
   removeThumbRating,
@@ -31,10 +31,11 @@ import {
   triggerJudge,
   type AppConfig,
   type ChatProviderConfig,
-  type ProviderInfo,
+  type LLMProviderConfig,
   type FileUploadResponse,
   type MessageMetrics,
   type JudgeScoreData,
+  type TraceStep,
 } from "@/lib/api";
 
 interface ChatTurn {
@@ -53,6 +54,7 @@ interface ChatTurn {
       content: string;
       isStreaming: boolean;
       metrics?: MessageMetrics;
+      steps?: TraceStep[];
     }
   >;
 }
@@ -64,28 +66,25 @@ interface ExecMapping {
 }
 
 export default function ChatPage() {
-  const [sessionId, setSessionId] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("rlmkit_active_session") || null;
-    }
-    return null;
-  });
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [selectedChatProviderIds, setSelectedChatProviderIds] = useState<string[]>([]);
+  const [chatProviderOrder, setChatProviderOrder] = useState<string[]>([]);
 
-  const [selectedChatProviderIds, setSelectedChatProviderIds] = useState<string[]>(() => {
-    if (typeof window !== "undefined") {
+  // Hydrate from localStorage after mount to avoid SSR/client mismatch
+  useEffect(() => {
+    try {
+      const sid = localStorage.getItem("rlmkit_active_session");
+      if (sid) setSessionId(sid);
+    } catch {}
+    try {
       const saved = localStorage.getItem("rlmkit_selected_chat_providers");
-      return saved ? JSON.parse(saved) : [];
-    }
-    return [];
-  });
-
-  const [chatProviderOrder, setChatProviderOrder] = useState<string[]>(() => {
-    if (typeof window !== "undefined") {
+      if (saved) setSelectedChatProviderIds(JSON.parse(saved));
+    } catch {}
+    try {
       const saved = localStorage.getItem("rlmkit-cp-order");
-      return saved ? JSON.parse(saved) : [];
-    }
-    return [];
-  });
+      if (saved) setChatProviderOrder(JSON.parse(saved));
+    } catch {}
+  }, []);
 
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -94,6 +93,7 @@ export default function ChatPage() {
   const [bestPicks, setBestPicks] = useState<Record<string, string>>({});
   const [judgeScores, setJudgeScores] = useState<Record<string, JudgeScoreData>>({});
   const [isJudging, setIsJudging] = useState(false);
+  const [stepsVisible, setStepsVisible] = useState<Record<string, boolean>>({});
   const skipSessionLoadRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const execMapRef = useRef<Record<string, ExecMapping>>({});
@@ -115,7 +115,7 @@ export default function ChatPage() {
     : selectedChatProviderIds;
 
   const { data: chatProviders = [] } = useSWR<ChatProviderConfig[]>("chat-providers", getChatProviders);
-  const { data: providers = [] } = useSWR<ProviderInfo[]>("providers", getProviders);
+  const { data: llmProviders = [] } = useSWR<LLMProviderConfig[]>("llm-providers", getLLMProviders);
   const { data: config } = useSWR<AppConfig>("config", getConfig);
 
   // Persist active session to localStorage
@@ -144,18 +144,18 @@ export default function ChatPage() {
   useEffect(() => {
     if (chatProviders.length === 0) return;
     let availableIds: Set<string>;
-    if (providers.length > 0) {
-      const providerMap = new Map(providers.map((p) => [p.name, p]));
+    if (llmProviders.length > 0) {
+      const providerMap = new Map(llmProviders.map((p) => [p.id, p]));
       availableIds = new Set(
         chatProviders
           .filter((cp) => {
-            const info = providerMap.get(cp.llm_provider);
+            const info = providerMap.get(cp.llm_provider_id);
             return info && (info.status === "connected" || info.status === "configured");
           })
           .map((cp) => cp.id),
       );
     } else {
-      // providers not yet loaded — fall back to checking by chat-provider ID only
+      // llmProviders not yet loaded — fall back to checking by chat-provider ID only
       availableIds = new Set(chatProviders.map((cp) => cp.id));
     }
     const filtered = selectedChatProviderIds.filter((id) => availableIds.has(id));
@@ -164,7 +164,7 @@ export default function ChatPage() {
       setSelectedChatProviderIds(filtered.length > 0 ? filtered : first ? [first] : []);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatProviders, providers]);
+  }, [chatProviders, llmProviders]);
 
   // Load session messages and reconstruct turns
   useEffect(() => {
@@ -356,6 +356,7 @@ export default function ChatPage() {
                           ...turn.responses[chatProviderId],
                           content: trace.result.answer,
                           isStreaming: false,
+                          steps: trace.steps?.length ? trace.steps : undefined,
                           metrics: {
                             input_tokens: trace.result.input_tokens ?? trace.budget.tokens_used,
                             output_tokens: trace.result.output_tokens ?? 0,
@@ -687,7 +688,7 @@ export default function ChatPage() {
         <div className="flex items-center gap-3 border-b px-4 py-2" role="toolbar" aria-label="Chat options">
           <ChatProviderSelector
             chatProviders={chatProviders}
-            providers={providers}
+            llmProviders={llmProviders}
             selectedIds={selectedChatProviderIds}
             onSelectionChange={setSelectedChatProviderIds}
             orderedIds={chatProviderOrder}
@@ -792,12 +793,46 @@ export default function ChatPage() {
                                         currentRating={ratings[resp.executionId]}
                                         onRate={handleRate}
                                       />
+                                      {resp.steps && resp.steps.length > 0 && (
+                                        <button
+                                          onClick={() => setStepsVisible((prev) => ({ ...prev, [resp.executionId]: !prev[resp.executionId] }))}
+                                          className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                          aria-label="Toggle steps"
+                                        >
+                                          <Terminal className="h-3 w-3" />
+                                          <span>{resp.steps.length} steps</span>
+                                          {stepsVisible[resp.executionId] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                        </button>
+                                      )}
                                     </div>
                                     {judgeScores[resp.executionId] && (
                                       <JudgeScores
                                         dimensions={judgeScores[resp.executionId].dimensions}
                                         overallScore={judgeScores[resp.executionId].overall_score}
                                       />
+                                    )}
+                                    {resp.steps && stepsVisible[resp.executionId] && (
+                                      <div className="mt-2 space-y-2 border-t pt-2">
+                                        {resp.steps.map((step, i) => (
+                                          <div key={i} className="rounded border border-muted bg-background p-2 font-mono text-xs">
+                                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                                              <span className="font-semibold uppercase tracking-wide text-[10px]">{step.action_type}</span>
+                                              <span>step {step.index + 1}</span>
+                                              {step.model && <span className="ml-auto opacity-60">{step.model}</span>}
+                                              {step.duration_seconds > 0 && <span className="opacity-60">{step.duration_seconds.toFixed(1)}s</span>}
+                                              {(step.input_tokens + step.output_tokens) > 0 && (
+                                                <span className="opacity-60">{step.input_tokens + step.output_tokens} tok</span>
+                                              )}
+                                            </div>
+                                            {step.code && (
+                                              <pre className="mb-1 overflow-x-auto rounded bg-muted/50 p-1.5 text-[11px] whitespace-pre-wrap">{step.code}</pre>
+                                            )}
+                                            {step.output && (
+                                              <div className="whitespace-pre-wrap opacity-80">{step.output}</div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
                                     )}
                                   </div>
                                 )}

@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import os
+
 from rlmkit.application.dto import RunConfigDTO
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
@@ -18,12 +20,31 @@ from rlmkit.server.models import (
     BudgetConfig,
     ChatProviderConfig,
     ConfigResponse,
+    LLMProviderConfig,
     RunProfile,
+    RuntimeSettings,
     SystemPrompts,
 )
 from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
+from rlmkit.ui.services.secret_store import FileSecretStore, KeyringSecretStore
 
 logger = logging.getLogger(__name__)
+
+
+def _get_instance_api_key(llm_provider_id: str, backend: str) -> str | None:
+    """Return the stored API key for a named LLM Provider, falling back to env var."""
+    key_name = f"llm_provider:{llm_provider_id}"
+    store: KeyringSecretStore | FileSecretStore = (
+        KeyringSecretStore() if KeyringSecretStore.is_available() else FileSecretStore()
+    )
+    raw_key: str | None = store.get(key_name)
+    if raw_key:
+        return raw_key
+    entry = PROVIDERS_BY_KEY.get(backend)
+    if entry and entry.env_var:
+        return os.environ.get(entry.env_var)
+    return None
+
 
 # Providers that default to zero retries (local servers; retries multiply hangs)
 _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio"})
@@ -236,6 +257,87 @@ class AppState:
                 )
                 self.save_config()
 
+        self._migrate_to_llm_providers()
+
+    def _migrate_to_llm_providers(self) -> None:
+        """Create named LLM Provider instances from legacy ChatProvider configs.
+
+        Old ChatProviderConfig has llm_provider (backend key) + llm_model.
+        New design references an LLMProviderConfig by UUID.
+        This migration creates the LLM Provider instances and updates the references.
+        """
+        # Check if any chat providers still use the old format (no llm_provider_id)
+        legacy_cps = [cp for cp in self.config.chat_providers if not cp.llm_provider_id]
+        if not legacy_cps:
+            return
+
+        from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
+
+        now = datetime.now(timezone.utc)
+        changed = False
+
+        # Deduplicate: one LLMProviderConfig per unique (backend, model, endpoint)
+        key_to_id: dict[tuple[str, str, str | None], str] = {}
+        for lp in self.config.llm_providers:
+            key_to_id[(lp.backend, lp.model, lp.endpoint)] = lp.id
+
+        for cp in legacy_cps:
+            backend = cp.llm_provider or "openai"
+            model = cp.llm_model or ""
+            # Get endpoint from matching provider_config
+            endpoint: str | None = None
+            for pc in self.config.provider_configs:
+                if pc.provider == backend and pc.endpoint:
+                    endpoint = pc.endpoint
+                    break
+
+            combo = (backend, model, endpoint)
+            if combo not in key_to_id:
+                # Create a new LLMProviderConfig
+                catalog = PROVIDERS_BY_KEY.get(backend)
+                display = catalog.display_name if catalog else backend.capitalize()
+                lp_name = f"{display} ({model})" if model else display
+                # Ensure name is unique
+                existing_names = {lp.name.lower() for lp in self.config.llm_providers}
+                base_name = lp_name
+                suffix = 2
+                while lp_name.lower() in existing_names:
+                    lp_name = f"{base_name} {suffix}"
+                    suffix += 1
+
+                # Use the provider_config's runtime_settings if available
+                rt = RuntimeSettings()
+                for pc in self.config.provider_configs:
+                    if pc.provider == backend:
+                        rt = pc.runtime_settings.model_copy()
+                        break
+
+                lp = LLMProviderConfig(
+                    id=str(uuid.uuid4()),
+                    name=lp_name,
+                    backend=backend,
+                    model=model,
+                    endpoint=endpoint,
+                    runtime_settings=rt,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self.config.llm_providers.append(lp)
+                key_to_id[combo] = lp.id
+                logger.info(
+                    "Created LLM Provider '%s' (backend=%s model=%s)", lp.name, backend, model
+                )
+
+            cp.llm_provider_id = key_to_id[combo]
+            changed = True
+
+        if changed:
+            logger.info(
+                "Migrated %d Chat Provider(s) to reference named LLM Providers",
+                len(legacy_cps),
+            )
+            self.save_config()
+
     def _assign_default_profiles(self) -> None:
         """Assign a default profile to Chat Providers that don't have one."""
         changed = False
@@ -268,6 +370,20 @@ class AppState:
                 return cp
         return None
 
+    def get_llm_provider(self, llm_provider_id: str) -> LLMProviderConfig | None:
+        """Look up a named LLM Provider instance by ID."""
+        for lp in self.config.llm_providers:
+            if lp.id == llm_provider_id:
+                return lp
+        return None
+
+    def get_llm_provider_by_name(self, name: str) -> LLMProviderConfig | None:
+        """Look up a named LLM Provider instance by display name (case-insensitive)."""
+        for lp in self.config.llm_providers:
+            if lp.name.lower() == name.lower():
+                return lp
+        return None
+
     def get_conversation(self, session_id: str, chat_provider_id: str) -> list[dict[str, Any]]:
         """Get conversation history for a specific Chat Provider in a session."""
         session = self.sessions.get(session_id)
@@ -288,14 +404,21 @@ class AppState:
         return None
 
     def resolve_chat_provider(self, cp: ChatProviderConfig) -> ChatProviderConfig:
-        """Return a copy of cp with settings resolved from its profile (if any)."""
+        """Return a copy of cp with settings resolved from its LLM Provider and profile."""
+        resolved = cp.model_copy()
+
+        # Resolve LLM Provider name for display
+        if cp.llm_provider_id:
+            lp = self.get_llm_provider(cp.llm_provider_id)
+            if lp:
+                resolved.llm_provider_name = lp.name
+
         if not cp.profile_id:
-            return cp
+            return resolved
         profile = self.find_profile(cp.profile_id)
         if not profile:
             logger.warning("Profile %s not found for Chat Provider %s", cp.profile_id, cp.id)
-            return cp
-        resolved = cp.model_copy()
+            return resolved
         resolved.profile_name = profile.name
         resolved.execution_mode = profile.strategy  # type: ignore[assignment]
         resolved.runtime_settings = (
@@ -421,27 +544,37 @@ class AppState:
             raise ValueError(f"Chat Provider {chat_provider_id} not found")
 
         cp = self.resolve_chat_provider(cp)
-        provider_key = cp.llm_provider
-        model = cp.llm_model
 
-        # Trust the user-selected model — it may have been fetched live from
-        # the provider API and won't be in the static catalog.
-        entry = PROVIDERS_BY_KEY.get(provider_key)
+        # Resolve backend config through LLM Provider instance
+        lp = self.get_llm_provider(cp.llm_provider_id) if cp.llm_provider_id else None
+        api_key: str | None = None
+        if lp:
+            provider_key = lp.backend
+            model = lp.model
+            api_base = lp.endpoint
+            api_key = _get_instance_api_key(lp.id, lp.backend)
+            # Fall back to catalog default endpoint for local providers
+            if not api_base:
+                entry = PROVIDERS_BY_KEY.get(provider_key)
+                if entry and entry.default_endpoint:
+                    api_base = entry.default_endpoint
+        else:
+            # Fallback for unmigrated legacy chat providers
+            provider_key = cp.llm_provider or "openai"
+            model = cp.llm_model or ""
+            entry = PROVIDERS_BY_KEY.get(provider_key)
+            api_base = None
+            for pc in self.config.provider_configs:
+                if pc.provider == provider_key and pc.endpoint:
+                    api_base = pc.endpoint
+                    break
+            if not api_base and entry and entry.default_endpoint:
+                api_base = entry.default_endpoint
 
         prefixed_model = self._litellm_model_name(provider_key, model)
-
-        # Prefer persisted endpoint over catalog default
-        api_base: str | None = None
-        for pc in self.config.provider_configs:
-            if pc.provider == provider_key and pc.endpoint:
-                api_base = pc.endpoint
-                break
-        if not api_base and entry and entry.default_endpoint:
-            api_base = entry.default_endpoint
-
+        # runtime_settings are resolved from the Profile by resolve_chat_provider()
         runtime = cp.runtime_settings
 
-        # Priority: per-request > Chat Provider config > local-provider default > 2
         effective_retries = (
             num_retries
             if num_retries is not None
@@ -455,6 +588,7 @@ class AppState:
         return LiteLLMAdapter(
             model=prefixed_model,
             api_base=api_base,
+            api_key=api_key,
             temperature=runtime.temperature,
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),

@@ -201,35 +201,3 @@ async def delete_profile(
             return
 
     raise HTTPException(status_code=404, detail=f"Profile not found: {profile_id}")
-
-
-@router.post("/api/profiles/{profile_id}/activate")
-async def activate_profile(
-    profile_id: str,
-    state: AppState = Depends(get_state),
-) -> RunProfile:
-    """Apply a profile's settings to the current configuration."""
-    # Search builtins + user profiles
-    all_profiles = BUILTIN_PROFILES + state.user_profiles
-    profile = None
-    for p in all_profiles:
-        if p.id == profile_id:
-            profile = p
-            break
-
-    if profile is None:
-        raise HTTPException(status_code=404, detail=f"Profile not found: {profile_id}")
-
-    # Apply profile settings to current config
-    state.config.budget = (
-        profile.budget.model_copy() if hasattr(profile.budget, "model_copy") else profile.budget
-    )
-    state.config.default_runtime_settings = (
-        profile.runtime_settings.model_copy()
-        if hasattr(profile.runtime_settings, "model_copy")
-        else profile.runtime_settings
-    )
-    state.config.active_profile_id = profile_id
-    state.save_config()
-
-    return profile

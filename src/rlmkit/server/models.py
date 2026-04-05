@@ -304,6 +304,42 @@ class ProviderTestResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Named LLM Provider instances
+# ---------------------------------------------------------------------------
+
+
+class LLMProviderConfig(BaseModel):
+    """A named, user-created instance of an LLM backend with full connection config."""
+
+    id: str
+    name: str  # User-defined, e.g. "Ollama-llama3.2", "GPT4-mini"
+    backend: str  # Catalog key: "openai", "anthropic", "ollama", "lmstudio"
+    model: str  # e.g. "gpt-4o-mini", "llama3.2"
+    endpoint: str | None = None  # Custom endpoint (overrides catalog default for local providers)
+    runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    status: str = "not_configured"  # "connected" | "configured" | "offline" | "not_configured"
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class LLMProviderCreateRequest(BaseModel):
+    name: str
+    backend: str  # catalog key: "openai", "anthropic", "ollama", "lmstudio"
+    model: str
+    api_key: str | None = None  # persisted to SecretStore, not stored in config
+    endpoint: str | None = None
+    runtime_settings: RuntimeSettings | None = None
+
+
+class LLMProviderUpdateRequest(BaseModel):
+    name: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+    endpoint: str | None = None
+    runtime_settings: RuntimeSettings | None = None
+
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
@@ -351,12 +387,15 @@ class ModeConfig(BaseModel):
 
 
 class ChatProviderConfig(BaseModel):
-    """A named combination of LLM Provider + Execution Mode + Settings."""
+    """A named combination of LLM Provider + Execution Mode + Profile."""
 
     id: str
     name: str  # e.g. "DIRECT-CLAUDE", "RLM-OPENAI"
-    llm_provider: str  # e.g. "anthropic", "openai"
-    llm_model: str  # e.g. "claude-sonnet-4-5"
+    llm_provider_id: str = ""  # UUID reference to LLMProviderConfig; empty = not yet migrated
+    llm_provider_name: str | None = None  # resolved display name (read-only, populated on GET)
+    # Deprecated legacy fields kept for backward-compat migration; cleared after migration
+    llm_provider: str = ""  # deprecated: backend key like "anthropic"
+    llm_model: str = ""  # deprecated: model name like "claude-sonnet-4-6"
     profile_id: str | None = None  # reference to a RunProfile
     profile_name: str | None = None  # resolved profile name (read-only)
     execution_mode: Literal["direct", "rlm", "rag"] = "direct"
@@ -364,34 +403,31 @@ class ChatProviderConfig(BaseModel):
     rag_config: RAGConfig | None = None  # only for RAG mode
     rlm_max_steps: int = 16  # only for RLM mode
     rlm_timeout_seconds: int = 60  # only for RLM mode
-    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
+    num_retries: int | None = Field(default=None, ge=0)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
 
 class ChatProviderCreateRequest(BaseModel):
     name: str
-    llm_provider: str
-    llm_model: str
+    llm_provider_id: str  # UUID of the LLMProviderConfig to use
     profile_id: str | None = None
     execution_mode: Literal["direct", "rlm", "rag"] = "direct"
-    runtime_settings: RuntimeSettings | None = None
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
     rlm_timeout_seconds: int | None = None
-    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
+    num_retries: int | None = Field(default=None, ge=0)
 
 
 class ChatProviderUpdateRequest(BaseModel):
     name: str | None = None
-    llm_model: str | None = None
+    llm_provider_id: str | None = None  # switch to a different LLM Provider
     profile_id: str | None = None
     execution_mode: Literal["direct", "rlm", "rag"] | None = None
-    runtime_settings: RuntimeSettings | None = None
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
     rlm_timeout_seconds: int | None = None
-    num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
+    num_retries: int | None = Field(default=None, ge=0)
 
 
 class ConfigResponse(BaseModel):
@@ -401,6 +437,7 @@ class ConfigResponse(BaseModel):
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
     provider_configs: list[ProviderConfig] = Field(default_factory=list)
+    llm_providers: list[LLMProviderConfig] = Field(default_factory=list)
     default_runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     mode_config: ModeConfig = Field(default_factory=ModeConfig)
     chat_providers: list[ChatProviderConfig] = Field(default_factory=list)
@@ -416,6 +453,7 @@ class ConfigUpdateRequest(BaseModel):
     sandbox: SandboxConfig | None = None
     appearance: AppearanceConfig | None = None
     provider_configs: list[ProviderConfig] | None = None
+    llm_providers: list[LLMProviderConfig] | None = None
     default_runtime_settings: RuntimeSettings | None = None
     mode_config: ModeConfig | None = None
     chat_providers: list[ChatProviderConfig] | None = None

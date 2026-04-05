@@ -12,9 +12,7 @@ from rlmkit.server.models import (
     ChatProviderConfig,
     ChatProviderCreateRequest,
     ChatProviderUpdateRequest,
-    RuntimeSettings,
 )
-from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
 router = APIRouter()
 
@@ -45,12 +43,12 @@ async def create_chat_provider(
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> ChatProviderConfig:
     """Create a new Chat Provider."""
-    # Validate that the LLM provider exists in catalog
-    if req.llm_provider not in PROVIDERS_BY_KEY:
+    # Validate that the referenced LLM Provider exists
+    lp = state.get_llm_provider(req.llm_provider_id)
+    if not lp:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown LLM provider: {req.llm_provider}. "
-            f"Available: {list(PROVIDERS_BY_KEY.keys())}",
+            detail=f"LLM Provider not found: {req.llm_provider_id}",
         )
 
     # Validate name uniqueness
@@ -74,11 +72,10 @@ async def create_chat_provider(
     cp = ChatProviderConfig(
         id=str(uuid.uuid4()),
         name=req.name,
-        llm_provider=req.llm_provider,
-        llm_model=req.llm_model,
+        llm_provider_id=req.llm_provider_id,
+        llm_provider_name=lp.name,
         profile_id=req.profile_id,
         execution_mode=req.execution_mode,
-        runtime_settings=req.runtime_settings or RuntimeSettings(),
         rag_config=req.rag_config,
         rlm_max_steps=req.rlm_max_steps or 16,
         rlm_timeout_seconds=req.rlm_timeout_seconds or 60,
@@ -112,6 +109,17 @@ async def update_chat_provider(
                 )
         cp.name = req.name
 
+    # Validate and update llm_provider_id if provided
+    if req.llm_provider_id is not None:
+        lp = state.get_llm_provider(req.llm_provider_id)
+        if not lp:
+            raise HTTPException(
+                status_code=400,
+                detail=f"LLM Provider not found: {req.llm_provider_id}",
+            )
+        cp.llm_provider_id = req.llm_provider_id
+        cp.llm_provider_name = lp.name
+
     # Validate profile_id if provided
     if req.profile_id is not None:
         if req.profile_id:
@@ -123,12 +131,8 @@ async def update_chat_provider(
                 )
         cp.profile_id = req.profile_id
 
-    if req.llm_model is not None:
-        cp.llm_model = req.llm_model
     if req.execution_mode is not None:
         cp.execution_mode = req.execution_mode
-    if req.runtime_settings is not None:
-        cp.runtime_settings = req.runtime_settings
     if req.rag_config is not None:
         cp.rag_config = req.rag_config
     if req.rlm_max_steps is not None:

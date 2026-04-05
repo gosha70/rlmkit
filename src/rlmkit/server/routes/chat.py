@@ -270,7 +270,16 @@ async def _run_execution(
                     answer_content = f"Error: {res.error or 'Execution failed'}"
 
                 cp_name = cp.name if cp else None
-                provider_name = cp.llm_provider if cp else state.config.active_provider
+                lp = (
+                    state.get_llm_provider(cp.llm_provider_id)
+                    if cp and cp.llm_provider_id
+                    else None
+                )
+                provider_name = (
+                    (lp.name if lp else None)
+                    or (cp.llm_provider if cp else None)
+                    or state.config.active_provider
+                )
 
                 assistant_msg = {
                     "id": str(uuid.uuid4()),
@@ -471,12 +480,22 @@ async def websocket_chat(
                             ws_cp = state.get_chat_provider(cp_id)
                             if ws_cp:
                                 ws_cp = state.resolve_chat_provider(ws_cp)
+                            ws_lp = (
+                                state.get_llm_provider(ws_cp.llm_provider_id)
+                                if ws_cp and ws_cp.llm_provider_id
+                                else None
+                            )
                             provider_label = (
-                                f"{ws_cp.llm_provider}/{ws_cp.llm_model}" if ws_cp else "unknown"
+                                ws_lp.name
+                                if ws_lp
+                                else (ws_cp.llm_provider or "unknown")
+                                if ws_cp
+                                else "unknown"
                             )
                         else:
                             llm = state.create_llm_adapter()
                             ws_cp = None
+                            ws_lp = None
                             provider_label = (
                                 f"{state.config.active_provider}/{state.config.active_model}"
                             )
@@ -534,7 +553,9 @@ async def websocket_chat(
 
                             cp_name = ws_cp.name if ws_cp else None
                             provider_name = (
-                                ws_cp.llm_provider if ws_cp else state.config.active_provider
+                                (ws_lp.name if ws_lp else None)
+                                or (ws_cp.llm_provider if ws_cp else None)
+                                or state.config.active_provider
                             )
 
                             # Store in session for dashboard metrics

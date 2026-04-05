@@ -184,6 +184,35 @@ export interface ProviderInfo {
   masked_api_key: string | null;
 }
 
+export interface LLMProviderConfig {
+  id: string;
+  name: string;
+  backend: string;  // "openai" | "anthropic" | "ollama" | "lmstudio"
+  model: string;
+  endpoint?: string | null;
+  runtime_settings: RuntimeSettings;
+  status: string;  // "connected" | "configured" | "offline" | "not_configured"
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface LLMProviderCreateRequest {
+  name: string;
+  backend: string;
+  model: string;
+  api_key?: string | null;
+  endpoint?: string | null;
+  runtime_settings?: RuntimeSettings | null;
+}
+
+export interface LLMProviderUpdateRequest {
+  name?: string | null;
+  model?: string | null;
+  api_key?: string | null;
+  endpoint?: string | null;
+  runtime_settings?: RuntimeSettings | null;
+}
+
 export interface ProviderTestRequest {
   provider: string;
   api_key?: string | null;
@@ -225,8 +254,11 @@ export interface ModeConfig {
 export interface ChatProviderConfig {
   id: string;
   name: string;
-  llm_provider: string;
-  llm_model: string;
+  llm_provider_id: string;        // UUID reference to LLMProviderConfig
+  llm_provider_name?: string | null; // resolved display name
+  // Deprecated legacy fields (may be present in migrated configs):
+  llm_provider?: string;  // old: backend key like "openai"
+  llm_model?: string;     // old: model name
   profile_id?: string | null;
   profile_name?: string | null;
   execution_mode: "direct" | "rlm" | "rag";
@@ -240,14 +272,13 @@ export interface ChatProviderConfig {
 
 export interface ChatProviderCreateRequest {
   name: string;
-  llm_provider: string;
-  llm_model: string;
+  llm_provider_id: string;  // UUID of LLMProviderConfig
   profile_id?: string | null;
   execution_mode?: "direct" | "rlm" | "rag";
-  runtime_settings?: RuntimeSettings | null;
   rag_config?: RAGConfig | null;
   rlm_max_steps?: number | null;
   rlm_timeout_seconds?: number | null;
+  num_retries?: number | null;
 }
 
 export interface ChatProviderUpdateRequest {
@@ -470,6 +501,30 @@ export const getProviderModels = (name: string, endpoint?: string) =>
     `/api/providers/${name}/models${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ""}`,
   );
 
+// LLM Provider instances
+export const getLLMProviders = () => fetchJSON<LLMProviderConfig[]>("/api/llm-providers");
+
+export const createLLMProvider = (req: LLMProviderCreateRequest) =>
+  fetchJSON<LLMProviderConfig>("/api/llm-providers", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+
+export const updateLLMProvider = (id: string, req: LLMProviderUpdateRequest) =>
+  fetchJSON<LLMProviderConfig>(`/api/llm-providers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(req),
+  });
+
+export const deleteLLMProvider = (id: string) =>
+  fetchJSON<void>(`/api/llm-providers/${id}`, { method: "DELETE" });
+
+export const testLLMProvider = (id: string) =>
+  fetchJSON<ProviderTestResponse>(`/api/llm-providers/${id}/test`, { method: "POST" });
+
+export const getLLMProviderModels = (id: string) =>
+  fetchJSON<ModelInfo[]>(`/api/llm-providers/${id}/models`);
+
 // Config
 
 /** Fields accepted by PUT /api/config. active_provider/active_model are
@@ -525,9 +580,6 @@ export const updateProfile = (id: string, req: Partial<RunProfileCreate>) =>
 
 export const deleteProfile = (id: string) =>
   fetchJSON<void>(`/api/profiles/${id}`, { method: "DELETE" });
-
-export const activateProfile = (id: string) =>
-  fetchJSON<RunProfile>(`/api/profiles/${id}/activate`, { method: "POST" });
 
 // System Prompts
 export interface SystemPrompts {
@@ -601,11 +653,25 @@ export const submitBestPick = (req: BestPickRequest) =>
 export const getSessionEvaluations = (sessionId: string) =>
   fetchJSON<SessionEvaluations>(`/api/evaluations/${sessionId}`);
 
+export const resetSessionEvaluations = (sessionId: string) =>
+  fetchJSON<undefined>(`/api/evaluations/${sessionId}`, { method: "DELETE" });
+
 export const getEvaluationSummary = (sessionId: string) =>
   fetchJSON<EvaluationSummaryResponse>(`/api/evaluations/${sessionId}/summary`);
 
-export const triggerJudge = (req: JudgeRequest) =>
-  fetchJSON<{ pointwise: JudgeScoreData[]; pairwise: unknown[] }>("/api/evaluations/judge", {
+// Always route through the Next.js proxy (relative URL, not API_BASE) so the
+// extended JUDGE_TIMEOUT_SECONDS applies even when NEXT_PUBLIC_API_URL is set.
+export async function triggerJudge(
+  req: JudgeRequest,
+): Promise<{ pointwise: JudgeScoreData[]; pairwise: unknown[] }> {
+  const resp = await fetch("/api/evaluations/judge", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`API error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
