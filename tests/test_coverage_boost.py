@@ -9,7 +9,6 @@ Covers the specific gaps introduced in the latest session:
 
 from __future__ import annotations
 
-import os
 from collections.abc import Generator
 from datetime import datetime, timezone
 from typing import Any
@@ -22,11 +21,10 @@ from rlmkit.server.app import create_app
 from rlmkit.server.dependencies import (
     AppState,
     SessionRecord,
+    _get_instance_api_key,
     get_state,
     reset_state,
-    _get_instance_api_key,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -280,8 +278,8 @@ class TestQualityEngineRecommendation:
         assert "judge score" in reason
 
     def test_returns_none_when_no_data(self) -> None:
-        from rlmkit.server.quality import QualityEngine
         from rlmkit.server.models import ProviderQualityScore
+        from rlmkit.server.quality import QualityEngine
 
         engine = QualityEngine()
         scores = {
@@ -445,6 +443,7 @@ class TestJudgeServiceScoring:
     def _make_judge_state(self) -> AppState:
         """Return an AppState with a fake judge Chat Provider."""
         from datetime import datetime, timezone
+
         from rlmkit.server.models import ChatProviderConfig, LLMProviderConfig
 
         state = AppState(load_from_disk=False)
@@ -501,8 +500,9 @@ class TestJudgeServiceScoring:
     ) -> None:
         """score_pointwise calls the judge adapter and returns a JudgeScore."""
         from unittest.mock import AsyncMock
-        from rlmkit.server.judge import JudgeService
+
         from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmkit.server.judge import JudgeService
 
         state = self._make_judge_state()
         self._add_execution(state, "sess-j", "exec-j1")
@@ -534,6 +534,7 @@ class TestJudgeServiceScoring:
     ) -> None:
         """score_pointwise falls back to default scores on parse failure."""
         from unittest.mock import AsyncMock
+
         from rlmkit.server.judge import JudgeService
 
         state = self._make_judge_state()
@@ -555,7 +556,6 @@ class TestJudgeServiceScoring:
     @pytest.mark.asyncio
     async def test_compare_pairwise_returns_winner(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """compare_pairwise debiases and returns final winner."""
-        from unittest.mock import AsyncMock
         from rlmkit.server.judge import JudgeService
 
         state = self._make_judge_state()
@@ -593,7 +593,6 @@ class TestJudgeServiceScoring:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When runs disagree, final_winner is 'tie'."""
-        from unittest.mock import AsyncMock
         from rlmkit.server.judge import JudgeService
 
         state = self._make_judge_state()
@@ -630,6 +629,7 @@ class TestTriggerJudgeEndpoint:
     def _setup_judge_provider(self, state: AppState) -> None:
         """Configure state with a judge chat provider."""
         from datetime import datetime, timezone
+
         from rlmkit.server.models import ChatProviderConfig, LLMProviderConfig
 
         now = datetime.now(timezone.utc)
@@ -673,7 +673,6 @@ class TestTriggerJudgeEndpoint:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """trigger_judge runs pointwise scoring and returns results."""
-        from unittest.mock import AsyncMock, MagicMock
         from rlmkit.server.models import JudgeScore
 
         state = get_state()
@@ -788,8 +787,8 @@ class TestQualityEngineComputeScores:
 
     def test_cost_and_speed_branches_covered(self) -> None:
         """Verify cost/speed score branches run (all_costs/all_speeds > 0)."""
+        from rlmkit.server.dependencies import AppState, ExecutionRecord, SessionRecord
         from rlmkit.server.quality import QualityEngine
-        from rlmkit.server.dependencies import AppState, SessionRecord, ExecutionRecord
 
         state = AppState(load_from_disk=False)
         state.save_config = lambda: None  # type: ignore[assignment]
@@ -854,8 +853,8 @@ class TestQualityEngineComputeScores:
 
     def test_no_data_combined_score_is_zero(self) -> None:
         """When a provider has no data at all, combined_score stays 0."""
-        from rlmkit.server.quality import QualityEngine
         from rlmkit.server.dependencies import AppState, ExecutionRecord
+        from rlmkit.server.quality import QualityEngine
 
         state = AppState(load_from_disk=False)
         state.save_config = lambda: None  # type: ignore[assignment]

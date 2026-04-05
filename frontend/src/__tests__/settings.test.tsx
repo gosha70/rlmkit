@@ -390,13 +390,14 @@ describe("SettingsPage", () => {
       if (key === "providers") return swrStub([]);
       if (key === "profiles") return swrStub([]);
       if (key === "chat-providers") return swrStub([]);
+      if (key === "llm-providers") return swrStub([]);
       return swrStub(undefined);
     }) as typeof useSWR);
   });
 
   test("renders provider cards section", () => {
     render(<SettingsPage />);
-    expect(screen.getByRole("tab", { name: "Providers" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "LLM Providers" })).toBeInTheDocument();
   });
 
   test("renders budget tab trigger", () => {

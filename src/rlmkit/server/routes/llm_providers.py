@@ -225,7 +225,6 @@ async def test_llm_provider(
 
     import litellm
 
-    from rlmkit.server.dependencies import _LOCAL_PROVIDERS
     from rlmkit.server.routes.providers import _litellm_model_name
 
     model = _litellm_model_name(lp.backend, lp.model)

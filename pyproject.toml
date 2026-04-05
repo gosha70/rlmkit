@@ -121,7 +121,7 @@ ignore = ["E501"]  # Line length (formatter handles)
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["N802", "N803", "N806", "PT011"]  # Tests: allow naming conventions, broad pytest.raises
-"src/rlmkit/server/routes/*" = ["B008"]  # Depends() in FastAPI route defaults
+"src/rlmkit/server/routes/*" = ["B008", "PT028"]  # Depends() in FastAPI route defaults; PT028: route functions named test_* are not pytest tests
 
 [tool.mypy]
 python_version = "3.10"

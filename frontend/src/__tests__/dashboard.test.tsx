@@ -66,6 +66,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("swr", () => ({
   default: vi.fn(),
+  useSWRConfig: () => ({ mutate: vi.fn() }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -283,12 +284,18 @@ const makeMetrics = (): MetricsResponse => ({
   timeline: [],
 });
 
+// Helper: stub all four useSWR calls made by DashboardPage:
+//   1. sessions  2. metrics  3. evalSummary  4. evalDetail
+const noData = { data: undefined, isLoading: false } as ReturnType<typeof useSWR>;
+
 describe("DashboardPage", () => {
   test("renders summary metrics cards", () => {
     const metrics = makeMetrics();
     mockUseSWR
       .mockReturnValueOnce({ data: makeSessions(), isLoading: false } as ReturnType<typeof useSWR>)
-      .mockReturnValueOnce({ data: metrics, isLoading: false } as ReturnType<typeof useSWR>);
+      .mockReturnValueOnce({ data: metrics, isLoading: false } as ReturnType<typeof useSWR>)
+      .mockReturnValueOnce(noData)  // evalSummary
+      .mockReturnValueOnce(noData); // evalDetail
 
     render(<DashboardPage />);
     expect(screen.getByText("Total Tokens")).toBeInTheDocument();
@@ -301,7 +308,9 @@ describe("DashboardPage", () => {
     const metrics = makeMetrics();
     mockUseSWR
       .mockReturnValueOnce({ data: makeSessions(), isLoading: false } as ReturnType<typeof useSWR>)
-      .mockReturnValueOnce({ data: metrics, isLoading: false } as ReturnType<typeof useSWR>);
+      .mockReturnValueOnce({ data: metrics, isLoading: false } as ReturnType<typeof useSWR>)
+      .mockReturnValueOnce(noData)  // evalSummary
+      .mockReturnValueOnce(noData); // evalDetail
 
     render(<DashboardPage />);
     expect(screen.getByText("RLM vs Direct")).toBeInTheDocument();
@@ -311,7 +320,9 @@ describe("DashboardPage", () => {
   test("shows empty state when no sessions exist", () => {
     mockUseSWR
       .mockReturnValueOnce({ data: [], isLoading: false } as ReturnType<typeof useSWR>)
-      .mockReturnValueOnce({ data: undefined, isLoading: false } as ReturnType<typeof useSWR>);
+      .mockReturnValueOnce(noData)  // metrics
+      .mockReturnValueOnce(noData)  // evalSummary
+      .mockReturnValueOnce(noData); // evalDetail
 
     render(<DashboardPage />);
     expect(
@@ -322,12 +333,13 @@ describe("DashboardPage", () => {
   test("fetches metrics data on mount via SWR", () => {
     mockUseSWR
       .mockReturnValueOnce({ data: makeSessions(), isLoading: false } as ReturnType<typeof useSWR>)
-      .mockReturnValueOnce({ data: undefined, isLoading: false } as ReturnType<typeof useSWR>);
+      .mockReturnValueOnce(noData)  // metrics
+      .mockReturnValueOnce(noData)  // evalSummary
+      .mockReturnValueOnce(noData); // evalDetail
 
     render(<DashboardPage />);
-    // SWR was called twice: once for sessions, once for metrics
+    // SWR was called at least twice: once for sessions, once for metrics
     expect(mockUseSWR).toHaveBeenCalledWith("sessions", expect.any(Function));
-    // Second call uses the metrics key
     expect(mockUseSWR).toHaveBeenCalledWith(
       expect.stringContaining("metrics-"),
       expect.any(Function),
