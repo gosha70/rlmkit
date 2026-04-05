@@ -12,9 +12,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
+import uuid as _uuid
+
 from rlmkit.application.dto import RunResultDTO
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.infrastructure.embedding.litellm_embedding_adapter import LiteLLMEmbeddingAdapter
+from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
 from rlmkit.core.trace import ExecutionTrace
 from rlmkit.core.trace import TraceStep as CoreTraceStep
 from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
@@ -26,6 +31,10 @@ from rlmkit.server.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# RAG index cache: file_id -> (SQLiteStorageAdapter, collection_name, embedding_model)
+# Avoids re-embedding the full document on every message in the same conversation.
+_rag_index_cache: dict[str, tuple["SQLiteStorageAdapter", str, str]] = {}
 
 
 def _save_trajectory(
@@ -138,7 +147,14 @@ async def submit_chat(
     # Execute in background
     asyncio.create_task(
         _run_execution(
-            state, execution, content, req.query, mode, chat_provider_id, req.num_retries
+            state,
+            execution,
+            content,
+            req.query,
+            mode,
+            chat_provider_id,
+            req.num_retries,
+            file_id=req.file_id,
         )
     )
 
@@ -158,6 +174,7 @@ async def _run_execution(
     mode: str,
     chat_provider_id: str | None = None,
     num_retries: int | None = None,
+    file_id: str | None = None,
 ) -> None:
     """Run the use case in the background and store results."""
     try:
@@ -179,16 +196,29 @@ async def _run_execution(
             query,
         )
 
-        # Build conversation context from Chat Provider history
+        # Build conversation context from Chat Provider history.
+        # RLM and RAG derive all context from the document on each call — they do not
+        # benefit from prior answers, and including them causes context-window overflow
+        # on small models (e.g. 8K-context vLLM).  Only direct/compare modes need
+        # conversational memory.
         conversation_history: list[dict[str, str]] = []
-        if chat_provider_id:
+        if chat_provider_id and mode in ("direct", "compare"):
             prev_msgs = state.get_conversation(execution.session_id, chat_provider_id)
-            # Include previous messages as context (skip the current user message which is last)
-            for msg in prev_msgs[:-1]:  # exclude the user message we just added
-                role = msg.get("role", "user")
+            # Keep last 3 turns; exclude error messages; trim long assistant answers
+            eligible = [
+                msg
+                for msg in prev_msgs[:-1]
+                if msg.get("role") in ("user", "assistant")
+                and msg.get("content", "")
+                and not str(msg.get("content", "")).startswith("Error:")
+            ]
+            for msg in eligible[-6:]:  # last 3 exchanges (6 messages)
                 msg_content = msg.get("content", "")
-                if role in ("user", "assistant") and msg_content:
-                    conversation_history.append({"role": role, "content": msg_content})
+                if len(msg_content) > 500:
+                    msg_content = msg_content[:500] + "…"
+                conversation_history.append(
+                    {"role": msg.get("role", "user"), "content": msg_content}
+                )
 
         # Build run config, using Chat Provider settings if available
         if cp and mode == "rlm":
@@ -219,9 +249,44 @@ async def _run_execution(
             )
             results = [result_rlm, result_direct]
         elif mode == "rag":
-            # TODO: Run RAG use case when available; fall back to direct for now
-            uc_direct = RunDirectUseCase(llm)
-            results = [await asyncio.to_thread(uc_direct.execute, content, full_query, run_config)]
+            rag_cfg = state.config.mode_config.rag_config
+            # Resolve embedding API key: OpenAI key covers embeddings for any provider
+            embedding_api_key: str | None = os.environ.get("OPENAI_API_KEY")
+            if not embedding_api_key and cp:
+                from rlmkit.server.routes.llm_providers import _get_api_key
+
+                lp = state.get_llm_provider(cp.llm_provider_id) if cp.llm_provider_id else None
+                if lp and lp.backend == "openai":
+                    embedding_api_key = _get_api_key(lp.id, lp.backend)
+
+            # Re-use indexed storage for follow-up messages on the same file.
+            # This skips the expensive chunk+embed step (can take 30s+ for large docs).
+            cached = _rag_index_cache.get(file_id) if file_id else None
+            if cached and cached[2] == rag_cfg.embedding_model:
+                storage, collection, _ = cached
+                skip_indexing = True
+                logger.info("RAG: reusing cached index for file_id=%s", file_id)
+            else:
+                storage = SQLiteStorageAdapter(":memory:")
+                collection = f"rag_{_uuid.uuid4().hex}"
+                skip_indexing = False
+
+            run_config.extra["collection"] = collection
+            run_config.extra["chunk_size"] = rag_cfg.chunk_size
+            run_config.extra["top_k"] = rag_cfg.top_k
+            embedder = LiteLLMEmbeddingAdapter(
+                model=rag_cfg.embedding_model,
+                api_key=embedding_api_key,
+            )
+            uc_rag = RunRAGUseCase(llm, embedder, storage)
+            results = [
+                await asyncio.to_thread(
+                    uc_rag.execute, content, full_query, run_config, skip_indexing
+                )
+            ]
+            # Populate cache after successful first index
+            if file_id and not skip_indexing and results[0].success:
+                _rag_index_cache[file_id] = (storage, collection, rag_cfg.embedding_model)
         elif mode in ("rlm", "auto"):
             sandbox = state.create_sandbox()
             uc = RunRLMUseCase(llm, sandbox)
@@ -519,8 +584,29 @@ async def websocket_chat(
                             )
                             results = [result_rlm, result_direct]
                         elif m == "rag":
-                            uc_d = RunDirectUseCase(llm)
-                            results = [await uc_d.execute_async(cnt, q, cfg, event_emitter=emitter)]
+                            rag_cfg = state.config.mode_config.rag_config
+                            emb_key: str | None = os.environ.get("OPENAI_API_KEY")
+                            if not emb_key and ws_cp:
+                                from rlmkit.server.routes.llm_providers import _get_api_key
+
+                                ws_lp_obj = (
+                                    state.get_llm_provider(ws_cp.llm_provider_id)
+                                    if ws_cp.llm_provider_id
+                                    else None
+                                )
+                                if ws_lp_obj and ws_lp_obj.backend == "openai":
+                                    emb_key = _get_api_key(ws_lp_obj.id, ws_lp_obj.backend)
+                            ws_collection = f"rag_{_uuid.uuid4().hex}"
+                            cfg.extra["collection"] = ws_collection
+                            cfg.extra["chunk_size"] = rag_cfg.chunk_size
+                            cfg.extra["top_k"] = rag_cfg.top_k
+                            ws_embedder = LiteLLMEmbeddingAdapter(
+                                model=rag_cfg.embedding_model,
+                                api_key=emb_key,
+                            )
+                            ws_storage = SQLiteStorageAdapter(":memory:")
+                            uc_rag = RunRAGUseCase(llm, ws_embedder, ws_storage)
+                            results = [await asyncio.to_thread(uc_rag.execute, cnt, q, cfg)]
                         elif m in ("rlm", "auto"):
                             sandbox = state.create_sandbox()
                             uc = RunRLMUseCase(llm, sandbox)

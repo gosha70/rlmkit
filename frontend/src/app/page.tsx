@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { User, Bot, Sparkles, Loader2, ChevronDown, ChevronRight, Terminal } from "lucide-react";
+import { User, Bot, Sparkles, Loader2, ChevronDown, ChevronRight, Terminal, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/shared/app-shell";
 import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
@@ -15,6 +15,7 @@ import { ResponseRating } from "@/components/chat/response-rating";
 import { PickWinner } from "@/components/chat/pick-winner";
 import { JudgeScores } from "@/components/chat/judge-scores";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getConfig,
@@ -91,6 +92,7 @@ export default function ChatPage() {
   }, []);
 
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | "processing" | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [isAnyStreaming, setIsAnyStreaming] = useState(false);
   const [ratings, setRatings] = useState<Record<string, "up" | "down">>({});
@@ -634,12 +636,19 @@ export default function ChatPage() {
   );
 
   const handleFileUpload = useCallback(async (file: File) => {
+    setUploadProgress(0);
     try {
-      const resp = await uploadFile(file);
+      const resp = await uploadFile(file, (pct) => {
+        // At 100% the bytes are sent but the server is still extracting text.
+        // Switch to indeterminate "processing" state so the bar doesn't freeze.
+        setUploadProgress(pct >= 100 ? "processing" : pct);
+      });
       setUploadedFile(resp);
     } catch (err) {
       console.error("Failed to upload file:", err);
       toast.error("File upload failed");
+    } finally {
+      setUploadProgress(null);
     }
   }, []);
 
@@ -703,6 +712,37 @@ export default function ChatPage() {
           />
         </div>
 
+        {/* Upload / processing progress */}
+        {uploadProgress !== null && (
+          <div className="border-b bg-muted/30 px-4 py-3">
+            <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                {uploadProgress === "processing" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+                )}
+                <span className="font-medium">
+                  {uploadProgress === "processing" ? "Extracting text…" : "Uploading…"}
+                </span>
+              </div>
+              {typeof uploadProgress === "number" && (
+                <span className="tabular-nums text-muted-foreground">{uploadProgress}%</span>
+              )}
+            </div>
+            <div className="mt-2">
+              {uploadProgress === "processing" ? (
+                /* Indeterminate shimmer while server extracts text */
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full w-1/3 animate-[shimmer_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
+                </div>
+              ) : (
+                <Progress value={uploadProgress} className="h-1.5" />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* File attachment bar */}
         {uploadedFile && (
           <div className="border-b px-4 py-2">
@@ -728,7 +768,7 @@ export default function ChatPage() {
               </p>
             </div>
             <div className="w-full max-w-3xl">
-              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0} />
+              <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0 || uploadProgress !== null} />
             </div>
           </div>
         ) : (
@@ -954,7 +994,7 @@ export default function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0} />
+            <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0 || uploadProgress !== null} />
           </>
         )}
       </div>

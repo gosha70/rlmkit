@@ -5,7 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from rlmkit.server.dependencies import AppState, FileRecord, get_state
 from rlmkit.server.models import FileUploadResponse
@@ -13,15 +14,29 @@ from rlmkit.server.models import FileUploadResponse
 router = APIRouter()
 
 _ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".py", ".json", ".csv"}
-_MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+# The entire file is read into memory before text extraction.
+# Cap at 200 MB to prevent a single upload from OOM-killing the process.
+# Disk-backed streaming would remove this limit but is not yet implemented.
+_MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 MB
+_MULTIPART_MAX_PART_SIZE = _MAX_FILE_SIZE + 64 * 1024  # slightly above for multipart overhead
 
 
 @router.post("/api/files/upload", status_code=201)
 async def upload_file(
-    file: UploadFile,
+    request: Request,
     state: AppState = Depends(get_state),
 ) -> FileUploadResponse:
     """Upload a document for analysis."""
+    # Raise Starlette's per-part limit so large documents are accepted.
+    try:
+        form = await request.form(max_part_size=_MULTIPART_MAX_PART_SIZE)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to parse upload: {exc}") from exc
+
+    file = form.get("file")
+    if not isinstance(file, StarletteUploadFile):
+        raise HTTPException(status_code=400, detail="No file provided")
+
     # Validate file type
     name = file.filename or "unnamed"
     ext = ""
@@ -33,13 +48,21 @@ async def upload_file(
             detail=f"Unsupported file type: {ext}. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}",
         )
 
-    # Read content
+    # Read content; enforce cap to avoid OOM on oversized uploads
     raw = await file.read()
     if len(raw) > _MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File exceeds 50 MB limit")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds {_MAX_FILE_SIZE // (1024 * 1024)} MB limit",
+        )
 
     # Extract text
-    text = _extract_text(raw, ext)
+    try:
+        text = _extract_text(raw, ext)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Could not extract text from file: {exc}"
+        ) from exc
     token_estimate = max(1, len(text) // 4)
 
     file_id = str(uuid.uuid4())

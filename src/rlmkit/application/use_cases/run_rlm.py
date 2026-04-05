@@ -8,8 +8,11 @@ until a final answer or budget exhaustion.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 from rlmkit.application.dto import (
     LLMResponseDTO,
@@ -25,6 +28,11 @@ from rlmkit.prompts import get_rlm_message
 
 if TYPE_CHECKING:
     from rlmkit.core.parsing import ParsedResponse
+
+# Maximum characters for an execution result that is fed back into the LLM
+# message history.  Caps the per-step token cost of growing context windows
+# on models with small context limits (e.g. 8k-token local models).
+_MAX_EXEC_RESULT_CHARS = 2000
 
 
 class RunRLMUseCase:
@@ -102,6 +110,7 @@ class RunRLMUseCase:
         last_assistant_text: str = ""  # fallback: last raw LLM response (including code steps)
         last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
+        overflow_at_step: int | None = None  # set when context window is exceeded mid-loop
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
         # Use root model for the initial reasoning call
@@ -139,8 +148,18 @@ class RunRLMUseCase:
                     else messages
                 )
 
-                # Call LLM
-                response: LLMResponseDTO = self._llm.complete(call_messages)
+                # Call LLM — break to synthesis/warning fallback on context window overflow
+                try:
+                    response: LLMResponseDTO = self._llm.complete(call_messages)
+                except Exception as llm_exc:
+                    if self._is_context_overflow(llm_exc):
+                        overflow_at_step = budget_state.steps
+                        logger.warning(
+                            "Context window exceeded at step %d; falling back to warning",
+                            budget_state.steps,
+                        )
+                        break
+                    raise
                 cumulative_input += response.input_tokens
                 cumulative_output += response.output_tokens
                 budget_state.input_tokens = cumulative_input
@@ -251,10 +270,18 @@ class RunRLMUseCase:
                     )
 
                     messages.append({"role": "assistant", "content": text})
+                    # Truncate large execution outputs before adding to message history
+                    # to prevent context window overflow on models with small context limits.
+                    exec_content = formatted
+                    if len(exec_content) > _MAX_EXEC_RESULT_CHARS:
+                        exec_content = (
+                            exec_content[:_MAX_EXEC_RESULT_CHARS]
+                            + f"\n… [truncated, {len(formatted) - _MAX_EXEC_RESULT_CHARS} chars omitted]"
+                        )
                     messages.append(
                         {
                             "role": "user",
-                            "content": f"Execution result:\n{formatted}",
+                            "content": f"Execution result:\n{exec_content}",
                         }
                     )
                 else:
@@ -379,20 +406,46 @@ class RunRLMUseCase:
                     elapsed_time=elapsed,
                     trace=trace,
                 )
-            raise BudgetExceededError(
-                f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
-                "without finding final answer"
-            )
-
-        except BudgetExceededError as exc:
+            # No answer available — return an actionable warning.
+            # Treated as success=True so the result is visible in chat and
+            # can be evaluated by Auto-Judge.
             if hasattr(self._llm, "use_root_model"):
                 self._llm.use_root_model()
             elapsed = time.time() - start
             return RunResultDTO(
-                answer="",
+                answer=self._format_limit_warning(
+                    overflow_step=overflow_at_step,
+                    steps_used=budget_state.steps,
+                    config=budget_config,
+                ),
                 mode_used="rlm",
-                success=False,
-                error=str(exc),
+                success=True,
+                steps=budget_state.steps,
+                input_tokens=cumulative_input,
+                output_tokens=cumulative_output,
+                total_cost=cumulative_cost,
+                elapsed_time=elapsed,
+                trace=trace,
+            )
+
+        except BudgetExceededError as exc:
+            # Config/limit hit — return a warning, not an error, so the user
+            # knows exactly which setting to change. success=True lets Auto-Judge run.
+            if hasattr(self._llm, "use_root_model"):
+                self._llm.use_root_model()
+            elapsed = time.time() - start
+            partial = last_plain_answer or last_assistant_text
+            warning = self._format_limit_warning(
+                overflow_step=overflow_at_step,
+                steps_used=budget_state.steps,
+                config=budget_config,
+                exc=exc,
+            )
+            answer = (partial + "\n\n---\n\n" + warning) if partial else warning
+            return RunResultDTO(
+                answer=answer,
+                mode_used="rlm",
+                success=True,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
@@ -404,6 +457,26 @@ class RunRLMUseCase:
             if hasattr(self._llm, "use_root_model"):
                 self._llm.use_root_model()
             elapsed = time.time() - start
+            # Context window exceeded is a configuration issue — warn, don't error.
+            if self._is_context_overflow(exc):
+                partial = last_plain_answer or last_assistant_text
+                warning = self._format_limit_warning(
+                    overflow_step=budget_state.steps,
+                    steps_used=budget_state.steps,
+                    config=budget_config,
+                )
+                answer = (partial + "\n\n---\n\n" + warning) if partial else warning
+                return RunResultDTO(
+                    answer=answer,
+                    mode_used="rlm",
+                    success=True,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
             return RunResultDTO(
                 answer="",
                 mode_used="rlm",
@@ -473,6 +546,7 @@ class RunRLMUseCase:
         last_assistant_text: str = ""  # fallback: last raw LLM response (including code steps)
         last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
+        overflow_at_step: int | None = None  # set when context window is exceeded mid-loop
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
         if hasattr(self._llm, "use_root_model"):
@@ -507,26 +581,37 @@ class RunRLMUseCase:
                     else messages
                 )
 
-                # Stream tokens if emitter and async streaming are available
-                if event_emitter and hasattr(self._llm, "complete_stream_async"):
-                    collected: list[str] = []
-                    async for token in self._llm.complete_stream_async(call_messages):
-                        collected.append(token)
-                        await event_emitter.on_token(token)
-                    text = "".join(collected)
-                    # Approximate token counts for streamed responses
-                    approx_input = max(1, sum(len(m["content"]) for m in call_messages) // 4)
-                    approx_output = max(1, len(text) // 4)
-                    response = LLMResponseDTO(
-                        content=text,
-                        model=getattr(self._llm, "active_model", ""),
-                        input_tokens=approx_input,
-                        output_tokens=approx_output,
-                    )
-                elif hasattr(self._llm, "complete_async"):
-                    response = await self._llm.complete_async(call_messages)
-                else:
-                    response = await asyncio.to_thread(self._llm.complete, call_messages)
+                # Stream tokens if emitter and async streaming are available.
+                # Break to synthesis fallback on context window overflow.
+                try:
+                    if event_emitter and hasattr(self._llm, "complete_stream_async"):
+                        collected: list[str] = []
+                        async for token in self._llm.complete_stream_async(call_messages):
+                            collected.append(token)
+                            await event_emitter.on_token(token)
+                        text = "".join(collected)
+                        # Approximate token counts for streamed responses
+                        approx_input = max(1, sum(len(m["content"]) for m in call_messages) // 4)
+                        approx_output = max(1, len(text) // 4)
+                        response = LLMResponseDTO(
+                            content=text,
+                            model=getattr(self._llm, "active_model", ""),
+                            input_tokens=approx_input,
+                            output_tokens=approx_output,
+                        )
+                    elif hasattr(self._llm, "complete_async"):
+                        response = await self._llm.complete_async(call_messages)
+                    else:
+                        response = await asyncio.to_thread(self._llm.complete, call_messages)
+                except Exception as llm_exc:
+                    if self._is_context_overflow(llm_exc):
+                        overflow_at_step = budget_state.steps
+                        logger.warning(
+                            "Context window exceeded at step %d; attempting synthesis fallback",
+                            budget_state.steps,
+                        )
+                        break
+                    raise
 
                 cumulative_input += response.input_tokens
                 cumulative_output += response.output_tokens
@@ -642,10 +727,18 @@ class RunRLMUseCase:
                     )
 
                     messages.append({"role": "assistant", "content": text})
+                    # Truncate large execution outputs before adding to message history
+                    # to prevent context window overflow on models with small context limits.
+                    exec_content = formatted
+                    if len(exec_content) > _MAX_EXEC_RESULT_CHARS:
+                        exec_content = (
+                            exec_content[:_MAX_EXEC_RESULT_CHARS]
+                            + f"\n… [truncated, {len(formatted) - _MAX_EXEC_RESULT_CHARS} chars omitted]"
+                        )
                     messages.append(
                         {
                             "role": "user",
-                            "content": f"Execution result:\n{formatted}",
+                            "content": f"Execution result:\n{exec_content}",
                         }
                     )
                 else:
@@ -762,20 +855,46 @@ class RunRLMUseCase:
                     elapsed_time=elapsed,
                     trace=trace,
                 )
-            raise BudgetExceededError(
-                f"Maximum steps ({budget_config.max_steps or 16}) exceeded "
-                "without finding final answer"
-            )
-
-        except BudgetExceededError as exc:
+            # No answer available — return an actionable warning.
+            # Treated as success=True so the result is visible in chat and
+            # can be evaluated by Auto-Judge.
             if hasattr(self._llm, "use_root_model"):
                 self._llm.use_root_model()
             elapsed = time.time() - start
             return RunResultDTO(
-                answer="",
+                answer=self._format_limit_warning(
+                    overflow_step=overflow_at_step,
+                    steps_used=budget_state.steps,
+                    config=budget_config,
+                ),
                 mode_used="rlm",
-                success=False,
-                error=str(exc),
+                success=True,
+                steps=budget_state.steps,
+                input_tokens=cumulative_input,
+                output_tokens=cumulative_output,
+                total_cost=cumulative_cost,
+                elapsed_time=elapsed,
+                trace=trace,
+            )
+
+        except BudgetExceededError as exc:
+            # Config/limit hit — return a warning, not an error, so the user
+            # knows exactly which setting to change. success=True lets Auto-Judge run.
+            if hasattr(self._llm, "use_root_model"):
+                self._llm.use_root_model()
+            elapsed = time.time() - start
+            partial = last_plain_answer or last_assistant_text
+            warning = self._format_limit_warning(
+                overflow_step=overflow_at_step,
+                steps_used=budget_state.steps,
+                config=budget_config,
+                exc=exc,
+            )
+            answer = (partial + "\n\n---\n\n" + warning) if partial else warning
+            return RunResultDTO(
+                answer=answer,
+                mode_used="rlm",
+                success=True,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
@@ -787,6 +906,26 @@ class RunRLMUseCase:
             if hasattr(self._llm, "use_root_model"):
                 self._llm.use_root_model()
             elapsed = time.time() - start
+            # Context window exceeded is a configuration issue — warn, don't error.
+            if self._is_context_overflow(exc):
+                partial = last_plain_answer or last_assistant_text
+                warning = self._format_limit_warning(
+                    overflow_step=budget_state.steps,
+                    steps_used=budget_state.steps,
+                    config=budget_config,
+                )
+                answer = (partial + "\n\n---\n\n" + warning) if partial else warning
+                return RunResultDTO(
+                    answer=answer,
+                    mode_used="rlm",
+                    success=True,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
             return RunResultDTO(
                 answer="",
                 mode_used="rlm",
@@ -1040,6 +1179,69 @@ class RunRLMUseCase:
                 ),
             },
         ]
+
+    @staticmethod
+    def _is_context_overflow(exc: Exception) -> bool:
+        """Return True if *exc* is a context-window-exceeded error from the LLM."""
+        msg = str(exc).lower()
+        return ("context" in msg or "8192" in msg or "4096" in msg) and any(
+            kw in msg for kw in ("window", "length", "exceed", "maximum", "too large", "token")
+        )
+
+    @staticmethod
+    def _format_limit_warning(
+        overflow_step: int | None = None,
+        steps_used: int = 0,
+        config: "BudgetConfig | None" = None,
+        exc: "Exception | None" = None,
+    ) -> str:
+        """Return a user-friendly warning for known configuration-driven limits.
+
+        These are *not* bugs — they indicate that the provider's settings need
+        adjustment.  The warning includes specific mitigation steps so the user
+        knows exactly what to change.
+        """
+        exc_msg = str(exc).lower() if exc else ""
+
+        if overflow_step is not None:
+            return (
+                f"⚠️ **Context window exceeded** at step {overflow_step}.\n\n"
+                "The model's context limit was reached during recursive exploration "
+                "and the response could not be completed.\n\n"
+                "**How to fix** — in Settings → Chat Providers → [this provider] → Runtime Settings:\n"
+                "- Reduce **Max Output Tokens** (e.g. from 4096 → 512 or 1024). "
+                "RLM steps generate small code snippets; reserving 4096 tokens for output "
+                "leaves very little room for the growing conversation context.\n"
+                "- Or reduce **Max Steps** to limit how deep the exploration goes."
+            )
+        if "timeout" in exc_msg or ("time" in exc_msg and "budget" in exc_msg):
+            timeout = config.max_time_seconds if config else None
+            timeout_str = f" ({int(timeout)}s limit)" if timeout else ""
+            return (
+                f"⚠️ **Execution timed out** after {steps_used} steps{timeout_str}.\n\n"
+                "**How to fix** — in Settings → Chat Providers → [this provider]:\n"
+                "- Increase **Timeout** to allow more time for analysis."
+            )
+        if "token" in exc_msg and any(
+            kw in exc_msg for kw in ("budget", "exceed", "maximum", "limit")
+        ):
+            max_tok = config.max_tokens if config else None
+            tok_str = f" (limit: {max_tok:,})" if max_tok else ""
+            return (
+                f"⚠️ **Token budget exceeded** after {steps_used} steps{tok_str}.\n\n"
+                "**How to fix** — in Settings → Budget:\n"
+                "- Increase **Max Tokens** per execution."
+            )
+        # Generic steps-exhausted case
+        max_steps = config.max_steps if config else None
+        steps_str = f" of {max_steps}" if max_steps else ""
+        return (
+            f"⚠️ **Step budget exhausted** ({steps_used}{steps_str} steps used) "
+            "without producing a complete answer.\n\n"
+            "**How to fix** — in Settings → Chat Providers → [this provider]:\n"
+            "- Increase **Max Steps** to allow deeper document analysis.\n"
+            "- Or ask a more focused question."
+        )
 
     @staticmethod
     def _extract_final(text: str) -> str | None:

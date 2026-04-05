@@ -77,13 +77,13 @@ BUILTIN_PROFILES: list[RunProfile] = [
         strategy="rag",
         is_builtin=True,
         runtime_settings=RuntimeSettings(
-            temperature=0.3, top_p=0.95, max_output_tokens=4096, timeout_seconds=30
+            temperature=0.3, top_p=0.95, max_output_tokens=4096, timeout_seconds=120
         ),
         budget=BudgetConfig(
             max_steps=8,
             max_tokens=50000,
             max_cost_usd=2.0,
-            max_time_seconds=30,
+            max_time_seconds=120,
             max_recursion_depth=3,
         ),
     ),

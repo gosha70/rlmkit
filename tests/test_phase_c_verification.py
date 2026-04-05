@@ -141,8 +141,10 @@ class TestRLMExecute:
         config = RunConfigDTO(mode="rlm", max_steps=3)
         result = uc.execute("content", "query", config)
 
-        assert result.success is False
-        assert "exceeded" in (result.error or "").lower()
+        # Budget exhaustion is a known config limit — treated as complete with a warning,
+        # not an error, so Auto-Judge can evaluate the result.
+        assert result.success is True
+        assert "⚠️" in result.answer
         assert result.steps <= 3
 
 
@@ -207,7 +209,7 @@ class TestRLMExecuteAsync:
 
     @pytest.mark.asyncio
     async def test_async_budget_exceeded(self) -> None:
-        """execute_async returns error when budget exceeded."""
+        """execute_async returns warning (not error) when budget exceeded."""
         from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(["```python\nx = 1\n```"] * 10)
@@ -217,5 +219,5 @@ class TestRLMExecuteAsync:
         config = RunConfigDTO(mode="rlm", max_steps=2)
         result = await uc.execute_async("content", "query", config)
 
-        assert result.success is False
-        assert "exceeded" in (result.error or "").lower()
+        assert result.success is True
+        assert "⚠️" in result.answer

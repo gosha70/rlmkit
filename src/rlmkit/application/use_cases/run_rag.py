@@ -15,6 +15,35 @@ from rlmkit.application.ports.storage_port import StoragePort
 from rlmkit.prompts import get_mode_system_prompt
 
 
+def _humanize_rag_error(exc: Exception) -> str:
+    """Return an actionable error message for common RAG failures."""
+    msg = str(exc).lower()
+    if "context" in msg and ("window" in msg or "length" in msg or "tokens" in msg):
+        return (
+            "RAG context window exceeded: the retrieved chunks are too large for this model. "
+            "Reduce 'chunk_size' or 'top_k' in Settings → Modes → RAG, "
+            "or switch to a model with a larger context window."
+        )
+    if "timeout" in msg or "timed out" in msg:
+        return (
+            "RAG timed out while embedding or querying. "
+            "For large documents this can be slow on the first message. "
+            "Try increasing the provider timeout in Settings, or reduce 'chunk_size'."
+        )
+    if "api key" in msg or "authentication" in msg or "unauthorized" in msg or "401" in msg:
+        return (
+            "RAG embedding failed: missing or invalid API key. "
+            "RAG uses OpenAI embeddings by default — set OPENAI_API_KEY in your environment "
+            "or configure an embedding provider in Settings."
+        )
+    if "max_tokens_per_request" in msg or "rate limit" in msg or "429" in msg:
+        return (
+            "RAG embedding rate-limited or exceeded tokens-per-request. "
+            "Reduce 'chunk_size' in Settings → Modes → RAG to send smaller batches."
+        )
+    return str(exc)
+
+
 class RunRAGUseCase:
     """Orchestrates a RAG pipeline through ports.
 
@@ -39,6 +68,7 @@ class RunRAGUseCase:
         content: str,
         query: str,
         config: RunConfigDTO | None = None,
+        skip_indexing: bool = False,
     ) -> RunResultDTO:
         """Run a RAG query: chunk, embed, retrieve, generate.
 
@@ -57,18 +87,19 @@ class RunRAGUseCase:
         collection = config.extra.get("collection", "rag_temp")
 
         try:
-            # 1. Chunk the content
-            chunks = self._chunk_text(content, chunk_size)
+            if not skip_indexing:
+                # 1. Chunk the content
+                chunks = self._chunk_text(content, chunk_size)
 
-            # 2. Embed all chunks
-            embeddings = self._embedder.embed_batch(chunks)
+                # 2. Embed all chunks and store (may be slow for large docs)
+                embeddings = self._embedder.embed_batch(chunks)
 
-            # 3. Store chunks with embeddings
-            self._storage.add_chunks(
-                collection=collection,
-                chunks=chunks,
-                embeddings=embeddings,
-            )
+                # 3. Store chunks with embeddings
+                self._storage.add_chunks(
+                    collection=collection,
+                    chunks=chunks,
+                    embeddings=embeddings,
+                )
 
             # 4. Embed the query and retrieve top-k
             query_embedding = self._embedder.embed(query)
@@ -97,13 +128,28 @@ class RunRAGUseCase:
             response: LLMResponseDTO = self._llm.complete(messages)
             elapsed = time.time() - start
 
+            # Collect embedding token usage if the adapter exposes it
+            embed_tokens = getattr(self._embedder, "total_tokens", 0)
+            embed_cost = getattr(self._embedder, "total_cost", 0.0)
+
+            # Compute LLM completion cost via the adapter's pricing table
+            try:
+                pricing = self._llm.get_pricing()
+                llm_cost = (
+                    response.input_tokens * float(pricing.get("input_cost_per_1m", 0.0))
+                    + response.output_tokens * float(pricing.get("output_cost_per_1m", 0.0))
+                ) / 1_000_000
+            except Exception:
+                llm_cost = 0.0
+
             return RunResultDTO(
                 answer=response.content,
                 mode_used="rag",
                 success=True,
                 steps=1,
-                input_tokens=response.input_tokens,
+                input_tokens=response.input_tokens + embed_tokens,
                 output_tokens=response.output_tokens,
+                total_cost=embed_cost + llm_cost,
                 elapsed_time=elapsed,
                 trace=[
                     {
@@ -111,21 +157,24 @@ class RunRAGUseCase:
                         "role": "rag_retrieval",
                         "chunks_retrieved": len(results),
                         "scores": [score for score, _, _ in results],
+                        "embedding_tokens": embed_tokens,
+                        "embedding_cost": embed_cost,
                     }
                 ],
                 metadata={
-                    "chunks_total": len(chunks),
+                    "chunks_total": len(chunks) if not skip_indexing else None,
                     "chunks_retrieved": len(results),
                     "collection": collection,
                 },
             )
         except Exception as exc:
             elapsed = time.time() - start
+            error_msg = _humanize_rag_error(exc)
             return RunResultDTO(
                 answer="",
                 mode_used="rag",
                 success=False,
-                error=str(exc),
+                error=error_msg,
                 elapsed_time=elapsed,
             )
 

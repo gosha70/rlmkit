@@ -202,6 +202,7 @@ class TraceBudget(BaseModel):
 class TraceResult(BaseModel):
     answer: str = ""
     success: bool = True
+    error: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     total_cost: float = 0.0
@@ -231,7 +232,7 @@ class RuntimeSettings(BaseModel):
     temperature: float = 0.7
     top_p: float = 1.0
     max_output_tokens: int = 4096
-    timeout_seconds: int = 30
+    timeout_seconds: int = 120
 
 
 # ---------------------------------------------------------------------------

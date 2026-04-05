@@ -4,6 +4,11 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+// File uploads bypass the Next.js dev-server proxy (large multipart bodies
+// don't pass through cleanly). Go directly to the backend instead.
+// CORS on the backend already allows http://localhost:3000.
+const UPLOAD_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 // ---------------------------------------------------------------------------
 // Types matching the backend Pydantic models
 // ---------------------------------------------------------------------------
@@ -415,12 +420,34 @@ export const submitChat = (req: ChatRequest) =>
   fetchJSON<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(req) });
 
 // Files
-export async function uploadFile(file: File): Promise<FileUploadResponse> {
-  const form = new FormData();
-  form.append("file", file);
-  const resp = await fetch(`${API_BASE}/api/files/upload`, { method: "POST", body: form });
-  if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
-  return resp.json();
+export function uploadFile(
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<FileUploadResponse> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${UPLOAD_BASE}/api/files/upload`);
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as FileUploadResponse);
+        } catch {
+          reject(new Error("Invalid response from server"));
+        }
+      } else {
+        reject(new Error(`Upload failed: ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.send(form);
+  });
 }
 
 // Sessions
