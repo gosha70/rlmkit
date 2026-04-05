@@ -18,6 +18,38 @@ from rlmkit.application.dto import LLMResponseDTO
 
 logger = logging.getLogger(__name__)
 
+_CONNECTION_KEYWORDS = (
+    "connection refused",
+    "connection error",
+    "cannot connect",
+    "unreachable",
+    "network is unreachable",
+    "connect call failed",
+    "failed to establish",
+    "name or service not known",
+    "no route to host",
+    "connectionerror",
+    "connecterror",
+    "apiconnectionerror",
+)
+
+
+def _is_connection_error(exc: BaseException) -> bool:
+    """Return True when *exc* looks like a network-level connection failure."""
+    msg = str(exc).lower()
+    return any(kw in msg for kw in _CONNECTION_KEYWORDS)
+
+
+def _connection_error_message(api_base: str | None, exc: BaseException) -> str:
+    """Build a human-readable message for connection failures."""
+    location = f" at '{api_base}'" if api_base else ""
+    hint = (
+        " Make sure the server is running and reachable."
+        if api_base
+        else " Check your provider credentials and network connectivity."
+    )
+    return f"Cannot connect to the LLM server{location}.{hint} (Detail: {exc})"
+
 
 class LiteLLMAdapter:
     """Unified LLM adapter using LiteLLM for provider-agnostic access.
@@ -90,6 +122,8 @@ class LiteLLMAdapter:
         try:
             response = litellm.completion(**params)
         except Exception as exc:
+            if _is_connection_error(exc):
+                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM completion failed: {exc}") from exc
 
         choice = response.choices[0]
@@ -125,6 +159,8 @@ class LiteLLMAdapter:
                 if delta and delta.content:
                     yield delta.content
         except Exception as exc:
+            if _is_connection_error(exc):
+                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM streaming failed: {exc}") from exc
 
     def count_tokens(self, text: str) -> int:
@@ -191,6 +227,8 @@ class LiteLLMAdapter:
         try:
             response = await litellm.acompletion(**params)
         except Exception as exc:
+            if _is_connection_error(exc):
+                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM async completion failed: {exc}") from exc
 
         choice = response.choices[0]
@@ -225,6 +263,8 @@ class LiteLLMAdapter:
                 if delta and delta.content:
                     yield delta.content
         except Exception as exc:
+            if _is_connection_error(exc):
+                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM async streaming failed: {exc}") from exc
 
     # -- Two-model support --

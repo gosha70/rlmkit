@@ -457,9 +457,10 @@ export interface ExecutionSummary {
   chat_provider_name?: string | null;
 }
 
-export const getExecutions = (limit = 20, chatProviderId?: string) => {
+export const getExecutions = (limit = 20, chatProviderId?: string, sessionId?: string) => {
   const params = new URLSearchParams({ limit: String(limit) });
   if (chatProviderId) params.set("chat_provider_id", chatProviderId);
+  if (sessionId) params.set("session_id", sessionId);
   return fetchJSON<ExecutionSummary[]>(`/api/executions?${params}`);
 };
 

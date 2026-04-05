@@ -46,7 +46,7 @@ def _get_instance_api_key(llm_provider_id: str, backend: str) -> str | None:
 
 
 # Providers that default to zero retries (local servers; retries multiply hangs)
-_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio"})
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio", "vllm"})
 
 # Config lives in ~/.rlmkit/ so the path is stable regardless of CWD.
 # Migrate from legacy .rlmkit_config.json in CWD on first run if present.
@@ -766,15 +766,21 @@ class AppState:
 
     @staticmethod
     def _litellm_model_name(provider_key: str, model: str) -> str:
-        """Prepend the LiteLLM provider prefix if needed."""
-        if "/" in model:
-            return model
+        """Prepend the LiteLLM provider prefix if needed.
+
+        HuggingFace-style IDs (e.g. 'Qwen/Qwen2.5-7B-Instruct') contain a
+        slash but are not yet prefixed — only skip when the model already
+        starts with this provider's own LiteLLM prefix.
+        """
         _prefixes = {
             "anthropic": "anthropic/",
             "ollama": "ollama/",
             "lmstudio": "openai/",
+            "vllm": "openai/",
         }
         prefix = _prefixes.get(provider_key, "")
+        if not prefix or model.startswith(prefix):
+            return model
         return f"{prefix}{model}"
 
     def create_sandbox(self):  # type: ignore[no-untyped-def]

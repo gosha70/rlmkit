@@ -69,6 +69,9 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [selectedChatProviderIds, setSelectedChatProviderIds] = useState<string[]>([]);
   const [chatProviderOrder, setChatProviderOrder] = useState<string[]>([]);
+  // Prevents the provider-cleanup effect from running before localStorage is read,
+  // which would reset the selection to the first available provider.
+  const [hydrated, setHydrated] = useState(false);
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
   useEffect(() => {
@@ -84,6 +87,7 @@ export default function ChatPage() {
       const saved = localStorage.getItem("rlmkit-cp-order");
       if (saved) setChatProviderOrder(JSON.parse(saved));
     } catch {}
+    setHydrated(true);
   }, []);
 
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
@@ -141,7 +145,10 @@ export default function ChatPage() {
   // Removes stale IDs (deleted/renamed providers persisted in localStorage) and
   // IDs whose backing LLM provider is now offline/unconfigured (mirrors the
   // availability filter in ChatProviderSelector).
+  // Guard: skip until localStorage has been read so we don't clobber the
+  // persisted selection with an empty initial state.
   useEffect(() => {
+    if (!hydrated) return;
     if (chatProviders.length === 0) return;
     let availableIds: Set<string>;
     if (llmProviders.length > 0) {
@@ -164,7 +171,7 @@ export default function ChatPage() {
       setSelectedChatProviderIds(filtered.length > 0 ? filtered : first ? [first] : []);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatProviders, llmProviders]);
+  }, [chatProviders, llmProviders, hydrated]);
 
   // Load session messages and reconstruct turns
   useEffect(() => {

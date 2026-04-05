@@ -35,6 +35,7 @@ _LITELLM_PREFIXES: dict[str, str] = {
     "anthropic": "anthropic/",
     "ollama": "ollama/",
     "lmstudio": "openai/",  # LM Studio uses OpenAI-compatible API
+    "vllm": "openai/",  # vLLM uses OpenAI-compatible API
 }
 
 
@@ -44,11 +45,14 @@ def _litellm_model_name(provider_key: str, model: str) -> str:
     E.g. 'ollama' + 'qwen3' -> 'ollama/qwen3'
     OpenAI models don't need a prefix. Anthropic models handled by LiteLLM
     but explicit prefix is safer.
+
+    HuggingFace-style model IDs (e.g. 'Qwen/Qwen2.5-7B-Instruct') contain a
+    slash but are NOT already prefixed — only skip prefixing when the model
+    already starts with this provider's own LiteLLM prefix.
     """
-    # If the model already has a prefix (user typed 'ollama/qwen3'), leave it
-    if "/" in model:
-        return model
     prefix = _LITELLM_PREFIXES.get(provider_key, "")
+    if not prefix or model.startswith(prefix):
+        return model
     return f"{prefix}{model}"
 
 
@@ -393,6 +397,15 @@ async def _fetch_models_from_api(
 
         elif provider_name == "lmstudio":
             endpoint = endpoint_override or entry.default_endpoint or "http://localhost:1234/v1"
+            resp = await client.get(f"{endpoint}/models")
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            return [
+                ModelInfo(name=m["id"], input_cost_per_1k=0.0, output_cost_per_1k=0.0) for m in data
+            ]
+
+        elif provider_name == "vllm":
+            endpoint = endpoint_override or entry.default_endpoint or "http://localhost:8000/v1"
             resp = await client.get(f"{endpoint}/models")
             resp.raise_for_status()
             data = resp.json().get("data", [])

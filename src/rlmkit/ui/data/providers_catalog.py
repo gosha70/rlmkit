@@ -35,7 +35,7 @@ class ProviderEntry:
     """Everything the UI needs to know about a single provider type."""
 
     key: str
-    """Internal key (``openai``, ``anthropic``, ``ollama``, ``lmstudio``)."""
+    """Internal key (``openai``, ``anthropic``, ``ollama``, ``lmstudio``, ``vllm``)."""
 
     display_name: str
     """Human-readable label shown in the UI."""
@@ -128,6 +128,15 @@ PROVIDERS: list[ProviderEntry] = [
         requires_api_key=False,
         default_endpoint="http://localhost:1234/v1",
         model_input_hint="e.g., mistral, neural-chat",
+    ),
+    ProviderEntry(
+        key="vllm",
+        display_name="vLLM (Self-hosted)",
+        env_var=None,
+        api_key_placeholder="Optional — leave blank for a local/private server",
+        requires_api_key=False,
+        default_endpoint="http://localhost:8000/v1",
+        model_input_hint="e.g., Qwen/Qwen2.5-7B-Instruct (HuggingFace model ID)",
     ),
 ]
 

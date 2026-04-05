@@ -292,6 +292,11 @@ async def list_llm_provider_models(
             lp.backend, endpoint_override=lp.endpoint
         )
         if live:
+            # Successful model fetch proves connectivity — mark as connected
+            if lp.status != "connected":
+                lp.status = "connected"
+                _status_cache[lp.id] = "connected"
+                state.save_config()
             return live
     except Exception as exc:
         logger.warning("Failed to fetch models for LLM Provider %s: %s", lp.name, exc)

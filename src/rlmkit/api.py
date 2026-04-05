@@ -97,6 +97,8 @@ _PROVIDER_PREFIXES: dict[str, str] = {
     "anthropic": "anthropic/",
     "ollama": "ollama/",
     "lmstudio": "openai/",
+    # vLLM exposes an OpenAI-compatible API; LiteLLM routes openai/* to api_base
+    "vllm": "openai/",
 }
 
 
@@ -140,7 +142,7 @@ def _resolve_embedding_key(
     )
 
 
-_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio"})
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio", "vllm"})
 
 _DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
@@ -182,14 +184,23 @@ def _resolve_model(
         if api_base:
             model = _fetch_lmstudio_model(api_base)
         if model is None:
+            location = f" at '{api_base}'" if api_base else ""
             raise ValueError(
-                "provider='lmstudio' requires either model= or a reachable api_base "
-                "so the loaded model can be detected automatically."
+                f"Cannot connect to LM Studio{location}. "
+                "Make sure LM Studio is running and its local API server is enabled "
+                "(open LM Studio → Local Server tab → Start Server). "
+                "Alternatively, pass model='<model-name>' explicitly to skip auto-detection."
             )
     if model is None and provider == "ollama":
         raise ValueError(
             "provider='ollama' requires an explicit model= argument (e.g. model='llama3.2'). "
             "Ollama can serve many models simultaneously so there is no safe default."
+        )
+    if model is None and provider == "vllm":
+        raise ValueError(
+            "provider='vllm' requires an explicit model= argument "
+            "(e.g. model='Qwen/Qwen2.5-7B-Instruct'). "
+            "Pass the HuggingFace model ID exactly as it was given to 'vllm serve'."
         )
     m = model or _DEFAULT_MODELS.get(provider, "gpt-4o")
     prefix = _PROVIDER_PREFIXES.get(provider, "")

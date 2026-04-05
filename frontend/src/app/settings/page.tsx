@@ -363,13 +363,14 @@ export default function SettingsPage() {
     }
   };
 
-  const LOCAL_BACKENDS = ["ollama", "lmstudio"];
+  const LOCAL_BACKENDS = ["ollama", "lmstudio", "vllm"];
   const CLOUD_BACKENDS = ["openai", "anthropic"];
   const BACKEND_LABELS: Record<string, string> = {
     openai: "OpenAI",
     anthropic: "Anthropic",
     ollama: "Ollama",
     lmstudio: "LM Studio",
+    vllm: "vLLM",
   };
 
   const STATUS_COLORS: Record<string, string> = {
@@ -440,6 +441,7 @@ export default function SettingsPage() {
                         <SelectItem value="anthropic">Anthropic</SelectItem>
                         <SelectItem value="ollama">Ollama</SelectItem>
                         <SelectItem value="lmstudio">LM Studio</SelectItem>
+                        <SelectItem value="vllm">vLLM (Self-hosted)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -450,6 +452,7 @@ export default function SettingsPage() {
                       placeholder={
                         llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
                         llmProviderForm.backend === "anthropic" ? "e.g., claude-3-5-sonnet-20241022" :
+                        llmProviderForm.backend === "vllm" ? "e.g., Qwen/Qwen2.5-7B-Instruct" :
                         "e.g., llama3.2"
                       }
                       value={llmProviderForm.model}
@@ -461,7 +464,11 @@ export default function SettingsPage() {
                       <Label htmlFor="llmp-endpoint">Endpoint</Label>
                       <Input
                         id="llmp-endpoint"
-                        placeholder={llmProviderForm.backend === "ollama" ? "http://localhost:11434" : "http://localhost:1234"}
+                        placeholder={
+                          llmProviderForm.backend === "ollama" ? "http://localhost:11434" :
+                          llmProviderForm.backend === "vllm" ? "http://<dgx-spark-ip>:8000/v1" :
+                          "http://localhost:1234/v1"
+                        }
                         value={llmProviderForm.endpoint}
                         onChange={(e) => setLLMProviderForm({ ...llmProviderForm, endpoint: e.target.value })}
                       />

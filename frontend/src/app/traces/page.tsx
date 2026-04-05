@@ -17,8 +17,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   getExecutions,
+  getSessions,
   getTrace,
   type ExecutionSummary,
+  type SessionSummary,
   type TraceResponse,
   type TraceStep,
 } from "@/lib/api";
@@ -30,23 +32,26 @@ function TracesPageInner() {
   const [loading, setLoading] = useState(false);
   const [selectedStep, setSelectedStep] = useState<TraceStep | null>(null);
   const [filterProviderId, setFilterProviderId] = useState<string>("");
+  const [filterSessionId, setFilterSessionId] = useState<string>("");
   const [limit, setLimit] = useState(20);
 
-  // Unfiltered fetch — drives the filter dropdown so it never disappears
+  const { data: sessions = [] } = useSWR<SessionSummary[]>("sessions", getSessions);
+
+  // Unfiltered fetch — drives the chat-provider filter dropdown so it never disappears
   const { data: allExecutions = [] } = useSWR<ExecutionSummary[]>(
-    "executions-all",
-    () => getExecutions(50),
+    ["executions-all", filterSessionId],
+    () => getExecutions(50, undefined, filterSessionId || undefined),
     { refreshInterval: 5000 },
   );
 
   // Filtered fetch — drives the table
   const { data: executions = [] } = useSWR<ExecutionSummary[]>(
-    ["executions", filterProviderId, limit],
-    () => getExecutions(limit, filterProviderId || undefined),
+    ["executions", filterProviderId, filterSessionId, limit],
+    () => getExecutions(limit, filterProviderId || undefined, filterSessionId || undefined),
     { refreshInterval: 5000 },
   );
 
-  // Unique chat providers from ALL executions for the filter dropdown
+  // Unique chat providers from ALL executions (within selected session) for the filter dropdown
   const chatProviderOptions = Array.from(
     new Map(
       allExecutions
@@ -82,24 +87,42 @@ function TracesPageInner() {
   return (
     <AppShell>
       <div className="mx-auto max-w-[1200px] space-y-6 p-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-2xl font-semibold">Traces</h2>
-          {chatProviderOptions.length > 0 && (
-            <Select
-              value={filterProviderId}
-              onValueChange={(v) => { setFilterProviderId(v === "all" ? "" : v); setLimit(20); }}
-            >
-              <SelectTrigger className="w-56" aria-label="Filter by Chat Provider">
-                <SelectValue placeholder="All Chat Providers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Chat Providers</SelectItem>
-                {chatProviderOptions.map(([id, name]) => (
-                  <SelectItem key={id} value={id}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+          <div className="flex items-center gap-2">
+            {sessions.length > 0 && (
+              <Select
+                value={filterSessionId}
+                onValueChange={(v) => { setFilterSessionId(v === "all" ? "" : v); setFilterProviderId(""); setLimit(20); }}
+              >
+                <SelectTrigger className="w-48" aria-label="Filter by Session">
+                  <SelectValue placeholder="All Sessions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sessions</SelectItem>
+                  {sessions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {chatProviderOptions.length > 0 && (
+              <Select
+                value={filterProviderId}
+                onValueChange={(v) => { setFilterProviderId(v === "all" ? "" : v); setLimit(20); }}
+              >
+                <SelectTrigger className="w-56" aria-label="Filter by Chat Provider">
+                  <SelectValue placeholder="All Chat Providers" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Chat Providers</SelectItem>
+                  {chatProviderOptions.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
         </div>
 
         {/* Execution list */}

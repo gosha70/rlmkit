@@ -288,7 +288,7 @@ describe("TracesPage", () => {
 
     render(<TracesPage />);
     expect(mockUseSWR).toHaveBeenCalledWith(
-      ["executions", "", 20],
+      ["executions", "", "", 20],
       expect.any(Function),
       expect.objectContaining({ refreshInterval: 5000 }),
     );

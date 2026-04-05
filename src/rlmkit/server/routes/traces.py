@@ -36,12 +36,15 @@ class ExecutionSummary(BaseModel):
 async def list_executions(
     limit: int = Query(default=20, ge=1, le=100),
     chat_provider_id: str | None = Query(default=None),
+    session_id: str | None = Query(default=None),
     state: AppState = Depends(get_state),
 ) -> list[ExecutionSummary]:
-    """List recent executions (newest first), optionally filtered by chat_provider_id."""
+    """List recent executions (newest first), optionally filtered by chat_provider_id or session_id."""
     all_execs: Iterable[ExecutionRecord] = state.executions.values()
     if chat_provider_id is not None:
         all_execs = [e for e in all_execs if e.chat_provider_id == chat_provider_id]
+    if session_id is not None:
+        all_execs = [e for e in all_execs if e.session_id == session_id]
     execs = sorted(
         all_execs,
         key=lambda e: e.started_at or "",
