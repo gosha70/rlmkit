@@ -30,9 +30,65 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# RAG index cache: file_id -> (SQLiteStorageAdapter, collection_name, embedding_model)
+# Per-message attachment limits
+_MAX_FILES_PER_MESSAGE: int = 10
+_MAX_TOTAL_CONTENT_BYTES: int = 50 * 1024 * 1024  # 50 MB
+
+# RAG index cache: cache_key -> (SQLiteStorageAdapter, collection_name, embedding_model)
+# cache_key = ":".join(sorted(file_ids))
 # Avoids re-embedding the full document on every message in the same conversation.
 _rag_index_cache: dict[str, tuple[SQLiteStorageAdapter, str, str]] = {}
+
+
+def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
+    """Join text from multiple uploaded files into a single content string.
+
+    Single file: returns plain content with a file header.
+    Multiple files: prepends a Document Index so RLM tools can navigate between
+    files using grep('[File N:') to jump to any file's start.
+
+    Enforces per-message file count and total byte limits.
+    Raises HTTPException 400/404/413 on violations.
+    """
+    if len(file_ids) > _MAX_FILES_PER_MESSAGE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many files per message (max {_MAX_FILES_PER_MESSAGE})",
+        )
+    records = []
+    cumulative_bytes = 0
+    for fid in file_ids:
+        rec = state.files.get(fid)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"File {fid} not found")
+        cumulative_bytes += len(rec.text_content.encode())
+        if cumulative_bytes > _MAX_TOTAL_CONTENT_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Combined file content exceeds {_MAX_TOTAL_CONTENT_BYTES // (1024 * 1024)} MB limit",
+            )
+        records.append(rec)
+
+    separator = "\n\n---\n\n"
+
+    if len(records) == 1:
+        rec = records[0]
+        result = f"[File: {rec.name}]\n\n{rec.text_content}"
+    else:
+        # Number each section so grep('[File N:') navigates directly to it.
+        sections = [
+            f"[File {i + 1}: {rec.name}]\n\n{rec.text_content}" for i, rec in enumerate(records)
+        ]
+        index_lines = [
+            f"[DOCUMENT INDEX — {len(records)} files attached]",
+            "To navigate to a specific file, use: grep('[File N:') where N is the file number.",
+        ]
+        for i, rec in enumerate(records):
+            index_lines.append(f'  {i + 1}. "{rec.name}"')
+        index_lines.append("[END DOCUMENT INDEX]")
+        index_block = "\n".join(index_lines)
+        result = index_block + "\n\n" + separator.join(sections)
+    return result
 
 
 def _save_trajectory(
@@ -85,19 +141,18 @@ async def submit_chat(
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> ChatResponse:
     """Submit a chat query for execution."""
-    # Validate that either content or file_id is provided
-    if req.content is None and req.file_id is None:
-        raise HTTPException(status_code=400, detail="Either content or file_id must be provided")
+    # Canonicalise file IDs (model_validator already promotes file_id -> file_ids)
+    effective_file_ids: list[str] = req.file_ids or []
+
+    # Validate that either content or file(s) are provided
+    if req.content is None and not effective_file_ids:
+        raise HTTPException(status_code=400, detail="Either content or file_id(s) must be provided")
 
     # Resolve content
-    content = req.content
-    if content is None and req.file_id:
-        file_rec = state.files.get(req.file_id)
-        if file_rec is None:
-            raise HTTPException(status_code=404, detail="File not found")
-        content = file_rec.text_content
-    if content is None:
-        content = ""
+    content = req.content or ""
+    if effective_file_ids:
+        file_content = _resolve_file_content(effective_file_ids, state)
+        content = (content + "\n\n" + file_content).strip() if content else file_content
 
     # Get or create session
     session = state.get_or_create_session(req.session_id)
@@ -134,7 +189,8 @@ async def submit_chat(
         "id": str(uuid.uuid4()),
         "role": "user",
         "content": req.query,
-        "file_id": req.file_id,
+        "file_id": effective_file_ids[0] if effective_file_ids else None,  # compat alias
+        "file_ids": effective_file_ids,
         "mode": mode,
         "chat_provider_id": chat_provider_id,
         "timestamp": now.isoformat(),
@@ -152,7 +208,7 @@ async def submit_chat(
             mode,
             chat_provider_id,
             req.num_retries,
-            file_id=req.file_id,
+            file_ids=effective_file_ids,
         )
     )
 
@@ -172,7 +228,7 @@ async def _run_execution(
     mode: str,
     chat_provider_id: str | None = None,
     num_retries: int | None = None,
-    file_id: str | None = None,
+    file_ids: list[str] | None = None,
 ) -> None:
     """Run the use case in the background and store results."""
     try:
@@ -257,13 +313,14 @@ async def _run_execution(
                 if lp and lp.backend == "openai":
                     embedding_api_key = _get_api_key(lp.id, lp.backend)
 
-            # Re-use indexed storage for follow-up messages on the same file.
+            # Re-use indexed storage for follow-up messages on the same file set.
             # This skips the expensive chunk+embed step (can take 30s+ for large docs).
-            cached = _rag_index_cache.get(file_id) if file_id else None
+            cache_key = ":".join(sorted(file_ids)) if file_ids else ""
+            cached = _rag_index_cache.get(cache_key) if cache_key else None
             if cached and cached[2] == rag_cfg.embedding_model:
                 storage, collection, _ = cached
                 skip_indexing = True
-                logger.info("RAG: reusing cached index for file_id=%s", file_id)
+                logger.info("RAG: reusing cached index for cache_key=%s", cache_key)
             else:
                 storage = SQLiteStorageAdapter(":memory:")
                 collection = f"rag_{uuid.uuid4().hex}"
@@ -283,8 +340,8 @@ async def _run_execution(
                 )
             ]
             # Populate cache after successful first index
-            if file_id and not skip_indexing and results[0].success:
-                _rag_index_cache[file_id] = (storage, collection, rag_cfg.embedding_model)
+            if cache_key and not skip_indexing and results[0].success:
+                _rag_index_cache[cache_key] = (storage, collection, rag_cfg.embedding_model)
         elif mode in ("rlm", "auto"):
             sandbox = state.create_sandbox()
             uc = RunRLMUseCase(llm, sandbox)
@@ -467,14 +524,31 @@ async def websocket_chat(
                 msg_id = data.get("id", str(uuid.uuid4()))
                 query = data.get("query", "")
                 content = data.get("content", "")
-                file_id = data.get("file_id")
+                ws_file_ids: list[str] = data.get("file_ids") or (
+                    [data["file_id"]] if data.get("file_id") else []
+                )
                 mode = data.get("mode", "auto")
                 ws_chat_provider_id = data.get("chat_provider_id")
 
-                if file_id:
-                    file_rec = state.files.get(file_id)
-                    if file_rec:
-                        content = file_rec.text_content
+                if ws_file_ids:
+                    try:
+                        file_content = _resolve_file_content(ws_file_ids, state)
+                        content = (
+                            (content + "\n\n" + file_content).strip() if content else file_content
+                        )
+                    except HTTPException as exc:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "id": msg_id,
+                                "data": {
+                                    "code": str(exc.status_code),
+                                    "message": exc.detail,
+                                    "recoverable": True,
+                                },
+                            }
+                        )
+                        continue
 
                 # Resolve mode from Chat Provider if provided
                 ws_cp = None
@@ -518,7 +592,8 @@ async def websocket_chat(
                     "id": str(uuid.uuid4()),
                     "role": "user",
                     "content": query,
-                    "file_id": file_id,
+                    "file_id": ws_file_ids[0] if ws_file_ids else None,  # compat alias
+                    "file_ids": ws_file_ids,
                     "mode": mode,
                     "chat_provider_id": ws_chat_provider_id,
                     "timestamp": now.isoformat(),

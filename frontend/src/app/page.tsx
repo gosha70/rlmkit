@@ -16,7 +16,6 @@ import { PickWinner } from "@/components/chat/pick-winner";
 import { JudgeScores } from "@/components/chat/judge-scores";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getConfig,
   getSession,
@@ -91,7 +90,7 @@ export default function ChatPage() {
     setHydrated(true);
   }, []);
 
-  const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<FileUploadResponse[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | "processing" | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [isAnyStreaming, setIsAnyStreaming] = useState(false);
@@ -552,8 +551,8 @@ export default function ChatPage() {
         try {
           const resp = await submitChat({
             query: text,
-            content: uploadedFile ? null : text || null,
-            file_id: uploadedFile?.id || null,
+            content: uploadedFiles.length > 0 ? null : text || null,
+            file_ids: uploadedFiles.length > 0 ? uploadedFiles.map((f) => f.id) : null,
             chat_provider_id: cpId,
             session_id: effectiveSessionId,
           });
@@ -605,7 +604,7 @@ export default function ChatPage() {
                       ...turn.responses,
                       [cpId]: {
                         ...turn.responses[cpId],
-                        content: `Error: Failed to submit request`,
+                        content: `Error: ${err instanceof Error ? err.message : "Failed to submit request"}`,
                         isStreaming: false,
                       },
                     },
@@ -632,25 +631,55 @@ export default function ChatPage() {
         );
       }
     },
-    [sessionId, uploadedFile, selectedChatProviderIds, chatProviders, pollForResult],
+    [sessionId, uploadedFiles, selectedChatProviderIds, chatProviders, pollForResult],
   );
 
-  const handleFileUpload = useCallback(async (file: File) => {
-    setUploadProgress(0);
-    try {
-      const resp = await uploadFile(file, (pct) => {
-        // At 100% the bytes are sent but the server is still extracting text.
-        // Switch to indeterminate "processing" state so the bar doesn't freeze.
-        setUploadProgress(pct >= 100 ? "processing" : pct);
-      });
-      setUploadedFile(resp);
-    } catch (err) {
-      console.error("Failed to upload file:", err);
-      toast.error("File upload failed");
-    } finally {
-      setUploadProgress(null);
+  const handleFileUpload = useCallback(async (files: File[]) => {
+    const MAX_FILES = 10;
+    const MAX_BYTES = 50 * 1024 * 1024; // mirrors backend _MAX_TOTAL_CONTENT_BYTES
+
+    const remaining = MAX_FILES - uploadedFiles.length;
+    if (remaining <= 0) {
+      toast.error("Maximum 10 files per session reached");
+      return;
     }
-  }, []);
+    const batch = files.slice(0, remaining);
+    if (batch.length < files.length) {
+      toast.warning(`Only the first ${remaining} file(s) will be uploaded (10-file limit)`);
+    }
+    setUploadProgress(0);
+    let anyFailed = false;
+    // Track cumulative extracted-text bytes across already-attached files and this batch.
+    // size_bytes on FileUploadResponse reflects server-side extracted text size.
+    let cumulativeBytes = uploadedFiles.reduce((sum, f) => sum + f.text_size_bytes, 0);
+    for (let i = 0; i < batch.length; i++) {
+      try {
+        const resp = await uploadFile(batch[i], (pct) => {
+          // Show overall progress: (completed files + current file fraction) / total
+          const overall = ((i + (pct >= 100 ? 1 : pct / 100)) / batch.length) * 100;
+          setUploadProgress(overall >= 100 ? "processing" : Math.round(overall));
+        });
+        if (cumulativeBytes + resp.text_size_bytes > MAX_BYTES) {
+          toast.error(
+            `"${resp.name}" skipped — adding it would exceed the 50 MB per-message limit`,
+          );
+          anyFailed = true;
+          continue;
+        }
+        cumulativeBytes += resp.text_size_bytes;
+        // Commit each file immediately so partial failures don't discard successes
+        setUploadedFiles((prev) => [...prev, resp]);
+      } catch (err) {
+        console.error(`Failed to upload ${batch[i].name}:`, err);
+        toast.error(`Upload failed: ${batch[i].name}`);
+        anyFailed = true;
+      }
+    }
+    setUploadProgress(null);
+    if (anyFailed && batch.length > 1) {
+      toast.warning("Some files failed to upload — successfully uploaded files are still attached");
+    }
+  }, [uploadedFiles]);
 
   const cancelAllPollers = useCallback(() => {
     sessionGenRef.current += 1;
@@ -675,7 +704,7 @@ export default function ChatPage() {
     cancelAllPollers();
     setSessionId(null);
     setTurns([]);
-    setUploadedFile(null);
+    setUploadedFiles([]);
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -688,6 +717,7 @@ export default function ChatPage() {
       if (id === sessionId) return;
       cancelAllPollers();
       setTurns([]);
+      setUploadedFiles([]);
       setSessionId(id);
     },
     [sessionId, cancelAllPollers],
@@ -699,7 +729,7 @@ export default function ChatPage() {
       onSelectSession={handleSelectSession}
       onNewSession={handleNewSession}
     >
-      <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-full flex-col">
         {/* Toolbar */}
         <div className="flex items-center gap-3 border-b px-4 py-2" role="toolbar" aria-label="Chat options">
           <ChatProviderSelector
@@ -744,16 +774,17 @@ export default function ChatPage() {
         )}
 
         {/* File attachment bar */}
-        {uploadedFile && (
-          <div className="border-b px-4 py-2">
-            <FileAttachment
-              name={uploadedFile.name}
-              sizeBytes={uploadedFile.size_bytes}
-              tokenCount={uploadedFile.token_count}
-              onRemove={() => {
-                setUploadedFile(null);
-              }}
-            />
+        {uploadedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-b px-4 py-2">
+            {uploadedFiles.map((f) => (
+              <FileAttachment
+                key={f.id}
+                name={f.name}
+                sizeBytes={f.size_bytes}
+                tokenCount={f.token_count}
+                onRemove={() => setUploadedFiles((prev) => prev.filter((x) => x.id !== f.id))}
+              />
+            ))}
           </div>
         )}
 
@@ -774,8 +805,8 @@ export default function ChatPage() {
         ) : (
           /* Active conversation: turns scroll, input pinned at bottom */
           <>
-            <ScrollArea className="min-h-0 flex-1" aria-label="Message history">
-              <div className="mx-auto w-full max-w-full space-y-8 px-4 py-6" role="log" aria-live="polite">
+            <div className="min-h-0 flex-1 overflow-auto" aria-label="Message history">
+              <div className="w-full space-y-8 px-4 py-6" role="log" aria-live="polite">
                 {turns.map((turn) => (
                   <div key={turn.id} className="space-y-4">
                     {/* User message - full width */}
@@ -790,11 +821,11 @@ export default function ChatPage() {
                       </div>
                     </div>
 
-                    {/* Provider responses - grid layout */}
+                    {/* Provider responses - grid expands to full width; browser scrolls */}
                     <div
-                      className="grid gap-4"
+                      className="grid gap-4 mr-4"
                       style={{
-                        gridTemplateColumns: `repeat(${orderedSelectedIds.length}, 1fr)`,
+                        gridTemplateColumns: `repeat(${orderedSelectedIds.length}, minmax(320px, 1fr))`,
                       }}
                     >
                       {orderedSelectedIds.map((cpId) => {
@@ -802,7 +833,7 @@ export default function ChatPage() {
                         return (
                           <div
                             key={cpId}
-                            className="rounded-lg border bg-muted/30 p-4"
+                            className="min-w-0 overflow-hidden rounded-lg border bg-muted/30 p-4"
                           >
                             {/* Provider name header */}
                             <div className="mb-2 flex items-center gap-2">
@@ -822,7 +853,7 @@ export default function ChatPage() {
                             {/* Response content or loading indicator */}
                             {resp && resp.content ? (
                               <>
-                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                <div className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto">
                                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                     {resp.content}
                                   </ReactMarkdown>
@@ -993,7 +1024,7 @@ export default function ChatPage() {
                 {isAnyStreaming && <TypingIndicator />}
                 <div ref={messagesEndRef} />
               </div>
-            </ScrollArea>
+            </div>
             <ChatInput onSend={handleSend} onFileUpload={handleFileUpload} disabled={isAnyStreaming || selectedChatProviderIds.length === 0 || uploadProgress !== null} />
           </>
         )}

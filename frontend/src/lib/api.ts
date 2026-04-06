@@ -17,7 +17,8 @@ export type ChatMode = "auto" | "rlm" | "direct" | "rag" | "compare";
 
 export interface ChatRequest {
   content?: string | null;
-  file_id?: string | null;
+  file_id?: string | null; // deprecated: use file_ids
+  file_ids?: string[] | null;
   query: string;
   mode?: ChatMode;
   provider?: string | null;
@@ -36,7 +37,8 @@ export interface ChatResponse {
 export interface FileUploadResponse {
   id: string;
   name: string;
-  size_bytes: number;
+  size_bytes: number;       // raw upload size
+  text_size_bytes: number;  // extracted-text size; used for per-message 50 MB guard
   type: string;
   token_count: number;
   created_at: string;
@@ -55,7 +57,8 @@ export interface SessionMessage {
   id: string;
   role: string;
   content: string;
-  file_id?: string | null;
+  file_id?: string | null; // deprecated: use file_ids
+  file_ids?: string[] | null;
   mode?: ChatMode | null;
   mode_used?: ChatMode | null;
   execution_id?: string | null;

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # Error
@@ -40,7 +40,8 @@ class HealthResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     content: str | None = None
-    file_id: str | None = None
+    file_id: str | None = None  # deprecated: use file_ids
+    file_ids: list[str] | None = None
     query: str
     mode: Literal["auto", "rlm", "direct", "rag", "compare"] = "auto"
     provider: str | None = None
@@ -48,6 +49,15 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     chat_provider_id: str | None = None  # NEW: reference a Chat Provider
     num_retries: int | None = Field(default=None, ge=0)  # override retry count (0 = no retries)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_file_ids(cls, data: Any) -> Any:
+        """Promote legacy file_id to file_ids list for backward compat."""
+        if isinstance(data, dict):
+            if not data.get("file_ids") and data.get("file_id"):
+                data = dict(data, file_ids=[data["file_id"]])
+        return data
 
 
 class ChatResponse(BaseModel):
@@ -65,7 +75,8 @@ class ChatResponse(BaseModel):
 class FileUploadResponse(BaseModel):
     id: str
     name: str
-    size_bytes: int
+    size_bytes: int  # raw upload size (bytes)
+    text_size_bytes: int  # extracted-text size; matches what the per-message 50 MB guard measures
     type: str
     token_count: int = 0
     created_at: datetime
@@ -89,7 +100,8 @@ class SessionMessage(BaseModel):
     id: str
     role: str
     content: str
-    file_id: str | None = None
+    file_id: str | None = None  # deprecated: use file_ids
+    file_ids: list[str] | None = None
     mode: str | None = None
     mode_used: str | None = None
     execution_id: str | None = None

@@ -538,6 +538,33 @@ class TestChat:
         )
         assert resp.status_code == 202
 
+    def test_chat_with_multiple_file_ids(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        for fid, name in [("fa", "doc_a.txt"), ("fb", "doc_b.txt")]:
+            state.files[fid] = FileRecord(
+                id=fid,
+                name=name,
+                size_bytes=50,
+                content_type="text/plain",
+                text_content=f"Content of {name}",
+                token_count=5,
+                created_at=now,
+            )
+        resp = client.post(
+            "/api/chat",
+            json={"query": "Compare these", "file_ids": ["fa", "fb"]},
+        )
+        assert resp.status_code == 202
+
+    def test_chat_too_many_files_returns_400(self, client: TestClient) -> None:
+        resp = client.post(
+            "/api/chat",
+            json={"query": "Summarize", "file_ids": [f"f{i}" for i in range(11)]},
+        )
+        assert resp.status_code == 400
+        assert "Too many files" in resp.json()["error"]["message"]
+
     def test_chat_missing_file_id_returns_404(self, client: TestClient) -> None:
         resp = client.post(
             "/api/chat",
@@ -546,7 +573,7 @@ class TestChat:
         assert resp.status_code == 404
         data = resp.json()
         assert data["error"]["code"] == "NOT_FOUND"
-        assert "File not found" in data["error"]["message"]
+        assert "not found" in data["error"]["message"].lower()
 
     def test_chat_missing_content_and_file_id_returns_400(self, client: TestClient) -> None:
         resp = client.post(
@@ -597,7 +624,7 @@ class TestErrorResponseFormat:
         data = resp.json()
         assert "error" in data
         assert data["error"]["code"] == "NOT_FOUND"
-        assert "File not found" in data["error"]["message"]
+        assert "not found" in data["error"]["message"].lower()
 
     def test_404_trace_error_format(self, client: TestClient) -> None:
         resp = client.get("/api/traces/nonexistent")

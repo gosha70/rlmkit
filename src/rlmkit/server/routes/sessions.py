@@ -53,6 +53,7 @@ def _deserialize_message(m: dict) -> SessionMessage:
         role=m["role"],
         content=m["content"],
         file_id=m.get("file_id"),
+        file_ids=m.get("file_ids"),
         mode=m.get("mode"),
         mode_used=m.get("mode_used"),
         execution_id=m.get("execution_id"),

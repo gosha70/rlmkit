@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
-  onFileUpload?: (file: File) => void;
+  onFileUpload?: (files: File[]) => void;
   disabled?: boolean;
 }
 
@@ -43,8 +43,8 @@ export function ChatInput({ onSend, onFileUpload, disabled }: ChatInputProps) {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && onFileUpload) onFileUpload(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0 && onFileUpload) onFileUpload(files);
   };
 
   return (
@@ -67,12 +67,13 @@ export function ChatInput({ onSend, onFileUpload, disabled }: ChatInputProps) {
           <input
             ref={fileInputRef}
             type="file"
+            multiple
             className="hidden"
             aria-label="Upload file"
             accept=".pdf,.docx,.txt,.md,.py,.json,.csv"
             onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file && onFileUpload) onFileUpload(file);
+              const files = Array.from(e.target.files || []);
+              if (files.length > 0 && onFileUpload) onFileUpload(files);
               e.target.value = "";
             }}
           />
