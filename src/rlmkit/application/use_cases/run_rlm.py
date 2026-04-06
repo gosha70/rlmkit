@@ -12,8 +12,6 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-logger = logging.getLogger(__name__)
-
 from rlmkit.application.dto import (
     LLMResponseDTO,
     RunConfigDTO,
@@ -28,6 +26,8 @@ from rlmkit.prompts import get_rlm_message
 
 if TYPE_CHECKING:
     from rlmkit.core.parsing import ParsedResponse
+
+logger = logging.getLogger(__name__)
 
 # Maximum characters for an execution result that is fed back into the LLM
 # message history.  Caps the per-step token cost of growing context windows
@@ -1192,8 +1192,8 @@ class RunRLMUseCase:
     def _format_limit_warning(
         overflow_step: int | None = None,
         steps_used: int = 0,
-        config: "BudgetConfig | None" = None,
-        exc: "Exception | None" = None,
+        config: BudgetConfig | None = None,
+        exc: Exception | None = None,
     ) -> str:
         """Return a user-friendly warning for known configuration-driven limits.
 

@@ -12,16 +12,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
-import uuid as _uuid
-
 from rlmkit.application.dto import RunResultDTO
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
-from rlmkit.infrastructure.embedding.litellm_embedding_adapter import LiteLLMEmbeddingAdapter
-from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
 from rlmkit.core.trace import ExecutionTrace
 from rlmkit.core.trace import TraceStep as CoreTraceStep
+from rlmkit.infrastructure.embedding.litellm_embedding_adapter import LiteLLMEmbeddingAdapter
+from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
 from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     ChatRequest,
@@ -34,7 +32,7 @@ router = APIRouter()
 
 # RAG index cache: file_id -> (SQLiteStorageAdapter, collection_name, embedding_model)
 # Avoids re-embedding the full document on every message in the same conversation.
-_rag_index_cache: dict[str, tuple["SQLiteStorageAdapter", str, str]] = {}
+_rag_index_cache: dict[str, tuple[SQLiteStorageAdapter, str, str]] = {}
 
 
 def _save_trajectory(
@@ -268,7 +266,7 @@ async def _run_execution(
                 logger.info("RAG: reusing cached index for file_id=%s", file_id)
             else:
                 storage = SQLiteStorageAdapter(":memory:")
-                collection = f"rag_{_uuid.uuid4().hex}"
+                collection = f"rag_{uuid.uuid4().hex}"
                 skip_indexing = False
 
             run_config.extra["collection"] = collection
@@ -596,7 +594,7 @@ async def websocket_chat(
                                 )
                                 if ws_lp_obj and ws_lp_obj.backend == "openai":
                                     emb_key = _get_api_key(ws_lp_obj.id, ws_lp_obj.backend)
-                            ws_collection = f"rag_{_uuid.uuid4().hex}"
+                            ws_collection = f"rag_{uuid.uuid4().hex}"
                             cfg.extra["collection"] = ws_collection
                             cfg.extra["chunk_size"] = rag_cfg.chunk_size
                             cfg.extra["top_k"] = rag_cfg.top_k

@@ -1259,3 +1259,279 @@ class TestCostAccounting:
         for cfg in child_configs:
             assert cfg.max_time_seconds is not None
             assert cfg.max_time_seconds < 10.0
+
+
+# ---------------------------------------------------------------------------
+# LiteLLMEmbeddingAdapter unit tests (no live API — litellm.embedding mocked)
+# ---------------------------------------------------------------------------
+
+
+class TestLiteLLMEmbeddingAdapter:
+    """Unit tests for the embedding adapter's token tracking and cost accounting."""
+
+    def _make_response(self, vectors: list[list[float]], total_tokens: int):
+        """Build a minimal fake litellm embedding response.
+
+        litellm response items are accessed as item["embedding"] (dict-style).
+        """
+        from types import SimpleNamespace
+
+        data = [{"embedding": v} for v in vectors]
+        usage = SimpleNamespace(total_tokens=total_tokens, prompt_tokens=total_tokens)
+        return SimpleNamespace(data=data, usage=usage)
+
+    def test_embed_batch_returns_vectors(self, monkeypatch):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        vectors = [[0.1, 0.2], [0.3, 0.4]]
+        monkeypatch.setattr(
+            "litellm.embedding", lambda **kw: self._make_response(vectors, total_tokens=10)
+        )
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-small")
+        result = adapter.embed_batch(["hello", "world"])
+        assert result == vectors
+
+    def test_embed_delegates_to_embed_batch(self, monkeypatch):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        monkeypatch.setattr(
+            "litellm.embedding",
+            lambda **kw: self._make_response([[1.0, 2.0]], total_tokens=5),
+        )
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-small")
+        result = adapter.embed("test")
+        assert result == [1.0, 2.0]
+
+    def test_total_tokens_accumulates(self, monkeypatch):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        call_count = [0]
+
+        def fake_embed(**kw):
+            call_count[0] += 1
+            return self._make_response([[0.1]], total_tokens=100)
+
+        monkeypatch.setattr("litellm.embedding", fake_embed)
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-small")
+        adapter.embed("a")
+        adapter.embed("b")
+        assert adapter.total_tokens == 200
+        assert call_count[0] == 2
+
+    def test_total_cost_uses_pricing_table(self, monkeypatch):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        monkeypatch.setattr(
+            "litellm.embedding",
+            lambda **kw: self._make_response([[0.1]], total_tokens=1_000_000),
+        )
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-small")
+        adapter.embed("x")
+        # 1M tokens × $0.020/1M = $0.020
+        assert abs(adapter.total_cost - 0.020) < 1e-9
+
+    def test_unknown_model_zero_cost(self, monkeypatch):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        monkeypatch.setattr(
+            "litellm.embedding",
+            lambda **kw: self._make_response([[0.1]], total_tokens=500),
+        )
+        adapter = LiteLLMEmbeddingAdapter(model="some-unknown-model")
+        adapter.embed("x")
+        assert adapter.total_tokens == 500
+        assert adapter.total_cost == 0.0
+
+    def test_model_property(self):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-large")
+        assert adapter.model == "text-embedding-3-large"
+
+    def test_dimension_from_known_table(self):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-small")
+        assert adapter.dimension == 1536
+
+    def test_dimension_inferred_from_response(self, monkeypatch):
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        monkeypatch.setattr(
+            "litellm.embedding",
+            lambda **kw: self._make_response([[0.1] * 512], total_tokens=3),
+        )
+        adapter = LiteLLMEmbeddingAdapter(model="custom-model")
+        assert adapter.dimension == 512
+
+    def test_usage_missing_gracefully(self, monkeypatch):
+        """Adapter does not crash when response has no usage attribute."""
+        from types import SimpleNamespace
+
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        def fake_embed(**kw):
+            data = [{"embedding": [0.1]}]
+            return SimpleNamespace(data=data)  # no .usage
+
+        monkeypatch.setattr("litellm.embedding", fake_embed)
+        adapter = LiteLLMEmbeddingAdapter(model="text-embedding-3-small")
+        result = adapter.embed("x")
+        assert result == [0.1]
+        assert adapter.total_tokens == 0
+
+    def test_api_key_and_base_forwarded(self, monkeypatch):
+        """api_key and api_base are passed through to litellm."""
+        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+            LiteLLMEmbeddingAdapter,
+        )
+
+        captured = {}
+
+        def fake_embed(**kw):
+            captured.update(kw)
+            return self._make_response([[0.1]], total_tokens=1)
+
+        monkeypatch.setattr("litellm.embedding", fake_embed)
+        adapter = LiteLLMEmbeddingAdapter(
+            model="text-embedding-3-small", api_key="sk-test", api_base="http://localhost"
+        )
+        adapter.embed("x")
+        assert captured["api_key"] == "sk-test"
+        assert captured["api_base"] == "http://localhost"
+
+
+# ---------------------------------------------------------------------------
+# RunRAGUseCase: cost accounting tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunRAGCostAccounting:
+    """Verify that both embedding and LLM completion costs are included."""
+
+    def test_cost_combines_embedding_and_llm(self):
+        """total_cost = embed_cost + llm_completion_cost."""
+        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+
+        class PricedLLM(FakeLLM):
+            def get_pricing(self):
+                return {"input_cost_per_1m": 1.0, "output_cost_per_1m": 2.0}
+
+        class PricedEmbedder(FakeEmbedder):
+            @property
+            def total_tokens(self):
+                return 1_000_000  # 1M tokens
+
+            @property
+            def total_cost(self):
+                return 0.020  # $0.020 for 1M @ text-embedding-3-small rate
+
+        llm = PricedLLM(["answer"])
+        uc = RunRAGUseCase(llm, PricedEmbedder(), FakeStorage())
+        result = uc.execute("content", "query")
+
+        assert result.success is True
+        # LLM: 10 input + 5 output tokens (FakeLLM defaults)
+        # LLM cost = (10*1.0 + 5*2.0) / 1_000_000 = 0.000020
+        llm_cost = (10 * 1.0 + 5 * 2.0) / 1_000_000
+        expected = 0.020 + llm_cost
+        assert abs(result.total_cost - expected) < 1e-9
+
+    def test_cost_zero_when_both_free(self):
+        """No cost when embedder reports 0 and LLM has no pricing."""
+        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+
+        result = RunRAGUseCase(FakeLLM(["answer"]), FakeEmbedder(), FakeStorage()).execute(
+            "content", "query"
+        )
+        assert result.total_cost == 0.0
+
+    def test_embedding_tokens_added_to_input_tokens(self):
+        """embed tokens are folded into RunResultDTO.input_tokens."""
+        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+
+        class EmbedderWith500Tokens(FakeEmbedder):
+            @property
+            def total_tokens(self):
+                return 500
+
+            @property
+            def total_cost(self):
+                return 0.0
+
+        llm = FakeLLM(["answer"])  # returns input_tokens=10
+        uc = RunRAGUseCase(llm, EmbedderWith500Tokens(), FakeStorage())
+        result = uc.execute("content", "query")
+        # input_tokens = LLM input (10) + embed tokens (500)
+        assert result.input_tokens == 510
+
+    def test_get_pricing_exception_falls_back_to_zero_llm_cost(self):
+        """If get_pricing() raises, llm_cost is silently set to 0."""
+        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+
+        class BrokenPricingLLM(FakeLLM):
+            def get_pricing(self):
+                raise RuntimeError("pricing unavailable")
+
+        result = RunRAGUseCase(BrokenPricingLLM(["answer"]), FakeEmbedder(), FakeStorage()).execute(
+            "content", "query"
+        )
+        assert result.success is True
+        assert result.total_cost == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _humanize_rag_error branch coverage
+# ---------------------------------------------------------------------------
+
+
+class TestHumanizeRAGError:
+    """Ensure each error-classification branch in _humanize_rag_error is exercised."""
+
+    def _humanize(self, msg: str) -> str:
+        from rlmkit.application.use_cases.run_rag import _humanize_rag_error
+
+        return str(_humanize_rag_error(Exception(msg)))
+
+    def test_context_window_branch(self):
+        result = self._humanize("context window exceeded")
+        assert "chunk_size" in result
+        assert "top_k" in result
+
+    def test_context_length_branch(self):
+        result = self._humanize("context length is 4096 tokens")
+        assert "chunk_size" in result
+
+    def test_timeout_branch(self):
+        result = self._humanize("request timed out after 30s")
+        assert "timeout" in result.lower()
+
+    def test_auth_branch(self):
+        result = self._humanize("401 unauthorized api key missing")
+        assert "OPENAI_API_KEY" in result
+
+    def test_rate_limit_branch(self):
+        result = self._humanize("rate limit exceeded 429")
+        assert "chunk_size" in result
+
+    def test_unknown_error_returns_original(self):
+        result = self._humanize("something completely unexpected")
+        assert result == "something completely unexpected"

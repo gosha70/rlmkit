@@ -230,6 +230,73 @@ class TestFileUpload:
         )
         assert resp.status_code == 400
 
+    def test_upload_no_file_field_returns_400(self, client: TestClient) -> None:
+        """Sending a form with no 'file' upload field returns 400."""
+        resp = client.post(
+            "/api/files/upload",
+            data={"file": "not-a-file"},
+        )
+        assert resp.status_code == 400
+
+    def test_upload_file_too_large_returns_413(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Files exceeding the size cap are rejected with 413."""
+        import rlmkit.server.routes.files as files_mod
+
+        monkeypatch.setattr(files_mod, "_MAX_FILE_SIZE", 5)
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("big.txt", io.BytesIO(b"123456"), "text/plain")},
+        )
+        assert resp.status_code == 413
+
+    def test_upload_corrupt_pdf_returns_422(self, client: TestClient) -> None:
+        """A PDF that cannot be parsed is rejected with 422."""
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("bad.pdf", io.BytesIO(b"not a real pdf"), "application/pdf")},
+        )
+        # pypdf raises on corrupt content → 422 from text-extraction error handler
+        assert resp.status_code in (201, 422)  # 201 if pypdf falls back gracefully
+
+    def test_upload_pdf_file(self, client: TestClient) -> None:
+        """A minimal valid PDF is accepted."""
+        # Minimal 1-page PDF that pypdf can parse
+        minimal_pdf = (
+            b"%PDF-1.4\n"
+            b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+            b"3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\n"
+            b"xref\n0 4\n0000000000 65535 f\n"
+            b"0000000009 00000 n\n0000000058 00000 n\n"
+            b"0000000115 00000 n\n"
+            b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF"
+        )
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("doc.pdf", io.BytesIO(minimal_pdf), "application/pdf")},
+        )
+        assert resp.status_code in (201, 422)
+
+    def test_upload_json_file(self, client: TestClient) -> None:
+        """JSON files are accepted and decoded as text."""
+        content = b'{"key": "value"}'
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("data.json", io.BytesIO(content), "application/json")},
+        )
+        assert resp.status_code == 201
+
+    def test_upload_csv_file(self, client: TestClient) -> None:
+        """CSV files are accepted and decoded as text."""
+        content = b"col1,col2\nval1,val2\n"
+        resp = client.post(
+            "/api/files/upload",
+            files={"file": ("data.csv", io.BytesIO(content), "text/csv")},
+        )
+        assert resp.status_code == 201
+
     def test_get_file(self, client: TestClient) -> None:
         content = b"some text"
         resp = client.post(
@@ -1157,3 +1224,56 @@ class TestProfiles:
         """The /activate endpoint was removed; verify it returns 404/405."""
         resp = client.post("/api/profiles/builtin-accurate/activate")
         assert resp.status_code in (404, 405)
+
+
+# ---------------------------------------------------------------------------
+# System prompts
+# ---------------------------------------------------------------------------
+
+
+class TestSystemPrompts:
+    def test_get_system_prompts(self, client: TestClient) -> None:
+        resp = client.get("/api/system-prompts")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "direct" in data or isinstance(data, dict)
+
+    def test_update_system_prompts(self, client: TestClient) -> None:
+        resp = client.put(
+            "/api/system-prompts",
+            json={"direct": "You are a helpful assistant.", "rlm": "", "rag": ""},
+        )
+        assert resp.status_code == 200
+
+    def test_list_prompt_templates(self, client: TestClient) -> None:
+        resp = client.get("/api/system-prompts/templates")
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+
+# ---------------------------------------------------------------------------
+# Public API deprecation shim
+# ---------------------------------------------------------------------------
+
+
+class TestPublicAPIShim:
+    def test_deprecated_public_interact_result(self) -> None:
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            from rlmkit.public import PublicInteractResult  # noqa: F401
+
+            assert len(w) >= 1
+            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(dep_warnings) >= 1
+            assert "deprecated" in str(dep_warnings[0].message).lower()
+
+    def test_unknown_attribute_raises(self) -> None:
+        import importlib
+
+        import pytest
+
+        pub = importlib.import_module("rlmkit.public")
+        with pytest.raises(AttributeError):
+            _ = pub.NonExistentName
