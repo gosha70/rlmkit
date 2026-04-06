@@ -14,13 +14,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Scale } from "lucide-react";
 import type { JudgeScoreData } from "@/lib/api";
+import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 const DIM_LABELS: Record<string, string> = {
-  relevance: "Rel",
-  correctness: "Cor",
-  completeness: "Com",
-  coherence: "Coh",
-  conciseness: "Con",
+  relevance: "Relevance",
+  correctness: "Correctness",
+  completeness: "Completeness",
+  coherence: "Coherence",
+  conciseness: "Conciseness",
 };
 
 const PROVIDER_COLORS = [
@@ -68,12 +69,7 @@ export function JudgeDimensionsChart({ judgeScores, providerNames }: JudgeDimens
     return entry;
   });
 
-  const tooltipStyle = {
-    backgroundColor: "var(--color-card)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "6px",
-    fontSize: "12px",
-  };
+  const tooltipStyle = useChartTooltipStyle();
 
   return (
     <Card>

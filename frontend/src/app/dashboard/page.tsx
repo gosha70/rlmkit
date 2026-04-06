@@ -100,7 +100,7 @@ export default function DashboardPage() {
           />
           <MetricCard
             label="Token Savings"
-            value={summary ? `${summary.avg_token_savings_percent.toFixed(0)}%` : "0%"}
+            value={summary?.avg_token_savings_percent != null ? `${summary.avg_token_savings_percent.toFixed(0)}%` : "N/A"}
             icon={Activity}
           />
         </div>

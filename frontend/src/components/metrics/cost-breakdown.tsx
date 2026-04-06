@@ -2,6 +2,7 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 interface CostBreakdownProps {
   data: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
@@ -11,6 +12,7 @@ interface CostBreakdownProps {
 const COLORS = ["#2563eb", "#7c3aed", "#059669", "#d97706", "#dc2626", "#6366f1"];
 
 export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdownProps) {
+  const tooltipStyle = useChartTooltipStyle();
   const chartData = Object.entries(data).map(([name, values]) => ({
     name,
     value: values.total_cost_usd,
@@ -32,8 +34,6 @@ export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdow
                 innerRadius={50}
                 outerRadius={80}
                 dataKey="value"
-                label={({ name, value }) => `${name}: $${(value as number).toFixed(2)}`}
-                labelLine={false}
               >
                 {chartData.map((_, index) => (
                   <Cell key={index} fill={COLORS[index % COLORS.length]} />
@@ -41,12 +41,7 @@ export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdow
               </Pie>
               <Tooltip
                 formatter={(value) => `$${Number(value).toFixed(4)}`}
-                contentStyle={{
-                  backgroundColor: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                }}
+                contentStyle={tooltipStyle}
               />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
             </PieChart>

@@ -90,7 +90,7 @@ export interface MetricsSummary {
   total_tokens: number;
   total_cost_usd: number;
   avg_latency_seconds: number;
-  avg_token_savings_percent: number;
+  avg_token_savings_percent: number | null;
 }
 
 export interface ModeSummary {

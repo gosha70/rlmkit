@@ -3,12 +3,14 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TimelineEntry } from "@/lib/api";
+import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 interface PerformanceTrendProps {
   timeline: TimelineEntry[];
 }
 
 export function PerformanceTrend({ timeline }: PerformanceTrendProps) {
+  const tooltipStyle = useChartTooltipStyle();
   const data = timeline.map((entry, i) => ({
     index: i + 1,
     tokens: entry.tokens,
@@ -30,14 +32,7 @@ export function PerformanceTrend({ timeline }: PerformanceTrendProps) {
               <XAxis dataKey="index" label={{ value: "Query #", position: "insideBottomRight", offset: -5 }} className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
               <YAxis yAxisId="left" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
               <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                }}
-              />
+              <Tooltip contentStyle={tooltipStyle} />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
               <Line yAxisId="left" type="monotone" dataKey="tokens" stroke="#2563eb" strokeWidth={2} dot={timeline.length < 20} name="Tokens" />
               <Line yAxisId="right" type="monotone" dataKey="cost" stroke="#7c3aed" strokeWidth={2} dot={timeline.length < 20} name="Cost ($)" />

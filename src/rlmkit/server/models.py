@@ -158,7 +158,7 @@ class MetricsSummary(BaseModel):
     total_tokens: int = 0
     total_cost_usd: float = 0.0
     avg_latency_seconds: float = 0.0
-    avg_token_savings_percent: float = 0.0
+    avg_token_savings_percent: float | None = None
 
 
 class TimelineEntry(BaseModel):

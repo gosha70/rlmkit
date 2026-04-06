@@ -3,6 +3,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ModeSummary } from "@/lib/api";
+import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 interface ComparisonChartProps {
   rlmData: ModeSummary | undefined;
@@ -32,12 +33,7 @@ export function ComparisonChart({ rlmData, directData }: ComparisonChartProps) {
     { name: "Cost ($)", RLM: rlmData?.total_cost_usd ?? 0, Direct: directData?.total_cost_usd ?? 0 },
   ];
 
-  const tooltipStyle = {
-    backgroundColor: "var(--color-card)",
-    border: "1px solid var(--color-border)",
-    borderRadius: "6px",
-    fontSize: "12px",
-  };
+  const tooltipStyle = useChartTooltipStyle();
 
   return (
     <Card>

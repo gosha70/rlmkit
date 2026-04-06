@@ -146,9 +146,9 @@ async def get_metrics(
     rlm_tokens = mode_summaries.get("rlm", ModeSummary()).total_tokens
     direct_tokens = mode_summaries.get("direct", ModeSummary()).total_tokens
     if direct_tokens > 0 and rlm_tokens > 0:
-        savings = round((1 - rlm_tokens / direct_tokens) * 100, 1)
+        savings: float | None = round((1 - rlm_tokens / direct_tokens) * 100, 1)
     else:
-        savings = 0.0
+        savings = None
 
     return MetricsResponse(
         session_id=session_id,

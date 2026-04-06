@@ -2,6 +2,7 @@
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 interface ProviderPerformanceProps {
   data: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
@@ -18,6 +19,7 @@ export function ProviderPerformance({ data, title = "Provider Performance" }: Pr
     queries: values.queries,
   }));
 
+  const tooltipStyle = useChartTooltipStyle();
   if (chartData.length === 0) return null;
 
   return (
@@ -33,14 +35,7 @@ export function ProviderPerformance({ data, title = "Provider Performance" }: Pr
               <XAxis dataKey="name" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
               <YAxis yAxisId="left" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
               <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                }}
-              />
+              <Tooltip contentStyle={tooltipStyle} />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
               <Bar yAxisId="left" dataKey="tokens" fill={COLORS.tokens} radius={[4, 4, 0, 0]} name="Tokens" />
               <Bar yAxisId="right" dataKey="latency" fill={COLORS.latency} radius={[4, 4, 0, 0]} name="Avg Latency (s)" />
