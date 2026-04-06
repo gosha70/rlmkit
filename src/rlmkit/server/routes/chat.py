@@ -197,6 +197,8 @@ async def submit_chat(
     }
     state.add_message(session.id, user_msg, chat_provider_id)
     session.updated_at = now
+    # Save immediately so the session survives a server restart before execution completes
+    state.save_sessions()
 
     # Execute in background
     asyncio.create_task(
@@ -423,6 +425,7 @@ async def _run_execution(
                 state.add_message(execution.session_id, assistant_msg, chat_provider_id)
             session.updated_at = now
             state.save_sessions()
+            state.save_executions()
 
     except Exception as exc:
         logger.exception("Execution crashed [exec=%s]", execution.execution_id[:8])
@@ -446,6 +449,7 @@ async def _run_execution(
             state.add_message(execution.session_id, error_msg, chat_provider_id)
             session.updated_at = now
             state.save_sessions()
+            state.save_executions()
 
 
 class WebSocketEventEmitter:
@@ -600,6 +604,8 @@ async def websocket_chat(
                 }
                 state.add_message(session.id, user_msg, ws_chat_provider_id)
                 session.updated_at = now
+                # Save immediately so the session survives a server restart before execution completes
+                state.save_sessions()
 
                 async def _ws_execute(
                     ws: WebSocket,
@@ -777,6 +783,7 @@ async def websocket_chat(
                                     }
                                 )
                         state.save_sessions()
+                        state.save_executions()
                     except asyncio.CancelledError:
                         pass
                     except Exception as exc:
@@ -799,6 +806,7 @@ async def websocket_chat(
                             state.add_message(sess.id, error_msg, cp_id)
                             sess.updated_at = finish
                             state.save_sessions()
+                            state.save_executions()
                         await ws.send_json(
                             {
                                 "type": "error",

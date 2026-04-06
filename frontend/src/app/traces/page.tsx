@@ -93,7 +93,7 @@ function TracesPageInner() {
             {sessions.length > 0 && (
               <Select
                 value={filterSessionId}
-                onValueChange={(v) => { setFilterSessionId(v === "all" ? "" : v); setFilterProviderId(""); setLimit(20); }}
+                onValueChange={(v) => { setFilterSessionId(v === "all" ? "" : v); setFilterProviderId(""); setLimit(20); setTrace(null); setSelectedStep(null); }}
               >
                 <SelectTrigger className="w-48" aria-label="Filter by Session">
                   <SelectValue placeholder="All Sessions" />
@@ -109,7 +109,7 @@ function TracesPageInner() {
             {chatProviderOptions.length > 0 && (
               <Select
                 value={filterProviderId}
-                onValueChange={(v) => { setFilterProviderId(v === "all" ? "" : v); setLimit(20); }}
+                onValueChange={(v) => { setFilterProviderId(v === "all" ? "" : v); setLimit(20); setTrace(null); setSelectedStep(null); }}
               >
                 <SelectTrigger className="w-56" aria-label="Filter by Chat Provider">
                   <SelectValue placeholder="All Chat Providers" />
