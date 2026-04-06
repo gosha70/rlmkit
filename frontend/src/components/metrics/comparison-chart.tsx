@@ -11,6 +11,7 @@ interface ComparisonChartProps {
 }
 
 export function ComparisonChart({ rlmData, directData }: ComparisonChartProps) {
+  const tooltipStyle = useChartTooltipStyle();
   if (!rlmData && !directData) {
     return (
       <Card>
@@ -32,8 +33,6 @@ export function ComparisonChart({ rlmData, directData }: ComparisonChartProps) {
   const costData = [
     { name: "Cost ($)", RLM: rlmData?.total_cost_usd ?? 0, Direct: directData?.total_cost_usd ?? 0 },
   ];
-
-  const tooltipStyle = useChartTooltipStyle();
 
   return (
     <Card>

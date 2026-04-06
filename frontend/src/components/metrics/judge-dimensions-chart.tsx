@@ -39,6 +39,7 @@ interface JudgeDimensionsChartProps {
 }
 
 export function JudgeDimensionsChart({ judgeScores, providerNames }: JudgeDimensionsChartProps) {
+  const tooltipStyle = useChartTooltipStyle();
   if (judgeScores.length === 0) return null;
 
   // Collect all providers and dimension names from the data
@@ -68,8 +69,6 @@ export function JudgeDimensionsChart({ judgeScores, providerNames }: JudgeDimens
     }
     return entry;
   });
-
-  const tooltipStyle = useChartTooltipStyle();
 
   return (
     <Card>
