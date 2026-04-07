@@ -145,14 +145,16 @@ export default function ChatPage() {
     localStorage.setItem("rlmkit-cp-order", JSON.stringify(chatProviderOrder));
   }, [chatProviderOrder]);
 
-  // Hydrate uploaded files from localStorage after session ID is known.
-  // Files are keyed per session so switching sessions restores the right set.
+  // Hydrate uploaded files from localStorage.
+  // Uses session-keyed storage when a session exists, or a "draft" key
+  // for uploads that happen before the first message creates a session.
+  const filesStorageKey = sessionId ? `rlmkit_files_${sessionId}` : "rlmkit_files_draft";
+
   useEffect(() => {
     if (!hydrated) return;
     filesHydratedRef.current = true;
-    if (!sessionId) return;
     try {
-      const saved = localStorage.getItem(`rlmkit_files_${sessionId}`);
+      const saved = localStorage.getItem(filesStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved) as FileUploadResponse[];
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -162,17 +164,30 @@ export default function ChatPage() {
     } catch {
       // Ignore corrupt data
     }
-  }, [hydrated, sessionId]);
+  }, [hydrated, filesStorageKey]);
 
   // Persist uploaded files whenever they change (after initial hydration).
   useEffect(() => {
     if (!filesHydratedRef.current) return;
-    if (sessionId && uploadedFiles.length > 0) {
-      localStorage.setItem(`rlmkit_files_${sessionId}`, JSON.stringify(uploadedFiles));
-    } else if (sessionId) {
-      localStorage.removeItem(`rlmkit_files_${sessionId}`);
+    if (uploadedFiles.length > 0) {
+      localStorage.setItem(filesStorageKey, JSON.stringify(uploadedFiles));
+    } else {
+      localStorage.removeItem(filesStorageKey);
     }
-  }, [uploadedFiles, sessionId]);
+  }, [uploadedFiles, filesStorageKey]);
+
+  // When a session is first created (null → id), migrate draft files to session key.
+  const prevSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (sessionId && !prevSessionIdRef.current) {
+      const draft = localStorage.getItem("rlmkit_files_draft");
+      if (draft) {
+        localStorage.setItem(`rlmkit_files_${sessionId}`, draft);
+        localStorage.removeItem("rlmkit_files_draft");
+      }
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   // Auto-select / clean up selected providers when the provider list loads.
   // Removes stale IDs (deleted/renamed providers persisted in localStorage) and
@@ -734,8 +749,8 @@ export default function ChatPage() {
 
   const handleNewSession = useCallback(() => {
     cancelAllPollers();
-    // Clear persisted files for old session
-    if (sessionId) localStorage.removeItem(`rlmkit_files_${sessionId}`);
+    // Clear draft files (not session-keyed files — those stay for reselection).
+    localStorage.removeItem("rlmkit_files_draft");
     setSessionId(null);
     setTurns([]);
     setUploadedFiles([]);
@@ -744,7 +759,7 @@ export default function ChatPage() {
       wsRef.current = null;
       wsReadyRef.current = false;
     }
-  }, [cancelAllPollers, sessionId]);
+  }, [cancelAllPollers]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
