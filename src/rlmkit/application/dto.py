@@ -98,6 +98,9 @@ class RunConfigDTO:
     max_time_seconds: float | None = None
     max_recursion_depth: int = 1
     stall_limit: int = 3  # consecutive no-progress steps before circuit-breaker fires
+    repeat_limit: int = 2  # duplicate inspect results before forced finalization
+    nudge_at_fraction: float = 0.6  # fraction of max_steps to send soft convergence nudge
+    system_prompt_extra: str | None = None  # appended to the built-in RLM system prompt
     verbose: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 

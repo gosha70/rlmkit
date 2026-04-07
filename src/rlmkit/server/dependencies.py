@@ -435,6 +435,10 @@ class AppState:
         )
         resolved.rlm_max_steps = budget.max_steps
         resolved.rlm_timeout_seconds = budget.max_time_seconds
+        if hasattr(budget, "repeat_limit"):
+            resolved.rlm_repeat_limit = budget.repeat_limit
+        if hasattr(budget, "nudge_at_fraction"):
+            resolved.rlm_nudge_at_fraction = budget.nudge_at_fraction
         return resolved
 
     def resolve_execution_context(self, execution_id: str) -> tuple[str, str, str, str] | None:
@@ -860,6 +864,8 @@ class AppState:
             max_cost=b.max_cost_usd,
             max_time_seconds=float(b.max_time_seconds),
             max_recursion_depth=b.max_recursion_depth,
+            repeat_limit=b.repeat_limit,
+            nudge_at_fraction=b.nudge_at_fraction,
         )
 
 

@@ -363,6 +363,8 @@ class BudgetConfig(BaseModel):
     max_cost_usd: float = 2.0
     max_time_seconds: int = 30
     max_recursion_depth: int = 5
+    repeat_limit: int = 2  # RLM: duplicate inspections before forced finalization
+    nudge_at_fraction: float = 0.6  # RLM: fraction of max_steps for soft nudge
 
 
 class SandboxConfig(BaseModel):
@@ -416,6 +418,8 @@ class ChatProviderConfig(BaseModel):
     rag_config: RAGConfig | None = None  # only for RAG mode
     rlm_max_steps: int = 16  # only for RLM mode
     rlm_timeout_seconds: int = 60  # only for RLM mode
+    rlm_repeat_limit: int = 2  # only for RLM mode — duplicate inspections before forced finalization
+    rlm_nudge_at_fraction: float = 0.6  # only for RLM mode — fraction of max_steps for soft nudge
     num_retries: int | None = Field(default=None, ge=0)
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -429,6 +433,8 @@ class ChatProviderCreateRequest(BaseModel):
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
     rlm_timeout_seconds: int | None = None
+    rlm_repeat_limit: int | None = None
+    rlm_nudge_at_fraction: float | None = None
     num_retries: int | None = Field(default=None, ge=0)
 
 
@@ -440,6 +446,8 @@ class ChatProviderUpdateRequest(BaseModel):
     rag_config: RAGConfig | None = None
     rlm_max_steps: int | None = None
     rlm_timeout_seconds: int | None = None
+    rlm_repeat_limit: int | None = None
+    rlm_nudge_at_fraction: float | None = None
     num_retries: int | None = Field(default=None, ge=0)
 
 

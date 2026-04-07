@@ -241,6 +241,8 @@ export interface BudgetConfig {
   max_cost_usd: number;
   max_time_seconds: number;
   max_recursion_depth: number;
+  repeat_limit: number;
+  nudge_at_fraction: number;
 }
 
 export interface RAGConfig {
@@ -274,6 +276,8 @@ export interface ChatProviderConfig {
   rag_config?: RAGConfig | null;
   rlm_max_steps: number;
   rlm_timeout_seconds: number;
+  rlm_repeat_limit: number;
+  rlm_nudge_at_fraction: number;
   created_at: string;
   updated_at: string;
 }
@@ -286,6 +290,8 @@ export interface ChatProviderCreateRequest {
   rag_config?: RAGConfig | null;
   rlm_max_steps?: number | null;
   rlm_timeout_seconds?: number | null;
+  rlm_repeat_limit?: number | null;
+  rlm_nudge_at_fraction?: number | null;
   num_retries?: number | null;
 }
 
@@ -298,6 +304,8 @@ export interface ChatProviderUpdateRequest {
   rag_config?: RAGConfig | null;
   rlm_max_steps?: number | null;
   rlm_timeout_seconds?: number | null;
+  rlm_repeat_limit?: number | null;
+  rlm_nudge_at_fraction?: number | null;
 }
 
 export interface AppConfig {

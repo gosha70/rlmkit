@@ -64,7 +64,6 @@ class FakeSandbox:
 
     def execute(self, code: str) -> ExecutionResultDTO:
         try:
-            exec(code, self._namespace)
             import contextlib
             import io
 
@@ -100,6 +99,18 @@ class FakeEmbedder:
     @property
     def dimension(self) -> int:
         return 8
+
+
+class CapturingLLM(FakeLLM):
+    """FakeLLM that records messages passed to each complete() call."""
+
+    def __init__(self, responses: list[str]) -> None:
+        super().__init__(responses)
+        self.call_messages: list[list[dict[str, str]]] = []
+
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        self.call_messages.append(list(messages))
+        return super().complete(messages)
 
 
 class FakeStorage:
@@ -951,6 +962,41 @@ class TestJsonProtocolParsing:
         assert result.success is True
         assert result.answer == "Done via markdown"
 
+    def test_json_in_code_fence_parsed(self):
+        """JSON wrapped in ```json ... ``` code fence is parsed correctly."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = '```json\n{"type": "final", "answer": "fenced answer"}\n```'
+        parsed = uc._parse_rlm_response(text)
+
+        assert parsed.is_complete
+        assert parsed.final_answer == "fenced answer"
+
+    def test_json_with_invalid_escape_parsed(self):
+        r"""JSON with invalid \[ escape in grep pattern is parsed correctly."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        # Model emits \[ which is invalid JSON — parser should sanitize to \\[
+        text = '{"type": "inspect", "tool": "grep", "args": {"pattern": "\\[File 2:"}}'
+        parsed = uc._parse_rlm_response(text)
+
+        assert parsed.has_code
+        assert "grep(" in parsed.code
+
+    def test_stall_detector_rejects_json_action_as_answer(self):
+        """Stall detector should not return raw JSON action blob as the answer."""
+        # Model emits a JSON action that the parser can't handle (e.g. deeply nested),
+        # so it falls through as plain text and triggers stall detection.
+        # The circuit breaker should NOT return the JSON as the final answer.
+        raw_json_action = '{"type": "inspect", "tool": "grep", "args": {"pattern": "test"}}'
+        llm = FakeLLM([raw_json_action])  # repeats same broken response
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=10, stall_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        # The answer should NOT be the raw JSON action blob
+        assert not result.answer.strip().startswith("{")
+
 
 # ---------------------------------------------------------------------------
 # System prompt uses v2.0 template
@@ -1535,3 +1581,519 @@ class TestHumanizeRAGError:
     def test_unknown_error_returns_original(self):
         result = self._humanize("something completely unexpected")
         assert result == "something completely unexpected"
+
+
+# ---------------------------------------------------------------------------
+# RLM Loop Convergence tests (Fix 1, 2, 3 + subcall propagation)
+# ---------------------------------------------------------------------------
+
+# Helper: JSON inspect action that will produce deterministic output via FakeSandbox.
+_INSPECT_PEEK_0_500 = '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 500}}'
+_INSPECT_PEEK_500_1000 = '{"type": "inspect", "tool": "peek", "args": {"start": 500, "end": 1000}}'
+_FINAL_DONE = '{"type": "final", "answer": "Done after exploration."}'
+
+
+class TestRepeatDetection:
+    """Fix 1: Inspection repeat detection."""
+
+    def test_repeat_detection_redirects_on_first_duplicate(self):
+        """First duplicate inspect result injects 'duplicate_result' nudge."""
+        # Step 1: inspect peek(0,500) → unique output
+        # Step 2: inspect peek(0,500) → same output (duplicate)
+        # Step 3: model finalizes after seeing the nudge
+        llm = FakeLLM([_INSPECT_PEEK_0_500, _INSPECT_PEEK_0_500, _FINAL_DONE])
+        sandbox = FakeSandbox()
+        content = "A" * 1000
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "summarize", config=config)
+
+        assert result.success is True
+        assert result.answer == "Done after exploration."
+
+    def test_repeat_detection_forces_final_after_repeat_limit(self):
+        """After repeat_limit duplicates, 'repeat_detected' message is injected."""
+        # All steps return same inspect → repeat_limit=2 means on 3rd dup
+        # the repeat_detected message fires.  Model then finalizes.
+        llm = FakeLLM([_INSPECT_PEEK_0_500, _INSPECT_PEEK_0_500, _INSPECT_PEEK_0_500, _FINAL_DONE])
+        sandbox = FakeSandbox()
+        content = "A" * 1000
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=2)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "summarize", config=config)
+
+        assert result.success is True
+        assert result.answer == "Done after exploration."
+
+    def test_no_repeat_detection_on_unique_outputs(self):
+        """Different inspect ranges produce different outputs — no repeat nudge."""
+        llm = FakeLLM([_INSPECT_PEEK_0_500, _INSPECT_PEEK_500_1000, _FINAL_DONE])
+        sandbox = FakeSandbox()
+        content = "A" * 500 + "B" * 500  # two distinct halves
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=2)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "compare halves", config=config)
+
+        assert result.success is True
+        assert result.answer == "Done after exploration."
+        assert result.steps == 3  # 2 inspects + final, no extra repeat steps
+
+    def test_repeat_count_resets_on_unique_output(self):
+        """A unique result between duplicates resets the repeat counter."""
+        # dup, unique, dup → repeat_count resets between the two dups
+        llm = FakeLLM(
+            [_INSPECT_PEEK_0_500, _INSPECT_PEEK_500_1000, _INSPECT_PEEK_0_500, _FINAL_DONE]
+        )
+        sandbox = FakeSandbox()
+        content = "A" * 500 + "B" * 500
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=2)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "explore", config=config)
+
+        assert result.success is True
+        # Should reach FINAL without repeat_detected firing (only 1 dup after reset)
+        assert result.answer == "Done after exploration."
+
+    def test_repeat_detection_skips_non_inspect_code(self):
+        """Arbitrary Python code (non-inspect) is NOT checked for repeats."""
+        code_step = "```python\nprint('hello')\n```"
+        # Same code twice — should NOT trigger repeat detection
+        llm = FakeLLM([code_step, code_step, "FINAL: done"])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=1)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        assert result.answer == "done"
+
+
+class TestRepeatDetectionAsync:
+    """Fix 1 async twins."""
+
+    def test_async_repeat_detection_redirects(self):
+        llm = FakeLLM([_INSPECT_PEEK_0_500, _INSPECT_PEEK_0_500, _FINAL_DONE])
+        sandbox = FakeSandbox()
+        content = "A" * 1000
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async(content, "summarize", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == "Done after exploration."
+
+    def test_async_repeat_detection_forces_final(self):
+        llm = FakeLLM([_INSPECT_PEEK_0_500, _INSPECT_PEEK_0_500, _INSPECT_PEEK_0_500, _FINAL_DONE])
+        sandbox = FakeSandbox()
+        content = "A" * 1000
+        config = RunConfigDTO(mode="rlm", max_steps=10, repeat_limit=2)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async(content, "summarize", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == "Done after exploration."
+
+
+class TestSoftNudge:
+    """Fix 2: Soft finalization nudge at budget fraction."""
+
+    def test_soft_nudge_fires_at_fraction(self):
+        """Nudge fires at step >= max_steps * nudge_at_fraction."""
+        # With max_steps=10, nudge_at_fraction=0.5 → nudge at step 5.
+        # We need at least 5 code steps + FINAL to verify.
+        code_step = "```python\nprint('step')\n```"
+        llm = FakeLLM([code_step] * 6 + ["FINAL: answer"])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=10, nudge_at_fraction=0.5)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        assert result.answer == "answer"
+
+    def test_soft_nudge_fires_once(self):
+        """Nudge only appears once even across many steps past threshold."""
+        code_step = "```python\nprint('step')\n```"
+        llm = CapturingLLM([code_step] * 8 + ["FINAL: answer"])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=10, nudge_at_fraction=0.5)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        assert result.answer == "answer"
+        # Nudge fires once and persists in history, so all subsequent calls see it
+        # but the message itself should only appear once in the full message list.
+        final_messages = llm.call_messages[-1]
+        nudge_count = sum(1 for m in final_messages if "Progress check" in m.get("content", ""))
+        assert nudge_count == 1
+
+    def test_soft_nudge_does_not_fire_on_short_runs(self):
+        """A 2-step run with max_steps=16 never triggers the nudge."""
+        llm = FakeLLM(
+            [
+                "```python\nprint('exploring')\n```",
+                "FINAL: Found it.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=16, nudge_at_fraction=0.6)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        assert result.answer == "Found it."
+        assert result.steps == 2
+
+    def test_soft_nudge_floor_with_max_steps_2(self):
+        """With max_steps=2, floor ensures nudge_step=2 (same as last step)."""
+        llm = FakeLLM(
+            [
+                "```python\nprint('exploring')\n```",
+                "FINAL: answer",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=2, nudge_at_fraction=0.6)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        assert result.answer == "answer"
+
+    def test_soft_nudge_floor_with_max_steps_3(self):
+        """With max_steps=3, floor ensures nudge_step=2, fires on step 2."""
+        llm = FakeLLM(
+            [
+                "```python\nprint('step1')\n```",
+                "```python\nprint('step2')\n```",
+                "FINAL: answer",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=3, nudge_at_fraction=0.6)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        assert result.answer == "answer"
+
+
+class TestSoftNudgeAsync:
+    """Fix 2 async twin."""
+
+    def test_async_soft_nudge_fires_at_fraction(self):
+        code_step = "```python\nprint('step')\n```"
+        llm = FakeLLM([code_step] * 6 + ["FINAL: answer"])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=10, nudge_at_fraction=0.5)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async("content", "question", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == "answer"
+
+
+class TestAdaptiveExecLimit:
+    """Fix 3: Adaptive execution result limit."""
+
+    def test_adaptive_limit_floor(self):
+        """Small content falls to the 2000-char floor."""
+        limit = RunRLMUseCase._compute_exec_result_limit(100, max_steps=16)
+        assert limit == 2000
+
+    def test_adaptive_limit_ceiling(self):
+        """Huge content is capped at 8000."""
+        limit = RunRLMUseCase._compute_exec_result_limit(1_000_000, max_steps=4)
+        assert limit == 8000
+
+    def test_adaptive_limit_scales(self):
+        """100K content with 8 steps → cap at 8000."""
+        limit = RunRLMUseCase._compute_exec_result_limit(100_000, max_steps=8)
+        assert limit == 8000  # 100000*0.8/8=10000 → capped at 8000
+
+    def test_override_takes_precedence(self):
+        """Explicit override is used."""
+        limit = RunRLMUseCase._compute_exec_result_limit(100_000, max_steps=8, override=3000)
+        assert limit == 3000
+
+    def test_override_safety_floor(self):
+        """Override below 500 is raised to 500."""
+        limit = RunRLMUseCase._compute_exec_result_limit(100_000, max_steps=8, override=100)
+        assert limit == 500
+
+    def test_context_aware_cap_reduces_limit(self):
+        """When context is nearly full, limit is reduced to available headroom."""
+        # model_context_limit=40000, 80% = 32000, messages already 30000 chars → headroom=2000
+        limit = RunRLMUseCase._compute_exec_result_limit(
+            100_000,
+            max_steps=8,
+            current_message_chars=30000,
+            model_context_limit=40000,
+        )
+        assert limit == 2000  # headroom = 32000 - 30000 = 2000
+
+    def test_tight_headroom_returns_actual_headroom(self):
+        """When headroom is small, limit equals actual headroom (never exceeds it)."""
+        # model_context_limit=40000, 80%=32000, messages=31800 → headroom=200
+        limit = RunRLMUseCase._compute_exec_result_limit(
+            100_000,
+            max_steps=8,
+            current_message_chars=31800,
+            model_context_limit=40000,
+        )
+        assert limit == 200  # headroom=200, returned as-is (no floor that exceeds it)
+
+    def test_negative_headroom_returns_minimum(self):
+        """When messages already exceed 80% of context, return 500."""
+        # model_context_limit=40000, 80%=32000, messages=35000 → headroom=-3000
+        limit = RunRLMUseCase._compute_exec_result_limit(
+            100_000,
+            max_steps=8,
+            current_message_chars=35000,
+            model_context_limit=40000,
+        )
+        assert limit == 500  # negative headroom → minimum viable limit
+
+    def test_graceful_degradation_without_context_limit(self):
+        """Without model_context_limit, context-aware cap is skipped."""
+        limit = RunRLMUseCase._compute_exec_result_limit(
+            100_000,
+            max_steps=8,
+            current_message_chars=30000,
+            model_context_limit=None,
+        )
+        assert limit == 8000  # context cap skipped, normal heuristic applies
+
+
+class TestAdaptiveExecLimitAsync:
+    """Fix 3 async twin — verify the adaptive limit works in the async loop."""
+
+    def test_async_adaptive_limit_scales(self):
+        """Large content with few steps uses higher truncation limit.
+
+        The adaptive heuristic gives 50000*0.8/4 = 10000, capped at 8000.
+        The 'Execution result:' message sent to the LLM should be truncated
+        at ~8000 chars, NOT the old 2000 default.
+        """
+        llm = CapturingLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 50000}}',
+                "FINAL: summary",
+            ]
+        )
+        sandbox = FakeSandbox()
+        content = "X" * 50_000
+        # Bind peek so inspect actions produce real output (matching real sandbox).
+        sandbox.set_variable(
+            "peek", lambda start=0, end=None, max_chars=10000: content[start:end][:max_chars]
+        )
+        config = RunConfigDTO(mode="rlm", max_steps=4)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async(content, "summarize", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == "summary"
+        # The second LLM call (FINAL step) receives the truncated exec result.
+        # Find the "Execution result:" user message in the messages sent to the LLM.
+        assert len(llm.call_messages) >= 2
+        final_call_msgs = llm.call_messages[1]
+        exec_msgs = [
+            m for m in final_call_msgs if m.get("content", "").startswith("Execution result:")
+        ]
+        assert len(exec_msgs) == 1
+        exec_payload = exec_msgs[0]["content"]
+        # With adaptive limit at 8000, the truncated payload should be > 2000 chars
+        # (old limit) but <= ~8200 (8000 + truncation suffix).
+        assert len(exec_payload) > 2500, (
+            f"Exec result too short ({len(exec_payload)}), adaptive limit not applied"
+        )
+        assert len(exec_payload) < 9000, (
+            f"Exec result too long ({len(exec_payload)}), cap not applied"
+        )
+
+
+class TestSubcallConfigPropagation:
+    """Verify new config fields are threaded into subcall child runs.
+
+    Patches ``RunRLMUseCase.execute`` to capture the child config when
+    ``_make_subcall`` spawns a child run, then inspects the captured config
+    to verify ``repeat_limit`` and ``nudge_at_fraction`` propagated.
+    """
+
+    def test_subcall_inherits_repeat_limit(self):
+        """repeat_limit propagates through _make_subcall to the child config."""
+        from unittest.mock import patch
+
+        captured_configs: list[RunConfigDTO] = []
+        _real_execute = RunRLMUseCase.execute
+
+        def capturing_execute(self_inner, content, query, config=None, **kw):
+            if config is not None:
+                captured_configs.append(config)
+            return _real_execute(self_inner, content, query, config=config, **kw)
+
+        llm = FakeLLM(
+            [
+                "```python\nresult = subcall(content='c', query='q')\nprint(result)\n```",
+                "FINAL: parent done",
+                "FINAL: child done",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(
+            mode="rlm",
+            max_steps=10,
+            max_recursion_depth=1,
+            repeat_limit=7,  # non-default
+            nudge_at_fraction=0.8,
+        )
+        uc = RunRLMUseCase(llm, sandbox)
+        with patch.object(RunRLMUseCase, "execute", capturing_execute):
+            uc.execute(content="parent content", query="query", config=config)
+
+        # The child config should have been captured by the patched execute.
+        # First capture is the parent call, second is the child subcall.
+        assert len(captured_configs) >= 2
+        child_config = captured_configs[1]
+        assert child_config.repeat_limit == 7
+        assert child_config.nudge_at_fraction == 0.8
+
+    def test_subcall_inherits_nudge_at_fraction(self):
+        """nudge_at_fraction propagates through _make_subcall to the child config."""
+        from unittest.mock import patch
+
+        captured_configs: list[RunConfigDTO] = []
+        _real_execute = RunRLMUseCase.execute
+
+        def capturing_execute(self_inner, content, query, config=None, **kw):
+            if config is not None:
+                captured_configs.append(config)
+            return _real_execute(self_inner, content, query, config=config, **kw)
+
+        llm = FakeLLM(
+            [
+                "```python\nresult = subcall(content='c', query='q')\nprint(result)\n```",
+                "FINAL: done",
+                "FINAL: sub done",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(
+            mode="rlm",
+            max_steps=10,
+            max_recursion_depth=1,
+            nudge_at_fraction=0.15,  # non-default
+        )
+        uc = RunRLMUseCase(llm, sandbox)
+        with patch.object(RunRLMUseCase, "execute", capturing_execute):
+            uc.execute(content="content", query="query", config=config)
+
+        assert len(captured_configs) >= 2
+        child_config = captured_configs[1]
+        assert child_config.nudge_at_fraction == 0.15
+
+
+class TestJsonParserRobustness:
+    """Regression tests for small-model JSON quirks that previously caused
+    parse failures, leading to stall loops and raw JSON returned as answers.
+
+    See: actions.py extract_first_json_object — markdown fence stripping
+    and invalid-escape sanitization.
+    """
+
+    def test_invalid_json_escape_in_grep_pattern(self):
+        """Qwen 7B emits \\[ in grep patterns — invalid JSON escape.
+
+        Before the fix, json.loads rejected this, the fallback parser found
+        no Python code, and the loop stalled for 3 steps returning raw JSON
+        as the "answer".  After the fix, the sanitizer converts \\[ to \\\\[
+        and the inspect action executes normally.
+
+        Regression for: 5-step multi-doc run where grep('[File 2:') never
+        executed because the model emitted {"pattern": "\\[File 2:"}.
+        """
+        # Step 1: peek to read the document index
+        step1 = '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 500}}'
+        # Step 2: grep with invalid escape \[ — the exact pattern Qwen produces
+        step2 = '{"type": "inspect", "tool": "grep", "args": {"pattern": "\\[File 2:", "max_matches": 1, "use_regex": true}}'
+        # Step 3: finalize after seeing file 2
+        step3 = '{"type": "final", "answer": "Document 1 is about KG-RAG, Document 2 is about semantic search."}'
+
+        llm = FakeLLM([step1, step2, step3])
+        sandbox = FakeSandbox()
+        content = (
+            "[DOCUMENT INDEX — 2 files attached]\n"
+            '  1. "KG_RAG.pdf"\n  2. "Semantic_Search.pdf"\n'
+            "[END DOCUMENT INDEX]\n\n"
+            "[File 1: KG_RAG.pdf]\nKnowledge graphs enhance RAG systems.\n\n"
+            "[File 2: Semantic_Search.pdf]\nSemantic search uses embeddings."
+        )
+        config = RunConfigDTO(mode="rlm", max_steps=5)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "summarize and compare", config=config)
+
+        assert result.success is True
+        # The answer should be from the FINAL action, NOT raw JSON
+        assert "Document 1" in result.answer
+        assert "type" not in result.answer  # no raw JSON leaking through
+        assert result.steps <= 3
+
+    def test_json_wrapped_in_markdown_code_fence(self):
+        """Small models often wrap JSON actions in ```json ... ``` blocks.
+
+        Before the fix, the trailing ``` caused ParseError("Found trailing
+        content after JSON"), fallback found no Python code, and the response
+        was treated as a no-progress stall.
+        """
+        step1 = '```json\n{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1000}}\n```'
+        step2 = '{"type": "final", "answer": "The document discusses RAG systems."}'
+
+        llm = FakeLLM([step1, step2])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=5)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("RAG systems combine retrieval with generation.", "summarize", config=config)
+
+        assert result.success is True
+        assert "RAG" in result.answer
+        assert result.steps <= 2
+
+    def test_invalid_escape_low_budget_does_not_return_raw_json(self):
+        """With max_steps=5, invalid escape must not cause raw JSON as answer.
+
+        This is the exact scenario from the production regression: 5-step
+        budget, grep with \\[ escape, parse failure on every grep attempt,
+        stall circuit-breaker returns raw JSON inspect object as the answer.
+        """
+        peek = '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 2000}}'
+        # Repeat the invalid grep 3 times (stall_limit=3 triggers circuit breaker)
+        bad_grep = '{"type": "inspect", "tool": "grep", "args": {"pattern": "\\[File 2:", "use_regex": true}}'
+        final = '{"type": "final", "answer": "Both documents discuss AI."}'
+
+        llm = FakeLLM([peek, bad_grep, bad_grep, bad_grep, final])
+        sandbox = FakeSandbox()
+        content = (
+            "[DOCUMENT INDEX — 2 files attached]\n"
+            '  1. "doc1.pdf"\n  2. "doc2.pdf"\n'
+            "[END DOCUMENT INDEX]\n\n"
+            "[File 1: doc1.pdf]\nContent one.\n\n"
+            "[File 2: doc2.pdf]\nContent two."
+        )
+        config = RunConfigDTO(mode="rlm", max_steps=5)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "compare documents", config=config)
+
+        assert result.success is True
+        # With the escape sanitizer fix, the grep should now parse and execute.
+        # The answer must NOT be raw JSON.
+        assert '"type"' not in result.answer
+        assert '"inspect"' not in result.answer

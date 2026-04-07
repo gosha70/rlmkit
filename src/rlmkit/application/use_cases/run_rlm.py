@@ -29,11 +29,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Maximum characters for an execution result that is fed back into the LLM
-# message history.  Caps the per-step token cost of growing context windows
-# on models with small context limits (e.g. 8k-token local models).
-_MAX_EXEC_RESULT_CHARS = 2000
-
 
 class RunRLMUseCase:
     """Orchestrates RLM recursive exploration through ports.
@@ -93,6 +88,8 @@ class RunRLMUseCase:
 
         # Build initial messages
         system_prompt = self._build_system_prompt(len(content))
+        if config.system_prompt_extra:
+            system_prompt += "\n\n" + config.system_prompt_extra
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
@@ -111,6 +108,10 @@ class RunRLMUseCase:
         last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
         overflow_at_step: int | None = None  # set when context window is exceeded mid-loop
+        recent_exec_hashes: list[int] = []  # last N inspect result hashes for repeat detection
+        repeat_count = 0  # consecutive duplicate inspect results
+        repeat_limit = config.repeat_limit
+        nudge_sent = False  # soft convergence nudge (sent once)
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
         # Use root model for the initial reasoning call
@@ -129,6 +130,26 @@ class RunRLMUseCase:
                 # Switch to recursive model for exploration subcalls (step > 1)
                 if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
                     self._llm.use_recursive_model()
+
+                # Soft convergence nudge at budget fraction.
+                # Floor at step 2: with low max_steps (e.g. 3), int(3*0.6)=1
+                # would fire on step 1 before the model has done anything useful.
+                nudge_step = (
+                    max(2, int(budget_config.max_steps * config.nudge_at_fraction))
+                    if budget_config.max_steps is not None
+                    else None
+                )
+                if not nudge_sent and nudge_step is not None and budget_state.steps >= nudge_step:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": get_rlm_message("soft_nudge").format(
+                                steps_used=budget_state.steps,
+                                max_steps=budget_config.max_steps,
+                            ),
+                        }
+                    )
+                    nudge_sent = True
 
                 # On the last allowed step, nudge the model to produce a final
                 # answer instead of another inspect call.
@@ -269,14 +290,50 @@ class RunRLMUseCase:
                         }
                     )
 
+                    # Repeat detection — only for inspect actions.
+                    # Non-inspect code (subcalls, arbitrary computation) can legitimately
+                    # produce identical output; only inspect-action results should feed
+                    # the repeat detector.
+                    repeat_nudge: str | None = None
+                    if parsed.is_inspect:
+                        exec_hash = hash(formatted[:500])
+                        is_repeat = exec_hash in recent_exec_hashes
+                        recent_exec_hashes.append(exec_hash)
+                        if len(recent_exec_hashes) > 5:
+                            recent_exec_hashes.pop(0)
+
+                        if is_repeat:
+                            repeat_count += 1
+                            if repeat_count >= repeat_limit:
+                                repeat_nudge = get_rlm_message("repeat_detected")
+                            else:
+                                repeat_nudge = get_rlm_message("duplicate_result")
+                        else:
+                            repeat_count = 0
+
                     messages.append({"role": "assistant", "content": text})
-                    # Truncate large execution outputs before adding to message history
-                    # to prevent context window overflow on models with small context limits.
+                    # Truncate large execution outputs before adding to message
+                    # history.  Limit is recomputed per step to account for
+                    # accumulated context usage.  We include overhead for the
+                    # "Execution result:\n" prefix (~20 chars), truncation suffix
+                    # (~50 chars), and any repeat nudge so the cap reflects the
+                    # full payload about to be appended, not just the raw body.
+                    _wrapper_overhead = 70 + (len(repeat_nudge) if repeat_nudge else 0)
+                    current_msg_chars = (
+                        sum(len(m.get("content", "")) for m in messages) + _wrapper_overhead
+                    )
+                    exec_result_limit = self._compute_exec_result_limit(
+                        len(content),
+                        config.max_steps,
+                        current_message_chars=current_msg_chars,
+                        model_context_limit=getattr(self._llm, "context_length_chars", None),
+                        override=config.extra.get("exec_result_limit"),
+                    )
                     exec_content = formatted
-                    if len(exec_content) > _MAX_EXEC_RESULT_CHARS:
+                    if len(exec_content) > exec_result_limit:
                         exec_content = (
-                            exec_content[:_MAX_EXEC_RESULT_CHARS]
-                            + f"\n… [truncated, {len(formatted) - _MAX_EXEC_RESULT_CHARS} chars omitted]"
+                            exec_content[:exec_result_limit]
+                            + f"\n… [truncated, {len(formatted) - exec_result_limit} chars omitted]"
                         )
                     messages.append(
                         {
@@ -284,6 +341,10 @@ class RunRLMUseCase:
                             "content": f"Execution result:\n{exec_content}",
                         }
                     )
+                    # Append repeat-detection nudge AFTER the exec result so the
+                    # model sees both the output (for learning) and the guidance.
+                    if repeat_nudge is not None:
+                        messages.append({"role": "user", "content": repeat_nudge})
                 else:
                     # No code and no FINAL -- track the best plain-text response seen
                     stripped = text.strip()
@@ -293,7 +354,7 @@ class RunRLMUseCase:
                     if consecutive_no_progress >= stall_limit:
                         # Circuit breaker: if the model wrote a real answer but skipped
                         # the FINAL: format, accept it rather than discarding it.
-                        if last_plain_answer:
+                        if last_plain_answer and not self._looks_like_action(last_plain_answer):
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
                             elapsed = time.time() - start
@@ -325,6 +386,10 @@ class RunRLMUseCase:
             # Prefer an explicit plain-text answer; fall back to last raw LLM
             # response (covers models that always generate code but never FINAL:).
             best_fallback = last_plain_answer or last_assistant_text
+            # Don't return raw JSON action blobs as the final answer —
+            # fall through to synthesis or limit-warning instead.
+            if best_fallback and self._looks_like_action(best_fallback):
+                best_fallback = ""
             if best_fallback:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
@@ -394,18 +459,21 @@ class RunRLMUseCase:
                 answer = synth_response.content.strip() or (
                     "The content was inspected but contained no extractable themes."
                 )
-                elapsed = time.time() - start
-                return RunResultDTO(
-                    answer=answer,
-                    mode_used="rlm",
-                    success=True,
-                    steps=budget_state.steps,
-                    input_tokens=cumulative_input,
-                    output_tokens=cumulative_output,
-                    total_cost=cumulative_cost,
-                    elapsed_time=elapsed,
-                    trace=trace,
-                )
+                # If the synthesis call itself returned a JSON action blob
+                # (model stuck in action mode), fall through to the limit warning.
+                if not self._looks_like_action(answer):
+                    elapsed = time.time() - start
+                    return RunResultDTO(
+                        answer=answer,
+                        mode_used="rlm",
+                        success=True,
+                        steps=budget_state.steps,
+                        input_tokens=cumulative_input,
+                        output_tokens=cumulative_output,
+                        total_cost=cumulative_cost,
+                        elapsed_time=elapsed,
+                        trace=trace,
+                    )
             # No answer available — return an actionable warning.
             # Treated as success=True so the result is visible in chat and
             # can be evaluated by Auto-Judge.
@@ -529,6 +597,8 @@ class RunRLMUseCase:
         )
 
         system_prompt = self._build_system_prompt(len(content))
+        if config.system_prompt_extra:
+            system_prompt += "\n\n" + config.system_prompt_extra
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
@@ -547,6 +617,10 @@ class RunRLMUseCase:
         last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
         overflow_at_step: int | None = None  # set when context window is exceeded mid-loop
+        recent_exec_hashes: list[int] = []  # last N inspect result hashes for repeat detection
+        repeat_count = 0  # consecutive duplicate inspect results
+        repeat_limit = config.repeat_limit
+        nudge_sent = False  # soft convergence nudge (sent once)
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
 
         if hasattr(self._llm, "use_root_model"):
@@ -563,6 +637,24 @@ class RunRLMUseCase:
 
                 if budget_state.steps > 1 and hasattr(self._llm, "use_recursive_model"):
                     self._llm.use_recursive_model()
+
+                # Soft convergence nudge at budget fraction.
+                nudge_step = (
+                    max(2, int(budget_config.max_steps * config.nudge_at_fraction))
+                    if budget_config.max_steps is not None
+                    else None
+                )
+                if not nudge_sent and nudge_step is not None and budget_state.steps >= nudge_step:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": get_rlm_message("soft_nudge").format(
+                                steps_used=budget_state.steps,
+                                max_steps=budget_config.max_steps,
+                            ),
+                        }
+                    )
+                    nudge_sent = True
 
                 # On the last allowed step, nudge the model to produce a final answer.
                 is_last_step = (
@@ -726,14 +818,47 @@ class RunRLMUseCase:
                         }
                     )
 
+                    # Repeat detection — only for inspect actions.
+                    repeat_nudge: str | None = None
+                    if parsed.is_inspect:
+                        exec_hash = hash(formatted[:500])
+                        is_repeat = exec_hash in recent_exec_hashes
+                        recent_exec_hashes.append(exec_hash)
+                        if len(recent_exec_hashes) > 5:
+                            recent_exec_hashes.pop(0)
+
+                        if is_repeat:
+                            repeat_count += 1
+                            if repeat_count >= repeat_limit:
+                                repeat_nudge = get_rlm_message("repeat_detected")
+                            else:
+                                repeat_nudge = get_rlm_message("duplicate_result")
+                        else:
+                            repeat_count = 0
+
                     messages.append({"role": "assistant", "content": text})
-                    # Truncate large execution outputs before adding to message history
-                    # to prevent context window overflow on models with small context limits.
+                    # Truncate large execution outputs before adding to message
+                    # history.  Limit is recomputed per step to account for
+                    # accumulated context usage.  We include overhead for the
+                    # "Execution result:\n" prefix (~20 chars), truncation suffix
+                    # (~50 chars), and any repeat nudge so the cap reflects the
+                    # full payload about to be appended, not just the raw body.
+                    _wrapper_overhead = 70 + (len(repeat_nudge) if repeat_nudge else 0)
+                    current_msg_chars = (
+                        sum(len(m.get("content", "")) for m in messages) + _wrapper_overhead
+                    )
+                    exec_result_limit = self._compute_exec_result_limit(
+                        len(content),
+                        config.max_steps,
+                        current_message_chars=current_msg_chars,
+                        model_context_limit=getattr(self._llm, "context_length_chars", None),
+                        override=config.extra.get("exec_result_limit"),
+                    )
                     exec_content = formatted
-                    if len(exec_content) > _MAX_EXEC_RESULT_CHARS:
+                    if len(exec_content) > exec_result_limit:
                         exec_content = (
-                            exec_content[:_MAX_EXEC_RESULT_CHARS]
-                            + f"\n… [truncated, {len(formatted) - _MAX_EXEC_RESULT_CHARS} chars omitted]"
+                            exec_content[:exec_result_limit]
+                            + f"\n… [truncated, {len(formatted) - exec_result_limit} chars omitted]"
                         )
                     messages.append(
                         {
@@ -741,13 +866,17 @@ class RunRLMUseCase:
                             "content": f"Execution result:\n{exec_content}",
                         }
                     )
+                    # Append repeat-detection nudge AFTER the exec result so the
+                    # model sees both the output (for learning) and the guidance.
+                    if repeat_nudge is not None:
+                        messages.append({"role": "user", "content": repeat_nudge})
                 else:
                     stripped = text.strip()
                     if stripped:
                         last_plain_answer = stripped
                     consecutive_no_progress += 1
                     if consecutive_no_progress >= stall_limit:
-                        if last_plain_answer:
+                        if last_plain_answer and not self._looks_like_action(last_plain_answer):
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
                             elapsed = time.time() - start
@@ -776,6 +905,10 @@ class RunRLMUseCase:
                     )
 
             best_fallback = last_plain_answer or last_assistant_text
+            # Don't return raw JSON action blobs as the final answer —
+            # fall through to synthesis or limit-warning instead.
+            if best_fallback and self._looks_like_action(best_fallback):
+                best_fallback = ""
             if best_fallback:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
@@ -843,18 +976,21 @@ class RunRLMUseCase:
                 answer = synth_response.content.strip() or (
                     "The content was inspected but contained no extractable themes."
                 )
-                elapsed = time.time() - start
-                return RunResultDTO(
-                    answer=answer,
-                    mode_used="rlm",
-                    success=True,
-                    steps=budget_state.steps,
-                    input_tokens=cumulative_input,
-                    output_tokens=cumulative_output,
-                    total_cost=cumulative_cost,
-                    elapsed_time=elapsed,
-                    trace=trace,
-                )
+                # If the synthesis call itself returned a JSON action blob
+                # (model stuck in action mode), fall through to the limit warning.
+                if not self._looks_like_action(answer):
+                    elapsed = time.time() - start
+                    return RunResultDTO(
+                        answer=answer,
+                        mode_used="rlm",
+                        success=True,
+                        steps=budget_state.steps,
+                        input_tokens=cumulative_input,
+                        output_tokens=cumulative_output,
+                        total_cost=cumulative_cost,
+                        elapsed_time=elapsed,
+                        trace=trace,
+                    )
             # No answer available — return an actionable warning.
             # Treated as success=True so the result is visible in chat and
             # can be evaluated by Auto-Judge.
@@ -1047,6 +1183,8 @@ class RunRLMUseCase:
                 max_steps=child_max_steps,
                 max_recursion_depth=config.max_recursion_depth - 1,
                 stall_limit=config.stall_limit,
+                repeat_limit=config.repeat_limit,
+                nudge_at_fraction=config.nudge_at_fraction,
                 max_tokens=remaining_tokens,
                 max_cost=remaining_cost,
                 max_time_seconds=remaining_time,
@@ -1285,6 +1423,18 @@ class RunRLMUseCase:
         return "\n\n".join(parts)
 
     @staticmethod
+    def _looks_like_action(text: str) -> bool:
+        """Return True if *text* looks like a JSON action, not a real answer.
+
+        The stall-detector circuit breaker should not return raw JSON action
+        blobs (inspect/final/subcall) as the final answer.  This heuristic
+        catches the common case where ``parse_action`` failed on otherwise
+        valid-looking JSON.
+        """
+        stripped = text.strip()
+        return stripped.startswith("{") and '"type"' in stripped
+
+    @staticmethod
     def _build_system_prompt(content_length: int) -> str:
         """Build the RLM system prompt from the versioned template file.
 
@@ -1296,3 +1446,36 @@ class RunRLMUseCase:
         from rlmkit.prompts import format_system_prompt
 
         return str(format_system_prompt(prompt_length=content_length))
+
+    @staticmethod
+    def _compute_exec_result_limit(
+        content_length: int,
+        max_steps: int | None,
+        current_message_chars: int = 0,
+        model_context_limit: int | None = None,
+        override: int | None = None,
+    ) -> int:
+        """Scale execution result size based on content, budget, and context usage.
+
+        Returns a character limit clamped to [500, 8000].  When *override* is
+        set it takes precedence.  Otherwise the heuristic targets 80% content
+        coverage spread across the step budget, with an optional context-aware
+        cap that avoids pushing past 80% of the model's context window.
+        """
+        if override is not None:
+            return max(override, 500)
+
+        effective_steps = max(max_steps or 16, 4)
+        adaptive = int(content_length * 0.8 / effective_steps)
+        limit = max(2000, min(adaptive, 8000))
+
+        # Context-aware cap: don't push result + existing messages past 80% of
+        # the model's context window.  Never return more than actual headroom.
+        if model_context_limit is not None and model_context_limit > 0:
+            headroom = int(model_context_limit * 0.8) - current_message_chars
+            if headroom > 0:
+                limit = min(limit, headroom)
+            else:
+                # Context already exceeded 80% — return absolute minimum.
+                limit = 500
+        return limit

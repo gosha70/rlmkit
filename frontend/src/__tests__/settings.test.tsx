@@ -59,6 +59,8 @@ const DEFAULT_CONFIG: BudgetConfigType = {
   max_cost_usd: 2.0,
   max_time_seconds: 30,
   max_recursion_depth: 5,
+  repeat_limit: 2,
+  nudge_at_fraction: 0.6,
 };
 
 describe("BudgetConfig", () => {
@@ -140,6 +142,8 @@ describe("BudgetConfig", () => {
       max_cost_usd: 0.5,
       max_time_seconds: 10,
       max_recursion_depth: 2,
+      repeat_limit: 1,
+      nudge_at_fraction: 0.3,
     };
     render(<BudgetConfig config={customConfig} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Reset to Defaults" }));
@@ -149,6 +153,8 @@ describe("BudgetConfig", () => {
       max_cost_usd: 2.0,
       max_time_seconds: 30,
       max_recursion_depth: 5,
+      repeat_limit: 2,
+      nudge_at_fraction: 0.6,
     });
   });
 
@@ -159,6 +165,8 @@ describe("BudgetConfig", () => {
       max_cost_usd: 0.5,
       max_time_seconds: 10,
       max_recursion_depth: 2,
+      repeat_limit: 1,
+      nudge_at_fraction: 0.3,
     };
     render(<BudgetConfig config={customConfig} onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Reset to Defaults" }));
@@ -375,6 +383,8 @@ const MOCK_CONFIG = {
     max_cost_usd: 2.0,
     max_time_seconds: 30,
     max_recursion_depth: 5,
+    repeat_limit: 2,
+    nudge_at_fraction: 0.6,
   },
   provider_configs: [],
   active_profile_id: null,

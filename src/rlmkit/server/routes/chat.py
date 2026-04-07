@@ -276,11 +276,19 @@ async def _run_execution(
                     {"role": msg.get("role", "user"), "content": msg_content}
                 )
 
-        # Build run config, using Chat Provider settings if available
-        if cp and mode == "rlm":
+        # Build run config, using Chat Provider settings if available.
+        # Apply RLM-specific knobs for rlm, auto, and compare (all run RLM internally).
+        if cp and mode in ("rlm", "auto", "compare"):
             run_config = state.create_run_config(mode)
             run_config.max_steps = cp.rlm_max_steps
             run_config.max_time_seconds = float(cp.rlm_timeout_seconds)
+            run_config.repeat_limit = cp.rlm_repeat_limit
+            run_config.nudge_at_fraction = cp.rlm_nudge_at_fraction
+            # Inject per-profile custom RLM system prompt if set
+            if cp.profile_id:
+                _prof = state.find_profile(cp.profile_id)
+                if _prof and _prof.system_prompts.get("rlm"):
+                    run_config.system_prompt_extra = _prof.system_prompts["rlm"]
         else:
             run_config = state.create_run_config(mode)
 
@@ -650,6 +658,17 @@ async def websocket_chat(
                             q,
                         )
                         cfg = state.create_run_config(m)
+                        # Thread Chat Provider RLM settings into run config
+                        if ws_cp and m in ("rlm", "auto", "compare"):
+                            cfg.max_steps = ws_cp.rlm_max_steps
+                            cfg.max_time_seconds = float(ws_cp.rlm_timeout_seconds)
+                            cfg.repeat_limit = ws_cp.rlm_repeat_limit
+                            cfg.nudge_at_fraction = ws_cp.rlm_nudge_at_fraction
+                            # Inject per-profile custom RLM system prompt
+                            if ws_cp.profile_id:
+                                _prof = state.find_profile(ws_cp.profile_id)
+                                if _prof and _prof.system_prompts.get("rlm"):
+                                    cfg.system_prompt_extra = _prof.system_prompts["rlm"]
 
                         if m == "compare":
                             sandbox = state.create_sandbox()

@@ -56,6 +56,8 @@ export function ProfileCard({
     max_cost_usd: profile.budget.max_cost_usd,
     max_time_seconds: profile.budget.max_time_seconds,
     max_recursion_depth: profile.budget.max_recursion_depth,
+    repeat_limit: profile.budget.repeat_limit ?? 2,
+    nudge_at_fraction: profile.budget.nudge_at_fraction ?? 0.6,
     system_prompts: { ...profile.system_prompts } as Record<string, string>,
   });
 
@@ -111,6 +113,8 @@ export function ProfileCard({
       max_cost_usd: profile.budget.max_cost_usd,
       max_time_seconds: profile.budget.max_time_seconds,
       max_recursion_depth: profile.budget.max_recursion_depth,
+      repeat_limit: profile.budget.repeat_limit ?? 2,
+      nudge_at_fraction: profile.budget.nudge_at_fraction ?? 0.6,
       system_prompts: { ...profile.system_prompts } as Record<string, string>,
     });
     setEditing(true);
@@ -155,6 +159,8 @@ export function ProfileCard({
           max_cost_usd: editData.max_cost_usd,
           max_time_seconds: editData.max_time_seconds,
           max_recursion_depth: editData.max_recursion_depth,
+          repeat_limit: editData.repeat_limit,
+          nudge_at_fraction: editData.nudge_at_fraction,
         },
         system_prompts: editData.system_prompts,
       });
@@ -353,6 +359,31 @@ export function ProfileCard({
                   className="h-8 text-xs"
                   value={editData.max_cost_usd}
                   onChange={(e) => setEditData({ ...editData, max_cost_usd: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`edit-repeat-limit-${profile.id}`} className="text-xs">Repeat Limit</Label>
+                <Input
+                  id={`edit-repeat-limit-${profile.id}`}
+                  type="number"
+                  min="1"
+                  max="10"
+                  className="h-8 text-xs"
+                  value={editData.repeat_limit}
+                  onChange={(e) => setEditData({ ...editData, repeat_limit: parseInt(e.target.value) || 2 })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`edit-nudge-fraction-${profile.id}`} className="text-xs">Nudge at Fraction</Label>
+                <Input
+                  id={`edit-nudge-fraction-${profile.id}`}
+                  type="number"
+                  step="0.05"
+                  min="0.1"
+                  max="1.0"
+                  className="h-8 text-xs"
+                  value={editData.nudge_at_fraction}
+                  onChange={(e) => setEditData({ ...editData, nudge_at_fraction: parseFloat(e.target.value) || 0.6 })}
                 />
               </div>
             </div>

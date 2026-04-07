@@ -113,6 +113,18 @@ def extract_first_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
 
+    # Strip markdown code fences if present.  Small models often wrap their
+    # JSON actions in ```json ... ``` blocks, which leaves trailing ``` after
+    # the closing brace and causes the trailing-content check to reject
+    # an otherwise valid JSON object.
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1 :]
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+        text = text.strip()
+
     # Find first '{' and matching '}'
     start = text.find("{")
     if start == -1:
@@ -142,9 +154,21 @@ def extract_first_json_object(text: str) -> dict[str, Any] | None:
     if trailing:
         raise ParseError(f"Found trailing content after JSON: {trailing[:50]}...")
 
-    # Parse JSON
+    # Parse JSON — first attempt as-is, then retry after sanitizing invalid
+    # escape sequences that small models commonly emit (e.g. \[ in regex patterns).
     try:
         return cast(dict[str, Any], json.loads(json_str))
+    except json.JSONDecodeError:
+        pass
+
+    # Sanitize: replace invalid \X escapes with \\X so they become literal
+    # backslash + character.  Valid JSON escapes (", \, /, b, f, n, r, t, u)
+    # are preserved.
+    import re
+
+    sanitized = re.sub(r'\\([^"\\/bfnrtu])', r"\\\\\1", json_str)
+    try:
+        return cast(dict[str, Any], json.loads(sanitized))
     except json.JSONDecodeError as e:
         raise ParseError(f"Invalid JSON: {e}") from e
 

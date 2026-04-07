@@ -18,6 +18,8 @@ const DEFAULTS: BudgetConfigType = {
   max_cost_usd: 2.0,
   max_time_seconds: 30,
   max_recursion_depth: 5,
+  repeat_limit: 2,
+  nudge_at_fraction: 0.6,
 };
 
 export function BudgetConfig({ config, onChange }: BudgetConfigProps) {

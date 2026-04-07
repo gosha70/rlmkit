@@ -42,6 +42,25 @@ synthesis_user: |
 
   Answer the question based on what was found above.
 
+# Sent when an inspect action returns the same content as a recent step.
+# Nudges the model to explore different content or finalize.
+duplicate_result: |
+  Your last inspection returned the same content as a previous step.
+  Explore a DIFFERENT section of the content, or if you've seen enough,
+  provide your final answer now.
+
+# Sent after repeat_limit duplicate inspections.  Forces finalization.
+repeat_detected: |
+  You have inspected the same content multiple times. You MUST now
+  synthesize what you've found and output {"type": "final", "answer": "..."}.
+  No more inspect calls allowed.
+
+# Soft convergence nudge sent at nudge_at_fraction of max_steps.
+soft_nudge: |
+  Progress check: you have used {steps_used}/{max_steps} steps.
+  If you have gathered enough information, start composing your final answer.
+  If critical sections remain unexamined, continue inspecting — but be targeted.
+
 # Comma-separated list of message fields checked for content when the primary
 # "content" field is empty (common with reasoning/thinking models).
 # Checked left-to-right; first non-empty value wins.

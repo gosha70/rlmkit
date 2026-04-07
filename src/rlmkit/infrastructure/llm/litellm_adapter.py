@@ -283,6 +283,30 @@ class LiteLLMAdapter:
         return self._active_model
 
     @property
+    def context_length_chars(self) -> int | None:
+        """Approximate context window size in characters for the active model.
+
+        Uses ``litellm.get_model_info`` to look up ``max_input_tokens``,
+        then converts tokens → chars with a 4-chars-per-token heuristic.
+        Returns ``None`` when the lookup fails (unknown/local models).
+        """
+        import litellm
+
+        models_to_try = [self._active_model]
+        if "/" in self._active_model:
+            models_to_try.append(self._active_model.split("/", 1)[1])
+
+        for model_name in models_to_try:
+            try:
+                info = litellm.get_model_info(model=model_name)
+                max_input = info.get("max_input_tokens") or info.get("max_tokens")
+                if max_input and isinstance(max_input, int) and max_input > 0:
+                    return max_input * 4  # ~4 chars per token heuristic
+            except Exception:
+                continue
+        return None
+
+    @property
     def root_model(self) -> str:
         """Root model identifier."""
         return self._root_model
