@@ -156,7 +156,7 @@ class TestResolveSystemPrompt:
         assert rag is not None
         assert "context" in rag.lower()
         assert rlm is not None
-        assert "reasoning" in rlm.lower()
+        assert "guidance" in rlm.lower()
 
     def test_named_template_returns_prompt(self):
         state = SimpleNamespace(
@@ -177,7 +177,7 @@ class TestResolveSystemPrompt:
         )
         result = resolve_system_prompt("rlm", state)
         assert result is not None
-        assert "execution" in result.lower()
+        assert "fewest steps" in result.lower()
 
     def test_custom_mode_returns_custom_text(self):
         """Per-mode custom prompts return the correct prompt for each mode."""
@@ -228,7 +228,7 @@ class TestResolveSystemPrompt:
         # direct has custom, rag/rlm fall back to template
         assert resolve_system_prompt("direct", state) == "Custom direct."
         assert "context" in resolve_system_prompt("rag", state).lower()
-        assert "reasoning" in resolve_system_prompt("rlm", state).lower()
+        assert "guidance" in resolve_system_prompt("rlm", state).lower()
 
     def test_no_session_state(self):
         """No session state → Default template prompts."""

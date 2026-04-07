@@ -998,6 +998,56 @@ class TestJsonProtocolParsing:
         assert not result.answer.strip().startswith("{")
 
 
+class TestExtractFirstJsonObject:
+    """Direct tests for extract_first_json_object parser hardening."""
+
+    def test_markdown_fence_stripped(self):
+        from rlmkit.core.actions import extract_first_json_object
+
+        text = '```json\n{"type": "final", "answer": "hello"}\n```'
+        result = extract_first_json_object(text)
+        assert result is not None
+        assert result["type"] == "final"
+        assert result["answer"] == "hello"
+
+    def test_invalid_escape_sanitized(self):
+        from rlmkit.core.actions import extract_first_json_object
+
+        # \[ is invalid JSON but common in grep patterns from small models
+        text = '{"type": "inspect", "tool": "grep", "args": {"pattern": "\\[File 2:"}}'
+        result = extract_first_json_object(text)
+        assert result is not None
+        assert result["type"] == "inspect"
+        assert result["args"]["pattern"] == "\\[File 2:"
+
+    def test_valid_json_unchanged(self):
+        from rlmkit.core.actions import extract_first_json_object
+
+        text = '{"type": "final", "answer": "done"}'
+        result = extract_first_json_object(text)
+        assert result is not None
+        assert result["answer"] == "done"
+
+
+class TestLooksLikeAction:
+    """Tests for _looks_like_action helper used by stall/fallback guards."""
+
+    def test_json_action_detected(self):
+        assert RunRLMUseCase._looks_like_action('{"type": "inspect", "tool": "grep"}')
+
+    def test_plain_text_not_detected(self):
+        assert not RunRLMUseCase._looks_like_action("The answer is 42.")
+
+    def test_json_without_type_not_detected(self):
+        assert not RunRLMUseCase._looks_like_action('{"answer": "hello"}')
+
+    def test_empty_string_not_detected(self):
+        assert not RunRLMUseCase._looks_like_action("")
+
+    def test_final_action_detected(self):
+        assert RunRLMUseCase._looks_like_action('{"type": "final", "answer": "done"}')
+
+
 # ---------------------------------------------------------------------------
 # System prompt uses v2.0 template
 # ---------------------------------------------------------------------------
@@ -2054,14 +2104,18 @@ class TestJsonParserRobustness:
         content after JSON"), fallback found no Python code, and the response
         was treated as a no-progress stall.
         """
-        step1 = '```json\n{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1000}}\n```'
+        step1 = (
+            '```json\n{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1000}}\n```'
+        )
         step2 = '{"type": "final", "answer": "The document discusses RAG systems."}'
 
         llm = FakeLLM([step1, step2])
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=5)
         uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute("RAG systems combine retrieval with generation.", "summarize", config=config)
+        result = uc.execute(
+            "RAG systems combine retrieval with generation.", "summarize", config=config
+        )
 
         assert result.success is True
         assert "RAG" in result.answer

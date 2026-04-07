@@ -516,3 +516,28 @@ class TestPublicClientLiteLLM:
 
         client = RLMKitClient(provider="mock")
         assert type(client._llm).__name__ == "MockLLMAdapter"
+
+
+class TestContextLengthChars:
+    """Tests for LiteLLMAdapter.context_length_chars property."""
+
+    def test_known_model_returns_chars(self):
+        """A known model (gpt-4o) returns a positive context length in chars."""
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        result = adapter.context_length_chars
+        # gpt-4o has 128K input tokens → 128000 * 4 = 512000 chars
+        assert result is not None
+        assert result > 0
+
+    def test_unknown_model_returns_none(self):
+        """An unknown/local model returns None (graceful degradation)."""
+        adapter = LiteLLMAdapter(model="totally-unknown-model-xyz")
+        result = adapter.context_length_chars
+        assert result is None
+
+    def test_prefixed_model_tries_base_name(self):
+        """A model with provider prefix (ollama/llama3) tries base name fallback."""
+        adapter = LiteLLMAdapter(model="ollama/totally-unknown-xyz")
+        result = adapter.context_length_chars
+        # Both prefixed and base name are unknown → None
+        assert result is None

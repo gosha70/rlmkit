@@ -16,10 +16,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import get_state, reset_state
+from rlmkit.server.dependencies import reset_state
 from rlmkit.server.models import RunProfile
 from rlmkit.server.routes.chat import _resolve_profile_prompt
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

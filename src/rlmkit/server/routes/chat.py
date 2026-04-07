@@ -24,6 +24,8 @@ from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     ChatRequest,
     ChatResponse,
+)
+from rlmkit.server.models import (
     RunProfile as _RunProfile,
 )
 
