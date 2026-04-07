@@ -93,6 +93,9 @@ export default function ChatPage() {
   const [uploadedFiles, setUploadedFiles] = useState<FileUploadResponse[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | "processing" | null>(null);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
+  // Track whether uploaded files have been hydrated from localStorage so we
+  // don't clobber persisted state with an empty array on mount.
+  const filesHydratedRef = useRef(false);
   const [isAnyStreaming, setIsAnyStreaming] = useState(false);
   const [ratings, setRatings] = useState<Record<string, "up" | "down">>({});
   const [bestPicks, setBestPicks] = useState<Record<string, string>>({});
@@ -141,6 +144,35 @@ export default function ChatPage() {
   useEffect(() => {
     localStorage.setItem("rlmkit-cp-order", JSON.stringify(chatProviderOrder));
   }, [chatProviderOrder]);
+
+  // Hydrate uploaded files from localStorage after session ID is known.
+  // Files are keyed per session so switching sessions restores the right set.
+  useEffect(() => {
+    if (!hydrated) return;
+    filesHydratedRef.current = true;
+    if (!sessionId) return;
+    try {
+      const saved = localStorage.getItem(`rlmkit_files_${sessionId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved) as FileUploadResponse[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setUploadedFiles(parsed);
+        }
+      }
+    } catch {
+      // Ignore corrupt data
+    }
+  }, [hydrated, sessionId]);
+
+  // Persist uploaded files whenever they change (after initial hydration).
+  useEffect(() => {
+    if (!filesHydratedRef.current) return;
+    if (sessionId && uploadedFiles.length > 0) {
+      localStorage.setItem(`rlmkit_files_${sessionId}`, JSON.stringify(uploadedFiles));
+    } else if (sessionId) {
+      localStorage.removeItem(`rlmkit_files_${sessionId}`);
+    }
+  }, [uploadedFiles, sessionId]);
 
   // Auto-select / clean up selected providers when the provider list loads.
   // Removes stale IDs (deleted/renamed providers persisted in localStorage) and
@@ -702,6 +734,8 @@ export default function ChatPage() {
 
   const handleNewSession = useCallback(() => {
     cancelAllPollers();
+    // Clear persisted files for old session
+    if (sessionId) localStorage.removeItem(`rlmkit_files_${sessionId}`);
     setSessionId(null);
     setTurns([]);
     setUploadedFiles([]);
@@ -710,7 +744,7 @@ export default function ChatPage() {
       wsRef.current = null;
       wsReadyRef.current = false;
     }
-  }, [cancelAllPollers]);
+  }, [cancelAllPollers, sessionId]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
