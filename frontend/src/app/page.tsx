@@ -775,7 +775,7 @@ export default function ChatPage() {
       wsRef.current = null;
       wsReadyRef.current = false;
     }
-  }, [cancelAllPollers]);
+  }, [cancelAllPollers, sessionId]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
