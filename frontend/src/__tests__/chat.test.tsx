@@ -247,23 +247,27 @@ describe("FileAttachment", () => {
 // ChatProviderSelector
 // ---------------------------------------------------------------------------
 
-const makeCP = (overrides: Partial<ChatProviderConfig> = {}): ChatProviderConfig => ({
-  id: "cp-1",
-  name: "GPT-4o Direct",
-  llm_provider_id: "llmp-1",
-  execution_mode: "direct",
-  runtime_settings: {
-    temperature: 0.7,
-    top_p: 1,
-    max_output_tokens: 2048,
-    timeout_seconds: 30,
-  },
-  rlm_max_steps: 16,
-  rlm_timeout_seconds: 30,
-  created_at: "2024-01-01T00:00:00Z",
-  updated_at: "2024-01-01T00:00:00Z",
-  ...overrides,
-});
+const makeCP = (overrides: Partial<ChatProviderConfig> = {}): ChatProviderConfig => {
+  const defaults: ChatProviderConfig = {
+    id: "cp-1",
+    name: "GPT-4o Direct",
+    llm_provider_id: "llmp-1",
+    execution_mode: "direct",
+    runtime_settings: {
+      temperature: 0.7,
+      top_p: 1,
+      max_output_tokens: 2048,
+      timeout_seconds: 30,
+    },
+    rlm_max_steps: 16,
+    rlm_timeout_seconds: 30,
+    rlm_repeat_limit: 2,
+    rlm_nudge_at_fraction: 0.6,
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-01T00:00:00Z",
+  };
+  return { ...defaults, ...overrides } as ChatProviderConfig;
+};
 
 const makeLLMProvider = (overrides: Partial<LLMProviderConfig> = {}): LLMProviderConfig => ({
   id: "llmp-1",
