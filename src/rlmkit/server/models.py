@@ -498,6 +498,7 @@ class RunProfile(BaseModel):
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     system_prompts: dict[str, str] = Field(default_factory=dict)
+    prompt_template_name: str | None = None
     is_builtin: bool = False
 
 
@@ -512,6 +513,7 @@ class RunProfileCreate(BaseModel):
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     system_prompts: dict[str, str] = Field(default_factory=dict)
+    prompt_template_name: str | None = None
 
 
 class RunProfileUpdate(BaseModel):
@@ -525,6 +527,7 @@ class RunProfileUpdate(BaseModel):
     runtime_settings: RuntimeSettings | None = None
     budget: BudgetConfig | None = None
     system_prompts: dict[str, str] | None = None
+    prompt_template_name: str | None = None
 
 
 # ---------------------------------------------------------------------------

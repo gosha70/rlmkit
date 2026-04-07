@@ -595,6 +595,7 @@ export interface RunProfile {
   runtime_settings: RuntimeSettings;
   budget: BudgetConfig;
   system_prompts: Record<string, string>;
+  prompt_template_name: string | null;
   is_builtin: boolean;
 }
 
@@ -607,6 +608,7 @@ export interface RunProfileCreate {
   runtime_settings?: RuntimeSettings;
   budget?: BudgetConfig;
   system_prompts?: Record<string, string>;
+  prompt_template_name?: string | null;
 }
 
 export const getProfiles = () => fetchJSON<RunProfile[]>("/api/profiles");

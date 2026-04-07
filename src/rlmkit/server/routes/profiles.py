@@ -122,6 +122,7 @@ async def create_profile(
         runtime_settings=req.runtime_settings,
         budget=req.budget,
         system_prompts=req.system_prompts,
+        prompt_template_name=req.prompt_template_name,
         is_builtin=False,
     )
     state.user_profiles.append(profile)
@@ -170,6 +171,8 @@ async def update_profile(
                 profile.budget = req.budget
             if req.system_prompts is not None:
                 profile.system_prompts = req.system_prompts
+            if req.prompt_template_name is not None:
+                profile.prompt_template_name = req.prompt_template_name
             state.save_config()
             return profile
 

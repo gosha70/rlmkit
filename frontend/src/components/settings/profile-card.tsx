@@ -14,20 +14,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   createProfile,
   deleteProfile,
   updateProfile,
   getPromptTemplates,
-  getSystemPrompts,
   type RunProfile,
   type ChatProviderConfig,
   type SystemPromptTemplate,
-  type SystemPrompts,
 } from "@/lib/api";
 import useSWR from "swr";
-import { Trash2, Lock, Edit2, Copy, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { Trash2, Lock, Edit2, Copy, Download } from "lucide-react";
 
 interface ProfileCardProps {
   profile: RunProfile;
@@ -50,30 +47,6 @@ export function ProfileCard({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const { data: templates = [] } = useSWR<SystemPromptTemplate[]>("prompt-templates", getPromptTemplates);
-  const { data: livePrompts } = useSWR<SystemPrompts>("system-prompts", getSystemPrompts);
-  const [showCustomEditors, setShowCustomEditors] = useState(false);
-
-  // Derive the current template name from stored system_prompts content.
-  // Matches against built-in templates + live Prompts-tab values.
-  const deriveTemplateName = (prompts: Record<string, string>): string => {
-    const hasContent = Object.values(prompts).some((v) => v && v.trim());
-    if (!hasContent) return "__global__";
-    // Check if it matches the live Prompts tab state
-    if (livePrompts) {
-      const matchesLive = (["direct", "rlm", "rag"] as const).every(
-        (mode) => (livePrompts[mode] ?? "") === (prompts[mode] ?? ""),
-      );
-      if (matchesLive) return "__live__";
-    }
-    // Check built-in templates
-    for (const t of templates) {
-      const match = (["direct", "rlm", "rag"] as const).every(
-        (mode) => (t.prompts[mode] ?? "") === (prompts[mode] ?? ""),
-      );
-      if (match) return t.name;
-    }
-    return "__custom__";
-  };
 
   const [editData, setEditData] = useState({
     name: profile.name,
@@ -90,7 +63,7 @@ export function ProfileCard({
     max_recursion_depth: profile.budget.max_recursion_depth,
     repeat_limit: profile.budget.repeat_limit ?? 2,
     nudge_at_fraction: profile.budget.nudge_at_fraction ?? 0.6,
-    system_prompts: { ...profile.system_prompts } as Record<string, string>,
+    prompt_template_name: profile.prompt_template_name as string | null,
   });
 
   const usedBy = chatProviders.filter((cp) => cp.profile_id === profile.id);
@@ -122,6 +95,7 @@ export function ProfileCard({
         strategy: profile.strategy,
         runtime_settings: { ...profile.runtime_settings },
         budget: { ...profile.budget },
+        prompt_template_name: profile.prompt_template_name,
       });
       onCloned?.();
     } catch {
@@ -147,13 +121,10 @@ export function ProfileCard({
       max_recursion_depth: profile.budget.max_recursion_depth,
       repeat_limit: profile.budget.repeat_limit ?? 2,
       nudge_at_fraction: profile.budget.nudge_at_fraction ?? 0.6,
-      system_prompts: { ...profile.system_prompts } as Record<string, string>,
+      prompt_template_name: profile.prompt_template_name,
     });
     setEditing(true);
     setMessage(null);
-    // Auto-open custom editors if the profile has non-template prompts
-    const hasCustom = Object.values(profile.system_prompts).some((v) => v && v.trim());
-    setShowCustomEditors(hasCustom && deriveTemplateName({ ...profile.system_prompts } as Record<string, string>) === "__custom__");
   };
 
   const handleExport = () => {
@@ -163,7 +134,7 @@ export function ProfileCard({
       strategy: profile.strategy,
       runtime_settings: profile.runtime_settings,
       budget: profile.budget,
-      system_prompts: profile.system_prompts,
+      prompt_template_name: profile.prompt_template_name,
     };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -197,7 +168,8 @@ export function ProfileCard({
           repeat_limit: editData.repeat_limit,
           nudge_at_fraction: editData.nudge_at_fraction,
         },
-        system_prompts: editData.system_prompts,
+        prompt_template_name: editData.prompt_template_name,
+        system_prompts: {},
       });
       setEditing(false);
       onUpdated?.();
@@ -276,6 +248,7 @@ export function ProfileCard({
           <span>Temp: {profile.runtime_settings.temperature}</span>
           <span>Max tokens: {profile.runtime_settings.max_output_tokens}</span>
           <span>Steps: {profile.budget.max_steps}</span>
+          <span>Prompts: {profile.prompt_template_name ?? "Global defaults"}</span>
         </div>
 
         {usedBy.length > 0 ? (
@@ -423,45 +396,18 @@ export function ProfileCard({
               </div>
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-medium">System Prompts</Label>
+              <Label className="text-xs font-medium">Prompt Group</Label>
               <p className="text-xs text-muted-foreground">
-                Use the global defaults from the Prompts tab, a built-in preset, or write custom prompts.
+                Choose a prompt group. Updates to the group in the Prompts tab will
+                automatically apply to this profile.
               </p>
               <Select
-                value={deriveTemplateName(editData.system_prompts)}
+                value={editData.prompt_template_name ?? "__global__"}
                 onValueChange={(value) => {
-                  if (value === "__global__") {
-                    setEditData({ ...editData, system_prompts: {} });
-                    setShowCustomEditors(false);
-                  } else if (value === "__live__") {
-                    if (livePrompts) {
-                      setEditData({
-                        ...editData,
-                        system_prompts: {
-                          direct: livePrompts.direct ?? "",
-                          rlm: livePrompts.rlm ?? "",
-                          rag: livePrompts.rag ?? "",
-                        },
-                      });
-                    }
-                    setShowCustomEditors(false);
-                  } else if (value === "__custom__") {
-                    // Keep current prompts, open editors
-                    setShowCustomEditors(true);
-                  } else {
-                    const tpl = templates.find((t) => t.name === value);
-                    if (tpl) {
-                      setEditData({
-                        ...editData,
-                        system_prompts: {
-                          direct: tpl.prompts.direct ?? "",
-                          rlm: tpl.prompts.rlm ?? "",
-                          rag: tpl.prompts.rag ?? "",
-                        },
-                      });
-                    }
-                    setShowCustomEditors(false);
-                  }
+                  setEditData({
+                    ...editData,
+                    prompt_template_name: value === "__global__" ? null : value,
+                  });
                 }}
               >
                 <SelectTrigger className="h-8 text-xs" id={`edit-prompt-template-${profile.id}`}>
@@ -472,12 +418,6 @@ export function ProfileCard({
                     <span>Use global defaults</span>
                     <span className="ml-2 text-muted-foreground">— inherits from Prompts tab</span>
                   </SelectItem>
-                  {livePrompts && (
-                    <SelectItem value="__live__" className="text-xs">
-                      <span>Prompts tab (current)</span>
-                      <span className="ml-2 text-muted-foreground">— snapshot current Prompts tab values</span>
-                    </SelectItem>
-                  )}
                   {templates.map((t) => (
                     <SelectItem key={t.name} value={t.name} className="text-xs">
                       <span>{t.name}</span>
@@ -486,50 +426,8 @@ export function ProfileCard({
                       )}
                     </SelectItem>
                   ))}
-                  <SelectItem value="__custom__" className="text-xs">
-                    <span>Custom</span>
-                    <span className="ml-2 text-muted-foreground">— edit per-mode prompts manually</span>
-                  </SelectItem>
                 </SelectContent>
               </Select>
-              {(showCustomEditors || deriveTemplateName(editData.system_prompts) === "__custom__") && (
-                <div className="space-y-2 pt-1">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowCustomEditors((v) => !v)}
-                  >
-                    {showCustomEditors ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                    {showCustomEditors ? "Hide prompt editors" : "Show prompt editors"}
-                  </button>
-                  {showCustomEditors && (
-                    <div className="space-y-2">
-                      {(["direct", "rlm", "rag"] as const).map((mode) => (
-                        <div key={mode} className="space-y-1">
-                          <Label htmlFor={`edit-prompt-${mode}-${profile.id}`} className="text-xs capitalize">
-                            {mode} mode
-                          </Label>
-                          <Textarea
-                            id={`edit-prompt-${mode}-${profile.id}`}
-                            className="min-h-[100px] text-xs font-mono resize-y"
-                            placeholder={`System prompt for ${mode} mode`}
-                            value={editData.system_prompts[mode] ?? ""}
-                            onChange={(e) =>
-                              setEditData({
-                                ...editData,
-                                system_prompts: {
-                                  ...editData.system_prompts,
-                                  [mode]: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSaveEdit} disabled={saving}>

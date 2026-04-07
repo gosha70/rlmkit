@@ -26,9 +26,34 @@ from rlmkit.server.models import (
     ChatResponse,
 )
 
+from rlmkit.server.models import RunProfile as _RunProfile
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _resolve_profile_prompt(profile: _RunProfile, mode: str) -> str | None:
+    """Resolve a profile's system prompt for the given mode.
+
+    Prefer explicit per-mode text in ``system_prompts``.  If none is
+    stored, fall back to the named ``prompt_template_name`` and look up
+    the template's text for *mode* from the built-in registry.
+    """
+    # Explicit override takes priority
+    custom = profile.system_prompts.get(mode)
+    if custom:
+        return custom
+
+    # Named template reference — resolved at runtime so profiles follow
+    # future edits to the template registry.
+    if profile.prompt_template_name:
+        from rlmkit.ui.services.profile_store import SYSTEM_PROMPT_TEMPLATES
+
+        tpl = SYSTEM_PROMPT_TEMPLATES.get(profile.prompt_template_name)
+        if tpl:
+            return tpl.get(mode) or None
+    return None
 
 # Per-message attachment limits
 _MAX_FILES_PER_MESSAGE: int = 10
@@ -284,11 +309,13 @@ async def _run_execution(
             run_config.max_time_seconds = float(cp.rlm_timeout_seconds)
             run_config.repeat_limit = cp.rlm_repeat_limit
             run_config.nudge_at_fraction = cp.rlm_nudge_at_fraction
-            # Inject per-profile custom RLM system prompt if set
+            # Inject per-profile RLM system prompt (custom text or named template)
             if cp.profile_id:
                 _prof = state.find_profile(cp.profile_id)
-                if _prof and _prof.system_prompts.get("rlm"):
-                    run_config.system_prompt_extra = _prof.system_prompts["rlm"]
+                if _prof:
+                    _extra = _resolve_profile_prompt(_prof, "rlm")
+                    if _extra:
+                        run_config.system_prompt_extra = _extra
         else:
             run_config = state.create_run_config(mode)
 
@@ -664,11 +691,13 @@ async def websocket_chat(
                             cfg.max_time_seconds = float(ws_cp.rlm_timeout_seconds)
                             cfg.repeat_limit = ws_cp.rlm_repeat_limit
                             cfg.nudge_at_fraction = ws_cp.rlm_nudge_at_fraction
-                            # Inject per-profile custom RLM system prompt
+                            # Inject per-profile RLM system prompt (custom or template)
                             if ws_cp.profile_id:
                                 _prof = state.find_profile(ws_cp.profile_id)
-                                if _prof and _prof.system_prompts.get("rlm"):
-                                    cfg.system_prompt_extra = _prof.system_prompts["rlm"]
+                                if _prof:
+                                    _extra = _resolve_profile_prompt(_prof, "rlm")
+                                    if _extra:
+                                        cfg.system_prompt_extra = _extra
 
                         if m == "compare":
                             sandbox = state.create_sandbox()
