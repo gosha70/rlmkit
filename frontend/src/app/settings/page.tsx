@@ -477,7 +477,7 @@ export default function SettingsPage() {
                   )}
                   {CLOUD_BACKENDS.includes(llmProviderForm.backend) && (
                     <div className="space-y-2">
-                      <FieldLabel htmlFor="llmp-apikey" tooltip="Your provider API key. Stored securely in .env on the server. Leave blank to keep the current key.">API Key</FieldLabel>
+                      <FieldLabel htmlFor="llmp-apikey" tooltip="Your provider API key. Stored in the OS keyring when available, otherwise in a local file. Leave blank to keep the current key.">API Key</FieldLabel>
                       <Input
                         id="llmp-apikey"
                         type="password"
