@@ -26,10 +26,16 @@ export function FieldLabel({ htmlFor, tooltip, children, className }: FieldLabel
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <HelpCircle
-              className="h-3.5 w-3.5 text-muted-foreground/60 hover:text-muted-foreground cursor-help shrink-0"
-              aria-hidden="true"
-            />
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-help shrink-0"
+              aria-label="Help"
+            >
+              <HelpCircle
+                className="h-3.5 w-3.5 text-muted-foreground/60 hover:text-muted-foreground"
+                aria-hidden="true"
+              />
+            </button>
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-[280px] text-xs">
             {tooltip}
