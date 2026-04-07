@@ -24,9 +24,8 @@ from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     ChatRequest,
     ChatResponse,
+    RunProfile as _RunProfile,
 )
-
-from rlmkit.server.models import RunProfile as _RunProfile
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ def _resolve_profile_prompt(profile: _RunProfile, mode: str) -> str | None:
     the template's text for *mode* from the built-in registry.
     """
     # Explicit override takes priority
-    custom = profile.system_prompts.get(mode)
+    custom: str | None = profile.system_prompts.get(mode)
     if custom:
         return custom
 
@@ -54,6 +53,7 @@ def _resolve_profile_prompt(profile: _RunProfile, mode: str) -> str | None:
         if tpl:
             return tpl.get(mode) or None
     return None
+
 
 # Per-message attachment limits
 _MAX_FILES_PER_MESSAGE: int = 10

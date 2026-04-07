@@ -43,3 +43,5 @@ AGENTS.md
 /.codex
 /specs
 /specs
+.git-rewrite/revs
+/.git-rewrite
