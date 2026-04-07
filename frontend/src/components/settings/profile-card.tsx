@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -18,9 +17,12 @@ import {
   createProfile,
   deleteProfile,
   updateProfile,
+  getPromptTemplates,
   type RunProfile,
   type ChatProviderConfig,
+  type SystemPromptTemplate,
 } from "@/lib/api";
+import useSWR from "swr";
 import { Trash2, Lock, Edit2, Copy, Download } from "lucide-react";
 
 interface ProfileCardProps {
@@ -43,6 +45,22 @@ export function ProfileCard({
   const [message, setMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { data: templates = [] } = useSWR<SystemPromptTemplate[]>("prompt-templates", getPromptTemplates);
+
+  // Derive the current template name from stored system_prompts content.
+  // If it matches a known template exactly, show that name; otherwise "global".
+  const deriveTemplateName = (prompts: Record<string, string>): string => {
+    const hasContent = Object.values(prompts).some((v) => v && v.trim());
+    if (!hasContent) return "__global__";
+    for (const t of templates) {
+      const match = (["direct", "rlm", "rag"] as const).every(
+        (mode) => (t.prompts[mode] ?? "") === (prompts[mode] ?? ""),
+      );
+      if (match) return t.name;
+    }
+    return "__custom__";
+  };
+
   const [editData, setEditData] = useState({
     name: profile.name,
     strategy: profile.strategy,
@@ -389,22 +407,52 @@ export function ProfileCard({
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium">System Prompts</Label>
-              <p className="text-xs text-muted-foreground">Leave empty to use global system prompts.</p>
-              {(["direct", "rlm", "rag"] as const).map((mode) => (
-                <div key={mode} className="space-y-1">
-                  <Label htmlFor={`edit-prompt-${mode}-${profile.id}`} className="text-xs capitalize">{mode}</Label>
-                  <Textarea
-                    id={`edit-prompt-${mode}-${profile.id}`}
-                    className="h-16 text-xs"
-                    placeholder={`System prompt for ${mode} mode`}
-                    value={editData.system_prompts[mode] || ""}
-                    onChange={(e) => setEditData({
-                      ...editData,
-                      system_prompts: { ...editData.system_prompts, [mode]: e.target.value },
-                    })}
-                  />
-                </div>
-              ))}
+              <p className="text-xs text-muted-foreground">
+                Select a prompt preset from the Prompts tab, or use global defaults.
+              </p>
+              <Select
+                value={deriveTemplateName(editData.system_prompts)}
+                onValueChange={(value) => {
+                  if (value === "__global__") {
+                    setEditData({ ...editData, system_prompts: {} });
+                  } else {
+                    const tpl = templates.find((t) => t.name === value);
+                    if (tpl) {
+                      setEditData({
+                        ...editData,
+                        system_prompts: {
+                          direct: tpl.prompts.direct ?? "",
+                          rlm: tpl.prompts.rlm ?? "",
+                          rag: tpl.prompts.rag ?? "",
+                        },
+                      });
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs" id={`edit-prompt-template-${profile.id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__global__">
+                    <span>Use global defaults</span>
+                    <span className="ml-2 text-muted-foreground">— inherits from Prompts tab</span>
+                  </SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.name} value={t.name} className="text-xs">
+                      <span>{t.name}</span>
+                      {t.description && (
+                        <span className="ml-2 text-muted-foreground">— {t.description}</span>
+                      )}
+                    </SelectItem>
+                  ))}
+                  {deriveTemplateName(editData.system_prompts) === "__custom__" && (
+                    <SelectItem value="__custom__" disabled className="text-xs italic">
+                      Custom (manually edited)
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
