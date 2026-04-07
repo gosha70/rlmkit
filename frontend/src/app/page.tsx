@@ -154,11 +154,27 @@ export default function ChatPage() {
     if (!hydrated) return;
     filesHydratedRef.current = true;
     try {
+      // First try the session-specific key, then fall back to draft key.
+      // This handles the case where a user uploaded files before sending
+      // (stored under draft key), navigated away, and came back — the
+      // main hydration may have restored a previous sessionId, so
+      // filesStorageKey would point at the old session's files, not the draft.
       const saved = localStorage.getItem(filesStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved) as FileUploadResponse[];
         if (Array.isArray(parsed) && parsed.length > 0) {
           setUploadedFiles(parsed);
+          return;
+        }
+      }
+      // If no files for the current session, check for orphaned drafts
+      if (filesStorageKey !== "rlmkit_files_draft") {
+        const draft = localStorage.getItem("rlmkit_files_draft");
+        if (draft) {
+          const parsed = JSON.parse(draft) as FileUploadResponse[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setUploadedFiles(parsed);
+          }
         }
       }
     } catch {
