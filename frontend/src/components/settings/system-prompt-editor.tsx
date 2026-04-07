@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -34,6 +34,7 @@ export function SystemPromptEditor() {
   const [local, setLocal] = useState<SystemPrompts | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("direct");
 
   const current = local ?? prompts ?? { direct: "", rlm: "", rag: "" };
 
@@ -76,8 +77,8 @@ export function SystemPromptEditor() {
   const hasChanges = local !== null;
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex flex-col" style={{ minHeight: "calc(100vh - 240px)" }}>
+      <CardHeader className="shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">System Prompts</CardTitle>
           <div className="flex items-center gap-2">
@@ -103,23 +104,31 @@ export function SystemPromptEditor() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {MODES.map(({ key, label }) => (
-          <div key={key} className="space-y-2">
-            <Label htmlFor={`prompt-${key}`}>{label} Mode</Label>
-            <Textarea
-              id={`prompt-${key}`}
-              value={current[key]}
-              onChange={(e) => handleChange(key, e.target.value)}
-              placeholder={`System prompt for ${label} mode (leave empty to use built-in default)`}
-              rows={4}
-              className="text-sm font-mono"
-              aria-label={`System prompt for ${label} mode`}
-            />
-          </div>
-        ))}
+      <CardContent className="flex flex-1 flex-col gap-3">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col">
+          <TabsList className="shrink-0">
+            {MODES.map(({ key, label }) => (
+              <TabsTrigger key={key} value={key}>
+                {label} Mode
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        <div className="flex items-center gap-2">
+          {MODES.map(({ key, label }) => (
+            <TabsContent key={key} value={key} className="flex-1 mt-3">
+              <Textarea
+                id={`prompt-${key}`}
+                value={current[key]}
+                onChange={(e) => handleChange(key, e.target.value)}
+                placeholder={`System prompt for ${label} mode (leave empty to use built-in default)`}
+                className="h-full min-h-[300px] text-sm font-mono resize-y"
+                aria-label={`System prompt for ${label} mode`}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
+
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             onClick={handleSave}
             disabled={saving || !hasChanges}
