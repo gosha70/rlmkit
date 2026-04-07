@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { FieldLabel } from "./field-label";
 import type { BudgetConfig as BudgetConfigType } from "@/lib/api";
 
 interface BudgetConfigProps {
@@ -41,7 +41,7 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="max-steps">Max Steps: {local.max_steps}</Label>
+        <FieldLabel htmlFor="max-steps" tooltip="Maximum number of LLM reasoning steps per query. Higher values allow deeper exploration in RLM mode but increase cost and latency.">Max Steps: {local.max_steps}</FieldLabel>
         <Slider
           id="max-steps"
           min={1}
@@ -55,7 +55,7 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="max-tokens">Max Tokens</Label>
+        <FieldLabel htmlFor="max-tokens" tooltip="Maximum total tokens (input + output) allowed per query execution. Prevents runaway cost on long RLM loops.">Max Tokens</FieldLabel>
         <Input
           id="max-tokens"
           type="number"
@@ -67,7 +67,7 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="max-cost">Max Cost (USD)</Label>
+        <FieldLabel htmlFor="max-cost" tooltip="Dollar limit per query execution. The query is terminated if this cost is exceeded. Set to 0 for local models.">Max Cost (USD)</FieldLabel>
         <Input
           id="max-cost"
           type="number"
@@ -80,7 +80,7 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="max-time">Max Time (seconds): {local.max_time_seconds}</Label>
+        <FieldLabel htmlFor="max-time" tooltip="Wall-clock timeout per query. Includes LLM inference, code execution, and network latency. Increase for complex multi-step RLM queries.">Max Time (seconds): {local.max_time_seconds}</FieldLabel>
         <Slider
           id="max-time"
           min={5}
@@ -94,7 +94,7 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="max-depth">Max Recursion Depth: {local.max_recursion_depth}</Label>
+        <FieldLabel htmlFor="max-depth" tooltip="Maximum depth of recursive sub-calls. Controls how many levels of nested reasoning the RLM agent can spawn.">Max Recursion Depth: {local.max_recursion_depth}</FieldLabel>
         <Slider
           id="max-depth"
           min={1}

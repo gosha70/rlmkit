@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { BudgetConfig } from "@/components/settings/budget-config";
 import { ProfileCard } from "@/components/settings/profile-card";
 import { SystemPromptEditor } from "@/components/settings/system-prompt-editor";
+import { FieldLabel } from "@/components/settings/field-label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -418,7 +419,7 @@ export default function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="llmp-name">Name</Label>
+                    <FieldLabel htmlFor="llmp-name" tooltip="A friendly display name to identify this LLM provider in dropdowns and logs.">Name</FieldLabel>
                     <Input
                       id="llmp-name"
                       placeholder="e.g., My GPT-4o"
@@ -427,7 +428,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="llmp-backend">Backend</Label>
+                    <FieldLabel htmlFor="llmp-backend" tooltip="The inference backend. Cloud providers (OpenAI, Anthropic) require an API key; local providers (Ollama, LM Studio, vLLM) connect to a local endpoint.">Backend</FieldLabel>
                     <Select
                       value={llmProviderForm.backend}
                       onValueChange={(v) => setLLMProviderForm({ ...llmProviderForm, backend: v, model: "", endpoint: "" })}
@@ -446,7 +447,7 @@ export default function SettingsPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="llmp-model">Model</Label>
+                    <FieldLabel htmlFor="llmp-model" tooltip="The model identifier. For cloud providers, use the official model name (e.g., gpt-4o). For local, use the model name as loaded in your server.">Model</FieldLabel>
                     <Input
                       id="llmp-model"
                       placeholder={
@@ -461,7 +462,7 @@ export default function SettingsPage() {
                   </div>
                   {LOCAL_BACKENDS.includes(llmProviderForm.backend) && (
                     <div className="space-y-2">
-                      <Label htmlFor="llmp-endpoint">Endpoint</Label>
+                      <FieldLabel htmlFor="llmp-endpoint" tooltip="The HTTP endpoint of your local inference server. Default ports: Ollama 11434, LM Studio 1234, vLLM 8000.">Endpoint</FieldLabel>
                       <Input
                         id="llmp-endpoint"
                         placeholder={
@@ -476,7 +477,7 @@ export default function SettingsPage() {
                   )}
                   {CLOUD_BACKENDS.includes(llmProviderForm.backend) && (
                     <div className="space-y-2">
-                      <Label htmlFor="llmp-apikey">API Key</Label>
+                      <FieldLabel htmlFor="llmp-apikey" tooltip="Your provider API key. Stored securely in .env on the server. Leave blank to keep the current key.">API Key</FieldLabel>
                       <Input
                         id="llmp-apikey"
                         type="password"
@@ -641,7 +642,7 @@ export default function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="cp-name">Name</Label>
+                    <FieldLabel htmlFor="cp-name" tooltip="A unique name for this chat provider configuration, shown in the chat toolbar.">Name</FieldLabel>
                     <Input
                       id="cp-name"
                       placeholder="e.g., My GPT-4 Config"
@@ -651,7 +652,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="cp-llm-provider">LLM Provider</Label>
+                    <FieldLabel htmlFor="cp-llm-provider" tooltip="The LLM provider instance to use for inference. Must be configured and connected in the LLM Providers tab.">LLM Provider</FieldLabel>
                     <Select
                       value={formData.llm_provider_id}
                       onValueChange={(value) => setFormData({ ...formData, llm_provider_id: value })}
@@ -673,7 +674,7 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="cp-profile">Profile</Label>
+                    <FieldLabel htmlFor="cp-profile" tooltip="The execution profile that defines the strategy (Direct/RLM/RAG), runtime settings (temperature, tokens), and budget limits.">Profile</FieldLabel>
                     <Select
                       value={formData.profile_id}
                       onValueChange={(value) => setFormData({ ...formData, profile_id: value })}
@@ -714,7 +715,7 @@ export default function SettingsPage() {
                     <div className="space-y-4 rounded-lg border border-muted p-4">
                       <h4 className="font-medium text-sm">RAG Settings</h4>
                       <div className="space-y-2">
-                        <Label htmlFor="cp-chunk-size">Chunk Size</Label>
+                        <FieldLabel htmlFor="cp-chunk-size" tooltip="Number of tokens per text chunk. Smaller chunks give more precise retrieval; larger chunks preserve more context. Typical: 256-1024.">Chunk Size</FieldLabel>
                         <Input
                           id="cp-chunk-size"
                           type="number"
@@ -732,7 +733,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="cp-chunk-overlap">Chunk Overlap</Label>
+                        <FieldLabel htmlFor="cp-chunk-overlap" tooltip="Number of tokens overlapping between adjacent chunks. Prevents information loss at chunk boundaries. Aim for 10-15% of chunk size.">Chunk Overlap</FieldLabel>
                         <Input
                           id="cp-chunk-overlap"
                           type="number"
@@ -750,7 +751,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="cp-top-k">Top K</Label>
+                        <FieldLabel htmlFor="cp-top-k" tooltip="Number of most relevant chunks to retrieve. Higher values provide more context but increase token usage and cost.">Top K</FieldLabel>
                         <Input
                           id="cp-top-k"
                           type="number"
@@ -768,7 +769,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="cp-embedding-model">Embedding Model</Label>
+                        <FieldLabel htmlFor="cp-embedding-model" tooltip="The embedding model used to vectorize text chunks for semantic search. Must match the model used at indexing time.">Embedding Model</FieldLabel>
                         <Input
                           id="cp-embedding-model"
                           placeholder="e.g., text-embedding-3-small"
@@ -871,7 +872,7 @@ export default function SettingsPage() {
                 {isEditing && (
                   <CardContent className="space-y-4 border-t pt-4">
                     <div className="space-y-2">
-                      <Label htmlFor={`edit-cp-name-${provider.id}`}>Name</Label>
+                      <FieldLabel htmlFor={`edit-cp-name-${provider.id}`} tooltip="A unique name for this chat provider configuration, shown in the chat toolbar.">Name</FieldLabel>
                       <Input
                         id={`edit-cp-name-${provider.id}`}
                         value={formData.name}
@@ -879,7 +880,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`edit-cp-llm-provider-${provider.id}`}>LLM Provider</Label>
+                      <FieldLabel htmlFor={`edit-cp-llm-provider-${provider.id}`} tooltip="The LLM provider instance to use for inference.">LLM Provider</FieldLabel>
                       <Select
                         value={formData.llm_provider_id}
                         onValueChange={(value) => setFormData({ ...formData, llm_provider_id: value })}
@@ -897,7 +898,7 @@ export default function SettingsPage() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor={`edit-cp-profile-${provider.id}`}>Profile</Label>
+                      <FieldLabel htmlFor={`edit-cp-profile-${provider.id}`} tooltip="The execution profile with strategy, runtime settings, and budget limits.">Profile</FieldLabel>
                       <Select
                         value={formData.profile_id}
                         onValueChange={(value) => setFormData({ ...formData, profile_id: value })}
@@ -927,28 +928,28 @@ export default function SettingsPage() {
                         <h4 className="font-medium text-sm">RAG Settings</h4>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
-                            <Label htmlFor={`edit-cp-chunk-${provider.id}`} className="text-xs">Chunk Size</Label>
+                            <FieldLabel htmlFor={`edit-cp-chunk-${provider.id}`} className="text-xs" tooltip="Number of tokens per text chunk for retrieval.">Chunk Size</FieldLabel>
                             <Input id={`edit-cp-chunk-${provider.id}`} type="number" min="1" className="h-8 text-xs"
                               value={formData.rag_config.chunk_size}
                               onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, chunk_size: parseInt(e.target.value) || 512 }})}
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label htmlFor={`edit-cp-overlap-${provider.id}`} className="text-xs">Overlap</Label>
+                            <FieldLabel htmlFor={`edit-cp-overlap-${provider.id}`} className="text-xs" tooltip="Token overlap between adjacent chunks. Aim for 10-15% of chunk size.">Overlap</FieldLabel>
                             <Input id={`edit-cp-overlap-${provider.id}`} type="number" min="0" className="h-8 text-xs"
                               value={formData.rag_config.chunk_overlap}
                               onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, chunk_overlap: parseInt(e.target.value) || 64 }})}
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label htmlFor={`edit-cp-topk-${provider.id}`} className="text-xs">Top K</Label>
+                            <FieldLabel htmlFor={`edit-cp-topk-${provider.id}`} className="text-xs" tooltip="Number of most relevant chunks to retrieve per query.">Top K</FieldLabel>
                             <Input id={`edit-cp-topk-${provider.id}`} type="number" min="1" className="h-8 text-xs"
                               value={formData.rag_config.top_k}
                               onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, top_k: parseInt(e.target.value) || 5 }})}
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label htmlFor={`edit-cp-embed-${provider.id}`} className="text-xs">Embedding Model</Label>
+                            <FieldLabel htmlFor={`edit-cp-embed-${provider.id}`} className="text-xs" tooltip="The embedding model for vectorizing text chunks.">Embedding Model</FieldLabel>
                             <Input id={`edit-cp-embed-${provider.id}`} className="h-8 text-xs"
                               value={formData.rag_config.embedding_model}
                               onChange={(e) => setFormData({ ...formData, rag_config: { ...formData.rag_config, embedding_model: e.target.value }})}

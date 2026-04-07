@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FieldLabel } from "./field-label";
 import {
   Select,
   SelectContent,
@@ -309,7 +310,7 @@ export function ProfileCard({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor={`edit-temp-${profile.id}`} className="text-xs">Temperature</Label>
+                <FieldLabel htmlFor={`edit-temp-${profile.id}`} className="text-xs" tooltip="Controls randomness. Lower values (0.1-0.3) give focused, deterministic outputs; higher values (0.7-1.0) increase creativity.">Temperature</FieldLabel>
                 <Input
                   id={`edit-temp-${profile.id}`}
                   type="number"
@@ -322,7 +323,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-topp-${profile.id}`} className="text-xs">Top P</Label>
+                <FieldLabel htmlFor={`edit-topp-${profile.id}`} className="text-xs" tooltip="Nucleus sampling: only consider tokens whose cumulative probability reaches this threshold. 1.0 = no filtering.">Top P</FieldLabel>
                 <Input
                   id={`edit-topp-${profile.id}`}
                   type="number"
@@ -335,7 +336,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-maxtokens-${profile.id}`} className="text-xs">Max Tokens</Label>
+                <FieldLabel htmlFor={`edit-maxtokens-${profile.id}`} className="text-xs" tooltip="Maximum output tokens per LLM call (not the total budget). Controls response length per step.">Max Tokens</FieldLabel>
                 <Input
                   id={`edit-maxtokens-${profile.id}`}
                   type="number"
@@ -346,7 +347,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-timeout-${profile.id}`} className="text-xs">Timeout (s)</Label>
+                <FieldLabel htmlFor={`edit-timeout-${profile.id}`} className="text-xs" tooltip="Per-step timeout in seconds. If a single LLM call exceeds this, it is aborted.">Timeout (s)</FieldLabel>
                 <Input
                   id={`edit-timeout-${profile.id}`}
                   type="number"
@@ -357,7 +358,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-steps-${profile.id}`} className="text-xs">Max Steps</Label>
+                <FieldLabel htmlFor={`edit-steps-${profile.id}`} className="text-xs" tooltip="Maximum reasoning steps in RLM mode. More steps allow deeper document exploration but cost more tokens.">Max Steps</FieldLabel>
                 <Input
                   id={`edit-steps-${profile.id}`}
                   type="number"
@@ -368,7 +369,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-cost-${profile.id}`} className="text-xs">Max Cost ($)</Label>
+                <FieldLabel htmlFor={`edit-cost-${profile.id}`} className="text-xs" tooltip="Dollar limit per query. The execution is stopped if this cost is exceeded.">Max Cost ($)</FieldLabel>
                 <Input
                   id={`edit-cost-${profile.id}`}
                   type="number"
@@ -380,7 +381,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-repeat-limit-${profile.id}`} className="text-xs">Repeat Limit</Label>
+                <FieldLabel htmlFor={`edit-repeat-limit-${profile.id}`} className="text-xs" tooltip="RLM convergence: how many duplicate inspect actions before forcing finalization. Lower = faster convergence, higher = more retries.">Repeat Limit</FieldLabel>
                 <Input
                   id={`edit-repeat-limit-${profile.id}`}
                   type="number"
@@ -392,7 +393,7 @@ export function ProfileCard({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`edit-nudge-fraction-${profile.id}`} className="text-xs">Nudge at Fraction</Label>
+                <FieldLabel htmlFor={`edit-nudge-fraction-${profile.id}`} className="text-xs" tooltip="RLM convergence: fraction of max_steps at which a soft nudge is sent to encourage finalization. E.g., 0.5 = nudge at step 16 of 32.">Nudge at Fraction</FieldLabel>
                 <Input
                   id={`edit-nudge-fraction-${profile.id}`}
                   type="number"
