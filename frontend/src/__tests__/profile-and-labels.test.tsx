@@ -141,7 +141,7 @@ describe("ProfileCard — read-only view", () => {
       isLoading: false,
       isValidating: false,
       mutate: vi.fn(),
-    } as any);
+    } as unknown);
   });
 
   test("displays profile name and strategy badge", () => {
@@ -200,7 +200,7 @@ describe("ProfileCard — editing form", () => {
       isLoading: false,
       isValidating: false,
       mutate: vi.fn(),
-    } as any);
+    } as unknown);
   });
 
   function openEditor() {
