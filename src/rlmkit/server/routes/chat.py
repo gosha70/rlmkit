@@ -318,6 +318,12 @@ async def _run_execution(
                     _extra = _resolve_profile_prompt(_prof, "rlm")
                     if _extra:
                         run_config.system_prompt_extra = _extra
+                        logger.info(
+                            "Profile '%s' (template=%s) → system_prompt_extra set (%d chars)",
+                            _prof.name,
+                            _prof.prompt_template_name or "(custom)",
+                            len(_extra),
+                        )
         else:
             run_config = state.create_run_config(mode)
 
@@ -700,6 +706,12 @@ async def websocket_chat(
                                     _extra = _resolve_profile_prompt(_prof, "rlm")
                                     if _extra:
                                         cfg.system_prompt_extra = _extra
+                                        logger.info(
+                                            "WS profile '%s' (template=%s) → system_prompt_extra set (%d chars)",
+                                            _prof.name,
+                                            _prof.prompt_template_name or "(custom)",
+                                            len(_extra),
+                                        )
 
                         if m == "compare":
                             sandbox = state.create_sandbox()

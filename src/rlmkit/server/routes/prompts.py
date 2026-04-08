@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends
 
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import SystemPrompts, SystemPromptTemplate
-from rlmkit.ui.services.profile_store import SYSTEM_PROMPT_TEMPLATES
+from rlmkit.ui.services.profile_store import (
+    SYSTEM_PROMPT_TEMPLATES,
+    reload_system_prompt_templates,
+)
 
 router = APIRouter()
 
@@ -44,3 +47,14 @@ async def list_templates() -> list[SystemPromptTemplate]:
             )
         )
     return result
+
+
+@router.post("/api/system-prompts/templates/reload")
+async def reload_templates() -> dict[str, int]:
+    """Re-read system_prompt_templates.json from disk without restarting.
+
+    Returns the number of templates loaded so the caller can confirm the
+    reload took effect.
+    """
+    fresh = reload_system_prompt_templates()
+    return {"reloaded": len(fresh)}

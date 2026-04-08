@@ -12,6 +12,7 @@ from rlmkit.ui.services.profile_store import (
     RunProfile,
     RunProfileStore,
     load_custom_prompts,
+    reload_system_prompt_templates,
     resolve_system_prompt,
     save_custom_prompts,
 )
@@ -303,3 +304,28 @@ class TestCustomPromptsPersistence:
         path.write_text("not valid json!")
         result = load_custom_prompts(path)
         assert result == {"direct": "", "rag": "", "rlm": ""}
+
+
+class TestReloadSystemPromptTemplates:
+    """Tests for reload_system_prompt_templates()."""
+
+    def test_reload_returns_templates(self):
+        """reload returns a non-empty dict of templates."""
+        result = reload_system_prompt_templates()
+        assert isinstance(result, dict)
+        assert "Default" in result
+
+    def test_reload_clears_prompt_caches(self):
+        """reload clears the prompt-rendering caches in rlmkit.prompts.templates."""
+        from rlmkit.prompts.templates import _template_cache
+
+        # Seed a fake cache entry
+        _template_cache["__test_sentinel__"] = "stale"
+        reload_system_prompt_templates()
+        assert "__test_sentinel__" not in _template_cache
+
+    def test_reload_updates_module_constants(self):
+        """reload refreshes the module-level SYSTEM_PROMPT_TEMPLATES dict."""
+        original_keys = set(SYSTEM_PROMPT_TEMPLATES.keys())
+        reload_system_prompt_templates()
+        assert set(SYSTEM_PROMPT_TEMPLATES.keys()) == original_keys

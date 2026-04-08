@@ -252,6 +252,31 @@ def get_system_prompt_templates() -> dict[str, dict[str, Any]]:
     return _load_system_prompt_templates()
 
 
+def reload_system_prompt_templates() -> dict[str, dict[str, Any]]:
+    """Force-reload templates from disk (e.g. after editing the JSON).
+
+    Also refreshes the module-level ``SYSTEM_PROMPT_TEMPLATES`` dict so
+    that callers who imported the constant see the updated values, and
+    clears the prompt-rendering caches in ``rlmkit.prompts.templates``
+    so that Direct/RAG/RLM prompts pick up the new text.
+    """
+    global _templates_cache, SYSTEM_PROMPT_TEMPLATES, SYSTEM_PROMPT_TEMPLATE_NAMES
+    _templates_cache = None
+    fresh = _load_system_prompt_templates()
+    SYSTEM_PROMPT_TEMPLATES.clear()
+    SYSTEM_PROMPT_TEMPLATES.update(fresh)
+    SYSTEM_PROMPT_TEMPLATE_NAMES.clear()
+    SYSTEM_PROMPT_TEMPLATE_NAMES.extend(fresh.keys())
+
+    # Clear the prompt-rendering caches so subsequent calls use the new templates.
+    from rlmkit.prompts.templates import _template_cache, _yaml_doc_cache
+
+    _template_cache.clear()
+    _yaml_doc_cache.clear()
+
+    return fresh
+
+
 def get_system_prompt_template_names() -> list[str]:
     """Return ordered list of template names."""
     return list(get_system_prompt_templates().keys())

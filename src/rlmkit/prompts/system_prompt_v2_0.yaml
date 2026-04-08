@@ -25,8 +25,10 @@ template: |
   • You write inspection code; code IN P is data to analyze
 
   MULTIPLE DOCUMENTS: If P starts with "[DOCUMENT INDEX", multiple files were
-  attached. ALWAYS start by reading the index (peek(0, 500)), then use
-  grep('[File N:') to jump to a specific file before using peek/select on it.
+  attached. IMPORTANT: peek(start=0) only reaches the FIRST file. To access
+  other files you MUST use grep('[File N:') to find each file's position,
+  then peek() from that position. You must visit EVERY listed file before
+  finalizing any summary, comparison, or cross-document answer.
   grep searches ALL files at once — use it for cross-document queries.
 
   ═══════════════════════════════════════════════════════════════
@@ -222,6 +224,54 @@ template: |
     "type": "final",
     "answer": "The document is about ...",
     "confidence": 0.9
+  }}
+
+  MULTI-DOCUMENT CONTENT QUERY (summarize, compare across files):
+  User: "Summarize the uploaded documents and find commonalities"
+
+  Step 1 — read index and beginning of file 1:
+  {{
+    "type": "inspect",
+    "tool": "peek",
+    "args": {{
+      "start": 0,
+      "end": 3000
+    }},
+    "note": "Read document index and file 1 content"
+  }}
+
+  [Runtime returns index showing 2 files, plus file 1 content]
+
+  Step 2 — jump to file 2 (peek from 0 only covers file 1!):
+  {{
+    "type": "inspect",
+    "tool": "grep",
+    "args": {{
+      "pattern": "[File 2:",
+      "context_lines": 0
+    }},
+    "note": "Find start position of file 2"
+  }}
+
+  [Runtime returns: Match at line 150 → "[File 2: other_doc.pdf]"]
+
+  Step 3 — read file 2 content from that position:
+  {{
+    "type": "inspect",
+    "tool": "peek",
+    "args": {{
+      "start": 5000,
+      "end": 8000
+    }},
+    "note": "Read file 2 content"
+  }}
+
+  [Runtime returns file 2 content]
+
+  Step 4 — answer covering BOTH files:
+  {{
+    "type": "final",
+    "answer": "Document 1 is about ... Document 2 is about ... Common themes: ..."
   }}
 
   INSPECTION-REQUIRED QUERY:
