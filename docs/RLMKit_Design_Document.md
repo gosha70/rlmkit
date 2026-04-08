@@ -1,5 +1,5 @@
   
-**RLMKit Design Document**
+# **RLMKit Design Document**
 
 LLM ↔ RLM (REPL) Interaction Architecture
 
