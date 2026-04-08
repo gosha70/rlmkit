@@ -300,7 +300,17 @@ export default function ChatPage() {
             }
           }
 
-          setTurns(Array.from(turnMap.values()));
+          const reconstructed = Array.from(turnMap.values());
+          setTurns(reconstructed);
+
+          // Restore chat provider selection from the providers present in conversations
+          const sessionProviderIds = Object.keys(session.conversations);
+          if (sessionProviderIds.length > 0) {
+            setSelectedChatProviderIds(sessionProviderIds);
+          }
+
+          // Hydrate execution steps from traces
+          _hydrateStepsFromTraces(reconstructed);
         } else {
           // Fallback: reconstruct from flat messages list
           const newTurns: ChatTurn[] = [];
@@ -330,6 +340,21 @@ export default function ChatPage() {
           }
 
           setTurns(newTurns);
+
+          // Restore provider selection from flat messages
+          const flatProviderIds = [
+            ...new Set(
+              session.messages
+                .filter((m) => m.chat_provider_id)
+                .map((m) => m.chat_provider_id!),
+            ),
+          ];
+          if (flatProviderIds.length > 0) {
+            setSelectedChatProviderIds(flatProviderIds);
+          }
+
+          // Hydrate execution steps from traces
+          _hydrateStepsFromTraces(newTurns);
         }
       })
       .catch((err) => {
@@ -338,6 +363,54 @@ export default function ChatPage() {
           setTurns([]);
         }
       });
+
+    /**
+     * Fetch execution traces for all responses in the reconstructed turns
+     * and backfill the `steps` field that is missing from persisted sessions.
+     */
+    function _hydrateStepsFromTraces(loadedTurns: ChatTurn[]) {
+      for (const turn of loadedTurns) {
+        for (const [cpId, resp] of Object.entries(turn.responses)) {
+          if (!resp.executionId || resp.steps) continue;
+          getTrace(resp.executionId)
+            .then((trace) => {
+              if (trace.status !== "complete" || !trace.steps?.length) return;
+              setTurns((prev) =>
+                prev.map((t) =>
+                  t.id === turn.id
+                    ? {
+                        ...t,
+                        responses: {
+                          ...t.responses,
+                          [cpId]: {
+                            ...t.responses[cpId],
+                            steps: trace.steps,
+                            metrics: t.responses[cpId].metrics ?? {
+                              input_tokens: trace.result.input_tokens ?? 0,
+                              output_tokens: trace.result.output_tokens ?? 0,
+                              total_tokens: trace.budget.tokens_used,
+                              cost_usd: trace.result.total_cost ?? 0,
+                              elapsed_seconds:
+                                trace.completed_at && trace.started_at
+                                  ? (new Date(trace.completed_at).getTime() -
+                                      new Date(trace.started_at).getTime()) /
+                                    1000
+                                  : 0,
+                              steps: trace.budget.steps_used,
+                            },
+                          },
+                        },
+                      }
+                    : t,
+                ),
+              );
+            })
+            .catch(() => {
+              // Trace not available (e.g. server restarted without persistence)
+            });
+        }
+      }
+    }
   }, [sessionId]);
 
   // Load evaluations when session changes
