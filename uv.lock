@@ -3089,7 +3089,7 @@ ui = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'ui'", specifier = ">=0.7.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
-    { name = "cryptography", specifier = ">=46.0.6" },
+    { name = "cryptography", specifier = ">=46.0.7" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.110.0" },
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "litellm", specifier = ">=1.83.0" },
