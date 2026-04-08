@@ -220,9 +220,7 @@ class TestProfileCRUDWithTemplateName:
         assert len(user_profiles) == 1
         assert user_profiles[0]["prompt_template_name"] == "Detailed explainer"
 
-    def test_builtin_profiles_have_template_name_field(
-        self, client: TestClient
-    ) -> None:
+    def test_builtin_profiles_have_template_name_field(self, client: TestClient) -> None:
         """All profiles (including builtins) should include the field."""
         listing = client.get("/api/profiles").json()
         for profile in listing:
