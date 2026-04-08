@@ -141,7 +141,8 @@ describe("ProfileCard — read-only view", () => {
       isLoading: false,
       isValidating: false,
       mutate: vi.fn(),
-    } as unknown);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
   });
 
   test("displays profile name and strategy badge", () => {
@@ -200,7 +201,8 @@ describe("ProfileCard — editing form", () => {
       isLoading: false,
       isValidating: false,
       mutate: vi.fn(),
-    } as unknown);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
   });
 
   function openEditor() {
