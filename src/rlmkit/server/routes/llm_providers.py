@@ -104,9 +104,14 @@ def _discover_context_window(backend: str, model: str, endpoint: str | None) -> 
 
         try:
             import json
+            from urllib.parse import urlparse
+
+            # B310: only allow http/https schemes to prevent file:// access
+            if urlparse(url).scheme not in ("http", "https"):
+                return None
 
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 — scheme validated above
                 data = json.loads(resp.read())
                 for m in data.get("data", []):
                     mid = m.get("id", "")
@@ -114,7 +119,7 @@ def _discover_context_window(backend: str, model: str, endpoint: str | None) -> 
                         c.split("/", 1)[1] for c in model_candidates if "/" in c
                     }:
                         # vLLM exposes max_model_len; Ollama may use context_length
-                        ctx = (
+                        ctx = (  # type: ignore[assignment]  # reuse outer name
                             m.get("max_model_len")
                             or m.get("context_length")
                             or m.get("context_window")
@@ -127,7 +132,7 @@ def _discover_context_window(backend: str, model: str, endpoint: str | None) -> 
                                 mid,
                                 url,
                             )
-                            return ctx
+                            return int(ctx)
         except Exception as exc:
             logger.debug("Could not query %s for context window: %s", url, exc)
 
@@ -256,9 +261,8 @@ async def update_llm_provider(
         lp.name = req.name
 
     # Track whether model or endpoint changed — triggers context_window re-discovery
-    model_or_endpoint_changed = (
-        (req.model is not None and req.model != lp.model)
-        or (req.endpoint is not None and (req.endpoint or None) != lp.endpoint)
+    model_or_endpoint_changed = (req.model is not None and req.model != lp.model) or (
+        req.endpoint is not None and (req.endpoint or None) != lp.endpoint
     )
 
     if req.model is not None:

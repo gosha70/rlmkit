@@ -566,7 +566,7 @@ class TestContextWindowClamping:
         assert params["max_tokens"] == 1024
 
     @patch("litellm.token_counter", return_value=6000)
-    def test_clamps_when_prompt_approaches_limit(self, _mock_tc):
+    def test_clamps_when_prompt_approaches_limit(self, mock_tc):
         """max_tokens should shrink when prompt consumes most of the context."""
         adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=8192)
         # context_window=8192, prompt=6000, reserve=max(8192*0.05, 64)=409
@@ -577,7 +577,7 @@ class TestContextWindowClamping:
         assert params["max_tokens"] < 4096
 
     @patch("litellm.token_counter", return_value=4000)
-    def test_raises_proactive_overflow_when_prompt_exceeds_context(self, _mock_tc):
+    def test_raises_proactive_overflow_when_prompt_exceeds_context(self, mock_tc):
         """When prompt leaves less than 128 tokens even without reserve, raise proactively."""
         adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=2048)
         # prompt=4000 > context_window=2048 → hard_headroom < 0 → ValueError
@@ -589,7 +589,7 @@ class TestContextWindowClamping:
         assert info["effective_max_tokens"] == 0
 
     @patch("litellm.token_counter", return_value=7900)
-    def test_skips_reserve_when_tight_but_feasible(self, _mock_tc):
+    def test_skips_reserve_when_tight_but_feasible(self, mock_tc):
         """When remaining < 128 but hard headroom >= 128, skip reserve and use hard headroom."""
         adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=8192)
         # prompt=7900, reserve=409, remaining=8192-7900-409=-117 < 128
@@ -600,7 +600,7 @@ class TestContextWindowClamping:
         assert info["clamped"] is True
 
     @patch("litellm.token_counter", return_value=6000)
-    def test_clamping_preserves_other_params(self, _mock_tc):
+    def test_clamping_preserves_other_params(self, mock_tc):
         """Clamping max_tokens should not affect other parameters."""
         adapter = LiteLLMAdapter(
             model="test",
@@ -650,7 +650,7 @@ class TestContextWindowClamping:
         assert params_big["max_tokens"] == 8192 - 7000 - reserve  # 783
 
     @patch("litellm.token_counter", return_value=4204)
-    def test_reserve_prevents_one_token_context_overflow(self, _mock_tc):
+    def test_reserve_prevents_one_token_context_overflow(self, mock_tc):
         """Keep headroom so a tokenizer mismatch cannot overflow by a single token.
 
         With 5% reserve (409 tokens for 8192 context), the clamp fires well

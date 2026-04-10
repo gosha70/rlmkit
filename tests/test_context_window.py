@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Generator
-from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -22,8 +21,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from rlmkit.server.app import app
-from rlmkit.server.dependencies import get_state, reset_state
-from rlmkit.server.models import LLMProviderConfig, RuntimeSettings
+from rlmkit.server.dependencies import reset_state
 from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
 # ---------------------------------------------------------------------------
@@ -83,7 +81,8 @@ class TestProviderUpdateRediscovery:
             payload["context_window"] = context_window
         resp = client.post("/api/llm-providers", json=payload)
         assert resp.status_code == 201, resp.text
-        return resp.json()
+        result: dict[str, Any] = resp.json()
+        return result
 
     @patch("rlmkit.server.routes.llm_providers._discover_context_window")
     def test_model_change_triggers_rediscovery(
@@ -92,9 +91,7 @@ class TestProviderUpdateRediscovery:
         """Changing the model should re-discover context_window."""
         # Create with explicit context_window so discovery is not called on create
         mock_discover.return_value = None
-        lp = self._create_provider(
-            client, valid_provider_key, "old-model", context_window=4096
-        )
+        lp = self._create_provider(client, valid_provider_key, "old-model", context_window=4096)
         assert lp["context_window"] == 4096
         mock_discover.reset_mock()
 
@@ -114,9 +111,7 @@ class TestProviderUpdateRediscovery:
     ) -> None:
         """Changing the endpoint should re-discover context_window."""
         mock_discover.return_value = None
-        lp = self._create_provider(
-            client, valid_provider_key, "some-model", context_window=8192
-        )
+        lp = self._create_provider(client, valid_provider_key, "some-model", context_window=8192)
         mock_discover.reset_mock()
 
         mock_discover.return_value = 16384
@@ -133,9 +128,7 @@ class TestProviderUpdateRediscovery:
     ) -> None:
         """If the user passes context_window explicitly, discovery is skipped."""
         mock_discover.return_value = None
-        lp = self._create_provider(
-            client, valid_provider_key, "a-model", context_window=4096
-        )
+        lp = self._create_provider(client, valid_provider_key, "a-model", context_window=4096)
         mock_discover.reset_mock()
 
         resp = client.put(
@@ -153,9 +146,7 @@ class TestProviderUpdateRediscovery:
     ) -> None:
         """Updating name-only should NOT trigger re-discovery."""
         mock_discover.return_value = None
-        lp = self._create_provider(
-            client, valid_provider_key, "stable-model", context_window=8192
-        )
+        lp = self._create_provider(client, valid_provider_key, "stable-model", context_window=8192)
         mock_discover.reset_mock()
 
         resp = client.put(
@@ -174,9 +165,7 @@ class TestProviderUpdateRediscovery:
         """If re-discovery returns None, context_window should be cleared
         so a stale value doesn't persist."""
         mock_discover.return_value = None
-        lp = self._create_provider(
-            client, valid_provider_key, "model-v1", context_window=8192
-        )
+        lp = self._create_provider(client, valid_provider_key, "model-v1", context_window=8192)
         mock_discover.reset_mock()
 
         mock_discover.return_value = None  # discovery fails
@@ -241,8 +230,7 @@ class TestLocalUIContextWindowClamping:
         # get_llm_client should have been called with clamped max_tokens
         call_kwargs = mock_get_client.call_args
         actual_max = call_kwargs.kwargs.get("max_tokens") or call_kwargs[1].get("max_tokens")
-        expected_max = int(8192 * 0.75)  # 6144
-        # 4096 < 6144, so no clamping needed — max_tokens stays 4096
+        # 4096 < int(8192 * 0.75) = 6144, so no clamping needed — max_tokens stays 4096
         assert actual_max == 4096
 
     @patch("rlmkit.ui.services.chat_manager.get_llm_client")
@@ -338,9 +326,7 @@ class TestOllamaClientStaticMaxTokens:
 
     @patch("rlmkit.llm.ollama_client.requests.get")
     @patch("rlmkit.llm.ollama_client.requests.post")
-    def test_ollama_uses_static_max_tokens(
-        self, mock_post: MagicMock, mock_get: MagicMock
-    ) -> None:
+    def test_ollama_uses_static_max_tokens(self, mock_post: MagicMock, mock_get: MagicMock) -> None:
         """OllamaClient passes the constructor max_tokens to every call unchanged."""
         from rlmkit.llm.ollama_client import OllamaClient
 
@@ -398,12 +384,9 @@ class TestDiscoveryURLAndModelMatching:
 
     def _mock_urlopen(self, model_id: str, max_model_len: int):
         """Build a mock for urllib.request.urlopen that returns a vLLM-style response."""
-        import io
         import json
 
-        body = json.dumps({
-            "data": [{"id": model_id, "max_model_len": max_model_len}]
-        }).encode()
+        body = json.dumps({"data": [{"id": model_id, "max_model_len": max_model_len}]}).encode()
         mock_resp = MagicMock()
         mock_resp.read.return_value = body
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
@@ -413,7 +396,7 @@ class TestDiscoveryURLAndModelMatching:
     @patch("litellm.get_model_info", side_effect=Exception("skip"))
     @patch("urllib.request.urlopen")
     def test_endpoint_with_v1_suffix_no_doubling(
-        self, mock_urlopen: MagicMock, _mock_litellm: MagicMock
+        self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """Endpoint http://host:8000/v1 should query http://host:8000/v1/models, not /v1/v1/models."""
         from rlmkit.server.routes.llm_providers import _discover_context_window
@@ -434,7 +417,7 @@ class TestDiscoveryURLAndModelMatching:
     @patch("litellm.get_model_info", side_effect=Exception("skip"))
     @patch("urllib.request.urlopen")
     def test_endpoint_without_v1_suffix(
-        self, mock_urlopen: MagicMock, _mock_litellm: MagicMock
+        self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """Endpoint http://host:8000 should query http://host:8000/v1/models."""
         from rlmkit.server.routes.llm_providers import _discover_context_window
@@ -453,7 +436,7 @@ class TestDiscoveryURLAndModelMatching:
     @patch("litellm.get_model_info", side_effect=Exception("skip"))
     @patch("urllib.request.urlopen")
     def test_litellm_prefix_stripped_for_matching(
-        self, mock_urlopen: MagicMock, _mock_litellm: MagicMock
+        self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """Model 'openai/Qwen/Qwen2.5-7B-Instruct' should match vLLM id 'Qwen/Qwen2.5-7B-Instruct'."""
         from rlmkit.server.routes.llm_providers import _discover_context_window
@@ -471,7 +454,7 @@ class TestDiscoveryURLAndModelMatching:
     @patch("litellm.get_model_info", side_effect=Exception("skip"))
     @patch("urllib.request.urlopen")
     def test_exact_match_still_works(
-        self, mock_urlopen: MagicMock, _mock_litellm: MagicMock
+        self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """When model name matches exactly, discovery should still work."""
         from rlmkit.server.routes.llm_providers import _discover_context_window
@@ -487,9 +470,7 @@ class TestDiscoveryURLAndModelMatching:
 
     @patch("litellm.get_model_info", side_effect=Exception("skip"))
     @patch("urllib.request.urlopen")
-    def test_no_match_returns_none(
-        self, mock_urlopen: MagicMock, _mock_litellm: MagicMock
-    ) -> None:
+    def test_no_match_returns_none(self, mock_urlopen: MagicMock, mock_litellm: MagicMock) -> None:
         """When model doesn't match any reported ID, return None."""
         from rlmkit.server.routes.llm_providers import _discover_context_window
 
