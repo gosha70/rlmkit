@@ -43,3 +43,4 @@ AGENTS.md
 /.codex
 /specs
 /.git-rewrite
+.env.test
