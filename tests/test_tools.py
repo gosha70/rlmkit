@@ -22,8 +22,14 @@ LONG_TEXT = "x" * 50000  # 50K chars for truncation tests
 def _build_multi_file_text() -> str:
     """Create a realistic multi-file payload with a document index."""
     records = [
-        ("kg_book.txt", "Knowledge Graphs Applied\nbrief contents\n1 Knowledge graphs and LLMs\n2 Intelligent systems\n"),
-        ("search_book.txt", "AI-Powered Search\nbrief contents\n1 Introducing AI-powered search\n2 Semantic search with knowledge graphs\n"),
+        (
+            "kg_book.txt",
+            "Knowledge Graphs Applied\nbrief contents\n1 Knowledge graphs and LLMs\n2 Intelligent systems\n",
+        ),
+        (
+            "search_book.txt",
+            "AI-Powered Search\nbrief contents\n1 Introducing AI-powered search\n2 Semantic search with knowledge graphs\n",
+        ),
     ]
     separator = "\n\n---\n\n"
     section_headers = [f"[File {i + 1}: {name}]\n\n" for i, (name, _body) in enumerate(records)]
@@ -68,7 +74,9 @@ MULTI_FILE_TEXT = _build_multi_file_text()
 
 
 def _file_2_content_start() -> int:
-    match = re.search(r'2\. "search_book\.txt" \(file_start=\d+, content_start=(\d+), ', MULTI_FILE_TEXT)
+    match = re.search(
+        r'2\. "search_book\.txt" \(file_start=\d+, content_start=(\d+), ', MULTI_FILE_TEXT
+    )
     assert match is not None
     return int(match.group(1))
 
@@ -135,12 +143,14 @@ class TestGrepTool:
         assert "Found 2 match(es)" in result["stdout"]
         assert "Line 5" in result["stdout"]
         assert "Line 8" in result["stdout"]
-        assert f"char_offset {SAMPLE_TEXT.index('Line 5: ERROR: Something went wrong')}" in result[
-            "stdout"
-        ]
-        assert f"char_offset {SAMPLE_TEXT.index('Line 8: ERROR: Another error occurred')}" in result[
-            "stdout"
-        ]
+        assert (
+            f"char_offset {SAMPLE_TEXT.index('Line 5: ERROR: Something went wrong')}"
+            in result["stdout"]
+        )
+        assert (
+            f"char_offset {SAMPLE_TEXT.index('Line 8: ERROR: Another error occurred')}"
+            in result["stdout"]
+        )
 
     def test_grep_no_matches(self):
         """Test grep when pattern not found."""

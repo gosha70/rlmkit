@@ -93,7 +93,9 @@ class OpenAIClient(BaseLLMProvider):
             "temperature": self.temperature,
         }
 
-        requested_max_tokens = self.max_tokens if max_tokens_override is None else max_tokens_override
+        requested_max_tokens = (
+            self.max_tokens if max_tokens_override is None else max_tokens_override
+        )
         clamped_max_tokens = self._context_aware_max_tokens(messages, requested_max_tokens)
         if clamped_max_tokens is not None:
             params["max_tokens"] = clamped_max_tokens
@@ -119,7 +121,9 @@ class OpenAIClient(BaseLLMProvider):
             return requested_max_tokens
 
         prompt_tokens = self._estimate_message_tokens(messages)
-        available = self._discovered_context_limit_tokens - prompt_tokens - self._context_token_reserve
+        available = (
+            self._discovered_context_limit_tokens - prompt_tokens - self._context_token_reserve
+        )
         if available <= 0:
             return 1
         return max(1, min(requested_max_tokens, available))
@@ -255,9 +259,7 @@ class OpenAIClient(BaseLLMProvider):
                         metadata={
                             "id": response.id,
                             "created": response.created,
-                            "system_fingerprint": getattr(
-                                response, "system_fingerprint", None
-                            ),
+                            "system_fingerprint": getattr(response, "system_fingerprint", None),
                         },
                     )
                 except Exception as retry_exc:

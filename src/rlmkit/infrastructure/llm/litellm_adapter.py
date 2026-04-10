@@ -510,8 +510,7 @@ class LiteLLMAdapter:
                 clamped = True
             elif remaining < effective_max_tokens:
                 logger.debug(
-                    "Dynamic max_tokens clamp: %d → %d "
-                    "(prompt≈%d, reserve=%d, context_window=%d)",
+                    "Dynamic max_tokens clamp: %d → %d (prompt≈%d, reserve=%d, context_window=%d)",
                     effective_max_tokens,
                     remaining,
                     estimated_prompt_tokens,

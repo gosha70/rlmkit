@@ -41,7 +41,15 @@ class InspectAction:
 
     def validate(self) -> None:
         """Validate the inspect action."""
-        if self.tool not in ["grep", "peek", "grep_file", "peek_file", "outline_file", "select", "chunk"]:
+        if self.tool not in [
+            "grep",
+            "peek",
+            "grep_file",
+            "peek_file",
+            "outline_file",
+            "select",
+            "chunk",
+        ]:
             raise ValueError(
                 "Invalid tool: "
                 f"{self.tool}. Must be one of: grep, peek, grep_file, peek_file, "

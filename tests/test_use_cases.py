@@ -402,7 +402,9 @@ class TestRunRLMUseCase:
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=8)
         uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+        result = uc.execute(
+            content, "Summarize the uploaded documents and find commonalities", config=config
+        )
 
         assert result.success is True
         assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
@@ -432,7 +434,9 @@ class TestRunRLMUseCase:
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=8)
         uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+        result = uc.execute(
+            content, "Summarize the uploaded documents and find commonalities", config=config
+        )
 
         assert result.success is True
         assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
@@ -461,7 +465,9 @@ class TestRunRLMUseCase:
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=8)
         uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+        result = uc.execute(
+            content, "Summarize the uploaded documents and find commonalities", config=config
+        )
 
         assert result.success is True
         assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
@@ -491,7 +497,9 @@ class TestRunRLMUseCase:
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=8, stall_limit=3)
         uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+        result = uc.execute(
+            content, "Summarize the uploaded documents and find commonalities", config=config
+        )
 
         assert result.success is True
         assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
@@ -522,14 +530,15 @@ class TestRunRLMUseCase:
         sandbox = FakeSandbox()
         config = RunConfigDTO(mode="rlm", max_steps=20, stall_limit=3)
         uc = RunRLMUseCase(llm, sandbox)
-        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+        result = uc.execute(
+            content, "Summarize the uploaded documents and find commonalities", config=config
+        )
 
         assert result.success is True
         # Early synthesis should produce an answer (via the synthesis fallback call)
         # rather than returning a stall warning, because coverage is complete.
         synth_entries = [
-            e for e in result.trace
-            if e.get("note") == "early post-coverage synthesis"
+            e for e in result.trace if e.get("note") == "early post-coverage synthesis"
         ]
         assert len(synth_entries) == 1, "Expected exactly one early synthesis trace entry"
 
@@ -910,13 +919,14 @@ class TestRunRLMAsync:
         config = RunConfigDTO(mode="rlm", max_steps=20, stall_limit=3)
         uc = RunRLMUseCase(llm, sandbox)
         result = asyncio.get_event_loop().run_until_complete(
-            uc.execute_async(content, "Summarize the uploaded documents and find commonalities", config=config)
+            uc.execute_async(
+                content, "Summarize the uploaded documents and find commonalities", config=config
+            )
         )
 
         assert result.success is True
         synth_entries = [
-            e for e in result.trace
-            if e.get("note") == "early post-coverage synthesis"
+            e for e in result.trace if e.get("note") == "early post-coverage synthesis"
         ]
         assert len(synth_entries) == 1, "Expected exactly one early synthesis trace entry"
 
@@ -940,7 +950,9 @@ class TestRunRLMAsync:
         config = RunConfigDTO(mode="rlm", max_steps=8)
         uc = RunRLMUseCase(llm, sandbox)
         result = asyncio.get_event_loop().run_until_complete(
-            uc.execute_async(content, "Summarize the uploaded documents and find commonalities", config=config)
+            uc.execute_async(
+                content, "Summarize the uploaded documents and find commonalities", config=config
+            )
         )
 
         assert result.success is True
@@ -972,7 +984,9 @@ class TestRunRLMAsync:
         config = RunConfigDTO(mode="rlm", max_steps=8, stall_limit=3)
         uc = RunRLMUseCase(llm, sandbox)
         result = asyncio.get_event_loop().run_until_complete(
-            uc.execute_async(content, "Summarize the uploaded documents and find commonalities", config=config)
+            uc.execute_async(
+                content, "Summarize the uploaded documents and find commonalities", config=config
+            )
         )
 
         assert result.success is True
@@ -1181,8 +1195,7 @@ class TestLastExecutionFailedWarning:
         assert result.answer == "I reasoned it out directly."
         # Filter out runtime fingerprint to isolate the warning entry
         system_entries = [
-            t for t in result.trace
-            if t.get("role") == "system" and "fingerprint" not in t
+            t for t in result.trace if t.get("role") == "system" and "fingerprint" not in t
         ]
         assert len(system_entries) == 1
         assert "Warning" in system_entries[0]["content"]
@@ -1202,8 +1215,7 @@ class TestLastExecutionFailedWarning:
 
         assert result.success is True
         system_entries = [
-            t for t in result.trace
-            if t.get("role") == "system" and "fingerprint" not in t
+            t for t in result.trace if t.get("role") == "system" and "fingerprint" not in t
         ]
         assert len(system_entries) == 0
 
@@ -1222,8 +1234,7 @@ class TestLastExecutionFailedWarning:
 
         assert result.success is True
         system_entries = [
-            t for t in result.trace
-            if t.get("role") == "system" and "fingerprint" not in t
+            t for t in result.trace if t.get("role") == "system" and "fingerprint" not in t
         ]
         assert len(system_entries) == 0
 
@@ -1284,7 +1295,9 @@ class TestJsonProtocolParsing:
     def test_json_inspect_outline_file_generates_code(self):
         """JSON inspect/outline_file action is converted to outline_file() call."""
         uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
-        text = '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 20}}'
+        text = (
+            '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 20}}'
+        )
         parsed = uc._parse_rlm_response(text)
 
         assert parsed.code is not None
@@ -1435,7 +1448,10 @@ class TestSystemPromptV2:
         assert "outline_file" in prompt
         assert "peek_file" in prompt
         assert "Surface metadata alone" in prompt
-        assert "do NOT output a final answer until you have called outline_file() or peek_file() on EVERY file" in prompt
+        assert (
+            "do NOT output a final answer until you have called outline_file() or peek_file() on EVERY file"
+            in prompt
+        )
         assert "you MUST call outline_file() or peek_file() for EVERY file in the index" in prompt
         assert "peek() from that position" not in prompt
         assert "visit EVERY listed file" not in prompt
@@ -2166,7 +2182,9 @@ class TestSoftNudge:
         assert result.success is True
         final_messages = llm.call_messages[-1]
         hard_nudges = [
-            m for m in final_messages if "You MUST produce your final answer within the next 2 steps." in m.get("content", "")
+            m
+            for m in final_messages
+            if "You MUST produce your final answer within the next 2 steps." in m.get("content", "")
         ]
         assert len(hard_nudges) == 1
 

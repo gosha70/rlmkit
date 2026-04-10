@@ -108,7 +108,9 @@ class RunRLMUseCase:
             {"role": "user", "content": query},
         ]
         attached_files = self._extract_attached_files(content)
-        enforce_multi_file_coverage = self._should_enforce_multi_file_coverage(query, attached_files)
+        enforce_multi_file_coverage = self._should_enforce_multi_file_coverage(
+            query, attached_files
+        )
         inspected_files: set[int] = set()
 
         trace: list[dict[str, Any]] = []
@@ -430,16 +432,18 @@ class RunRLMUseCase:
                         attached_files, inspected_files, enforce_multi_file_coverage
                     )
                     if missing_files:
-                        trace_seq, inspect_snapshots, auto_file_no = self._auto_inspect_missing_file(
-                            content=content,
-                            config=config,
-                            messages=messages,
-                            trace=trace,
-                            trace_seq=trace_seq,
-                            budget_state=budget_state,
-                            inspect_snapshots=inspect_snapshots,
-                            missing_files=missing_files,
-                            assistant_text=text,
+                        trace_seq, inspect_snapshots, auto_file_no = (
+                            self._auto_inspect_missing_file(
+                                content=content,
+                                config=config,
+                                messages=messages,
+                                trace=trace,
+                                trace_seq=trace_seq,
+                                budget_state=budget_state,
+                                inspect_snapshots=inspect_snapshots,
+                                missing_files=missing_files,
+                                assistant_text=text,
+                            )
                         )
                         inspected_files.add(auto_file_no)
                         consecutive_no_progress = 0
@@ -505,8 +509,7 @@ class RunRLMUseCase:
                                 "input_tokens": synth_response.input_tokens,
                                 "output_tokens": synth_response.output_tokens,
                                 "model": (
-                                    getattr(self._llm, "active_model", None)
-                                    or synth_response.model
+                                    getattr(self._llm, "active_model", None) or synth_response.model
                                 ),
                                 "elapsed_seconds": time.time() - synth_step_start,
                                 "note": "early post-coverage synthesis",
@@ -569,7 +572,9 @@ class RunRLMUseCase:
             # Prefer an explicit plain-text answer; fall back to last raw LLM
             # response (covers models that always generate code but never FINAL:).
             best_fallback = last_plain_answer or last_assistant_text
-            if self._get_missing_files(attached_files, inspected_files, enforce_multi_file_coverage):
+            if self._get_missing_files(
+                attached_files, inspected_files, enforce_multi_file_coverage
+            ):
                 best_fallback = ""
             # Don't return raw JSON action blobs as the final answer —
             # fall through to synthesis or limit-warning instead.
@@ -842,7 +847,9 @@ class RunRLMUseCase:
             {"role": "user", "content": query},
         ]
         attached_files = self._extract_attached_files(content)
-        enforce_multi_file_coverage = self._should_enforce_multi_file_coverage(query, attached_files)
+        enforce_multi_file_coverage = self._should_enforce_multi_file_coverage(
+            query, attached_files
+        )
         inspected_files: set[int] = set()
 
         trace: list[dict[str, Any]] = []
@@ -1185,16 +1192,18 @@ class RunRLMUseCase:
                     )
                     if missing_files:
                         prev_trace_len = len(trace)
-                        trace_seq, inspect_snapshots, auto_file_no = self._auto_inspect_missing_file(
-                            content=content,
-                            config=config,
-                            messages=messages,
-                            trace=trace,
-                            trace_seq=trace_seq,
-                            budget_state=budget_state,
-                            inspect_snapshots=inspect_snapshots,
-                            missing_files=missing_files,
-                            assistant_text=text,
+                        trace_seq, inspect_snapshots, auto_file_no = (
+                            self._auto_inspect_missing_file(
+                                content=content,
+                                config=config,
+                                messages=messages,
+                                trace=trace,
+                                trace_seq=trace_seq,
+                                budget_state=budget_state,
+                                inspect_snapshots=inspect_snapshots,
+                                missing_files=missing_files,
+                                assistant_text=text,
+                            )
                         )
                         inspected_files.add(auto_file_no)
                         consecutive_no_progress = 0
@@ -1264,8 +1273,7 @@ class RunRLMUseCase:
                             "input_tokens": synth_response.input_tokens,
                             "output_tokens": synth_response.output_tokens,
                             "model": (
-                                getattr(self._llm, "active_model", None)
-                                or synth_response.model
+                                getattr(self._llm, "active_model", None) or synth_response.model
                             ),
                             "elapsed_seconds": time.time() - synth_step_start,
                             "note": "early post-coverage synthesis",
@@ -1325,7 +1333,9 @@ class RunRLMUseCase:
                     )
 
             best_fallback = last_plain_answer or last_assistant_text
-            if self._get_missing_files(attached_files, inspected_files, enforce_multi_file_coverage):
+            if self._get_missing_files(
+                attached_files, inspected_files, enforce_multi_file_coverage
+            ):
                 best_fallback = ""
             # Don't return raw JSON action blobs as the final answer —
             # fall through to synthesis or limit-warning instead.
@@ -1596,8 +1606,7 @@ class RunRLMUseCase:
                 "coverage_enforced": enforce_multi_file_coverage,
                 "attached_file_count": len(attached_files),
                 "attached_files": [
-                    {"file_no": f.file_no, "name": f.name}
-                    for f in attached_files.values()
+                    {"file_no": f.file_no, "name": f.name} for f in attached_files.values()
                 ],
                 "context_window": context_window,
                 "configured_max_tokens": configured_max_tokens,
@@ -1891,9 +1900,7 @@ class RunRLMUseCase:
             }
         )
 
-        code = (
-            f"print(outline_file(file_no={target.file_no}, max_lines=25, max_chars=8000))"
-        )
+        code = f"print(outline_file(file_no={target.file_no}, max_lines=25, max_chars=8000))"
         exec_result = self._sandbox.execute(code)
         formatted = self._format_execution(exec_result)
         inspect_snapshots = self._append_inspect_snapshot(
@@ -1978,7 +1985,15 @@ class RunRLMUseCase:
             and result.code
             and any(
                 f"{tool}(" in result.code
-                for tool in ("peek", "peek_file", "grep", "grep_file", "outline_file", "chunk", "select")
+                for tool in (
+                    "peek",
+                    "peek_file",
+                    "grep",
+                    "grep_file",
+                    "outline_file",
+                    "chunk",
+                    "select",
+                )
             )
         ):
             result.is_inspect = True
@@ -2086,7 +2101,9 @@ class RunRLMUseCase:
 
         output = execution_output.strip() or "(no output)"
         if len(output) > per_snapshot_chars:
-            output = output[:per_snapshot_chars] + f"\n... (truncated to {per_snapshot_chars} chars)"
+            output = (
+                output[:per_snapshot_chars] + f"\n... (truncated to {per_snapshot_chars} chars)"
+            )
 
         snapshots = list(snapshots)
         snapshots.append(f"[Inspect step {step}]\nTool call: {first_code_line}\n{output}")
@@ -2117,7 +2134,8 @@ class RunRLMUseCase:
         """Return True if *exc* is a context-window-exceeded error from the LLM."""
         msg = str(exc).lower()
         return ("context" in msg or "8192" in msg or "4096" in msg) and any(
-            kw in msg for kw in ("window", "length", "exceed", "exhausted", "maximum", "too large", "token")
+            kw in msg
+            for kw in ("window", "length", "exceed", "exhausted", "maximum", "too large", "token")
         )
 
     @staticmethod

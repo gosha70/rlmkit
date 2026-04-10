@@ -127,8 +127,7 @@ class ChatManager:
             max_safe_output = int(context_window * 0.75)
             if max_tokens > max_safe_output:
                 logger.info(
-                    "Local UI: clamping max_tokens %d → %d for %s/%s "
-                    "(context_window=%d)",
+                    "Local UI: clamping max_tokens %d → %d for %s/%s (context_window=%d)",
                     max_tokens,
                     max_safe_output,
                     provider_config.provider,

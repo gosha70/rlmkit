@@ -67,9 +67,7 @@ _MAX_TOTAL_CONTENT_BYTES: int = 50 * 1024 * 1024  # 50 MB
 _rag_index_cache: dict[str, tuple[SQLiteStorageAdapter, str, str]] = {}
 
 
-def _render_multi_file_index(
-    records: list[Any], offsets: list[tuple[int, int, int]]
-) -> str:
+def _render_multi_file_index(records: list[Any], offsets: list[tuple[int, int, int]]) -> str:
     """Render the multi-file document index with exact character offsets."""
     index_lines = [
         f"[DOCUMENT INDEX — {len(records)} files attached]",
@@ -132,9 +130,7 @@ def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
         # Fixed-point calculation: offsets depend on index length, and the index
         # itself contains those offsets. Iterate until the rendered index is stable.
         section_headers = [f"[File {i + 1}: {rec.name}]\n\n" for i, rec in enumerate(records)]
-        sections = [
-            f"{section_headers[i]}{records[i].text_content}" for i in range(len(records))
-        ]
+        sections = [f"{section_headers[i]}{records[i].text_content}" for i in range(len(records))]
         offsets: list[tuple[int, int, int]] = [(0, 0, 0) for _ in records]
 
         for _ in range(8):
