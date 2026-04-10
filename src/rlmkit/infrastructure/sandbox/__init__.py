@@ -4,7 +4,7 @@ from .docker_sandbox_adapter import DockerSandboxAdapter
 from .local_sandbox import LocalSandboxAdapter
 from .restricted_sandbox import RestrictedSandboxAdapter
 from .sandbox_factory import create_sandbox
-from .subprocess_sandbox import SubprocessSandboxAdapter
+from .subprocess_sandbox import SubprocessSandboxAdapter  # nosec B404
 
 __all__ = [
     "LocalSandboxAdapter",

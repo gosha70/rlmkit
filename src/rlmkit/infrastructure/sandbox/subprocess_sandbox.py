@@ -183,8 +183,8 @@ def _child_worker(
     )
     try:
         conn.send(result)
-    except Exception:
-        pass
+    except Exception:  # nosec B110 — pipe may be broken if parent timed out; nothing to do
+        pass  # noqa: S110
     finally:
         conn.close()
 

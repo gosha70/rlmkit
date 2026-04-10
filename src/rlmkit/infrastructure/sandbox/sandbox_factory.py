@@ -46,7 +46,7 @@ def create_sandbox(
             max_stdout_chars=max_stdout_chars,
         )
     elif sandbox_type == "subprocess":
-        from .subprocess_sandbox import SubprocessSandboxAdapter
+        from .subprocess_sandbox import SubprocessSandboxAdapter  # nosec B404
 
         return SubprocessSandboxAdapter(
             safe_mode=safe_mode,
