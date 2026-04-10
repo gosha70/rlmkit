@@ -24,6 +24,7 @@ from rlmkit.server.models import (
     RuntimeSettings,
     SystemPrompts,
 )
+from rlmkit.telemetry.store import TelemetryStore
 from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
 from rlmkit.ui.services.secret_store import FileSecretStore, KeyringSecretStore
 
@@ -53,13 +54,11 @@ _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio", "vllm"})
 _RLMKIT_DIR = Path.home() / ".rlmkit"
 _CONFIG_FILE = _RLMKIT_DIR / "config.json"
 _SESSIONS_FILE = _RLMKIT_DIR / "sessions.json"
-_EXECUTIONS_FILE = _RLMKIT_DIR / "executions.json"
 _EVALUATIONS_FILE = _RLMKIT_DIR / "evaluations.json"
 _LEGACY_CONFIG_FILE = Path(".rlmkit_config.json")
 _LEGACY_SESSIONS_FILE = Path(".rlmkit_sessions.json")
 _LEGACY_EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
 _MAX_PERSISTED_SESSIONS = 50
-_MAX_PERSISTED_EXECUTIONS = 200
 
 # ---------------------------------------------------------------------------
 # In-memory stores (replaced by real persistence in production)
@@ -121,10 +120,12 @@ class AppState:
             "judge_scores": [],
             "judge_pairwise": [],
         }
+        # Persistent telemetry store (SQLite-backed).
+        # In-memory ":memory:" for tests, on-disk for production.
+        self.telemetry: TelemetryStore = TelemetryStore(":memory:" if not load_from_disk else None)
         if load_from_disk:
             self._load_config()
             self._load_sessions()
-            self._load_executions()
             self._load_evaluations()
             self._migrate_chat_providers()
             self._assign_default_profiles()
@@ -709,66 +710,11 @@ class AppState:
             logger.warning("Failed to save sessions: %s", exc)
 
     # ------------------------------------------------------------------
-    # Execution persistence
+    # Execution persistence (SQLite via TelemetryStore)
     # ------------------------------------------------------------------
 
-    def _load_executions(self) -> None:
-        """Load persisted execution records from disk if available."""
-        if not _EXECUTIONS_FILE.exists():
-            return
-        try:
-            raw = json.loads(_EXECUTIONS_FILE.read_text())
-            for e in raw:
-                rec = ExecutionRecord(
-                    execution_id=e["execution_id"],
-                    session_id=e["session_id"],
-                    query=e["query"],
-                    mode=e["mode"],
-                    status=e["status"],
-                    started_at=datetime.fromisoformat(e["started_at"])
-                    if e.get("started_at")
-                    else None,
-                    completed_at=datetime.fromisoformat(e["completed_at"])
-                    if e.get("completed_at")
-                    else None,
-                    result=e.get("result"),
-                    steps=e.get("steps", []),
-                    chat_provider_id=e.get("chat_provider_id"),
-                    chat_provider_name=e.get("chat_provider_name"),
-                )
-                self.executions[rec.execution_id] = rec
-            logger.info("Loaded %d executions from disk", len(self.executions))
-        except Exception as exc:
-            logger.warning("Failed to load executions: %s", exc)
-
     def save_executions(self) -> None:
-        """Persist the most recent executions to disk."""
-        try:
-            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
-            sorted_execs = sorted(
-                self.executions.values(),
-                key=lambda e: e.started_at.isoformat() if e.started_at else "",
-                reverse=True,
-            )[:_MAX_PERSISTED_EXECUTIONS]
-            data = [
-                {
-                    "execution_id": e.execution_id,
-                    "session_id": e.session_id,
-                    "query": e.query,
-                    "mode": e.mode,
-                    "status": e.status,
-                    "started_at": e.started_at.isoformat() if e.started_at else None,
-                    "completed_at": e.completed_at.isoformat() if e.completed_at else None,
-                    "result": e.result,
-                    "steps": e.steps,
-                    "chat_provider_id": e.chat_provider_id,
-                    "chat_provider_name": e.chat_provider_name,
-                }
-                for e in sorted_execs
-            ]
-            _EXECUTIONS_FILE.write_text(json.dumps(data, indent=2, default=str))
-        except Exception as exc:
-            logger.warning("Failed to save executions: %s", exc)
+        """No-op: executions are now persisted via TelemetryStore on completion."""
 
     # ------------------------------------------------------------------
     # Evaluation persistence
@@ -924,5 +870,4 @@ def reset_state() -> None:
     _state = AppState(load_from_disk=False)
     _state.save_config = lambda: None  # type: ignore[assignment]
     _state.save_sessions = lambda: None  # type: ignore[assignment]
-    _state.save_executions = lambda: None  # type: ignore[assignment]
     _state.save_evaluations = lambda: None  # type: ignore[assignment]

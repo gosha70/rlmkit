@@ -158,6 +158,25 @@ def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
     return result
 
 
+# Canonical ExecutionTrace action types.
+# Use-case traces store raw roles ("assistant"/"execution"); the rest of the
+# system (JSONL export, ExecutionTrace schema, UI) expects the canonical
+# set from rlmkit.core.trace: inspect/subcall/final/error.
+_ACTION_TYPE_MAP = {"assistant": "inspect", "execution": "subcall"}
+
+
+def _canonical_action_type(role: str | None, is_last: bool, success: bool) -> str:
+    """Normalize a raw trace role into a canonical ExecutionTrace action type.
+
+    Mirrors the normalization used by :func:`_save_trajectory` so telemetry
+    rows, JSONL exports, and in-memory traces all agree.
+    """
+    action_type = _ACTION_TYPE_MAP.get(role or "", "inspect")
+    if is_last and success:
+        action_type = "final"
+    return action_type
+
+
 def _save_trajectory(
     execution: ExecutionRecord,
     result: RunResultDTO,
@@ -173,13 +192,13 @@ def _save_trajectory(
             "query": execution.query,
             "mode": execution.mode,
         }
+        total = len(result.trace)
         for i, step_data in enumerate(result.trace):
-            role = step_data.get("role", "inspect")
-            action_map = {"assistant": "inspect", "execution": "subcall"}
-            action_type: str = action_map.get(role, "inspect")
-            if i == len(result.trace) - 1 and result.success:
-                action_type = "final"
-
+            action_type = _canonical_action_type(
+                step_data.get("role"),
+                is_last=(i == total - 1),
+                success=result.success,
+            )
             trace.add_step(
                 CoreTraceStep(
                     index=i,
@@ -289,6 +308,66 @@ async def submit_chat(
     )
 
 
+def _record_telemetry(
+    state: AppState,
+    execution: ExecutionRecord,
+    result: RunResultDTO,
+    *,
+    provider: str,
+    model: str,
+) -> None:
+    """Persist a completed execution to the telemetry store.
+
+    Args:
+        state: Application state providing the telemetry store.
+        execution: The execution record being persisted.
+        result: The final RunResultDTO from the use case.
+        provider: LLM backend identifier (e.g. "openai", "anthropic", "vllm").
+            This MUST be the structured backend key, not a user display name,
+            so ``aggregate_by_provider()`` remains consistent across code paths.
+        model: Model identifier (e.g. "gpt-4o", "claude-sonnet-4-6").
+    """
+    run_id = state.telemetry.record_run(
+        run_id=execution.execution_id,
+        created_at=execution.started_at.timestamp() if execution.started_at else 0.0,
+        mode=execution.mode,
+        provider=provider,
+        model=model,
+        query=execution.query,
+        content_length=0,
+        answer=result.answer,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        total_tokens=result.total_tokens,
+        total_cost=result.total_cost,
+        elapsed_seconds=result.elapsed_time,
+        success=result.success,
+        error=result.error,
+        session_id=execution.session_id,
+        chat_provider_id=execution.chat_provider_id,
+        chat_provider_name=execution.chat_provider_name,
+        steps_count=result.steps,
+    )
+    total = len(result.trace)
+    for i, step_data in enumerate(result.trace):
+        action_type = _canonical_action_type(
+            step_data.get("role"),
+            is_last=(i == total - 1),
+            success=result.success,
+        )
+        state.telemetry.record_step(
+            run_id=run_id,
+            step_index=i,
+            action_type=action_type,
+            code=step_data.get("code"),
+            output=step_data.get("content"),
+            input_tokens=step_data.get("input_tokens", 0),
+            output_tokens=step_data.get("output_tokens", 0),
+            duration=step_data.get("elapsed_seconds", 0.0),
+            model=step_data.get("model"),
+        )
+
+
 async def _run_execution(
     state: AppState,
     execution: ExecutionRecord,
@@ -301,17 +380,32 @@ async def _run_execution(
 ) -> None:
     """Run the use case in the background and store results."""
     try:
-        # Use Chat Provider-specific adapter if available, otherwise global
+        # Use Chat Provider-specific adapter if available, otherwise global.
+        # telemetry_backend/telemetry_model are the structured backend key
+        # and model id (preferred over the display label in telemetry records).
         if chat_provider_id:
             llm = state.create_llm_adapter_for_chat_provider(chat_provider_id, num_retries)
             cp = state.get_chat_provider(chat_provider_id)
             if cp:
                 cp = state.resolve_chat_provider(cp)
-            provider_label = f"{cp.llm_provider}/{cp.llm_model}" if cp else "unknown"
+            lp_http = (
+                state.get_llm_provider(cp.llm_provider_id) if cp and cp.llm_provider_id else None
+            )
+            telemetry_backend = (
+                (lp_http.backend if lp_http else None)
+                or (cp.llm_provider if cp else None)
+                or "unknown"
+            )
+            telemetry_model = (
+                (lp_http.model if lp_http else None) or (cp.llm_model if cp else None) or ""
+            )
+            provider_label = f"{telemetry_backend}/{telemetry_model}"
         else:
             llm = state.create_llm_adapter(num_retries)
             cp = None
-            provider_label = f"{state.config.active_provider}/{state.config.active_model}"
+            telemetry_backend = state.config.active_provider
+            telemetry_model = state.config.active_model
+            provider_label = f"{telemetry_backend}/{telemetry_model}"
         logger.info(
             "Executing query [mode=%s, provider=%s, adapter=%s]: %.100s",
             mode,
@@ -461,6 +555,15 @@ async def _run_execution(
             "steps_count": result.steps,
         }
         execution.steps = result.trace
+
+        # Persist to telemetry store
+        _record_telemetry(
+            state,
+            execution,
+            result,
+            provider=telemetry_backend,
+            model=telemetry_model,
+        )
 
         # Save trajectory if configured
         if state.config.trajectory_dir:
@@ -720,6 +823,19 @@ async def websocket_chat(
                                 if ws_cp
                                 else "unknown"
                             )
+                            # Structured backend/model for telemetry — must be
+                            # the backend key (e.g. "openai"), not the display
+                            # name, so aggregate_by_provider() stays consistent.
+                            ws_telemetry_backend = (
+                                (ws_lp.backend if ws_lp else None)
+                                or (ws_cp.llm_provider if ws_cp else None)
+                                or "unknown"
+                            )
+                            ws_telemetry_model = (
+                                (ws_lp.model if ws_lp else None)
+                                or (ws_cp.llm_model if ws_cp else None)
+                                or ""
+                            )
                         else:
                             llm = state.create_llm_adapter()
                             ws_cp = None
@@ -727,6 +843,8 @@ async def websocket_chat(
                             provider_label = (
                                 f"{state.config.active_provider}/{state.config.active_model}"
                             )
+                            ws_telemetry_backend = state.config.active_provider
+                            ws_telemetry_model = state.config.active_model
                         logger.info(
                             "WS executing [mode=%s, provider=%s, adapter=%s]: %.100s",
                             m,
@@ -814,6 +932,15 @@ async def websocket_chat(
                             "steps_count": result.steps,
                         }
                         exec_rec.steps = result.trace
+
+                        # Persist to telemetry store
+                        _record_telemetry(
+                            state,
+                            exec_rec,
+                            result,
+                            provider=ws_telemetry_backend,
+                            model=ws_telemetry_model,
+                        )
 
                         for res in results:
                             answer = res.answer
