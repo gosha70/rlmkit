@@ -348,6 +348,12 @@ class RLM:
                     code = f"print(grep(pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
                 elif tool == "peek":
                     code = f"print(peek(start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
+                elif tool == "peek_file":
+                    code = f"print(peek_file(file_no={args.get('file_no')}, start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
+                elif tool == "grep_file":
+                    code = f"print(grep_file(file_no={args.get('file_no')}, pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
+                elif tool == "outline_file":
+                    code = f"print(outline_file(file_no={args.get('file_no')}, max_lines={args.get('max_lines', 40)}, max_chars={args.get('max_chars', 8000)}))"
                 elif tool == "select":
                     code = f"print(select(ranges={args.get('ranges')}))"
                 elif tool == "chunk":

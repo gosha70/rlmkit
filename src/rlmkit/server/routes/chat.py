@@ -67,12 +67,39 @@ _MAX_TOTAL_CONTENT_BYTES: int = 50 * 1024 * 1024  # 50 MB
 _rag_index_cache: dict[str, tuple[SQLiteStorageAdapter, str, str]] = {}
 
 
+def _render_multi_file_index(
+    records: list[Any], offsets: list[tuple[int, int, int]]
+) -> str:
+    """Render the multi-file document index with exact character offsets."""
+    index_lines = [
+        f"[DOCUMENT INDEX — {len(records)} files attached]",
+        "Read this index first with peek(0, 1200).",
+        "Each file entry includes exact character offsets within P:",
+        "- Prefer outline_file(file_no=...) to get a document roadmap before reading large sections.",
+        "- Use peek_file(file_no=..., start=..., end=...) for file-relative reading without offset math.",
+        "- Use grep_file(file_no=..., pattern=...) for file-relative search; returned char_offset values work with peek_file().",
+        "- content_start is still available for direct peek(start=content_start, end=...) jumps when needed.",
+        "- If you cannot inspect every relevant file within budget, say which files you covered.",
+    ]
+    for i, (rec, (file_start, content_start, file_end_exclusive)) in enumerate(
+        zip(records, offsets, strict=True), start=1
+    ):
+        index_lines.append(
+            f'  {i}. "{rec.name}" '
+            f"(file_start={file_start}, content_start={content_start}, "
+            f"file_end_exclusive={file_end_exclusive})"
+        )
+    index_lines.append("[END DOCUMENT INDEX]")
+    return "\n".join(index_lines)
+
+
 def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
     """Join text from multiple uploaded files into a single content string.
 
     Single file: returns plain content with a file header.
-    Multiple files: prepends a Document Index so RLM tools can navigate between
-    files using grep('[File N:') to jump to any file's start.
+    Multiple files: prepends a Document Index with exact character offsets so
+    RLM tools can jump directly to a file's content or use grep() follow-up
+    peeks without guessing offsets.
 
     Enforces per-message file count and total byte limits.
     Raises HTTPException 400/404/413 on violations.
@@ -102,18 +129,35 @@ def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
         rec = records[0]
         result = f"[File: {rec.name}]\n\n{rec.text_content}"
     else:
-        # Number each section so grep('[File N:') navigates directly to it.
+        # Fixed-point calculation: offsets depend on index length, and the index
+        # itself contains those offsets. Iterate until the rendered index is stable.
+        section_headers = [f"[File {i + 1}: {rec.name}]\n\n" for i, rec in enumerate(records)]
         sections = [
-            f"[File {i + 1}: {rec.name}]\n\n{rec.text_content}" for i, rec in enumerate(records)
+            f"{section_headers[i]}{records[i].text_content}" for i in range(len(records))
         ]
-        index_lines = [
-            f"[DOCUMENT INDEX — {len(records)} files attached]",
-            "To navigate to a specific file, use: grep('[File N:') where N is the file number.",
-        ]
-        for i, rec in enumerate(records):
-            index_lines.append(f'  {i + 1}. "{rec.name}"')
-        index_lines.append("[END DOCUMENT INDEX]")
-        index_block = "\n".join(index_lines)
+        offsets: list[tuple[int, int, int]] = [(0, 0, 0) for _ in records]
+
+        for _ in range(8):
+            index_block = _render_multi_file_index(records, offsets)
+            cursor = len(index_block) + 2  # blank line between index and first section
+            new_offsets: list[tuple[int, int, int]] = []
+            for i in range(len(records)):
+                section_text = sections[i]
+                section_header = section_headers[i]
+                file_start = cursor
+                content_start = cursor + len(section_header)
+                file_end_exclusive = cursor + len(section_text)
+                new_offsets.append((file_start, content_start, file_end_exclusive))
+                cursor = file_end_exclusive
+                if i < len(records) - 1:
+                    cursor += len(separator)
+
+            if new_offsets == offsets:
+                break
+            offsets = new_offsets
+        else:
+            raise RuntimeError("Failed to stabilize multi-file document index offsets")
+
         result = index_block + "\n\n" + separator.join(sections)
     return result
 
@@ -273,9 +317,10 @@ async def _run_execution(
             cp = None
             provider_label = f"{state.config.active_provider}/{state.config.active_model}"
         logger.info(
-            "Executing query [mode=%s, provider=%s]: %.100s",
+            "Executing query [mode=%s, provider=%s, adapter=%s]: %.100s",
             mode,
             provider_label,
+            type(llm).__name__,
             query,
         )
 
@@ -687,9 +732,10 @@ async def websocket_chat(
                                 f"{state.config.active_provider}/{state.config.active_model}"
                             )
                         logger.info(
-                            "WS executing [mode=%s, provider=%s]: %.100s",
+                            "WS executing [mode=%s, provider=%s, adapter=%s]: %.100s",
                             m,
                             provider_label,
+                            type(llm).__name__,
                             q,
                         )
                         cfg = state.create_run_config(m)

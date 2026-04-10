@@ -283,11 +283,13 @@ When multiple files are uploaded, the system concatenates them into a single str
 
 \[DOCUMENT INDEX — 2 files attached\]
 
-To navigate to a specific file, use: grep('\[File N:') where N is the file number.
+Read this index first with peek(0, 1200).
 
-  1\. "Knowledge\_Graphs\_Applied\_v7\_MEAP.pdf"
+Each file entry includes exact character offsets:
 
-  2\. "AI-Powered\_Search.pdf"
+  1\. "Knowledge\_Graphs\_Applied\_v7\_MEAP.pdf" (file\_start=215, content\_start=264, file\_end\_exclusive=451228)
+
+  2\. "AI-Powered\_Search.pdf" (file\_start=451235, content\_start=451268, file\_end\_exclusive=823114)
 
 \[END DOCUMENT INDEX\]
 
@@ -309,9 +311,9 @@ The expected navigation pattern for multi-file queries is:
 
 * Step 1: peek(0, 500\) to read the document index and beginning of file 1
 
-* Step 2: grep('\[File 2:') to locate the character position of file 2
+* Step 2: use the file's content\_start offset from the index to jump directly with peek(start=\<content\_start\>, ...)
 
-* Step 3: peek(start=\<position\>, end=\<position+N\>) to read file 2 content
+* Step 3: use grep(..., context\_lines=...) when you need local context around a file marker or a topic match; grep output also includes char\_offset for precise follow-up peeks
 
 The system prompt v2.0 YAML includes this pattern as an explicit example workflow.
 
@@ -345,13 +347,13 @@ Templates are loaded once at module import time into SYSTEM\_PROMPT\_TEMPLATES (
 
 * The v2.0 protocol assumes the LLM can reliably output valid JSON. Smaller models (e.g., Qwen 2.5 7B) frequently produce malformed JSON, hallucinate tool outputs, or ignore multi-step navigation instructions.
 
-* The multi-document navigation pattern (grep then peek) requires the model to understand character position offsets from grep results. This is a non-trivial reasoning step that many models fail at.
+* The multi-document navigation contract must stay aligned with the tool API. Prompts should rely on the index's explicit content\_start offsets and grep()'s returned char\_offset values instead of asking the model to infer offsets.
 
 * The system prompt is \~8600 chars before profile supplements. Combined with conversation history, this consumes significant context window on each turn, leaving less room for actual document content.
 
 ## **9.2 Peek/Grep Position Mismatch**
 
-grep() returns line numbers, but peek() uses character positions. The model must mentally translate between line-based grep results and character-based peek calls. There is no tool that converts line numbers to character offsets, creating a gap in the navigation API.
+Historically, grep() returned only line numbers while peek() used character positions, forcing the model to infer offsets. The current design closes that gap by exposing explicit file offsets in the document index and char\_offset values in grep() output.
 
 ## **9.3 Single Content String (P)**
 
@@ -416,4 +418,3 @@ Complete index of files and line ranges referenced in this document, rooted at s
 | server/routes/chat.py | 37–57 | \_resolve\_profile\_prompt |
 | server/routes/chat.py | 99–118 | Multi-file content assembly |
 | domain/entities.py | 152–210 | BudgetConfig, BudgetState |
-

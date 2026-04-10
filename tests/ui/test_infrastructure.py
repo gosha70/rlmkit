@@ -8,6 +8,7 @@ from datetime import datetime
 
 import pytest
 
+from rlmkit.application.dto import RunConfigDTO, RunResultDTO
 from rlmkit.ui.services import (
     ChatManager,
     ChatMessage,
@@ -20,6 +21,7 @@ from rlmkit.ui.services import (
     Response,
     SessionMetrics,
 )
+from rlmkit.ui.services.profile_store import resolve_system_prompt
 
 
 class TestDataModels:
@@ -405,6 +407,84 @@ class TestLLMConfigManager:
 
 class TestChatManagerDirectExecution:
     """Test ChatManager._execute_direct() method."""
+
+    @pytest.mark.asyncio
+    async def test_execute_rlm_uses_run_use_case_with_session_settings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        fake_provider_config: LLMProviderConfig,
+    ) -> None:
+        """Local UI RLM should delegate to RunRLMUseCase with active profile settings."""
+        session_state = {
+            "max_steps": 32,
+            "rlm_timeout": 120,
+            "system_prompt_mode": "custom",
+            "system_prompt_custom": {"rlm": "Use the detailed explainer supplement."},
+            "default_temperature": 0.4,
+            "default_top_p": 1.0,
+            "default_max_tokens": 4096,
+        }
+        manager = ChatManager(session_state)
+        captured: dict[str, object] = {}
+
+        class FakeLegacyClient:
+            model = "gpt-4o-mini"
+
+            def complete(self, messages):  # pragma: no cover - should not be called
+                raise AssertionError("Legacy client should not be called directly in this test")
+
+            def complete_with_metadata(self, messages):  # pragma: no cover - should not be called
+                raise AssertionError("Legacy client should not be called directly in this test")
+
+        class FakeRunRLMUseCase:
+            def __init__(self, llm, sandbox):
+                captured["llm"] = llm
+                captured["sandbox"] = sandbox
+
+            def execute(self, content, query, config):
+                captured["content"] = content
+                captured["query"] = query
+                captured["config"] = config
+                return RunResultDTO(
+                    answer="Unified RLM answer",
+                    mode_used="rlm",
+                    success=True,
+                    steps=7,
+                    input_tokens=120,
+                    output_tokens=45,
+                    total_cost=0.0,
+                    elapsed_time=1.2,
+                    trace=[{"step": 1, "role": "assistant", "content": "step"}],
+                )
+
+        monkeypatch.setattr(
+            ChatManager,
+            "_resolve_provider",
+            lambda self, provider_name=None, api_key=None: (fake_provider_config, "sk-test"),
+        )
+        monkeypatch.setattr(
+            "rlmkit.ui.services.chat_manager.get_llm_client",
+            lambda **kwargs: FakeLegacyClient(),
+        )
+        monkeypatch.setattr(
+            "rlmkit.ui.services.chat_manager.create_sandbox",
+            lambda: object(),
+        )
+        monkeypatch.setattr(
+            "rlmkit.ui.services.chat_manager.RunRLMUseCase",
+            FakeRunRLMUseCase,
+        )
+
+        result = await manager._execute_rlm("Summarize both files", file_context="doc content")
+
+        config = captured["config"]
+        assert isinstance(config, RunConfigDTO)
+        assert result["response"].content == "Unified RLM answer"
+        assert result["metrics"].steps_taken == 7
+        assert result["trace"] == [{"step": 1, "role": "assistant", "content": "step"}]
+        assert config.max_steps == 32
+        assert config.max_time_seconds == 120.0
+        assert config.system_prompt_extra == resolve_system_prompt("rlm", manager.session_state)
 
     @pytest.mark.asyncio
     async def test_execute_direct_returns_dict(self) -> None:

@@ -25,7 +25,7 @@ from RestrictedPython.PrintCollector import PrintCollector
 
 from rlmkit.application.dto import ExecutionResultDTO
 from rlmkit.domain.exceptions import SecurityViolationError
-from rlmkit.tools import chunk, grep, peek, select
+from rlmkit.tools import chunk, grep, grep_file, outline_file, peek, peek_file, select
 
 # Modules considered safe for LLM-generated code (subset of rlmkit defaults)
 _DEFAULT_ALLOWED_MODULES = frozenset(
@@ -187,7 +187,8 @@ class RestrictedSandboxAdapter:
         """Inject a variable into the sandbox namespace.
 
         When ``name`` is ``"P"`` (the content variable), also rebinds the
-        content-navigation tools (``peek``, ``grep``, ``chunk``, ``select``)
+        content-navigation tools (``peek``, ``peek_file``, ``grep``,
+        ``grep_file``, ``outline_file``, ``chunk``, ``select``)
         as ``partial`` functions so that LLM-generated code can call them
         without passing content explicitly.
 
@@ -199,7 +200,10 @@ class RestrictedSandboxAdapter:
         if name == "P" and isinstance(value, str):
             content = value
             self._globals["peek"] = partial(peek, content)
+            self._globals["peek_file"] = partial(peek_file, content)
             self._globals["grep"] = partial(grep, content)
+            self._globals["grep_file"] = partial(grep_file, content)
+            self._globals["outline_file"] = partial(outline_file, content)
             self._globals["chunk"] = partial(chunk, content)
             self._globals["select"] = partial(select, content)
 
@@ -221,6 +225,9 @@ class RestrictedSandboxAdapter:
 
         # Content-navigation tools (unbound; rebound to P in set_variable)
         self._globals["peek"] = peek
+        self._globals["peek_file"] = peek_file
         self._globals["grep"] = grep
+        self._globals["grep_file"] = grep_file
+        self._globals["outline_file"] = outline_file
         self._globals["chunk"] = chunk
         self._globals["select"] = select

@@ -5,9 +5,17 @@
 ChatManager - Core message management and execution routing.
 """
 
+import asyncio
+import logging
 import time
 from typing import Any
 from uuid import uuid4
+
+from rlmkit.application.dto import RunConfigDTO
+from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.infrastructure.llm import AnthropicAdapter, OllamaAdapter, OpenAIAdapter
+from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+from rlmkit.llm import get_llm_client
 
 from .memory_monitor import MemoryMonitor
 from .models import (
@@ -22,6 +30,8 @@ from .models import (
     Response,
 )
 from .profile_store import resolve_system_prompt
+
+logger = logging.getLogger(__name__)
 
 
 class ChatManager:
@@ -95,6 +105,119 @@ class ChatManager:
             )
 
         return provider_config, effective_api_key
+
+    def _build_rlm_adapter(
+        self,
+        provider_config: LLMProviderConfig,
+        effective_api_key: str,
+    ) -> Any:
+        """Create an LLMPort-compatible adapter for local UI RLM runs.
+
+        For local providers (Ollama, vLLM, LM Studio), attempts to discover
+        the model's context window and clamps max_tokens so that at least
+        25 % of the context window remains for input — matching the server
+        path's behaviour in ``create_llm_adapter_for_chat_provider``.
+        """
+        provider_key = provider_config.provider.lower().replace(" ", "")
+        max_tokens = self.session_state.get("default_max_tokens", provider_config.max_tokens)
+
+        # Context-window cap for local providers (same logic as server path)
+        context_window = self._discover_context_window(provider_config)
+        if context_window and context_window > 0:
+            max_safe_output = int(context_window * 0.75)
+            if max_tokens > max_safe_output:
+                logger.info(
+                    "Local UI: clamping max_tokens %d → %d for %s/%s "
+                    "(context_window=%d)",
+                    max_tokens,
+                    max_safe_output,
+                    provider_config.provider,
+                    provider_config.model,
+                    context_window,
+                )
+                max_tokens = max_safe_output
+
+        legacy_client = get_llm_client(
+            provider=provider_config.provider,
+            model=provider_config.model,
+            api_key=effective_api_key,
+            base_url=provider_config.api_endpoint,
+            temperature=self.session_state.get("default_temperature", provider_config.temperature),
+            max_tokens=max_tokens,
+            top_p=self.session_state.get("default_top_p", provider_config.top_p),
+        )
+
+        if provider_key == "anthropic":
+            return AnthropicAdapter(legacy_client)
+        if provider_key == "openai":
+            return OpenAIAdapter(legacy_client)
+        # Treat local/OpenAI-compatible backends as zero-cost adapters in the UI.
+        return OllamaAdapter(legacy_client)
+
+    @staticmethod
+    def _discover_context_window(provider_config: LLMProviderConfig) -> int | None:
+        """Best-effort discovery of a model's context window for local UI providers.
+
+        Queries the provider's ``/v1/models`` endpoint (vLLM, Ollama, LM Studio)
+        and falls back to litellm model info for well-known models.
+        Returns None when discovery fails.
+        """
+        endpoint = provider_config.api_endpoint
+        model = provider_config.model
+        backend = provider_config.provider.lower().replace(" ", "")
+
+        # 1. Query /v1/models for local providers
+        if endpoint and backend in ("vllm", "ollama", "lmstudio", "openai"):
+            import json
+            import re
+            import urllib.request
+
+            # Normalize base URL — strip trailing /v1 or /v1/ to avoid doubling
+            base = re.sub(r"/v1/?$", "", endpoint.rstrip("/"))
+            url = f"{base}/v1/models"
+
+            # Build candidate model IDs for matching.  LiteLLM prefixes like
+            # "openai/" are not part of the id vLLM/Ollama actually report.
+            model_candidates = {model}
+            if "/" in model:
+                model_candidates.add(model.split("/", 1)[1])
+                model_candidates.add(model.rsplit("/", 1)[-1])
+
+            try:
+                req = urllib.request.Request(url, headers={"Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    data = json.loads(resp.read())
+                    for m in data.get("data", []):
+                        mid = m.get("id", "")
+                        if mid in model_candidates or mid in {
+                            c.split("/", 1)[1] for c in model_candidates if "/" in c
+                        }:
+                            ctx = (
+                                m.get("max_model_len")
+                                or m.get("context_length")
+                                or m.get("context_window")
+                            )
+                            if ctx and isinstance(ctx, int) and ctx > 0:
+                                return ctx
+            except Exception:
+                pass
+
+        # 2. litellm model info for well-known models
+        try:
+            import litellm
+
+            for name in [model, f"{backend}/{model}"]:
+                try:
+                    info = litellm.get_model_info(model=name)
+                    ctx = info.get("max_input_tokens") or info.get("max_tokens")
+                    if ctx and isinstance(ctx, int) and ctx > 0:
+                        return ctx
+                except Exception:
+                    continue
+        except ImportError:
+            pass
+
+        return None
 
     async def process_message(
         self,
@@ -221,72 +344,54 @@ class ChatManager:
             3
 
         Implementation notes:
-        - Uses actual RLM controller from src/rlmkit/core/rlm.py
-        - Integrates with configured LLM provider
+        - Uses RunRLMUseCase so the local UI path matches the server-backed path
+        - Threads active UI profile settings into the RLM run config
         - Collects real token counts and timing metrics
         """
-        from rlmkit.config import ExecutionConfig, RLMConfig
-        from rlmkit.core.rlm import RLM
-        from rlmkit.llm import get_llm_client
 
         try:
             provider_config, effective_api_key = self._resolve_provider(selected_provider, api_key)
+            llm = self._build_rlm_adapter(provider_config, effective_api_key)
+            sandbox = create_sandbox()
+            uc = RunRLMUseCase(llm, sandbox)
 
-            # Create LLM client
-            llm_client = get_llm_client(
-                provider=provider_config.provider,
-                model=provider_config.model,
-                api_key=effective_api_key,
+            logger.info(
+                "ChatManager RLM dispatch: adapter=%s provider=%s/%s endpoint=%s",
+                type(llm).__name__,
+                provider_config.provider,
+                provider_config.model,
+                provider_config.api_endpoint or "(default)",
             )
-
-            # Create RLM instance with configuration
-            rlm_config = RLMConfig(
-                execution=ExecutionConfig(
-                    default_timeout=5.0,
-                    max_steps=16,
-                    default_safe_mode=True,
-                    max_output_chars=10000,
-                )
-            )
-            rlm = RLM(client=llm_client, config=rlm_config)
 
             # Prepare content (use file_context if provided)
             content = file_context or "No content provided"
-
-            # For RLM mode, use the built-in comprehensive system prompt that includes
-            # tool documentation (grep, peek, select, chunk). The UI templates are
-            # designed for Direct/RAG modes and don't include RLM tool documentation.
-            # Passing None lets RLM use its full system prompt with {prompt_length} formatting.
-            #
-            # Note: If custom RLM prompts are needed in the future, they should be
-            # combined with format_system_prompt() to include tool documentation.
+            run_config = RunConfigDTO(
+                mode="rlm",
+                max_steps=int(self.session_state.get("max_steps", 16)),
+                max_time_seconds=float(self.session_state.get("rlm_timeout", 60)),
+                system_prompt_extra=resolve_system_prompt("rlm", self.session_state),
+            )
 
             # Run RLM
             mem = MemoryMonitor()
             mem.reset()
             start_time = time.time()
-            rlm_result = rlm.run(prompt=content, query=user_query, system_prompt=None)
+            rlm_result = await asyncio.to_thread(uc.execute, content, user_query, run_config)
             elapsed_time = time.time() - start_time
             mem.capture()
-
-            # Extract actual token counts from RLMResult (populated by API metadata)
-            total_input_tokens = rlm_result.total_input_tokens
-            total_output_tokens = rlm_result.total_output_tokens
-
-            # Fallback to per-step trace counts if RLMResult totals are zero
-            if total_input_tokens == 0 and total_output_tokens == 0:
-                for step in rlm_result.trace:
-                    total_input_tokens += step.get("input_tokens", 0)
-                    total_output_tokens += step.get("output_tokens", 0)
-
-            # Calculate cost using provider pricing
-            input_cost = (total_input_tokens / 1000) * provider_config.input_cost_per_1k_tokens
-            output_cost = (total_output_tokens / 1000) * provider_config.output_cost_per_1k_tokens
-            total_cost = input_cost + output_cost
+            pricing = llm.get_pricing()
+            input_cost = (
+                rlm_result.input_tokens * float(pricing.get("input_cost_per_1m", 0.0))
+            ) / 1_000_000
+            output_cost = (
+                rlm_result.output_tokens * float(pricing.get("output_cost_per_1m", 0.0))
+            ) / 1_000_000
 
             # Create response
             response = Response(
-                content=rlm_result.answer, stop_reason="stop", raw_response=rlm_result
+                content=rlm_result.answer,
+                stop_reason="stop" if rlm_result.success else "error",
+                raw_response=rlm_result,
             )
 
             # Create metrics
@@ -294,10 +399,10 @@ class ChatManager:
             # which may show 0 if Python's GC has already freed temporary objects
             peak_memory = mem.peak_mb()
             metrics = ExecutionMetrics(
-                input_tokens=int(total_input_tokens),
-                output_tokens=int(total_output_tokens),
-                total_tokens=int(total_input_tokens + total_output_tokens),
-                cost_usd=total_cost,
+                input_tokens=rlm_result.input_tokens,
+                output_tokens=rlm_result.output_tokens,
+                total_tokens=rlm_result.total_tokens,
+                cost_usd=rlm_result.total_cost,
                 cost_breakdown={
                     "input": input_cost,
                     "output": output_cost,
@@ -307,6 +412,7 @@ class ChatManager:
                 memory_used_mb=peak_memory,
                 memory_peak_mb=peak_memory,
                 success=rlm_result.success,
+                error=rlm_result.error,
                 execution_type="rlm",
             )
 

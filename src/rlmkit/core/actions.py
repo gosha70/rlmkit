@@ -24,6 +24,9 @@ class ToolType(str, Enum):
 
     GREP = "grep"
     PEEK = "peek"
+    GREP_FILE = "grep_file"
+    PEEK_FILE = "peek_file"
+    OUTLINE_FILE = "outline_file"
     SELECT = "select"
     CHUNK = "chunk"
 
@@ -32,15 +35,17 @@ class ToolType(str, Enum):
 class InspectAction:
     """Action to inspect content using tools."""
 
-    tool: str  # grep, peek, select, chunk
+    tool: str  # grep, peek, grep_file, peek_file, outline_file, select, chunk
     args: dict[str, Any]
     note: str | None = None
 
     def validate(self) -> None:
         """Validate the inspect action."""
-        if self.tool not in ["grep", "peek", "select", "chunk"]:
+        if self.tool not in ["grep", "peek", "grep_file", "peek_file", "outline_file", "select", "chunk"]:
             raise ValueError(
-                f"Invalid tool: {self.tool}. Must be one of: grep, peek, select, chunk"
+                "Invalid tool: "
+                f"{self.tool}. Must be one of: grep, peek, grep_file, peek_file, "
+                "outline_file, select, chunk"
             )
 
         if not isinstance(self.args, dict):

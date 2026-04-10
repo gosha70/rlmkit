@@ -58,8 +58,25 @@ repeat_detected: |
 # Soft convergence nudge sent at nudge_at_fraction of max_steps.
 soft_nudge: |
   Progress check: you have used {steps_used}/{max_steps} steps.
-  If you have gathered enough information, start composing your final answer.
-  If critical sections remain unexamined, continue inspecting — but be targeted.
+  You should now start composing your final answer from what you've gathered.
+  Only continue inspecting if a CRITICAL gap remains — do not explore for completeness.
+
+# Stronger convergence nudge sent around 75% of the step budget.
+hard_nudge: |
+  Convergence check: you have used {steps_used}/{max_steps} steps.
+  You MUST produce your final answer within the next 2 steps.
+  Begin synthesizing now. Only inspect again if one critical missing fact blocks the answer.
+
+# Sent when a cross-document summary/comparison answer is attempted before all
+# attached files have been inspected.
+coverage_incomplete: |
+  Coverage check: this is a cross-document summary/comparison and you have not inspected every attached file yet.
+  Missing files: {missing_files}
+  Output ONLY a JSON inspect action next. Do not output prose.
+  Use this exact shape and substitute one missing file number:
+  {{"type":"inspect","tool":"outline_file","args":{{"file_no":N,"max_lines":25}}}}
+  After you inspect a missing file, continue until every missing file has been inspected.
+  Do not finalize or summarize unseen files.
 
 # Comma-separated list of message fields checked for content when the primary
 # "content" field is empty (common with reasoning/thinking models).

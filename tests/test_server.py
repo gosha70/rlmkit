@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import Generator
 from datetime import datetime, timezone
 
@@ -17,6 +18,8 @@ from rlmkit.server.dependencies import (
     get_state,
     reset_state,
 )
+from rlmkit.server.routes.chat import _resolve_file_content
+from rlmkit.server.routes.files import _clean_pdf_text
 
 
 @pytest.fixture(autouse=True)
@@ -170,6 +173,91 @@ class TestSessions:
         # Blank name strips to "" which is falsy, so the original name is kept
         assert data["name"] == "Original Name"
         assert state.sessions["s1"].name == "Original Name"
+
+
+class TestResolveFileContent:
+    def test_multi_file_index_includes_exact_offsets(self) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.files["f1"] = FileRecord(
+            id="f1",
+            name="first.txt",
+            size_bytes=10,
+            content_type="text/plain",
+            text_content="Alpha body",
+            token_count=2,
+            created_at=now,
+        )
+        state.files["f2"] = FileRecord(
+            id="f2",
+            name="second.txt",
+            size_bytes=9,
+            content_type="text/plain",
+            text_content="Beta body",
+            token_count=2,
+            created_at=now,
+        )
+
+        content = _resolve_file_content(["f1", "f2"], state)
+
+        assert "[DOCUMENT INDEX — 2 files attached]" in content
+        assert "content_start=" in content
+        assert "file_end_exclusive=" in content
+
+        match = re.search(
+            r'2\. "second\.txt" \(file_start=(\d+), content_start=(\d+), file_end_exclusive=(\d+)\)',
+            content,
+        )
+        assert match is not None
+        file_start, content_start, file_end_exclusive = map(int, match.groups())
+
+        assert content[file_start:].startswith("[File 2: second.txt]")
+        assert content[content_start : content_start + len("Beta body")] == "Beta body"
+        assert content[file_end_exclusive - len("Beta body") : file_end_exclusive] == "Beta body"
+
+    def test_multi_file_index_mentions_file_scoped_tools(self) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.files["f1"] = FileRecord(
+            id="f1",
+            name="first.txt",
+            size_bytes=10,
+            content_type="text/plain",
+            text_content="Alpha body",
+            token_count=2,
+            created_at=now,
+        )
+        state.files["f2"] = FileRecord(
+            id="f2",
+            name="second.txt",
+            size_bytes=9,
+            content_type="text/plain",
+            text_content="Beta body",
+            token_count=2,
+            created_at=now,
+        )
+
+        content = _resolve_file_content(["f1", "f2"], state)
+
+        assert "outline_file(file_no=...)" in content
+        assert "peek_file(file_no=..., start=..., end=...)" in content
+        assert "grep_file(file_no=..., pattern=...)" in content
+
+
+class TestPdfCleanup:
+    def test_clean_pdf_text_removes_repeated_license_furniture(self) -> None:
+        cleaned = _clean_pdf_text(
+            [
+                "Licensed to George Ivan <i.am.goga@gmail.com>\nAI-Powered Search\n1\nIntroduction to search",
+                "Licensed to George Ivan <i.am.goga@gmail.com>\nAI-Powered Search\n2\nSemantic search and ranking",
+                "Licensed to George Ivan <i.am.goga@gmail.com>\nAI-Powered Search\n3\nKnowledge graphs for search",
+            ]
+        )
+
+        assert "Licensed to George Ivan" not in cleaned
+        assert "\n1\n" not in cleaned
+        assert "Introduction to search" in cleaned
+        assert "Knowledge graphs for search" in cleaned
 
 
 # ---------------------------------------------------------------------------

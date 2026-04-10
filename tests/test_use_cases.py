@@ -82,6 +82,18 @@ class FakeSandbox:
 
     def set_variable(self, name: str, value: Any) -> None:
         self._namespace[name] = value
+        if name == "P" and isinstance(value, str):
+            from functools import partial
+
+            from rlmkit.tools import chunk, grep, grep_file, outline_file, peek, peek_file, select
+
+            self._namespace["peek"] = partial(peek, value)
+            self._namespace["peek_file"] = partial(peek_file, value)
+            self._namespace["grep"] = partial(grep, value)
+            self._namespace["grep_file"] = partial(grep_file, value)
+            self._namespace["outline_file"] = partial(outline_file, value)
+            self._namespace["chunk"] = partial(chunk, value)
+            self._namespace["select"] = partial(select, value)
 
     def get_variable(self, name: str) -> Any | None:
         return self._namespace.get(name)
@@ -158,6 +170,52 @@ class FakeStorage:
         matching = [(c, txt, emb) for c, txt, emb in self._chunks if c == collection]
         results = [(0.9, f"id-{i}", txt) for i, (_, txt, _) in enumerate(matching[:top_k])]
         return results
+
+
+def _build_multi_file_content_for_rlm(records: list[tuple[str, str]]) -> str:
+    """Create a multi-file payload matching the chat route's document-index format."""
+    separator = "\n\n---\n\n"
+    section_headers = [f"[File {i + 1}: {name}]\n\n" for i, (name, _body) in enumerate(records)]
+    sections = [f"{section_headers[i]}{records[i][1]}" for i in range(len(records))]
+    offsets = [(0, 0, 0) for _ in records]
+
+    for _ in range(8):
+        index_lines = [
+            f"[DOCUMENT INDEX — {len(records)} files attached]",
+            "Read this index first with peek(0, 1200).",
+            "Each file entry includes exact character offsets within P:",
+            "- Prefer outline_file(file_no=...) to get a document roadmap before reading large sections.",
+            "- Use peek_file(file_no=..., start=..., end=...) for file-relative reading without offset math.",
+            "- Use grep_file(file_no=..., pattern=...) for file-relative search; returned char_offset values work with peek_file().",
+            "- content_start is still available for direct peek(start=content_start, end=...) jumps when needed.",
+            "- If you cannot inspect every relevant file within budget, say which files you covered.",
+        ]
+        for i, ((name, _body), (file_start, content_start, file_end_exclusive)) in enumerate(
+            zip(records, offsets, strict=True), start=1
+        ):
+            index_lines.append(
+                f'  {i}. "{name}" (file_start={file_start}, content_start={content_start}, '
+                f"file_end_exclusive={file_end_exclusive})"
+            )
+        index_lines.append("[END DOCUMENT INDEX]")
+        index_block = "\n".join(index_lines)
+
+        cursor = len(index_block) + 2
+        new_offsets: list[tuple[int, int, int]] = []
+        for i, section_text in enumerate(sections):
+            file_start = cursor
+            content_start = cursor + len(section_headers[i])
+            file_end_exclusive = cursor + len(section_text)
+            new_offsets.append((file_start, content_start, file_end_exclusive))
+            cursor = file_end_exclusive
+            if i < len(sections) - 1:
+                cursor += len(separator)
+
+        if new_offsets == offsets:
+            break
+        offsets = new_offsets
+
+    return index_block + "\n\n" + separator.join(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +360,179 @@ class TestRunRLMUseCase:
         assert result.success is True
         assert result.answer  # non-empty fallback message
 
+    def test_synthesis_fallback_receives_multiple_inspect_snapshots(self):
+        """Synthesis fallback should summarize all recent inspect steps, not only the last one."""
+        document = "Alpha title\nbrief contents\n1 Alpha intro\n\nBeta title\nbrief contents\n2 Common themes\n"
+        llm = CapturingLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 30}}',
+                '{"type": "inspect", "tool": "peek", "args": {"start": 31, "end": 80}}',
+                "Both files cover introductions and thematic structure.",
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=2)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(document, "Compare the files", config=config)
+
+        assert result.success is True
+        assert "thematic structure" in result.answer
+        synthesis_messages = llm.call_messages[-1]
+        synthesis_user_content = synthesis_messages[-1]["content"]
+        assert "[Inspect step 1]" in synthesis_user_content
+        assert "[Inspect step 2]" in synthesis_user_content
+
+    def test_cross_document_final_rejected_until_all_files_are_inspected(self):
+        """A premature FINAL on multi-doc comparison should be rejected until every file is covered."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                '{"type": "final", "answer": "Both documents discuss alpha-style concepts."}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 2, "max_lines": 10}}',
+                '{"type": "final", "answer": "Document 1 covers alpha concepts. Document 2 covers beta concepts."}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=8)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+
+        assert result.success is True
+        assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
+        assert any(
+            entry["role"] == "system"
+            and "Coverage gate blocked early finalization" in entry["content"]
+            for entry in result.trace
+        )
+
+    def test_cross_document_plain_text_answer_reprompted_until_all_files_are_inspected(self):
+        """Plain-text answers must not terminate multi-doc comparison before all files are inspected."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                "Both documents discuss alpha-style concepts.",
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 2, "max_lines": 10}}',
+                '{"type": "final", "answer": "Document 1 covers alpha concepts. Document 2 covers beta concepts."}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=8)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+
+        assert result.success is True
+        assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
+        assert any(
+            entry["role"] == "system"
+            and "Coverage gate blocked early finalization" in entry["content"]
+            for entry in result.trace
+        )
+
+    def test_cross_document_plain_text_answer_triggers_auto_outline_for_missing_file(self):
+        """Coverage guard should auto-inspect a missing file instead of relying on a small model reprompt."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                "Both documents discuss alpha-style concepts.",
+                '{"type": "final", "answer": "Document 1 covers alpha concepts. Document 2 covers beta concepts."}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=8)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+
+        assert result.success is True
+        assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
+        assert any(
+            entry["role"] == "execution"
+            and "outline_file(file_no=2" in entry.get("code", "")
+            and entry.get("note") == "auto coverage inspect for file 2"
+            for entry in result.trace
+        )
+
+    def test_cross_document_blank_response_still_triggers_auto_outline_for_missing_file(self):
+        """Coverage guard should auto-inspect even when the model emits an empty/thinking response."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                "   ",
+                '{"type": "final", "answer": "Document 1 covers alpha concepts. Document 2 covers beta concepts."}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=8, stall_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+
+        assert result.success is True
+        assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
+        assert any(
+            entry["role"] == "execution"
+            and "outline_file(file_no=2" in entry.get("code", "")
+            and entry.get("note") == "auto coverage inspect for file 2"
+            for entry in result.trace
+        )
+
+    def test_cross_document_stall_triggers_early_synthesis_after_coverage_complete(self):
+        """If a model stalls in prose after coverage is complete (via auto-inspect),
+        the early post-coverage synthesis should rescue the answer."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        partial = "Both documents discuss alpha-style concepts."
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                partial,
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=20, stall_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute(content, "Summarize the uploaded documents and find commonalities", config=config)
+
+        assert result.success is True
+        # Early synthesis should produce an answer (via the synthesis fallback call)
+        # rather than returning a stall warning, because coverage is complete.
+        synth_entries = [
+            e for e in result.trace
+            if e.get("note") == "early post-coverage synthesis"
+        ]
+        assert len(synth_entries) == 1, "Expected exactly one early synthesis trace entry"
+
     def test_stall_detection_circuit_breaker_returns_plain_text(self):
         # LLM produces plain-text answers without FINAL: prefix (common with small models).
         # Circuit breaker should accept the text as the answer instead of discarding it.
@@ -374,8 +605,12 @@ class TestRunRLMUseCase:
         sandbox = FakeSandbox()
         uc = RunRLMUseCase(llm, sandbox)
         result = uc.execute("content", "question")
-        assert len(result.trace) >= 1
-        assert result.trace[0]["role"] == "assistant"
+        assert len(result.trace) >= 2
+        # First entry is the runtime fingerprint (seq=0, role=system)
+        assert result.trace[0]["role"] == "system"
+        assert "fingerprint" in result.trace[0]
+        # Second entry is the first assistant response
+        assert result.trace[1]["role"] == "assistant"
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +890,100 @@ class TestRunRLMAsync:
         assert result.answer == filler
         assert result.steps < 10
 
+    def test_async_cross_document_stall_triggers_early_synthesis_after_coverage_complete(self):
+        """execute_async should trigger early synthesis when model stalls after coverage is complete."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        partial = "Both documents discuss alpha-style concepts."
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                partial,
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=20, stall_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async(content, "Summarize the uploaded documents and find commonalities", config=config)
+        )
+
+        assert result.success is True
+        synth_entries = [
+            e for e in result.trace
+            if e.get("note") == "early post-coverage synthesis"
+        ]
+        assert len(synth_entries) == 1, "Expected exactly one early synthesis trace entry"
+
+    def test_async_cross_document_plain_text_answer_triggers_auto_outline_for_missing_file(self):
+        """execute_async should auto-inspect a missing file after a premature plain-text answer."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                "Both documents discuss alpha-style concepts.",
+                '{"type": "final", "answer": "Document 1 covers alpha concepts. Document 2 covers beta concepts."}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=8)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async(content, "Summarize the uploaded documents and find commonalities", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
+        assert any(
+            entry["role"] == "execution"
+            and "outline_file(file_no=2" in entry.get("code", "")
+            and entry.get("note") == "auto coverage inspect for file 2"
+            for entry in result.trace
+        )
+
+    def test_async_cross_document_blank_response_still_triggers_auto_outline_for_missing_file(self):
+        """execute_async should auto-inspect even when the model emits an empty/thinking response."""
+        content = _build_multi_file_content_for_rlm(
+            [
+                ("alpha.txt", "Alpha title\nbrief contents\n1 Alpha concepts\n"),
+                ("beta.txt", "Beta title\nbrief contents\n1 Beta concepts\n"),
+            ]
+        )
+        llm = FakeLLM(
+            [
+                '{"type": "inspect", "tool": "peek", "args": {"start": 0, "end": 1200}}',
+                '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 10}}',
+                "   ",
+                '{"type": "final", "answer": "Document 1 covers alpha concepts. Document 2 covers beta concepts."}',
+            ]
+        )
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=8, stall_limit=3)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = asyncio.get_event_loop().run_until_complete(
+            uc.execute_async(content, "Summarize the uploaded documents and find commonalities", config=config)
+        )
+
+        assert result.success is True
+        assert result.answer == "Document 1 covers alpha concepts. Document 2 covers beta concepts."
+        assert any(
+            entry["role"] == "execution"
+            and "outline_file(file_no=2" in entry.get("code", "")
+            and entry.get("note") == "auto coverage inspect for file 2"
+            for entry in result.trace
+        )
+
     def test_async_synthesis_fallback_on_inspect_exhaustion(self):
         """execute_async returns synthesized answer when inspect-only run exhausts max_steps."""
         # Step 1: JSON inspect action; step 2 (synthesis): plain answer
@@ -717,8 +1046,8 @@ class TestRLMDeepExploration:
         assert result.success is True
         assert result.steps == 4
         assert "100" in result.answer
-        # 4 assistant entries + 3 execution entries = 7 trace entries
-        assert len(result.trace) == 7
+        # 1 fingerprint + 4 assistant entries + 3 execution entries = 8 trace entries
+        assert len(result.trace) == 8
 
     def test_five_step_with_varying_outputs(self):
         """Five distinct code steps produce unique trace entries."""
@@ -739,8 +1068,8 @@ class TestRLMDeepExploration:
 
         assert result.success is True
         assert result.steps == 6
-        # 6 assistant entries + 5 execution entries = 11
-        assert len(result.trace) == 11
+        # 1 fingerprint + 6 assistant entries + 5 execution entries = 12
+        assert len(result.trace) == 12
         # Verify each assistant trace entry has a code field
         assistant_steps = [t for t in result.trace if t["role"] == "assistant"]
         for step in assistant_steps[:5]:
@@ -850,7 +1179,11 @@ class TestLastExecutionFailedWarning:
 
         assert result.success is True
         assert result.answer == "I reasoned it out directly."
-        system_entries = [t for t in result.trace if t.get("role") == "system"]
+        # Filter out runtime fingerprint to isolate the warning entry
+        system_entries = [
+            t for t in result.trace
+            if t.get("role") == "system" and "fingerprint" not in t
+        ]
         assert len(system_entries) == 1
         assert "Warning" in system_entries[0]["content"]
         assert "execution failure" in system_entries[0]["content"].lower()
@@ -868,7 +1201,10 @@ class TestLastExecutionFailedWarning:
         result = uc.execute("content", "query")
 
         assert result.success is True
-        system_entries = [t for t in result.trace if t.get("role") == "system"]
+        system_entries = [
+            t for t in result.trace
+            if t.get("role") == "system" and "fingerprint" not in t
+        ]
         assert len(system_entries) == 0
 
     def test_warning_clears_after_successful_execution(self):
@@ -885,7 +1221,10 @@ class TestLastExecutionFailedWarning:
         result = uc.execute("content", "query")
 
         assert result.success is True
-        system_entries = [t for t in result.trace if t.get("role") == "system"]
+        system_entries = [
+            t for t in result.trace
+            if t.get("role") == "system" and "fingerprint" not in t
+        ]
         assert len(system_entries) == 0
 
 
@@ -931,6 +1270,26 @@ class TestJsonProtocolParsing:
         assert parsed.code is not None
         assert "peek(" in parsed.code
         assert "500" in parsed.code
+
+    def test_json_inspect_peek_file_generates_code(self):
+        """JSON inspect/peek_file action is converted to peek_file() call."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = '{"type": "inspect", "tool": "peek_file", "args": {"file_no": 2, "start": 0, "end": 500}}'
+        parsed = uc._parse_rlm_response(text)
+
+        assert parsed.code is not None
+        assert "peek_file(" in parsed.code
+        assert "file_no=2" in parsed.code
+
+    def test_json_inspect_outline_file_generates_code(self):
+        """JSON inspect/outline_file action is converted to outline_file() call."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = '{"type": "inspect", "tool": "outline_file", "args": {"file_no": 1, "max_lines": 20}}'
+        parsed = uc._parse_rlm_response(text)
+
+        assert parsed.code is not None
+        assert "outline_file(" in parsed.code
+        assert "max_lines=20" in parsed.code
 
     def test_json_inspect_via_execute_loop(self):
         """Full execute loop with JSON inspect then JSON final."""
@@ -1067,6 +1426,19 @@ class TestSystemPromptV2:
         """Content length is formatted into the prompt."""
         prompt = RunRLMUseCase._build_system_prompt(12345)
         assert "12,345" in prompt
+
+    def test_system_prompt_uses_offset_aware_multi_document_guidance(self):
+        """The v2.0 prompt should teach safe multi-document navigation."""
+        prompt = RunRLMUseCase._build_system_prompt(10000)
+        assert "content_start" in prompt
+        assert "char_offset" in prompt
+        assert "outline_file" in prompt
+        assert "peek_file" in prompt
+        assert "Surface metadata alone" in prompt
+        assert "do NOT output a final answer until you have called outline_file() or peek_file() on EVERY file" in prompt
+        assert "you MUST call outline_file() or peek_file() for EVERY file in the index" in prompt
+        assert "peek() from that position" not in prompt
+        assert "visit EVERY listed file" not in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -1781,6 +2153,22 @@ class TestSoftNudge:
         final_messages = llm.call_messages[-1]
         nudge_count = sum(1 for m in final_messages if "Progress check" in m.get("content", ""))
         assert nudge_count == 1
+
+    def test_hard_nudge_fires_near_budget_end(self):
+        """A stronger convergence nudge appears before the final forced step."""
+        code_step = "```python\nprint('step')\n```"
+        llm = CapturingLLM([code_step] * 9 + ["FINAL: answer"])
+        sandbox = FakeSandbox()
+        config = RunConfigDTO(mode="rlm", max_steps=10, nudge_at_fraction=0.4)
+        uc = RunRLMUseCase(llm, sandbox)
+        result = uc.execute("content", "question", config=config)
+
+        assert result.success is True
+        final_messages = llm.call_messages[-1]
+        hard_nudges = [
+            m for m in final_messages if "You MUST produce your final answer within the next 2 steps." in m.get("content", "")
+        ]
+        assert len(hard_nudges) == 1
 
     def test_soft_nudge_does_not_fire_on_short_runs(self):
         """A 2-step run with max_steps=16 never triggers the nudge."""

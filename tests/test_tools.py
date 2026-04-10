@@ -1,5 +1,7 @@
 """Tests for content navigation tools."""
 
+import re
+
 from rlmkit.envs import PyReplEnv
 
 # Sample content for testing
@@ -15,6 +17,60 @@ Line 9: Final line of the document
 Line 10: End of file"""
 
 LONG_TEXT = "x" * 50000  # 50K chars for truncation tests
+
+
+def _build_multi_file_text() -> str:
+    """Create a realistic multi-file payload with a document index."""
+    records = [
+        ("kg_book.txt", "Knowledge Graphs Applied\nbrief contents\n1 Knowledge graphs and LLMs\n2 Intelligent systems\n"),
+        ("search_book.txt", "AI-Powered Search\nbrief contents\n1 Introducing AI-powered search\n2 Semantic search with knowledge graphs\n"),
+    ]
+    separator = "\n\n---\n\n"
+    section_headers = [f"[File {i + 1}: {name}]\n\n" for i, (name, _body) in enumerate(records)]
+    sections = [f"{section_headers[i]}{records[i][1]}" for i in range(len(records))]
+    offsets = [(0, 0, 0) for _ in records]
+
+    for _ in range(8):
+        index_lines = [
+            f"[DOCUMENT INDEX — {len(records)} files attached]",
+            "Read this index first with peek(0, 1200).",
+            "Each file entry includes exact character offsets within P:",
+        ]
+        for i, ((name, _body), (file_start, content_start, file_end_exclusive)) in enumerate(
+            zip(records, offsets, strict=True), start=1
+        ):
+            index_lines.append(
+                f'  {i}. "{name}" (file_start={file_start}, content_start={content_start}, '
+                f"file_end_exclusive={file_end_exclusive})"
+            )
+        index_lines.append("[END DOCUMENT INDEX]")
+        index_block = "\n".join(index_lines)
+
+        cursor = len(index_block) + 2
+        new_offsets: list[tuple[int, int, int]] = []
+        for i, section_text in enumerate(sections):
+            file_start = cursor
+            content_start = cursor + len(section_headers[i])
+            file_end_exclusive = cursor + len(section_text)
+            new_offsets.append((file_start, content_start, file_end_exclusive))
+            cursor = file_end_exclusive
+            if i < len(sections) - 1:
+                cursor += len(separator)
+
+        if new_offsets == offsets:
+            break
+        offsets = new_offsets
+
+    return index_block + "\n\n" + separator.join(sections)
+
+
+MULTI_FILE_TEXT = _build_multi_file_text()
+
+
+def _file_2_content_start() -> int:
+    match = re.search(r'2\. "search_book\.txt" \(file_start=\d+, content_start=(\d+), ', MULTI_FILE_TEXT)
+    assert match is not None
+    return int(match.group(1))
 
 
 class TestPeekTool:
@@ -79,6 +135,12 @@ class TestGrepTool:
         assert "Found 2 match(es)" in result["stdout"]
         assert "Line 5" in result["stdout"]
         assert "Line 8" in result["stdout"]
+        assert f"char_offset {SAMPLE_TEXT.index('Line 5: ERROR: Something went wrong')}" in result[
+            "stdout"
+        ]
+        assert f"char_offset {SAMPLE_TEXT.index('Line 8: ERROR: Another error occurred')}" in result[
+            "stdout"
+        ]
 
     def test_grep_no_matches(self):
         """Test grep when pattern not found."""
@@ -186,6 +248,55 @@ print(f'second: {chunks[1]}')
         assert "ValueError" in result["exception"]
 
 
+class TestFileScopedTools:
+    """Test file-relative helpers for multi-document payloads."""
+
+    def test_peek_file_reads_relative_to_selected_file(self):
+        env = PyReplEnv()
+        env.set_content(MULTI_FILE_TEXT)
+
+        result = env.execute("print(peek_file(2, 0, 40))")
+        assert result["exception"] is None
+        assert "AI-Powered Search" in result["stdout"]
+
+    def test_peek_file_normalizes_content_start_copied_from_index(self):
+        env = PyReplEnv()
+        env.set_content(MULTI_FILE_TEXT)
+        content_start = _file_2_content_start()
+
+        result = env.execute(f"print(peek_file(2, {content_start}, {content_start + 40}))")
+        assert result["exception"] is None
+        assert "AI-Powered Search" in result["stdout"]
+
+    def test_peek_file_normalizes_global_span_when_start_is_content_start(self):
+        env = PyReplEnv()
+        env.set_content(MULTI_FILE_TEXT)
+        content_start = _file_2_content_start()
+
+        result = env.execute(f"print(peek_file(2, {content_start}, {content_start + 47}))")
+        assert result["exception"] is None
+        assert "AI-Powered Search" in result["stdout"]
+
+    def test_grep_file_returns_file_relative_offsets(self):
+        env = PyReplEnv()
+        env.set_content(MULTI_FILE_TEXT)
+
+        result = env.execute("print(grep_file(2, 'Semantic search'))")
+        assert result["exception"] is None
+        assert "relative to this file" in result["stdout"]
+        assert "char_offset" in result["stdout"]
+
+    def test_outline_file_extracts_document_structure(self):
+        env = PyReplEnv()
+        env.set_content(MULTI_FILE_TEXT)
+
+        result = env.execute("print(outline_file(1, max_lines=5))")
+        assert result["exception"] is None
+        assert "Knowledge Graphs Applied" in result["stdout"]
+        assert "brief contents" in result["stdout"].lower()
+        assert "Knowledge graphs and LLMs" in result["stdout"]
+
+
 class TestSelectTool:
     """Test select() range extraction tool."""
 
@@ -244,14 +355,19 @@ class TestToolsIntegration:
         """Test that all tools are available in environment."""
         env = PyReplEnv()
 
-        result = env.execute("""
+        result = env.execute(
+            """
 print(callable(peek))
+print(callable(peek_file))
 print(callable(grep))
+print(callable(grep_file))
+print(callable(outline_file))
 print(callable(chunk))
 print(callable(select))
-""")
+"""
+        )
         assert result["exception"] is None
-        assert result["stdout"].count("True") == 4
+        assert result["stdout"].count("True") == 7
 
     def test_tools_with_p_variable(self):
         """Test tools work with P variable."""

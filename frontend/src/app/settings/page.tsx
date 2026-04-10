@@ -89,12 +89,14 @@ export default function SettingsPage() {
     model: string;
     api_key: string;
     endpoint: string;
+    context_window: string;  // stored as string for input; parsed to int on save
   }>({
     name: "",
     backend: "openai",
     model: "",
     api_key: "",
     endpoint: "",
+    context_window: "",
   });
   const [savingLLMProvider, setSavingLLMProvider] = useState(false);
   const [deletingLLMProviderId, setDeletingLLMProviderId] = useState<string | null>(null);
@@ -286,7 +288,7 @@ export default function SettingsPage() {
   };
 
   const resetLLMProviderForm = () => {
-    setLLMProviderForm({ name: "", backend: "openai", model: "", api_key: "", endpoint: "" });
+    setLLMProviderForm({ name: "", backend: "openai", model: "", api_key: "", endpoint: "", context_window: "" });
     setEditingLLMProviderId(null);
   };
 
@@ -298,6 +300,7 @@ export default function SettingsPage() {
       model: lp.model,
       api_key: "",
       endpoint: lp.endpoint || "",
+      context_window: lp.context_window ? String(lp.context_window) : "",
     });
     setShowLLMProviderForm(true);
   };
@@ -306,12 +309,16 @@ export default function SettingsPage() {
     if (!llmProviderForm.name.trim() || !llmProviderForm.model.trim()) return;
     setSavingLLMProvider(true);
     try {
+      const parsedCtxWindow = llmProviderForm.context_window.trim()
+        ? parseInt(llmProviderForm.context_window.trim(), 10)
+        : null;
       const req: LLMProviderCreateRequest = {
         name: llmProviderForm.name.trim(),
         backend: llmProviderForm.backend,
         model: llmProviderForm.model.trim(),
         api_key: llmProviderForm.api_key.trim() || null,
         endpoint: llmProviderForm.endpoint.trim() || null,
+        context_window: parsedCtxWindow && parsedCtxWindow > 0 ? parsedCtxWindow : null,
       };
       if (editingLLMProviderId) {
         await updateLLMProvider(editingLLMProviderId, req);
@@ -487,6 +494,16 @@ export default function SettingsPage() {
                       />
                     </div>
                   )}
+                  <div className="space-y-2">
+                    <FieldLabel htmlFor="llmp-context-window" tooltip="Total context window in tokens (input + output). Auto-discovered from the model endpoint when left blank. Set manually to override, e.g. 8192 for Qwen 7B. Profile max_tokens will be capped to 75% of this value.">Context Window (tokens)</FieldLabel>
+                    <Input
+                      id="llmp-context-window"
+                      type="number"
+                      placeholder="Auto-discover (e.g. 8192)"
+                      value={llmProviderForm.context_window}
+                      onChange={(e) => setLLMProviderForm({ ...llmProviderForm, context_window: e.target.value })}
+                    />
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       onClick={handleSaveLLMProvider}
@@ -527,6 +544,7 @@ export default function SettingsPage() {
                         <p className="text-sm text-muted-foreground">
                           {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
                           {lp.endpoint && <> &middot; {lp.endpoint}</>}
+                          {lp.context_window && <> &middot; {lp.context_window.toLocaleString()} tokens</>}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

@@ -268,6 +268,74 @@ class TestOpenAIClientMocked:
         client = OpenAIClient(model="gpt-3.5-turbo", api_key="test")
         assert client.model == "gpt-3.5-turbo"
 
+    @staticmethod
+    def _mock_openai_response(content: str = "Recovered answer") -> Mock:
+        """Build a minimal mocked chat completion response."""
+        choice = Mock()
+        choice.message.content = content
+        choice.finish_reason = "stop"
+
+        usage = Mock()
+        usage.prompt_tokens = 4000
+        usage.completion_tokens = 128
+
+        response = Mock()
+        response.choices = [choice]
+        response.usage = usage
+        response.model = "qwen"
+        response.id = "resp-1"
+        response.created = 123
+        response.system_fingerprint = None
+        return response
+
+    def test_complete_with_metadata_retries_context_overflow_with_smaller_max_tokens(
+        self, mock_openai
+    ):
+        """Context-limit errors should trigger one retry with a reduced output budget."""
+        from rlmkit.llm.openai_client import OpenAIClient
+
+        client = OpenAIClient(
+            model="qwen",
+            api_key="test",
+            max_tokens=4096,
+            context_token_reserve=64,
+        )
+        overflow = (
+            "This model's maximum context length is 8192 tokens. However, you requested "
+            "4096 output tokens and your prompt contains at least 4097 input tokens, "
+            "for a total of at least 8193 tokens."
+        )
+        create = client._client.chat.completions.create
+        create.side_effect = [RuntimeError(overflow), self._mock_openai_response()]
+
+        result = client.complete_with_metadata([{"role": "user", "content": "Hi"}])
+
+        assert result.content == "Recovered answer"
+        assert client._discovered_context_limit_tokens == 8192
+        assert len(create.call_args_list) == 2
+        assert create.call_args_list[0].kwargs["max_tokens"] == 4096
+        assert 0 < create.call_args_list[1].kwargs["max_tokens"] < 4096
+
+    def test_complete_proactively_clamps_max_tokens_after_context_limit_learned(self, mock_openai):
+        """Once a context limit is known, later calls should clamp output tokens proactively."""
+        from rlmkit.llm.openai_client import OpenAIClient
+
+        client = OpenAIClient(
+            model="qwen",
+            api_key="test",
+            max_tokens=4096,
+            context_token_reserve=64,
+        )
+        client._discovered_context_limit_tokens = 8192
+        client._client.chat.completions.create.return_value = self._mock_openai_response("ok")
+
+        with patch.object(client, "estimate_tokens", return_value=5000):
+            result = client.complete([{"role": "user", "content": "big prompt"}])
+
+        assert result == "ok"
+        sent_max_tokens = client._client.chat.completions.create.call_args.kwargs["max_tokens"]
+        assert sent_max_tokens == 3122
+
 
 class TestClaudeClientMocked:
     """Test Claude client with mocked API calls."""

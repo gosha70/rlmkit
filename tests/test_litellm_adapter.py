@@ -541,3 +541,124 @@ class TestContextLengthChars:
         result = adapter.context_length_chars
         # Both prefixed and base name are unknown → None
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: context_window dynamic clamping
+# ---------------------------------------------------------------------------
+
+
+class TestContextWindowClamping:
+    """Verify that _build_params dynamically clamps max_tokens when
+    context_window is set."""
+
+    def test_no_clamping_without_context_window(self):
+        """Without context_window, max_tokens is passed through unchanged."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096)
+        params = adapter._build_params([{"role": "user", "content": "hello"}])
+        assert params["max_tokens"] == 4096
+
+    def test_no_clamping_when_prompt_is_small(self):
+        """When prompt fits comfortably, max_tokens stays at configured value."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=1024, context_window=8192)
+        # Small prompt: ~10 chars → ~3 tokens; 8192 - 3 - 10 >> 1024
+        params = adapter._build_params([{"role": "user", "content": "hello"}])
+        assert params["max_tokens"] == 1024
+
+    @patch("litellm.token_counter", return_value=6000)
+    def test_clamps_when_prompt_approaches_limit(self, _mock_tc):
+        """max_tokens should shrink when prompt consumes most of the context."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=8192)
+        # context_window=8192, prompt=6000, reserve=max(8192*0.05, 64)=409
+        # remaining = 8192 - 6000 - 409 = 1783
+        params = adapter._build_params([{"role": "user", "content": "big prompt"}])
+        expected_reserve = max(int(8192 * 0.05), 64)  # 409
+        assert params["max_tokens"] == 8192 - 6000 - expected_reserve
+        assert params["max_tokens"] < 4096
+
+    @patch("litellm.token_counter", return_value=4000)
+    def test_raises_proactive_overflow_when_prompt_exceeds_context(self, _mock_tc):
+        """When prompt leaves less than 128 tokens even without reserve, raise proactively."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=2048)
+        # prompt=4000 > context_window=2048 → hard_headroom < 0 → ValueError
+        with pytest.raises(ValueError, match="Context window exhausted"):
+            adapter._build_params([{"role": "user", "content": "huge prompt"}])
+        # Clamp info should still be populated for diagnostics
+        info = adapter.last_clamp_info
+        assert info["proactive_overflow"] is True
+        assert info["effective_max_tokens"] == 0
+
+    @patch("litellm.token_counter", return_value=7900)
+    def test_skips_reserve_when_tight_but_feasible(self, _mock_tc):
+        """When remaining < 128 but hard headroom >= 128, skip reserve and use hard headroom."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=8192)
+        # prompt=7900, reserve=409, remaining=8192-7900-409=-117 < 128
+        # but hard_headroom=8192-7900=292 >= 128 → use 292
+        params = adapter._build_params([{"role": "user", "content": "tight prompt"}])
+        assert params["max_tokens"] == 8192 - 7900  # 292
+        info = adapter.last_clamp_info
+        assert info["clamped"] is True
+
+    @patch("litellm.token_counter", return_value=6000)
+    def test_clamping_preserves_other_params(self, _mock_tc):
+        """Clamping max_tokens should not affect other parameters."""
+        adapter = LiteLLMAdapter(
+            model="test",
+            max_tokens=4096,
+            context_window=8192,
+            temperature=0.5,
+            api_key="sk-test",
+            api_base="http://localhost:8000",
+        )
+        params = adapter._build_params([{"role": "user", "content": "big prompt"}])
+        assert params["temperature"] == 0.5
+        assert params["api_key"] == "sk-test"
+        assert params["api_base"] == "http://localhost:8000"
+        assert params["model"] == "test"
+
+    def test_context_window_none_behaves_like_absent(self):
+        """context_window=None should not trigger any clamping."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=None)
+        big_prompt = "x" * 24000
+        params = adapter._build_params([{"role": "user", "content": big_prompt}])
+        assert params["max_tokens"] == 4096
+
+    @patch("litellm.token_counter")
+    def test_multi_message_conversation_growth(self, mock_tc):
+        """Simulates growing conversation: max_tokens should decrease as messages accumulate."""
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=8192)
+
+        # Small conversation: 100 tokens
+        small_msgs = [
+            {"role": "system", "content": "You are a helper."},
+            {"role": "user", "content": "Hello"},
+        ]
+        mock_tc.return_value = 100
+        params_small = adapter._build_params(small_msgs)
+
+        # Big conversation: 7000 tokens
+        big_msgs = list(small_msgs)
+        for i in range(10):
+            big_msgs.append({"role": "assistant", "content": f"Response {i}: " + "x" * 2000})
+            big_msgs.append({"role": "user", "content": f"Follow-up {i}: " + "y" * 500})
+        mock_tc.return_value = 7000
+        params_big = adapter._build_params(big_msgs)
+
+        reserve = max(int(8192 * 0.05), 64)  # 409
+        # Big conversation should have smaller max_tokens
+        assert params_small["max_tokens"] == 4096  # 8192 - 100 - 409 = 7683 > 4096 → no clamp
+        assert params_big["max_tokens"] == 8192 - 7000 - reserve  # 783
+
+    @patch("litellm.token_counter", return_value=4204)
+    def test_reserve_prevents_one_token_context_overflow(self, _mock_tc):
+        """Keep headroom so a tokenizer mismatch cannot overflow by a single token.
+
+        With 5% reserve (409 tokens for 8192 context), the clamp fires well
+        before the boundary, unlike the old 32-token reserve that was off by 1.
+        """
+        adapter = LiteLLMAdapter(model="test", max_tokens=4096, context_window=8192)
+        params = adapter._build_params([{"role": "user", "content": "prompt"}])
+        reserve = max(int(8192 * 0.05), 64)  # 409
+        expected = 8192 - 4204 - reserve  # 3579
+        assert params["max_tokens"] == expected
+        assert params["max_tokens"] < 4096

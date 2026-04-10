@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from rlmkit.application.dto import (
@@ -28,6 +30,17 @@ if TYPE_CHECKING:
     from rlmkit.core.parsing import ParsedResponse
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _AttachedFileSection:
+    """Attached-file metadata parsed from the multi-file document index."""
+
+    file_no: int
+    name: str
+    file_start: int
+    content_start: int
+    file_end_exclusive: int
 
 
 class RunRLMUseCase:
@@ -94,6 +107,9 @@ class RunRLMUseCase:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ]
+        attached_files = self._extract_attached_files(content)
+        enforce_multi_file_coverage = self._should_enforce_multi_file_coverage(query, attached_files)
+        inspected_files: set[int] = set()
 
         trace: list[dict[str, Any]] = []
         trace_seq = 0  # sequential index across all trace entries (assistant + execution)
@@ -105,14 +121,23 @@ class RunRLMUseCase:
         stall_limit = config.stall_limit
         last_plain_answer: str = ""  # circuit-breaker: best non-FINAL text seen so far
         last_assistant_text: str = ""  # fallback: last raw LLM response (including code steps)
-        last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
+        inspect_snapshots: list[str] = []  # rolling inspect summary for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
         overflow_at_step: int | None = None  # set when context window is exceeded mid-loop
         recent_exec_hashes: list[int] = []  # last N inspect result hashes for repeat detection
         repeat_count = 0  # consecutive duplicate inspect results
         repeat_limit = config.repeat_limit
         nudge_sent = False  # soft convergence nudge (sent once)
+        hard_nudge_sent = False  # stronger convergence nudge near the end
+        post_coverage_stall = 0  # no-progress turns after all files inspected
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
+
+        self._emit_runtime_fingerprint(
+            trace=trace,
+            attached_files=attached_files,
+            enforce_multi_file_coverage=enforce_multi_file_coverage,
+            execution_path="sync",
+        )
 
         # Use root model for the initial reasoning call
         if hasattr(self._llm, "use_root_model"):
@@ -134,10 +159,10 @@ class RunRLMUseCase:
                 # Soft convergence nudge at budget fraction.
                 # Floor at step 2: with low max_steps (e.g. 3), int(3*0.6)=1
                 # would fire on step 1 before the model has done anything useful.
-                nudge_step = (
-                    max(2, int(budget_config.max_steps * config.nudge_at_fraction))
-                    if budget_config.max_steps is not None
-                    else None
+                nudge_step = self._compute_nudge_step(
+                    budget_config.max_steps,
+                    config.nudge_at_fraction,
+                    minimum_step=2,
                 )
                 if not nudge_sent and nudge_step is not None and budget_state.steps >= nudge_step:
                     messages.append(
@@ -150,6 +175,28 @@ class RunRLMUseCase:
                         }
                     )
                     nudge_sent = True
+
+                hard_nudge_step = self._compute_nudge_step(
+                    budget_config.max_steps,
+                    0.75,
+                    minimum_step=4,
+                )
+                if (
+                    not hard_nudge_sent
+                    and hard_nudge_step is not None
+                    and budget_state.steps >= hard_nudge_step
+                    and budget_state.steps < (budget_config.max_steps or 0)
+                ):
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": get_rlm_message("hard_nudge").format(
+                                steps_used=budget_state.steps,
+                                max_steps=budget_config.max_steps,
+                            ),
+                        }
+                    )
+                    hard_nudge_sent = True
 
                 # On the last allowed step, nudge the model to produce a final
                 # answer instead of another inspect call.
@@ -208,22 +255,44 @@ class RunRLMUseCase:
                     last_assistant_text = text.strip()
 
                 trace_seq += 1
-                trace.append(
-                    {
-                        "step": budget_state.steps,
-                        "seq": trace_seq,
-                        "role": "assistant",
-                        "content": response.content,
-                        "input_tokens": response.input_tokens,
-                        "output_tokens": response.output_tokens,
-                        "code": parsed.code,
-                        "model": getattr(self._llm, "active_model", None) or response.model,
-                        "elapsed_seconds": time.time() - step_start,
-                    }
-                )
+                clamp_info = getattr(self._llm, "last_clamp_info", None) or {}
+                trace_entry: dict[str, Any] = {
+                    "step": budget_state.steps,
+                    "seq": trace_seq,
+                    "role": "assistant",
+                    "content": response.content,
+                    "input_tokens": response.input_tokens,
+                    "output_tokens": response.output_tokens,
+                    "code": parsed.code,
+                    "model": getattr(self._llm, "active_model", None) or response.model,
+                    "elapsed_seconds": time.time() - step_start,
+                }
+                if clamp_info:
+                    trace_entry["clamp"] = clamp_info
+                trace.append(trace_entry)
 
                 # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
                 if parsed.is_complete:
+                    missing_files = self._get_missing_files(
+                        attached_files, inspected_files, enforce_multi_file_coverage
+                    )
+                    if missing_files:
+                        trace_seq, inspect_snapshots, auto_file_no = (
+                            self._auto_inspect_missing_file(
+                                content=content,
+                                config=config,
+                                messages=messages,
+                                trace=trace,
+                                trace_seq=trace_seq,
+                                budget_state=budget_state,
+                                inspect_snapshots=inspect_snapshots,
+                                missing_files=missing_files,
+                                assistant_text=text,
+                            )
+                        )
+                        inspected_files.add(auto_file_no)
+                        consecutive_no_progress = 0
+                        continue
                     if last_execution_failed:
                         trace_seq += 1
                         trace.append(
@@ -256,6 +325,10 @@ class RunRLMUseCase:
                 # Check for code to execute
                 if parsed.has_code and parsed.code:
                     consecutive_no_progress = 0
+                    if parsed.is_inspect:
+                        inspected_files.update(
+                            self._infer_inspected_files_from_code(parsed.code, attached_files)
+                        )
                     # Snapshot current spend so the subcall closure can guard against
                     # multiple subcalls within one block jointly exceeding the budget.
                     parent_budget_snapshot["cost"] = cumulative_cost
@@ -277,7 +350,12 @@ class RunRLMUseCase:
                     # Only track output from inspect actions (they all generate print() calls).
                     # Arbitrary Python code executions are not useful for synthesis fallback.
                     if parsed.is_inspect:
-                        last_inspect_output = formatted
+                        inspect_snapshots = self._append_inspect_snapshot(
+                            inspect_snapshots,
+                            step=budget_state.steps,
+                            code=parsed.code,
+                            execution_output=formatted,
+                        )
 
                     trace_seq += 1
                     trace.append(
@@ -348,13 +426,118 @@ class RunRLMUseCase:
                 else:
                     # No code and no FINAL -- track the best plain-text response seen
                     stripped = text.strip()
-                    if stripped:
+                    missing_files = self._get_missing_files(
+                        attached_files, inspected_files, enforce_multi_file_coverage
+                    )
+                    if missing_files:
+                        trace_seq, inspect_snapshots, auto_file_no = self._auto_inspect_missing_file(
+                            content=content,
+                            config=config,
+                            messages=messages,
+                            trace=trace,
+                            trace_seq=trace_seq,
+                            budget_state=budget_state,
+                            inspect_snapshots=inspect_snapshots,
+                            missing_files=missing_files,
+                            assistant_text=text,
+                        )
+                        inspected_files.add(auto_file_no)
+                        consecutive_no_progress = 0
+                        continue
+                    if stripped and not missing_files:
                         last_plain_answer = stripped
                     consecutive_no_progress += 1
+
+                    # Early post-coverage synthesis: when all required files
+                    # have been inspected but the model keeps producing prose
+                    # without a valid final, synthesize from inspect_snapshots
+                    # after 2 stalled turns instead of waiting for full stall
+                    # exhaustion.  This rescues weak models that cannot produce
+                    # a JSON final but have already gathered enough evidence.
+                    if not missing_files and enforce_multi_file_coverage:
+                        post_coverage_stall += 1
+                    else:
+                        post_coverage_stall = 0
+
+                    if (
+                        post_coverage_stall >= 2
+                        and inspect_snapshots
+                        and enforce_multi_file_coverage
+                    ):
+                        logger.info(
+                            "Early post-coverage synthesis at step %d "
+                            "(model stalled %d turns after coverage complete)",
+                            budget_state.steps,
+                            post_coverage_stall,
+                        )
+                        trace_seq += 1
+                        trace.append(
+                            {
+                                "step": budget_state.steps,
+                                "seq": trace_seq,
+                                "role": "system",
+                                "content": (
+                                    "Early synthesis: coverage complete but model "
+                                    "did not finalize after 2 no-progress turns."
+                                ),
+                            }
+                        )
+                        if hasattr(self._llm, "use_root_model"):
+                            self._llm.use_root_model()
+                        synth_step_start = time.time()
+                        synth_response = self._llm.complete(
+                            self._build_synthesis_messages(query, inspect_snapshots)
+                        )
+                        budget_state.steps += 1
+                        cumulative_input += synth_response.input_tokens
+                        cumulative_output += synth_response.output_tokens
+                        cumulative_cost += (
+                            synth_response.input_tokens * input_cost_per_1m
+                            + synth_response.output_tokens * output_cost_per_1m
+                        ) / 1_000_000
+                        trace_seq += 1
+                        trace.append(
+                            {
+                                "step": budget_state.steps,
+                                "seq": trace_seq,
+                                "role": "assistant",
+                                "content": synth_response.content,
+                                "input_tokens": synth_response.input_tokens,
+                                "output_tokens": synth_response.output_tokens,
+                                "model": (
+                                    getattr(self._llm, "active_model", None)
+                                    or synth_response.model
+                                ),
+                                "elapsed_seconds": time.time() - synth_step_start,
+                                "note": "early post-coverage synthesis",
+                            }
+                        )
+                        answer = synth_response.content.strip() or (
+                            "The content was inspected but contained no extractable themes."
+                        )
+                        if not self._looks_like_action(answer):
+                            elapsed = time.time() - start
+                            return RunResultDTO(
+                                answer=answer,
+                                mode_used="rlm",
+                                success=True,
+                                steps=budget_state.steps,
+                                input_tokens=cumulative_input,
+                                output_tokens=cumulative_output,
+                                total_cost=cumulative_cost,
+                                elapsed_time=elapsed,
+                                trace=trace,
+                            )
+
                     if consecutive_no_progress >= stall_limit:
                         # Circuit breaker: if the model wrote a real answer but skipped
                         # the FINAL: format, accept it rather than discarding it.
-                        if last_plain_answer and not self._looks_like_action(last_plain_answer):
+                        if (
+                            last_plain_answer
+                            and not self._looks_like_action(last_plain_answer)
+                            and not missing_files
+                            and not enforce_multi_file_coverage
+                        ):
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
                             elapsed = time.time() - start
@@ -386,6 +569,8 @@ class RunRLMUseCase:
             # Prefer an explicit plain-text answer; fall back to last raw LLM
             # response (covers models that always generate code but never FINAL:).
             best_fallback = last_plain_answer or last_assistant_text
+            if self._get_missing_files(attached_files, inspected_files, enforce_multi_file_coverage):
+                best_fallback = ""
             # Don't return raw JSON action blobs as the final answer —
             # fall through to synthesis or limit-warning instead.
             if best_fallback and self._looks_like_action(best_fallback):
@@ -411,7 +596,7 @@ class RunRLMUseCase:
             # Synthesis fallback: model exhausted steps without a final answer but
             # we have inspection output. Make one extra call (outside the step budget)
             # asking the model to summarize what it found.
-            if last_inspect_output:
+            if inspect_snapshots:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
                 # Honour non-step budgets before making the synthesis call.
@@ -420,7 +605,7 @@ class RunRLMUseCase:
                     raise BudgetExceededError("Budget exceeded before synthesis call")
                 synth_step_start = time.time()
                 synth_response = self._llm.complete(
-                    self._build_synthesis_messages(query, last_inspect_output)
+                    self._build_synthesis_messages(query, inspect_snapshots)
                 )
                 budget_state.steps += 1
                 cumulative_input += synth_response.input_tokens
@@ -503,6 +688,55 @@ class RunRLMUseCase:
                 self._llm.use_root_model()
             elapsed = time.time() - start
             partial = last_plain_answer or last_assistant_text
+            if enforce_multi_file_coverage or self._get_missing_files(
+                attached_files, inspected_files, enforce_multi_file_coverage
+            ):
+                partial = ""
+            if enforce_multi_file_coverage and inspect_snapshots:
+                budget_state.elapsed_seconds = time.time() - start
+                if budget_state.is_within(budget_config):
+                    synth_step_start = time.time()
+                    synth_response = self._llm.complete(
+                        self._build_synthesis_messages(query, inspect_snapshots)
+                    )
+                    budget_state.steps += 1
+                    cumulative_input += synth_response.input_tokens
+                    cumulative_output += synth_response.output_tokens
+                    cumulative_cost += (
+                        synth_response.input_tokens * input_cost_per_1m
+                        + synth_response.output_tokens * output_cost_per_1m
+                    ) / 1_000_000
+                    trace_seq += 1
+                    trace.append(
+                        {
+                            "step": budget_state.steps,
+                            "seq": trace_seq,
+                            "role": "assistant",
+                            "content": synth_response.content,
+                            "input_tokens": synth_response.input_tokens,
+                            "output_tokens": synth_response.output_tokens,
+                            "model": getattr(self._llm, "active_model", None)
+                            or synth_response.model,
+                            "elapsed_seconds": time.time() - synth_step_start,
+                            "note": "synthesis fallback",
+                        }
+                    )
+                    answer = synth_response.content.strip() or (
+                        "The content was inspected but contained no extractable themes."
+                    )
+                    prior_plain = (last_plain_answer or last_assistant_text).strip()
+                    if not self._looks_like_action(answer) and answer != prior_plain:
+                        return RunResultDTO(
+                            answer=answer,
+                            mode_used="rlm",
+                            success=True,
+                            steps=budget_state.steps,
+                            input_tokens=cumulative_input,
+                            output_tokens=cumulative_output,
+                            total_cost=cumulative_cost,
+                            elapsed_time=time.time() - start,
+                            trace=trace,
+                        )
             warning = self._format_limit_warning(
                 overflow_step=overflow_at_step,
                 steps_used=budget_state.steps,
@@ -528,6 +762,10 @@ class RunRLMUseCase:
             # Context window exceeded is a configuration issue — warn, don't error.
             if self._is_context_overflow(exc):
                 partial = last_plain_answer or last_assistant_text
+                if self._get_missing_files(
+                    attached_files, inspected_files, enforce_multi_file_coverage
+                ):
+                    partial = ""
                 warning = self._format_limit_warning(
                     overflow_step=budget_state.steps,
                     steps_used=budget_state.steps,
@@ -603,6 +841,9 @@ class RunRLMUseCase:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": query},
         ]
+        attached_files = self._extract_attached_files(content)
+        enforce_multi_file_coverage = self._should_enforce_multi_file_coverage(query, attached_files)
+        inspected_files: set[int] = set()
 
         trace: list[dict[str, Any]] = []
         trace_seq = 0  # sequential index across all trace entries (assistant + execution)
@@ -614,14 +855,23 @@ class RunRLMUseCase:
         stall_limit = config.stall_limit
         last_plain_answer: str = ""  # circuit-breaker: best non-FINAL text seen so far
         last_assistant_text: str = ""  # fallback: last raw LLM response (including code steps)
-        last_inspect_output: str = ""  # last inspect-action result, used for synthesis fallback
+        inspect_snapshots: list[str] = []  # rolling inspect summary for synthesis fallback
         last_execution_failed = False  # track if previous code execution had errors
         overflow_at_step: int | None = None  # set when context window is exceeded mid-loop
         recent_exec_hashes: list[int] = []  # last N inspect result hashes for repeat detection
         repeat_count = 0  # consecutive duplicate inspect results
         repeat_limit = config.repeat_limit
         nudge_sent = False  # soft convergence nudge (sent once)
+        hard_nudge_sent = False  # stronger convergence nudge near the end
+        post_coverage_stall = 0  # no-progress turns after all files inspected
         input_cost_per_1m, output_cost_per_1m = self._get_pricing(self._llm)
+
+        self._emit_runtime_fingerprint(
+            trace=trace,
+            attached_files=attached_files,
+            enforce_multi_file_coverage=enforce_multi_file_coverage,
+            execution_path="async",
+        )
 
         if hasattr(self._llm, "use_root_model"):
             self._llm.use_root_model()
@@ -639,10 +889,10 @@ class RunRLMUseCase:
                     self._llm.use_recursive_model()
 
                 # Soft convergence nudge at budget fraction.
-                nudge_step = (
-                    max(2, int(budget_config.max_steps * config.nudge_at_fraction))
-                    if budget_config.max_steps is not None
-                    else None
+                nudge_step = self._compute_nudge_step(
+                    budget_config.max_steps,
+                    config.nudge_at_fraction,
+                    minimum_step=2,
                 )
                 if not nudge_sent and nudge_step is not None and budget_state.steps >= nudge_step:
                     messages.append(
@@ -655,6 +905,28 @@ class RunRLMUseCase:
                         }
                     )
                     nudge_sent = True
+
+                hard_nudge_step = self._compute_nudge_step(
+                    budget_config.max_steps,
+                    0.75,
+                    minimum_step=4,
+                )
+                if (
+                    not hard_nudge_sent
+                    and hard_nudge_step is not None
+                    and budget_state.steps >= hard_nudge_step
+                    and budget_state.steps < (budget_config.max_steps or 0)
+                ):
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": get_rlm_message("hard_nudge").format(
+                                steps_used=budget_state.steps,
+                                max_steps=budget_config.max_steps,
+                            ),
+                        }
+                    )
+                    hard_nudge_sent = True
 
                 # On the last allowed step, nudge the model to produce a final answer.
                 is_last_step = (
@@ -729,6 +1001,7 @@ class RunRLMUseCase:
                     last_assistant_text = text.strip()
 
                 trace_seq += 1
+                clamp_info = getattr(self._llm, "last_clamp_info", None) or {}
                 step_entry: dict[str, Any] = {
                     "step": budget_state.steps,
                     "seq": trace_seq,
@@ -740,6 +1013,8 @@ class RunRLMUseCase:
                     "model": getattr(self._llm, "active_model", None) or response.model,
                     "elapsed_seconds": time.time() - step_start,
                 }
+                if clamp_info:
+                    step_entry["clamp"] = clamp_info
                 trace.append(step_entry)
 
                 # Emit step event
@@ -757,6 +1032,30 @@ class RunRLMUseCase:
 
                 # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
                 if parsed.is_complete:
+                    missing_files = self._get_missing_files(
+                        attached_files, inspected_files, enforce_multi_file_coverage
+                    )
+                    if missing_files:
+                        prev_trace_len = len(trace)
+                        trace_seq, inspect_snapshots, auto_file_no = (
+                            self._auto_inspect_missing_file(
+                                content=content,
+                                config=config,
+                                messages=messages,
+                                trace=trace,
+                                trace_seq=trace_seq,
+                                budget_state=budget_state,
+                                inspect_snapshots=inspect_snapshots,
+                                missing_files=missing_files,
+                                assistant_text=text,
+                            )
+                        )
+                        inspected_files.add(auto_file_no)
+                        consecutive_no_progress = 0
+                        if event_emitter:
+                            for entry in trace[prev_trace_len:]:
+                                await event_emitter.on_step(entry)
+                        continue
                     if last_execution_failed:
                         trace_seq += 1
                         trace.append(
@@ -788,6 +1087,10 @@ class RunRLMUseCase:
                 # Check for code to execute
                 if parsed.has_code and parsed.code:
                     consecutive_no_progress = 0
+                    if parsed.is_inspect:
+                        inspected_files.update(
+                            self._infer_inspected_files_from_code(parsed.code, attached_files)
+                        )
                     parent_budget_snapshot["cost"] = cumulative_cost
                     parent_budget_snapshot["tokens"] = float(cumulative_input + cumulative_output)
                     parent_budget_snapshot["steps"] = float(budget_state.steps)
@@ -805,7 +1108,12 @@ class RunRLMUseCase:
                     budget_state.cost = cumulative_cost
                     formatted = self._format_execution(exec_result)
                     if parsed.is_inspect:
-                        last_inspect_output = formatted
+                        inspect_snapshots = self._append_inspect_snapshot(
+                            inspect_snapshots,
+                            step=budget_state.steps,
+                            code=parsed.code,
+                            execution_output=formatted,
+                        )
 
                     trace_seq += 1
                     trace.append(
@@ -872,11 +1180,123 @@ class RunRLMUseCase:
                         messages.append({"role": "user", "content": repeat_nudge})
                 else:
                     stripped = text.strip()
-                    if stripped:
+                    missing_files = self._get_missing_files(
+                        attached_files, inspected_files, enforce_multi_file_coverage
+                    )
+                    if missing_files:
+                        prev_trace_len = len(trace)
+                        trace_seq, inspect_snapshots, auto_file_no = self._auto_inspect_missing_file(
+                            content=content,
+                            config=config,
+                            messages=messages,
+                            trace=trace,
+                            trace_seq=trace_seq,
+                            budget_state=budget_state,
+                            inspect_snapshots=inspect_snapshots,
+                            missing_files=missing_files,
+                            assistant_text=text,
+                        )
+                        inspected_files.add(auto_file_no)
+                        consecutive_no_progress = 0
+                        if event_emitter:
+                            for entry in trace[prev_trace_len:]:
+                                await event_emitter.on_step(entry)
+                        continue
+                    if stripped and not missing_files:
                         last_plain_answer = stripped
                     consecutive_no_progress += 1
+
+                    # Early post-coverage synthesis (async path).
+                    if not missing_files and enforce_multi_file_coverage:
+                        post_coverage_stall += 1
+                    else:
+                        post_coverage_stall = 0
+
+                    if (
+                        post_coverage_stall >= 2
+                        and inspect_snapshots
+                        and enforce_multi_file_coverage
+                    ):
+                        logger.info(
+                            "Early post-coverage synthesis at step %d "
+                            "(model stalled %d turns after coverage complete)",
+                            budget_state.steps,
+                            post_coverage_stall,
+                        )
+                        trace_seq += 1
+                        synth_note_entry = {
+                            "step": budget_state.steps,
+                            "seq": trace_seq,
+                            "role": "system",
+                            "content": (
+                                "Early synthesis: coverage complete but model "
+                                "did not finalize after 2 no-progress turns."
+                            ),
+                        }
+                        trace.append(synth_note_entry)
+                        if event_emitter:
+                            await event_emitter.on_step(synth_note_entry)
+                        if hasattr(self._llm, "use_root_model"):
+                            self._llm.use_root_model()
+                        synth_step_start = time.time()
+                        if hasattr(self._llm, "complete_async"):
+                            synth_response = await self._llm.complete_async(
+                                self._build_synthesis_messages(query, inspect_snapshots)
+                            )
+                        else:
+                            synth_response = await asyncio.to_thread(
+                                self._llm.complete,
+                                self._build_synthesis_messages(query, inspect_snapshots),
+                            )
+                        budget_state.steps += 1
+                        cumulative_input += synth_response.input_tokens
+                        cumulative_output += synth_response.output_tokens
+                        cumulative_cost += (
+                            synth_response.input_tokens * input_cost_per_1m
+                            + synth_response.output_tokens * output_cost_per_1m
+                        ) / 1_000_000
+                        trace_seq += 1
+                        synth_entry = {
+                            "step": budget_state.steps,
+                            "seq": trace_seq,
+                            "role": "assistant",
+                            "content": synth_response.content,
+                            "input_tokens": synth_response.input_tokens,
+                            "output_tokens": synth_response.output_tokens,
+                            "model": (
+                                getattr(self._llm, "active_model", None)
+                                or synth_response.model
+                            ),
+                            "elapsed_seconds": time.time() - synth_step_start,
+                            "note": "early post-coverage synthesis",
+                        }
+                        trace.append(synth_entry)
+                        if event_emitter:
+                            await event_emitter.on_step(synth_entry)
+                        answer = synth_response.content.strip() or (
+                            "The content was inspected but contained no extractable themes."
+                        )
+                        if not self._looks_like_action(answer):
+                            elapsed = time.time() - start
+                            return RunResultDTO(
+                                answer=answer,
+                                mode_used="rlm",
+                                success=True,
+                                steps=budget_state.steps,
+                                input_tokens=cumulative_input,
+                                output_tokens=cumulative_output,
+                                total_cost=cumulative_cost,
+                                elapsed_time=elapsed,
+                                trace=trace,
+                            )
+
                     if consecutive_no_progress >= stall_limit:
-                        if last_plain_answer and not self._looks_like_action(last_plain_answer):
+                        if (
+                            last_plain_answer
+                            and not self._looks_like_action(last_plain_answer)
+                            and not missing_files
+                            and not enforce_multi_file_coverage
+                        ):
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
                             elapsed = time.time() - start
@@ -905,6 +1325,8 @@ class RunRLMUseCase:
                     )
 
             best_fallback = last_plain_answer or last_assistant_text
+            if self._get_missing_files(attached_files, inspected_files, enforce_multi_file_coverage):
+                best_fallback = ""
             # Don't return raw JSON action blobs as the final answer —
             # fall through to synthesis or limit-warning instead.
             if best_fallback and self._looks_like_action(best_fallback):
@@ -925,7 +1347,7 @@ class RunRLMUseCase:
                     elapsed_time=elapsed,
                     trace=trace,
                 )
-            if last_inspect_output:
+            if inspect_snapshots:
                 if hasattr(self._llm, "use_root_model"):
                     self._llm.use_root_model()
                 budget_state.elapsed_seconds = time.time() - start
@@ -934,12 +1356,12 @@ class RunRLMUseCase:
                 synth_step_start = time.time()
                 if hasattr(self._llm, "complete_async"):
                     synth_response = await self._llm.complete_async(
-                        self._build_synthesis_messages(query, last_inspect_output)
+                        self._build_synthesis_messages(query, inspect_snapshots)
                     )
                 else:
                     synth_response = await asyncio.to_thread(
                         self._llm.complete,
-                        self._build_synthesis_messages(query, last_inspect_output),
+                        self._build_synthesis_messages(query, inspect_snapshots),
                     )
                 budget_state.steps += 1
                 cumulative_input += synth_response.input_tokens
@@ -1020,6 +1442,61 @@ class RunRLMUseCase:
                 self._llm.use_root_model()
             elapsed = time.time() - start
             partial = last_plain_answer or last_assistant_text
+            if enforce_multi_file_coverage or self._get_missing_files(
+                attached_files, inspected_files, enforce_multi_file_coverage
+            ):
+                partial = ""
+            if enforce_multi_file_coverage and inspect_snapshots:
+                budget_state.elapsed_seconds = time.time() - start
+                if budget_state.is_within(budget_config):
+                    synth_step_start = time.time()
+                    if hasattr(self._llm, "complete_async"):
+                        synth_response = await self._llm.complete_async(
+                            self._build_synthesis_messages(query, inspect_snapshots)
+                        )
+                    else:
+                        synth_response = await asyncio.to_thread(
+                            self._llm.complete,
+                            self._build_synthesis_messages(query, inspect_snapshots),
+                        )
+                    budget_state.steps += 1
+                    cumulative_input += synth_response.input_tokens
+                    cumulative_output += synth_response.output_tokens
+                    cumulative_cost += (
+                        synth_response.input_tokens * input_cost_per_1m
+                        + synth_response.output_tokens * output_cost_per_1m
+                    ) / 1_000_000
+                    trace_seq += 1
+                    synth_entry = {
+                        "step": budget_state.steps,
+                        "seq": trace_seq,
+                        "role": "assistant",
+                        "content": synth_response.content,
+                        "input_tokens": synth_response.input_tokens,
+                        "output_tokens": synth_response.output_tokens,
+                        "model": getattr(self._llm, "active_model", None) or synth_response.model,
+                        "elapsed_seconds": time.time() - synth_step_start,
+                        "note": "synthesis fallback",
+                    }
+                    trace.append(synth_entry)
+                    if event_emitter:
+                        await event_emitter.on_step(synth_entry)
+                    answer = synth_response.content.strip() or (
+                        "The content was inspected but contained no extractable themes."
+                    )
+                    prior_plain = (last_plain_answer or last_assistant_text).strip()
+                    if not self._looks_like_action(answer) and answer != prior_plain:
+                        return RunResultDTO(
+                            answer=answer,
+                            mode_used="rlm",
+                            success=True,
+                            steps=budget_state.steps,
+                            input_tokens=cumulative_input,
+                            output_tokens=cumulative_output,
+                            total_cost=cumulative_cost,
+                            elapsed_time=time.time() - start,
+                            trace=trace,
+                        )
             warning = self._format_limit_warning(
                 overflow_step=overflow_at_step,
                 steps_used=budget_state.steps,
@@ -1045,6 +1522,10 @@ class RunRLMUseCase:
             # Context window exceeded is a configuration issue — warn, don't error.
             if self._is_context_overflow(exc):
                 partial = last_plain_answer or last_assistant_text
+                if self._get_missing_files(
+                    attached_files, inspected_files, enforce_multi_file_coverage
+                ):
+                    partial = ""
                 warning = self._format_limit_warning(
                     overflow_step=budget_state.steps,
                     steps_used=budget_state.steps,
@@ -1076,6 +1557,61 @@ class RunRLMUseCase:
             )
 
     # -- Private helpers --
+
+    def _emit_runtime_fingerprint(
+        self,
+        *,
+        trace: list[dict[str, Any]],
+        attached_files: dict[int, _AttachedFileSection],
+        enforce_multi_file_coverage: bool,
+        execution_path: str,
+    ) -> None:
+        """Emit a seq=0 trace entry with runtime metadata for diagnostics.
+
+        Helps identify path/deployment mismatches (e.g. vLLM vs Ollama hitting
+        different code paths or stale adapter classes).
+        """
+        adapter_class = type(self._llm).__name__
+        active_model = getattr(self._llm, "active_model", None) or getattr(
+            self._llm, "_active_model", None
+        )
+        root_model = getattr(self._llm, "_root_model", None)
+        api_base = getattr(self._llm, "_api_base", None)
+
+        # Context window enforcement config (static, set once at adapter creation)
+        context_window = getattr(self._llm, "_context_window", None)
+        configured_max_tokens = getattr(self._llm, "_max_tokens", None)
+
+        fingerprint = {
+            "step": 0,
+            "seq": 0,
+            "role": "system",
+            "content": "Runtime fingerprint",
+            "fingerprint": {
+                "adapter_class": adapter_class,
+                "active_model": str(active_model) if active_model else None,
+                "root_model": str(root_model) if root_model else None,
+                "api_base": str(api_base) if api_base else None,
+                "execution_path": execution_path,
+                "coverage_enforced": enforce_multi_file_coverage,
+                "attached_file_count": len(attached_files),
+                "attached_files": [
+                    {"file_no": f.file_no, "name": f.name}
+                    for f in attached_files.values()
+                ],
+                "context_window": context_window,
+                "configured_max_tokens": configured_max_tokens,
+            },
+        }
+        trace.insert(0, fingerprint)
+        logger.info(
+            "RLM runtime fingerprint: adapter=%s model=%s path=%s coverage=%s files=%d",
+            adapter_class,
+            active_model,
+            execution_path,
+            enforce_multi_file_coverage,
+            len(attached_files),
+        )
 
     def _make_subcall(
         self,
@@ -1218,6 +1754,194 @@ class RunRLMUseCase:
         except Exception:
             return (0.0, 0.0)
 
+    @staticmethod
+    def _extract_attached_files(content: str) -> dict[int, _AttachedFileSection]:
+        """Parse attached-file metadata from the multi-file document index."""
+        if not content.startswith("[DOCUMENT INDEX"):
+            return {}
+
+        pattern = re.compile(
+            r'^\s*(?P<file_no>\d+)\.\s+"(?P<name>.+?)"\s+\('
+            r"file_start=(?P<file_start>\d+), "
+            r"content_start=(?P<content_start>\d+), "
+            r"file_end_exclusive=(?P<file_end>\d+)\)$",
+            flags=re.MULTILINE,
+        )
+        attached_files: dict[int, _AttachedFileSection] = {}
+        for match in pattern.finditer(content):
+            file_no = int(match.group("file_no"))
+            attached_files[file_no] = _AttachedFileSection(
+                file_no=file_no,
+                name=match.group("name"),
+                file_start=int(match.group("file_start")),
+                content_start=int(match.group("content_start")),
+                file_end_exclusive=int(match.group("file_end")),
+            )
+        return attached_files
+
+    @staticmethod
+    def _should_enforce_multi_file_coverage(
+        query: str,
+        attached_files: dict[int, _AttachedFileSection],
+    ) -> bool:
+        """Return True when the query implies a cross-document summary/comparison."""
+        if len(attached_files) <= 1:
+            return False
+
+        lowered = query.lower()
+        coverage_terms = (
+            "compare",
+            "common",
+            "commonal",
+            "both",
+            "all files",
+            "all documents",
+            "uploaded documents",
+            "uploaded files",
+            "documents",
+            "files",
+            "summarize",
+            "summary",
+            "differences",
+            "shared",
+            "similarities",
+        )
+        return any(term in lowered for term in coverage_terms)
+
+    @staticmethod
+    def _infer_inspected_files_from_code(
+        code: str,
+        attached_files: dict[int, _AttachedFileSection],
+    ) -> set[int]:
+        """Infer which files were inspected by a tool call."""
+        inspected_files: set[int] = set()
+
+        for match in re.finditer(r"(?:outline_file|peek_file|grep_file)\(file_no=(\d+)", code):
+            file_no = int(match.group(1))
+            if file_no in attached_files:
+                inspected_files.add(file_no)
+
+        for match in re.finditer(r"peek\(start=(\d+),\s*end=", code):
+            start = int(match.group(1))
+            for file_no, section in attached_files.items():
+                if section.content_start <= start < section.file_end_exclusive:
+                    inspected_files.add(file_no)
+                    break
+
+        return inspected_files
+
+    @staticmethod
+    def _get_missing_files(
+        attached_files: dict[int, _AttachedFileSection],
+        inspected_files: set[int],
+        enforce_multi_file_coverage: bool,
+    ) -> list[_AttachedFileSection]:
+        """Return files still missing required inspection coverage."""
+        if not enforce_multi_file_coverage:
+            return []
+        return [
+            section
+            for file_no, section in sorted(attached_files.items())
+            if file_no not in inspected_files
+        ]
+
+    @staticmethod
+    def _format_missing_files(missing_files: list[_AttachedFileSection]) -> str:
+        """Format missing-file metadata for user-facing reprompts."""
+        return ", ".join(f'{section.file_no} ("{section.name}")' for section in missing_files)
+
+    @classmethod
+    def _format_coverage_gate_note(cls, missing_files: list[_AttachedFileSection]) -> str:
+        """Build a trace-visible note when multi-file coverage blocks finalization."""
+        return (
+            "Coverage gate blocked early finalization; inspect missing files first: "
+            f"{cls._format_missing_files(missing_files)}"
+        )
+
+    def _auto_inspect_missing_file(
+        self,
+        *,
+        content: str,
+        config: RunConfigDTO,
+        messages: list[dict[str, str]],
+        trace: list[dict[str, Any]],
+        trace_seq: int,
+        budget_state: BudgetState,
+        inspect_snapshots: list[str],
+        missing_files: list[_AttachedFileSection],
+        assistant_text: str,
+    ) -> tuple[int, list[str], int]:
+        """Automatically inspect one missing file when coverage blocks finalization.
+
+        Small local models often fail to comply with a reprompt telling them to
+        inspect another file. When that happens, proactively run a lightweight
+        `outline_file()` for the next missing file and feed the result back into
+        the loop so the model can continue from a complete structural view.
+        """
+        target = missing_files[0]
+        coverage_note = self._format_coverage_gate_note(missing_files)
+
+        trace_seq += 1
+        trace.append(
+            {
+                "step": budget_state.steps,
+                "seq": trace_seq,
+                "role": "system",
+                "content": coverage_note,
+            }
+        )
+
+        code = (
+            f"print(outline_file(file_no={target.file_no}, max_lines=25, max_chars=8000))"
+        )
+        exec_result = self._sandbox.execute(code)
+        formatted = self._format_execution(exec_result)
+        inspect_snapshots = self._append_inspect_snapshot(
+            inspect_snapshots,
+            step=budget_state.steps,
+            code=code,
+            execution_output=formatted,
+        )
+
+        trace_seq += 1
+        trace.append(
+            {
+                "step": budget_state.steps,
+                "seq": trace_seq,
+                "role": "execution",
+                "content": formatted,
+                "code": code,
+                "note": f"auto coverage inspect for file {target.file_no}",
+            }
+        )
+
+        messages.append({"role": "assistant", "content": assistant_text})
+        current_msg_chars = sum(len(m.get("content", "")) for m in messages) + 120
+        exec_result_limit = self._compute_exec_result_limit(
+            len(content),
+            config.max_steps,
+            current_message_chars=current_msg_chars,
+            model_context_limit=getattr(self._llm, "context_length_chars", None),
+            override=config.extra.get("exec_result_limit"),
+        )
+        exec_content = formatted
+        if len(exec_content) > exec_result_limit:
+            exec_content = (
+                exec_content[:exec_result_limit]
+                + f"\n… [truncated, {len(formatted) - exec_result_limit} chars omitted]"
+            )
+        messages.append({"role": "user", "content": f"Execution result:\n{exec_content}"})
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Coverage guard auto-inspected missing file {target.file_no}. "
+                    "Continue using all inspected files. Do not ask the user to inspect files manually."
+                ),
+            }
+        )
+        return trace_seq, inspect_snapshots, target.file_no
+
     def _parse_rlm_response(self, text: str) -> ParsedResponse:
         """Parse LLM response: try JSON v2.0 first, fall back to markdown v1.0."""
         from rlmkit.core.actions import ParseError, parse_action
@@ -1252,7 +1976,10 @@ class RunRLMUseCase:
         if (
             result.has_code
             and result.code
-            and any(f"{tool}(" in result.code for tool in ("peek", "grep", "chunk", "select"))
+            and any(
+                f"{tool}(" in result.code
+                for tool in ("peek", "peek_file", "grep", "grep_file", "outline_file", "chunk", "select")
+            )
         ):
             result.is_inspect = True
         return result
@@ -1278,6 +2005,31 @@ class RunRLMUseCase:
                 f"end={args.get('end')}, "
                 f"max_chars={args.get('max_chars', 10000)}))"
             )
+        elif tool == "peek_file":
+            return (
+                f"print(peek_file("
+                f"file_no={args.get('file_no')}, "
+                f"start={args.get('start', 0)}, "
+                f"end={args.get('end')}, "
+                f"max_chars={args.get('max_chars', 10000)}))"
+            )
+        elif tool == "grep_file":
+            return (
+                f"print(grep_file("
+                f"file_no={args.get('file_no')}, "
+                f"pattern={repr(args.get('pattern'))}, "
+                f"context_lines={args.get('context_lines', 2)}, "
+                f"max_matches={args.get('max_matches', 100)}, "
+                f"ignore_case={args.get('ignore_case', False)}, "
+                f"use_regex={args.get('use_regex', False)}))"
+            )
+        elif tool == "outline_file":
+            return (
+                f"print(outline_file("
+                f"file_no={args.get('file_no')}, "
+                f"max_lines={args.get('max_lines', 40)}, "
+                f"max_chars={args.get('max_chars', 8000)}))"
+            )
         elif tool == "select":
             return f"print(select(ranges={args.get('ranges')}))"
         elif tool == "chunk":
@@ -1302,8 +2054,50 @@ class RunRLMUseCase:
         return "Error: No final answer found"
 
     @staticmethod
-    def _build_synthesis_messages(query: str, execution_output: str) -> list[dict[str, str]]:
+    def _compute_nudge_step(
+        max_steps: int | None,
+        fraction: float,
+        *,
+        minimum_step: int,
+    ) -> int | None:
+        """Return the step number at which a budget nudge should fire."""
+        if max_steps is None:
+            return None
+        return max(minimum_step, int(max_steps * fraction))
+
+    @staticmethod
+    def _append_inspect_snapshot(
+        snapshots: list[str],
+        *,
+        step: int,
+        code: str | None,
+        execution_output: str,
+        per_snapshot_chars: int = 500,
+        max_snapshots: int = 12,
+    ) -> list[str]:
+        """Append a compact inspect snapshot for synthesis fallback."""
+        first_code_line = "inspect"
+        if code:
+            for line in code.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    first_code_line = stripped
+                    break
+
+        output = execution_output.strip() or "(no output)"
+        if len(output) > per_snapshot_chars:
+            output = output[:per_snapshot_chars] + f"\n... (truncated to {per_snapshot_chars} chars)"
+
+        snapshots = list(snapshots)
+        snapshots.append(f"[Inspect step {step}]\nTool call: {first_code_line}\n{output}")
+        if len(snapshots) > max_snapshots:
+            snapshots = snapshots[-max_snapshots:]
+        return snapshots
+
+    @staticmethod
+    def _build_synthesis_messages(query: str, execution_output: list[str]) -> list[dict[str, str]]:
         """Build messages for a synthesis call when max steps exhausted without a final answer."""
+        inspection_summary = "\n\n".join(execution_output)[:6000]
         return [
             {
                 "role": "system",
@@ -1313,7 +2107,7 @@ class RunRLMUseCase:
                 "role": "user",
                 "content": get_rlm_message("synthesis_user").format(
                     query=query,
-                    execution_output=execution_output[:3000],
+                    execution_output=inspection_summary,
                 ),
             },
         ]
@@ -1323,7 +2117,7 @@ class RunRLMUseCase:
         """Return True if *exc* is a context-window-exceeded error from the LLM."""
         msg = str(exc).lower()
         return ("context" in msg or "8192" in msg or "4096" in msg) and any(
-            kw in msg for kw in ("window", "length", "exceed", "maximum", "too large", "token")
+            kw in msg for kw in ("window", "length", "exceed", "exhausted", "maximum", "too large", "token")
         )
 
     @staticmethod

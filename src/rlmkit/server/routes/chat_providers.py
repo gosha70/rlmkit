@@ -80,7 +80,7 @@ async def create_chat_provider(
         rlm_max_steps=req.rlm_max_steps or 16,
         rlm_timeout_seconds=req.rlm_timeout_seconds or 60,
         rlm_repeat_limit=req.rlm_repeat_limit or 2,
-        rlm_nudge_at_fraction=req.rlm_nudge_at_fraction or 0.6,
+        rlm_nudge_at_fraction=req.rlm_nudge_at_fraction or 0.4,
         num_retries=req.num_retries,
         created_at=now,
         updated_at=now,

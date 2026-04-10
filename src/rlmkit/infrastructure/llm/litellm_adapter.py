@@ -32,6 +32,13 @@ _CONNECTION_KEYWORDS = (
     "connecterror",
     "apiconnectionerror",
 )
+# Reserve tokens to absorb the gap between litellm's generic tokenizer
+# and the model's actual tokenizer + chat template.  A fixed 32 was not
+# enough: Qwen2.5-7B on vLLM showed a 33-token divergence in practice.
+# Using 5% of context_window (floor 64) covers tokenizer differences,
+# chat template special tokens, and BOS/EOS overhead safely.
+_CONTEXT_WINDOW_RESERVE_FRACTION = 0.05
+_CONTEXT_WINDOW_RESERVE_FLOOR = 64
 
 
 def _is_connection_error(exc: BaseException) -> bool:
@@ -86,6 +93,7 @@ class LiteLLMAdapter:
         timeout: float = 120.0,
         num_retries: int = 2,
         extra_params: dict[str, Any] | None = None,
+        context_window: int | None = None,
     ) -> None:
         self._model = model
         self._root_model = root_model or model
@@ -97,9 +105,28 @@ class LiteLLMAdapter:
         self._timeout = timeout
         self._num_retries = num_retries
         self._extra_params = extra_params or {}
+        # Total context window (input + output) in tokens.  When set, the
+        # adapter dynamically clamps max_tokens per call so that prompt +
+        # output never exceeds the limit.
+        self._context_window = context_window
 
         # Track which model to use for the next call (can be toggled)
         self._active_model = self._root_model
+
+        # Diagnostics: updated on every _build_params() call so the RLM
+        # trace can record exactly what the clamp decided.
+        self._last_clamp_info: dict[str, Any] = {}
+
+    @property
+    def last_clamp_info(self) -> dict[str, Any]:
+        """Return the clamp diagnostics from the most recent _build_params call.
+
+        Keys (all present when context_window is set):
+            context_window, configured_max_tokens, estimated_prompt_tokens,
+            reserve, effective_max_tokens, clamped (bool).
+        Empty dict when context_window is not set or _build_params hasn't run.
+        """
+        return self._last_clamp_info
 
     # -- LLMPort protocol methods --
 
@@ -402,6 +429,11 @@ class LiteLLMAdapter:
     def _build_params(self, messages: list[dict[str, str]]) -> dict[str, Any]:
         """Build the parameter dict for litellm.completion().
 
+        When ``context_window`` is known, dynamically clamps ``max_tokens``
+        so that (estimated_prompt_tokens + max_tokens) never exceeds the
+        context limit.  This prevents hard rejections from vLLM / Ollama
+        when conversation history grows mid-loop.
+
         Args:
             messages: Chat messages.
 
@@ -416,8 +448,92 @@ class LiteLLMAdapter:
             "num_retries": self._num_retries,
         }
 
-        if self._max_tokens is not None:
-            params["max_tokens"] = self._max_tokens
+        effective_max_tokens = self._max_tokens
+        if effective_max_tokens is not None and self._context_window:
+            # Use litellm's model-aware tokenizer for accurate counting;
+            # fall back to a conservative chars÷3 heuristic if unavailable.
+            try:
+                import litellm as _litellm
+
+                estimated_prompt_tokens = _litellm.token_counter(
+                    model=self._active_model, messages=messages
+                )
+            except Exception:
+                prompt_chars = sum(len(m.get("content", "")) for m in messages)
+                # chars÷3 is safer than chars÷4 — multilingual models (Qwen,
+                # Llama-3) and chat templates often use <3 chars per token.
+                estimated_prompt_tokens = prompt_chars // 3 + 50  # +50 for chat template overhead
+            reserve = max(
+                int(self._context_window * _CONTEXT_WINDOW_RESERVE_FRACTION),
+                _CONTEXT_WINDOW_RESERVE_FLOOR,
+            )
+            remaining = self._context_window - estimated_prompt_tokens - reserve
+            configured_max = effective_max_tokens
+            # Floor: model needs at least 128 tokens to produce a useful response
+            # (a JSON action or short final answer).
+            min_output_tokens = 128
+            clamped = False
+            if remaining < min_output_tokens:
+                # Prompt + reserve exceeds context window.  Calculate hard
+                # headroom (ignoring reserve) to decide whether to attempt.
+                hard_headroom = self._context_window - estimated_prompt_tokens
+                if hard_headroom < min_output_tokens:
+                    # Even without any reserve the prompt leaves less than
+                    # min_output_tokens — raise proactively so the RLM loop
+                    # catches this as a context overflow and falls back to
+                    # synthesis instead of sending a doomed request.
+                    self._last_clamp_info = {
+                        "context_window": self._context_window,
+                        "configured_max_tokens": configured_max,
+                        "estimated_prompt_tokens": estimated_prompt_tokens,
+                        "reserve": reserve,
+                        "effective_max_tokens": 0,
+                        "clamped": True,
+                        "proactive_overflow": True,
+                    }
+                    raise ValueError(
+                        f"Context window exhausted: prompt ≈{estimated_prompt_tokens} tokens "
+                        f"+ minimum output {min_output_tokens} > context window "
+                        f"{self._context_window} tokens. "
+                        f"Cannot generate a useful response."
+                    )
+                # There's *some* headroom but less than ideal — use it, skip
+                # the safety reserve since we're already at the edge.
+                logger.warning(
+                    "Prompt ≈%d tokens nearly fills context_window=%d; "
+                    "clamping max_tokens to hard headroom=%d (reserve skipped)",
+                    estimated_prompt_tokens,
+                    self._context_window,
+                    hard_headroom,
+                )
+                effective_max_tokens = hard_headroom
+                clamped = True
+            elif remaining < effective_max_tokens:
+                logger.debug(
+                    "Dynamic max_tokens clamp: %d → %d "
+                    "(prompt≈%d, reserve=%d, context_window=%d)",
+                    effective_max_tokens,
+                    remaining,
+                    estimated_prompt_tokens,
+                    reserve,
+                    self._context_window,
+                )
+                effective_max_tokens = remaining
+                clamped = True
+
+            self._last_clamp_info = {
+                "context_window": self._context_window,
+                "configured_max_tokens": configured_max,
+                "estimated_prompt_tokens": estimated_prompt_tokens,
+                "reserve": reserve,
+                "effective_max_tokens": effective_max_tokens,
+                "clamped": clamped,
+            }
+        else:
+            self._last_clamp_info = {}
+
+        if effective_max_tokens is not None:
+            params["max_tokens"] = effective_max_tokens
 
         if self._api_key is not None:
             params["api_key"] = self._api_key

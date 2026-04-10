@@ -145,6 +145,8 @@ Customize the system prompts used for each execution mode:
 
 You can also apply **prompt templates** — predefined prompt sets that you can load and customize.
 
+For safe RLM customization patterns and multi-document anti-patterns, see [rlm-prompt-tuning.md](/Users/gosha/dev/repo/rlmkit/docs/rlm-prompt-tuning.md).
+
 ### Appearance
 
 Switch between **Light**, **Dark**, and **System** themes.

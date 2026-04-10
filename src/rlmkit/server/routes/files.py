@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -122,7 +124,8 @@ def _extract_text(raw: bytes, ext: str) -> str:
             from pypdf import PdfReader
 
             reader = PdfReader(io.BytesIO(raw))
-            return "\n".join(page.extract_text() or "" for page in reader.pages)
+            pages = [page.extract_text() or "" for page in reader.pages]
+            return _clean_pdf_text(pages)
         except ImportError:
             return raw.decode("utf-8", errors="replace")
     if ext == ".docx":
@@ -136,3 +139,105 @@ def _extract_text(raw: bytes, ext: str) -> str:
         except ImportError:
             return raw.decode("utf-8", errors="replace")
     return raw.decode("utf-8", errors="replace")
+
+
+def _normalize_pdf_line(line: str) -> str:
+    """Collapse whitespace so repeated headers/footers compare reliably."""
+    return " ".join(line.split())
+
+
+def _looks_like_page_number(line: str) -> bool:
+    """Detect isolated page numbers or roman numerals."""
+    compact = line.strip().replace(" ", "")
+    if not compact:
+        return False
+    return bool(re.fullmatch(r"(?i)(page)?\d{1,4}|[ivxlcdm]{1,8}", compact))
+
+
+def _is_pdf_boilerplate_line(line: str) -> bool:
+    """Return True for recurring legal / publisher / footer text."""
+    lowered = line.lower()
+    boilerplate_prefixes = (
+        "licensed to ",
+        "copyright ",
+        "©",
+        "for more information on this and other manning",
+        "manning publications co.",
+        "printed in the united states of america",
+        "special sales department",
+        "po box ",
+        "shelter island",
+        "development editor:",
+        "technical development editor:",
+        "production editor:",
+        "copy editor:",
+        "proofreader:",
+        "technical proofreaders:",
+        "typesetter and cover designer:",
+    )
+    if lowered.startswith(boilerplate_prefixes):
+        return True
+    if _looks_like_page_number(line):
+        return True
+    return False
+
+
+def _clean_pdf_text(page_texts: list[str]) -> str:
+    """Remove obvious repeated PDF furniture while preserving substantive text."""
+    if not page_texts:
+        return ""
+
+    raw_joined = "\n\n".join(page_texts)
+    if not raw_joined.strip():
+        return raw_joined
+
+    page_line_counts: Counter[str] = Counter()
+    normalized_pages: list[list[str]] = []
+    for page_text in page_texts:
+        normalized_lines = [_normalize_pdf_line(line) for line in page_text.splitlines()]
+        normalized_pages.append(normalized_lines)
+        page_line_counts.update(
+            {
+                line
+                for line in normalized_lines
+                if line and len(line) <= 120 and not re.fullmatch(r"[-_=]{3,}", line)
+            }
+        )
+
+    repeated_threshold = max(3, (len(page_texts) + 4) // 5)
+    repeated_furniture = {
+        line
+        for line, count in page_line_counts.items()
+        if count >= repeated_threshold and (_is_pdf_boilerplate_line(line) or len(line) <= 80)
+    }
+
+    cleaned_pages: list[str] = []
+    for lines in normalized_pages:
+        kept: list[str] = []
+        previous_blank = False
+        for line in lines:
+            if not line:
+                if not previous_blank and kept:
+                    kept.append("")
+                previous_blank = True
+                continue
+
+            if line in repeated_furniture or _is_pdf_boilerplate_line(line):
+                continue
+
+            kept.append(line)
+            previous_blank = False
+
+        cleaned_page = "\n".join(kept).strip()
+        if cleaned_page:
+            cleaned_pages.append(cleaned_page)
+
+    cleaned = "\n\n".join(cleaned_pages).strip()
+    if not cleaned:
+        return raw_joined
+
+    # Guardrail: if cleanup removed almost everything, prefer the raw extraction.
+    if len(cleaned) < len(raw_joined) * 0.2:
+        return raw_joined
+
+    return cleaned

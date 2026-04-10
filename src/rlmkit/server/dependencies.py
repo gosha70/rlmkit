@@ -406,10 +406,18 @@ class AppState:
         return None
 
     def resolve_chat_provider(self, cp: ChatProviderConfig) -> ChatProviderConfig:
-        """Return a copy of cp with settings resolved from its LLM Provider and profile."""
+        """Return a copy of cp with settings resolved from its LLM Provider and profile.
+
+        When the linked LLM Provider has a ``context_window``, the resolved
+        ``runtime_settings.max_output_tokens`` is clamped so that at least
+        25 % of the context window remains for input.  This prevents vLLM
+        from rejecting requests when a generous Profile max_tokens is paired
+        with a small-context model.
+        """
         resolved = cp.model_copy()
 
         # Resolve LLM Provider name for display
+        lp = None
         if cp.llm_provider_id:
             lp = self.get_llm_provider(cp.llm_provider_id)
             if lp:
@@ -439,6 +447,24 @@ class AppState:
             resolved.rlm_repeat_limit = budget.repeat_limit
         if hasattr(budget, "nudge_at_fraction"):
             resolved.rlm_nudge_at_fraction = budget.nudge_at_fraction
+
+        # Clamp max_output_tokens against the LLM Provider's context window.
+        # Reserve at least 25% of context for the input prompt so the RLM loop
+        # has room for system prompt + conversation history.
+        if lp and lp.context_window and lp.context_window > 0:
+            max_safe_output = int(lp.context_window * 0.75)
+            profile_max = resolved.runtime_settings.max_output_tokens
+            if profile_max > max_safe_output:
+                logger.info(
+                    "Clamping max_output_tokens %d → %d for provider %s "
+                    "(context_window=%d, 25%% reserved for input)",
+                    profile_max,
+                    max_safe_output,
+                    lp.name,
+                    lp.context_window,
+                )
+                resolved.runtime_settings.max_output_tokens = max_safe_output
+
         return resolved
 
     def resolve_execution_context(self, execution_id: str) -> tuple[str, str, str, str] | None:
@@ -591,6 +617,8 @@ class AppState:
             else 2
         )
 
+        context_window = lp.context_window if lp else None
+
         return LiteLLMAdapter(
             model=prefixed_model,
             api_base=api_base,
@@ -599,6 +627,7 @@ class AppState:
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),
             num_retries=effective_retries,
+            context_window=context_window,
         )
 
     def save_config(self) -> None:

@@ -330,6 +330,10 @@ class LLMProviderConfig(BaseModel):
     model: str  # e.g. "gpt-4o-mini", "llama3.2"
     endpoint: str | None = None  # Custom endpoint (overrides catalog default for local providers)
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    # Model context window in tokens.  Auto-discovered during health check or
+    # set manually.  When present, Profile max_output_tokens will be clamped to
+    # (context_window - prompt_tokens) at runtime so vLLM/Ollama never rejects.
+    context_window: int | None = None  # total tokens (input + output), e.g. 8192
     status: str = "not_configured"  # "connected" | "configured" | "offline" | "not_configured"
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -342,6 +346,7 @@ class LLMProviderCreateRequest(BaseModel):
     api_key: str | None = None  # persisted to SecretStore, not stored in config
     endpoint: str | None = None
     runtime_settings: RuntimeSettings | None = None
+    context_window: int | None = None  # manual override; auto-discovered if omitted
 
 
 class LLMProviderUpdateRequest(BaseModel):
@@ -350,6 +355,7 @@ class LLMProviderUpdateRequest(BaseModel):
     api_key: str | None = None
     endpoint: str | None = None
     runtime_settings: RuntimeSettings | None = None
+    context_window: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +370,7 @@ class BudgetConfig(BaseModel):
     max_time_seconds: int = 30
     max_recursion_depth: int = 5
     repeat_limit: int = 2  # RLM: duplicate inspections before forced finalization
-    nudge_at_fraction: float = 0.6  # RLM: fraction of max_steps for soft nudge
+    nudge_at_fraction: float = 0.4  # RLM: fraction of max_steps for soft nudge
 
 
 class SandboxConfig(BaseModel):
@@ -421,7 +427,7 @@ class ChatProviderConfig(BaseModel):
     rlm_repeat_limit: int = (
         2  # only for RLM mode — duplicate inspections before forced finalization
     )
-    rlm_nudge_at_fraction: float = 0.6  # only for RLM mode — fraction of max_steps for soft nudge
+    rlm_nudge_at_fraction: float = 0.4  # only for RLM mode — fraction of max_steps for soft nudge
     num_retries: int | None = Field(default=None, ge=0)
     created_at: datetime | None = None
     updated_at: datetime | None = None

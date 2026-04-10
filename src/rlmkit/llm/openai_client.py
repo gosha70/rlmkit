@@ -4,6 +4,7 @@
 """OpenAI LLM provider implementation."""
 
 import os
+import re
 from typing import Any
 
 from .base import BaseLLMProvider, LLMResponse
@@ -48,7 +49,9 @@ class OpenAIClient(BaseLLMProvider):
             max_tokens: Maximum tokens to generate
             **kwargs: Additional parameters passed to OpenAI API
         """
+        self._context_token_reserve = int(kwargs.pop("context_token_reserve", 128))
         super().__init__(model=model, temperature=temperature, max_tokens=max_tokens, **kwargs)
+        self._discovered_context_limit_tokens: int | None = None
 
         # Get API key from parameter or environment
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
@@ -78,6 +81,86 @@ class OpenAIClient(BaseLLMProvider):
             base_url=self.base_url,
         )
 
+    def _build_params(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens_override: int | None = None,
+    ) -> dict[str, Any]:
+        """Build API request parameters with context-aware max-token clamping."""
+        params: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
+
+        requested_max_tokens = self.max_tokens if max_tokens_override is None else max_tokens_override
+        clamped_max_tokens = self._context_aware_max_tokens(messages, requested_max_tokens)
+        if clamped_max_tokens is not None:
+            params["max_tokens"] = clamped_max_tokens
+
+        params.update(self.extra_params)
+        return params
+
+    def _estimate_message_tokens(self, messages: list[dict[str, str]]) -> int:
+        """Estimate prompt token usage for a list of chat messages."""
+        total = 0
+        for msg in messages:
+            total += 4  # rough chat-message framing overhead
+            total += self.estimate_tokens(str(msg.get("content", "")))
+        return total + 2  # assistant priming
+
+    def _context_aware_max_tokens(
+        self,
+        messages: list[dict[str, str]],
+        requested_max_tokens: int | None,
+    ) -> int | None:
+        """Clamp output tokens when the model context limit is known."""
+        if requested_max_tokens is None or self._discovered_context_limit_tokens is None:
+            return requested_max_tokens
+
+        prompt_tokens = self._estimate_message_tokens(messages)
+        available = self._discovered_context_limit_tokens - prompt_tokens - self._context_token_reserve
+        if available <= 0:
+            return 1
+        return max(1, min(requested_max_tokens, available))
+
+    def _derive_retry_max_tokens(
+        self,
+        messages: list[dict[str, str]],
+        error_text: str,
+        requested_max_tokens: int | None,
+    ) -> int | None:
+        """Return a smaller max_tokens when an error reports context overflow."""
+        max_context: int | None = None
+        prompt_tokens: int | None = None
+
+        ctx_match = re.search(r"maximum context length is\s+(\d+)\s+tokens", error_text, re.I)
+        if ctx_match:
+            max_context = int(ctx_match.group(1))
+            self._discovered_context_limit_tokens = max_context
+
+        prompt_match = re.search(
+            r"prompt contains(?: at least)?\s+(\d+)\s+input tokens",
+            error_text,
+            re.I,
+        )
+        if prompt_match:
+            prompt_tokens = int(prompt_match.group(1))
+
+        if prompt_tokens is None and max_context is not None:
+            prompt_tokens = self._estimate_message_tokens(messages)
+
+        if max_context is None or prompt_tokens is None:
+            return None
+
+        available = max_context - prompt_tokens - self._context_token_reserve
+        if available <= 0:
+            return None
+
+        if requested_max_tokens is None:
+            return available
+        return max(1, min(requested_max_tokens, available))
+
     def complete(self, messages: list[dict[str, str]]) -> str:
         """
         Generate completion from messages.
@@ -94,24 +177,25 @@ class OpenAIClient(BaseLLMProvider):
         """
         self.validate_messages(messages)
 
-        # Build API request parameters
-        params: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-        }
-
-        if self.max_tokens:
-            params["max_tokens"] = self.max_tokens
-
-        # Add extra parameters
-        params.update(self.extra_params)
+        params = self._build_params(messages)
 
         # Make API call
         try:
             response = self._client.chat.completions.create(**params)  # type: ignore[call-overload]
             return str(response.choices[0].message.content)
         except Exception as e:
+            retry_max_tokens = self._derive_retry_max_tokens(
+                messages,
+                str(e),
+                params.get("max_tokens"),
+            )
+            if retry_max_tokens is not None and retry_max_tokens != params.get("max_tokens"):
+                retry_params = self._build_params(messages, max_tokens_override=retry_max_tokens)
+                try:
+                    response = self._client.chat.completions.create(**retry_params)  # type: ignore[call-overload]
+                    return str(response.choices[0].message.content)
+                except Exception as retry_exc:
+                    raise RuntimeError(f"OpenAI API error: {str(retry_exc)}") from retry_exc
             raise RuntimeError(f"OpenAI API error: {str(e)}") from e
 
     def complete_with_metadata(self, messages: list[dict[str, str]]) -> LLMResponse:
@@ -130,18 +214,7 @@ class OpenAIClient(BaseLLMProvider):
         """
         self.validate_messages(messages)
 
-        # Build API request parameters
-        params: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-        }
-
-        if self.max_tokens:
-            params["max_tokens"] = self.max_tokens
-
-        # Add extra parameters
-        params.update(self.extra_params)
+        params = self._build_params(messages)
 
         # Make API call
         try:
@@ -162,6 +235,33 @@ class OpenAIClient(BaseLLMProvider):
                 },
             )
         except Exception as e:
+            retry_max_tokens = self._derive_retry_max_tokens(
+                messages,
+                str(e),
+                params.get("max_tokens"),
+            )
+            if retry_max_tokens is not None and retry_max_tokens != params.get("max_tokens"):
+                retry_params = self._build_params(messages, max_tokens_override=retry_max_tokens)
+                try:
+                    response = self._client.chat.completions.create(**retry_params)  # type: ignore[call-overload]
+                    choice = response.choices[0]
+                    usage = response.usage
+                    return LLMResponse(
+                        content=choice.message.content,
+                        model=response.model,
+                        input_tokens=usage.prompt_tokens if usage else None,
+                        output_tokens=usage.completion_tokens if usage else None,
+                        finish_reason=choice.finish_reason,
+                        metadata={
+                            "id": response.id,
+                            "created": response.created,
+                            "system_fingerprint": getattr(
+                                response, "system_fingerprint", None
+                            ),
+                        },
+                    )
+                except Exception as retry_exc:
+                    raise RuntimeError(f"OpenAI API error: {str(retry_exc)}") from retry_exc
             raise RuntimeError(f"OpenAI API error: {str(e)}") from e
 
     def estimate_tokens(self, text: str) -> int:

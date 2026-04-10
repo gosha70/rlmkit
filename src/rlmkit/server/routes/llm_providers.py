@@ -57,6 +57,83 @@ def _get_api_key(llm_provider_id: str, backend: str) -> str | None:
     return None
 
 
+def _discover_context_window(backend: str, model: str, endpoint: str | None) -> int | None:
+    """Best-effort discovery of a model's total context window in tokens.
+
+    Tries litellm model info first, then queries the provider's
+    ``/v1/models`` endpoint for vLLM / Ollama / OpenAI-compatible backends.
+    Returns None when the context window cannot be determined.
+    """
+    # 1. litellm model info (works for well-known models)
+    try:
+        import litellm
+
+        # LiteLLM uses prefixed model names for some backends
+        model_names = [model, f"{backend}/{model}"]
+        if "/" in model:
+            model_names.append(model.split("/", 1)[1])
+        for name in model_names:
+            try:
+                info = litellm.get_model_info(model=name)
+                ctx = info.get("max_input_tokens") or info.get("max_tokens")
+                if ctx and isinstance(ctx, int) and ctx > 0:
+                    logger.info("Discovered context_window=%d for %s via litellm", ctx, name)
+                    return ctx
+            except Exception:
+                continue
+    except ImportError:
+        pass
+
+    # 2. Query /v1/models endpoint (vLLM, Ollama, LM Studio)
+    if endpoint and backend in ("vllm", "ollama", "lmstudio", "openai"):
+        import re
+        import urllib.request
+
+        # Normalize base URL — strip trailing /v1 or /v1/ to avoid doubling
+        base = re.sub(r"/v1/?$", "", endpoint.rstrip("/"))
+        url = f"{base}/v1/models"
+
+        # Build candidate model IDs for matching.  LiteLLM prefixes like
+        # "openai/" are not part of the id vLLM/Ollama actually report.
+        model_candidates = {model}
+        if "/" in model:
+            # "openai/Qwen/Qwen2.5-7B-Instruct" → "Qwen/Qwen2.5-7B-Instruct"
+            model_candidates.add(model.split("/", 1)[1])
+            # Also try just the final segment: "Qwen2.5-7B-Instruct"
+            model_candidates.add(model.rsplit("/", 1)[-1])
+
+        try:
+            import json
+
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                for m in data.get("data", []):
+                    mid = m.get("id", "")
+                    if mid in model_candidates or mid in {
+                        c.split("/", 1)[1] for c in model_candidates if "/" in c
+                    }:
+                        # vLLM exposes max_model_len; Ollama may use context_length
+                        ctx = (
+                            m.get("max_model_len")
+                            or m.get("context_length")
+                            or m.get("context_window")
+                        )
+                        if ctx and isinstance(ctx, int) and ctx > 0:
+                            logger.info(
+                                "Discovered context_window=%d for %s (matched %s) via %s",
+                                ctx,
+                                model,
+                                mid,
+                                url,
+                            )
+                            return ctx
+        except Exception as exc:
+            logger.debug("Could not query %s for context window: %s", url, exc)
+
+    return None
+
+
 def _compute_status(lp: LLMProviderConfig) -> str:
     """Compute current status for an LLM Provider instance."""
     # Check in-memory cache first
@@ -118,6 +195,7 @@ async def create_llm_provider(
         model=req.model,
         endpoint=req.endpoint,
         runtime_settings=req.runtime_settings or RuntimeSettings(),
+        context_window=req.context_window,
         status="not_configured",
         created_at=now,
         updated_at=now,
@@ -126,6 +204,14 @@ async def create_llm_provider(
     if req.api_key:
         _persist_api_key(lp.id, req.backend, req.api_key)
         lp.status = "configured"
+
+    # Auto-discover context window if not explicitly provided
+    if lp.context_window is None:
+        entry = PROVIDERS_BY_KEY.get(req.backend)
+        endpoint = req.endpoint or (entry.default_endpoint if entry else None)
+        discovered = _discover_context_window(req.backend, req.model, endpoint)
+        if discovered:
+            lp.context_window = discovered
 
     state.config.llm_providers.append(lp)
     state.save_config()
@@ -169,12 +255,34 @@ async def update_llm_provider(
                 )
         lp.name = req.name
 
+    # Track whether model or endpoint changed — triggers context_window re-discovery
+    model_or_endpoint_changed = (
+        (req.model is not None and req.model != lp.model)
+        or (req.endpoint is not None and (req.endpoint or None) != lp.endpoint)
+    )
+
     if req.model is not None:
         lp.model = req.model
     if req.endpoint is not None:
         lp.endpoint = req.endpoint or None
     if req.runtime_settings is not None:
         lp.runtime_settings = req.runtime_settings
+    if req.context_window is not None:
+        lp.context_window = req.context_window if req.context_window > 0 else None
+    elif model_or_endpoint_changed:
+        # Model or endpoint changed but no explicit context_window override —
+        # re-discover so the provider doesn't keep a stale limit.
+        entry = PROVIDERS_BY_KEY.get(lp.backend)
+        endpoint = lp.endpoint or (entry.default_endpoint if entry else None)
+        discovered = _discover_context_window(lp.backend, lp.model, endpoint)
+        lp.context_window = discovered  # None if discovery fails — safe default
+        if discovered:
+            logger.info(
+                "Re-discovered context_window=%d for updated provider %s (%s)",
+                discovered,
+                lp.name,
+                lp.model,
+            )
     if req.api_key:
         _persist_api_key(lp.id, lp.backend, req.api_key)
         lp.status = "configured"

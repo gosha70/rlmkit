@@ -97,6 +97,7 @@ class TestResolveProfilePrompt:
         result = _resolve_profile_prompt(profile, "rlm")
         assert result is not None
         assert "reasoning chain" in result
+        assert "MUST inspect EVERY listed file before finalizing" in result
 
     def test_returns_none_for_unknown_template_name(self) -> None:
         profile = _make_profile(prompt_template_name="Nonexistent Template")
@@ -265,3 +266,8 @@ class TestSystemPromptTemplates:
             # Should NOT contain conflicting instructions
             assert "use your full step budget" not in rlm_text.lower()
             assert "do not finalize early" not in rlm_text.lower()
+            assert "peek() from the returned position" not in rlm_text.lower()
+            assert "content_start" in rlm_text
+            assert "char_offset" in rlm_text
+            assert "outline_file" in rlm_text
+            assert "peek_file" in rlm_text

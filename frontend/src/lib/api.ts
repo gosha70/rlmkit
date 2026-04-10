@@ -199,6 +199,7 @@ export interface LLMProviderConfig {
   model: string;
   endpoint?: string | null;
   runtime_settings: RuntimeSettings;
+  context_window?: number | null;  // total tokens (input + output), e.g. 8192
   status: string;  // "connected" | "configured" | "offline" | "not_configured"
   created_at?: string | null;
   updated_at?: string | null;
@@ -211,6 +212,7 @@ export interface LLMProviderCreateRequest {
   api_key?: string | null;
   endpoint?: string | null;
   runtime_settings?: RuntimeSettings | null;
+  context_window?: number | null;
 }
 
 export interface LLMProviderUpdateRequest {
@@ -219,6 +221,7 @@ export interface LLMProviderUpdateRequest {
   api_key?: string | null;
   endpoint?: string | null;
   runtime_settings?: RuntimeSettings | null;
+  context_window?: number | null;
 }
 
 export interface ProviderTestRequest {

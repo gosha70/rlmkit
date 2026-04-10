@@ -13,7 +13,7 @@ from typing import Any
 from rlmkit.envs.sandbox import create_safe_globals
 from rlmkit.envs.timeout import TimeoutError as ExecTimeoutError
 from rlmkit.envs.timeout import create_timeout
-from rlmkit.tools import chunk, grep, peek, select
+from rlmkit.tools import chunk, grep, grep_file, outline_file, peek, peek_file, select
 
 logger = logging.getLogger("rlmkit.envs")
 
@@ -74,7 +74,10 @@ class PyReplEnv:
 
         # Add content navigation tools
         self.env_globals["peek"] = peek
+        self.env_globals["peek_file"] = peek_file
         self.env_globals["grep"] = grep
+        self.env_globals["grep_file"] = grep_file
+        self.env_globals["outline_file"] = outline_file
         self.env_globals["chunk"] = chunk
         self.env_globals["select"] = select
 
@@ -92,7 +95,10 @@ class PyReplEnv:
         # This allows LLM to call peek(0, 10) instead of peek(P, 0, 10)
         # Use functools.partial instead of lambdas to avoid pickling issues
         self.env_globals["peek"] = partial(peek, content)
+        self.env_globals["peek_file"] = partial(peek_file, content)
         self.env_globals["grep"] = partial(grep, content)
+        self.env_globals["grep_file"] = partial(grep_file, content)
+        self.env_globals["outline_file"] = partial(outline_file, content)
         self.env_globals["chunk"] = partial(chunk, content)
         self.env_globals["select"] = partial(select, content)
 
@@ -224,12 +230,18 @@ class PyReplEnv:
             self.env_globals["P"] = content
             # Bind tools to content using functools.partial (avoids pickling issues)
             self.env_globals["peek"] = partial(peek, content)
+            self.env_globals["peek_file"] = partial(peek_file, content)
             self.env_globals["grep"] = partial(grep, content)
+            self.env_globals["grep_file"] = partial(grep_file, content)
+            self.env_globals["outline_file"] = partial(outline_file, content)
             self.env_globals["chunk"] = partial(chunk, content)
             self.env_globals["select"] = partial(select, content)
         else:
             # No content set, use unbound tools
             self.env_globals["peek"] = peek
+            self.env_globals["peek_file"] = peek_file
             self.env_globals["grep"] = grep
+            self.env_globals["grep_file"] = grep_file
+            self.env_globals["outline_file"] = outline_file
             self.env_globals["chunk"] = chunk
             self.env_globals["select"] = select
