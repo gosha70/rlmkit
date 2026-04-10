@@ -882,7 +882,13 @@ class AppState:
         return f"{prefix}{model}"
 
     def create_sandbox(self):  # type: ignore[no-untyped-def]
-        return create_sandbox(sandbox_type=self.config.sandbox.type)
+        sandbox_type = self.config.sandbox.type
+        # Server runs in worker threads where signal-based timeouts don't work.
+        # Auto-select subprocess for "local" only; "restricted" stays as-is
+        # because it provides AST-level security that subprocess doesn't.
+        if sandbox_type == "local":
+            sandbox_type = "subprocess"
+        return create_sandbox(sandbox_type=sandbox_type)
 
     def create_run_config(self, mode: str = "auto") -> RunConfigDTO:
         b = self.config.budget

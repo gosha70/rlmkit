@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from rlmkit.application.ports.sandbox_port import SandboxPort
 
 from .local_sandbox import LocalSandboxAdapter
@@ -17,7 +19,8 @@ def create_sandbox(
     """Create a sandbox adapter based on the requested type.
 
     Args:
-        sandbox_type: Type of sandbox ("local", "restricted", "docker").
+        sandbox_type: Type of sandbox
+            ("local", "restricted", "docker", "subprocess").
         safe_mode: Enable restricted execution.
         allowed_imports: Modules allowed in safe mode.
         max_exec_time_s: Per-execution timeout.
@@ -29,8 +32,23 @@ def create_sandbox(
     Raises:
         ValueError: If sandbox_type is not supported.
     """
+    # Auto-select subprocess when "local" is requested off the main thread,
+    # because LocalSandboxAdapter's signal-based timeouts only work on the
+    # main thread.
+    if sandbox_type == "local" and threading.current_thread() is not threading.main_thread():
+        sandbox_type = "subprocess"
+
     if sandbox_type == "local":
         return LocalSandboxAdapter(
+            safe_mode=safe_mode,
+            allowed_imports=allowed_imports,
+            max_exec_time_s=max_exec_time_s,
+            max_stdout_chars=max_stdout_chars,
+        )
+    elif sandbox_type == "subprocess":
+        from .subprocess_sandbox import SubprocessSandboxAdapter
+
+        return SubprocessSandboxAdapter(
             safe_mode=safe_mode,
             allowed_imports=allowed_imports,
             max_exec_time_s=max_exec_time_s,
@@ -56,5 +74,6 @@ def create_sandbox(
         )
     else:
         raise ValueError(
-            f"Unknown sandbox type: {sandbox_type!r}. Supported: 'local', 'restricted', 'docker'."
+            f"Unknown sandbox type: {sandbox_type!r}. "
+            "Supported: 'local', 'subprocess', 'restricted', 'docker'."
         )
