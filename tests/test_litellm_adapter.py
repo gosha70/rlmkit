@@ -308,6 +308,74 @@ class TestLiteLLMAdapterTokenCount:
         # Fallback: len // 4
         assert count == max(1, len("Hello world, this is a test") // 4)
 
+    @patch("litellm.token_counter")
+    def test_count_tokens_messages_overload(self, mock_counter):
+        """count_tokens(messages=...) dispatches to litellm with messages kwarg."""
+        mock_counter.return_value = 123
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        messages = [
+            {"role": "system", "content": "You are a helper."},
+            {"role": "user", "content": "Hi"},
+        ]
+        count = adapter.count_tokens(messages=messages)
+
+        assert count == 123
+        mock_counter.assert_called_once_with(model="gpt-4o", messages=messages)
+
+    @patch("litellm.token_counter")
+    def test_count_tokens_messages_fallback_on_error(self, mock_counter):
+        """On tokenizer failure, messages overload falls back to char heuristic."""
+        mock_counter.side_effect = Exception("Tokenizer unavailable")
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        messages = [
+            {"role": "user", "content": "abcdefghij"},  # 10 chars
+            {"role": "assistant", "content": "klmnop"},  # 6 chars
+        ]
+        count = adapter.count_tokens(messages=messages)
+        # Fallback: total_chars // 3 + 10 (chat template overhead)
+        assert count == max(1, 16 // 3 + 10)
+
+    def test_count_tokens_requires_exactly_one_of_text_or_messages(self):
+        """Neither or both args is a ValueError."""
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with pytest.raises(ValueError, match="requires either text or messages"):
+            adapter.count_tokens()
+        with pytest.raises(ValueError, match="text OR messages"):
+            adapter.count_tokens("hi", messages=[{"role": "user", "content": "hi"}])
+
+
+class TestContextWindowProperty:
+    """Tests for the new context_window / min_output_tokens properties."""
+
+    def test_context_window_returns_configured_value(self):
+        adapter = LiteLLMAdapter(model="test-model", context_window=8192)
+        assert adapter.context_window == 8192
+
+    @patch("litellm.get_model_info")
+    def test_context_window_falls_back_to_get_model_info(self, mock_info):
+        """Without a configured override, context_window queries litellm."""
+        mock_info.return_value = {"max_input_tokens": 128_000}
+        adapter = LiteLLMAdapter(model="gpt-4o")  # no context_window= arg
+        assert adapter.context_window == 128_000
+
+    @patch("litellm.get_model_info")
+    def test_context_window_unknown_model_returns_none(self, mock_info):
+        mock_info.side_effect = Exception("Model not found")
+        adapter = LiteLLMAdapter(model="totally-unknown-model-xyz")
+        assert adapter.context_window is None
+
+    def test_context_window_configured_overrides_detection(self):
+        """A configured value takes precedence over litellm detection."""
+        adapter = LiteLLMAdapter(model="gpt-4o", context_window=42)
+        assert adapter.context_window == 42
+
+    def test_min_output_tokens_matches_clamp_floor(self):
+        """Exposed min_output_tokens matches the value used by _build_params."""
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        assert adapter.min_output_tokens == 128
+
 
 # ---------------------------------------------------------------------------
 # Tests: get_pricing()

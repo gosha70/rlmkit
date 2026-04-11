@@ -40,6 +40,11 @@ _CONNECTION_KEYWORDS = (
 _CONTEXT_WINDOW_RESERVE_FRACTION = 0.05
 _CONTEXT_WINDOW_RESERVE_FLOOR = 64
 
+# Minimum output budget the clamp will leave intact.  The model needs at
+# least this many tokens to produce a useful response (a JSON action or
+# short final answer) — anything less and the clamp refuses proactively.
+_MIN_OUTPUT_TOKENS = 128
+
 
 def _is_connection_error(exc: BaseException) -> bool:
     """Return True when *exc* looks like a network-level connection failure."""
@@ -190,17 +195,47 @@ class LiteLLMAdapter:
                 raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM streaming failed: {exc}") from exc
 
-    def count_tokens(self, text: str) -> int:
+    def count_tokens(
+        self,
+        text: str | None = None,
+        *,
+        messages: list[dict[str, str]] | None = None,
+    ) -> int:
         """Count tokens using LiteLLM's model-aware tokenizer.
 
+        Supports two input shapes (exactly one must be provided):
+
+        - ``count_tokens("some text")`` — count tokens for a raw string.
+        - ``count_tokens(messages=[{...}, ...])`` — count tokens for a full
+          chat message list, including chat-template overhead.
+
         Args:
-            text: Text to tokenize.
+            text: Raw text to tokenize.
+            messages: Chat messages (role/content dicts) to tokenize as a
+                complete prompt.
 
         Returns:
             Token count.
+
+        Raises:
+            ValueError: If neither or both of ``text``/``messages`` are given.
         """
+        if text is None and messages is None:
+            raise ValueError("count_tokens requires either text or messages")
+        if text is not None and messages is not None:
+            raise ValueError("count_tokens accepts text OR messages, not both")
+
         import litellm
 
+        if messages is not None:
+            try:
+                return litellm.token_counter(model=self._active_model, messages=messages)
+            except Exception:
+                # Fallback: sum content chars ÷ 3 + small chat template overhead
+                chars = sum(len(m.get("content", "") or "") for m in messages)
+                return max(1, chars // 3 + 10)
+
+        assert text is not None  # narrowed by the checks above
         try:
             return litellm.token_counter(model=self._active_model, text=text)
         except Exception:
@@ -332,6 +367,45 @@ class LiteLLMAdapter:
             except Exception:
                 continue
         return None
+
+    @property
+    def context_window(self) -> int | None:
+        """Total context window (input + output) in tokens for the active model.
+
+        Returns the value configured via ``context_window=`` at construction
+        time when set; otherwise falls back to ``litellm.get_model_info`` to
+        detect ``max_input_tokens``.  Returns ``None`` when neither source
+        produces a positive integer (unknown/local models without a configured
+        override).
+        """
+        if self._context_window:
+            return self._context_window
+
+        import litellm
+
+        models_to_try = [self._active_model]
+        if "/" in self._active_model:
+            models_to_try.append(self._active_model.split("/", 1)[1])
+
+        for model_name in models_to_try:
+            try:
+                info = litellm.get_model_info(model=model_name)
+                max_input = info.get("max_input_tokens") or info.get("max_tokens")
+                if max_input and isinstance(max_input, int) and max_input > 0:
+                    return max_input
+            except Exception:
+                continue
+        return None
+
+    @property
+    def min_output_tokens(self) -> int:
+        """Minimum output budget the clamp will leave intact.
+
+        The model needs at least this many tokens to produce a useful
+        response (a JSON action or a short final answer); anything less
+        and the clamp refuses proactively with a ``ValueError``.
+        """
+        return _MIN_OUTPUT_TOKENS
 
     @property
     def root_model(self) -> str:
@@ -469,9 +543,7 @@ class LiteLLMAdapter:
             )
             remaining = self._context_window - estimated_prompt_tokens - reserve
             configured_max = effective_max_tokens
-            # Floor: model needs at least 128 tokens to produce a useful response
-            # (a JSON action or short final answer).
-            min_output_tokens = 128
+            min_output_tokens = _MIN_OUTPUT_TOKENS
             clamped = False
             if remaining < min_output_tokens:
                 # Prompt + reserve exceeds context window.  Calculate hard
