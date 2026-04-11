@@ -350,6 +350,7 @@ class TestAsyncExecution:
         assert "async hello" in result.stdout
 
 
+@pytest.mark.slow
 class TestTopLevelScriptEntrypoint:
     """Regression coverage for the ``__main__`` script path.
 
@@ -367,6 +368,11 @@ class TestTopLevelScriptEntrypoint:
 
     These tests pin both the working idiom and the failing idiom so any
     future change to ``_MP_CTX`` is caught in CI instead of at runtime.
+
+    Marked ``slow`` because each test launches 1-3 fresh Python
+    interpreters via ``subprocess.run``, compounding spawn cost to
+    ~5-18 s per test.  Default dev runs skip these; CI passes
+    ``--runslow`` to include them.
     """
 
     _SANDBOX_IMPORT = (

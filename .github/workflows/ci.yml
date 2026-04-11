@@ -50,7 +50,10 @@ jobs:
           version: "latest"
       - run: uv sync --extra dev --extra server
       - name: Run tests with coverage (non-UI runtime; ui/* excluded — see pyproject.toml)
-        run: uv run pytest tests/ --cov=rlmkit --cov-report=term-missing --cov-report=xml --cov-fail-under=80 -q
+        # --runslow includes spawn-heavy tests like TestTopLevelScriptEntrypoint
+        # which are gated by default for local dev speed but MUST run in CI.
+        # -n auto from pyproject.toml [tool.pytest.ini_options] addopts parallelizes.
+        run: uv run pytest tests/ --runslow --cov=rlmkit --cov-report=term-missing --cov-report=xml --cov-fail-under=80 -q
       - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@v4

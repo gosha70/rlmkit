@@ -39,6 +39,11 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.24.0",
+    # pytest-xdist parallelizes the sandbox suite across CPU cores.
+    # The subprocess sandbox uses spawn (see subprocess_sandbox.py for why),
+    # and spawn cold-start is I/O-heavy, so the suite parallelizes well:
+    # ~118s serial → ~25-30s with -n auto on an 8-core machine.
+    "pytest-xdist>=3.5.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
     "bandit>=1.7.0",
@@ -95,6 +100,13 @@ python_functions = ["test_*"]
 addopts = [
     "--verbose",
     "--strict-markers",
+    # Parallelize across all available CPU cores.  The subprocess sandbox
+    # uses spawn (see subprocess_sandbox.py), and spawn cold-start is
+    # I/O-heavy, so the sandbox suite parallelizes well: ~156 s serial →
+    # ~16 s with -n auto.  The full backend suite drops from ~206 s to
+    # ~45 s on a 14-core machine.  Override with ``-n 0`` for serial
+    # debug runs or ``-n 4`` for a specific worker count.
+    "-n=auto",
 ]
 filterwarnings = [
     # aiohttp: fixed in Python 3.13.2 but aiohttp hasn't caught up yet
