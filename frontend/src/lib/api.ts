@@ -34,6 +34,57 @@ export interface ChatResponse {
   chat_provider_id?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Matrix compare — POST /api/chat/compare-matrix
+// ---------------------------------------------------------------------------
+
+export type MatrixSlotMode = "direct" | "rlm" | "rag";
+
+export type MatrixRankingMetric =
+  | "cost"
+  | "tokens"
+  | "latency"
+  | "answer_per_cost";
+
+export interface CompareMatrixRequest {
+  content?: string | null;
+  file_ids?: string[] | null;
+  query: string;
+  chat_provider_ids: string[];
+  modes: MatrixSlotMode[];
+  session_id?: string | null;
+  ranking_metric?: MatrixRankingMetric;
+}
+
+export interface CompareMatrixSlotResponse {
+  slot_id: string;
+  label: string;
+  mode: string;
+  provider: string;
+  model: string;
+  chat_provider_id: string;
+  chat_provider_name?: string | null;
+  execution_id: string;
+  success: boolean;
+  answer: string;
+  error?: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  total_cost: number;
+  elapsed_seconds: number;
+  steps: number;
+}
+
+export interface CompareMatrixResponse {
+  comparison_group_id: string;
+  session_id: string;
+  slots: CompareMatrixSlotResponse[];
+  ranking: number[];
+  ranking_metric: string;
+  total_elapsed: number;
+}
+
 export interface FileUploadResponse {
   id: string;
   name: string;
@@ -432,6 +483,16 @@ export const getHealth = () => fetchJSON<HealthResponse>("/health");
 // Chat
 export const submitChat = (req: ChatRequest) =>
   fetchJSON<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(req) });
+
+// Matrix compare — synchronous, returns the full result when every slot
+// has either completed or failed.  Unlike submitChat (which is 202-accepted
+// and reports back through polling), this endpoint waits for the thread
+// pool to join.  Expect latency proportional to the slowest slot.
+export const submitCompareMatrix = (req: CompareMatrixRequest) =>
+  fetchJSON<CompareMatrixResponse>("/api/chat/compare-matrix", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 
 // Files
 export function uploadFile(
