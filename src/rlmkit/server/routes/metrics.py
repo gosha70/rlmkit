@@ -1,8 +1,28 @@
-"""Metrics endpoints."""
+"""Metrics endpoints.
+
+Aggregates per-session metrics from two sources:
+
+1. **Telemetry store** (primary): ``state.telemetry.list_runs(session_id=…)``
+   is the source of truth for new runs going forward.  Data survives
+   restarts and stays consistent with ``/api/traces`` and
+   ``/api/executions``.
+
+2. **Legacy session messages** (fallback): sessions created before Bet 2
+   stored per-run metrics inline on assistant messages
+   (``msg['metrics']``).  Those rows were never backfilled into
+   telemetry, so we still walk ``session.messages`` for any assistant
+   message whose ``execution_id`` is not already represented in the
+   store and fold it into the aggregation.
+
+The fallback is keyed by ``execution_id`` so messages that DO have a
+telemetry row are never double-counted.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -18,131 +38,164 @@ from rlmkit.server.models import (
 router = APIRouter()
 
 
+@dataclass
+class _RunPoint:
+    """Normalized per-run data point used for aggregation.
+
+    Sits between the two input sources (telemetry rows, legacy messages)
+    and the output aggregators, so :func:`_build_metrics_response` never
+    has to care where a row came from.
+    """
+
+    execution_id: str | None
+    timestamp: datetime
+    tokens: int
+    cost: float
+    latency: float
+    mode: str
+    provider: str
+    chat_provider_name: str | None
+
+
 @router.get("/api/metrics/{session_id}")
 async def get_metrics(
     session_id: str,
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> MetricsResponse:
-    """Get aggregated metrics for a session."""
+    """Get aggregated metrics for a session (telemetry + legacy messages)."""
     session = state.sessions.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Source 1: telemetry store. A high limit (10_000) avoids accidental
+    # truncation for long sessions; at ~1 KB per row this stays well under
+    # memory limits.
+    telemetry_runs = state.telemetry.list_runs(session_id=session_id, limit=10_000)
+    telemetry_exec_ids: set[str] = {r.id for r in telemetry_runs}
+
+    points: list[_RunPoint] = [_point_from_telemetry(r) for r in telemetry_runs]
+
+    # Source 2: legacy assistant messages not already represented in telemetry.
+    # This preserves metrics visibility for sessions persisted before Bet 2.
+    for msg in session.messages:
+        if msg.get("role") != "assistant":
+            continue
+        msg_metrics = msg.get("metrics")
+        if not isinstance(msg_metrics, dict):
+            continue
+        exec_id = msg.get("execution_id")
+        if exec_id and exec_id in telemetry_exec_ids:
+            # Already counted via telemetry — avoid double-counting.
+            continue
+        point = _point_from_message(msg, msg_metrics)
+        if point is not None:
+            points.append(point)
+
+    return _build_metrics_response(session_id, points)
+
+
+def _point_from_telemetry(run: Any) -> _RunPoint:
+    """Convert a telemetry :class:`RunSummary` into a :class:`_RunPoint`."""
+    return _RunPoint(
+        execution_id=run.id,
+        timestamp=datetime.fromtimestamp(run.created_at, tz=timezone.utc),
+        tokens=run.total_tokens,
+        cost=run.total_cost,
+        latency=run.elapsed_seconds,
+        mode=run.mode or "unknown",
+        provider=run.provider or "unknown",
+        chat_provider_name=run.chat_provider_name,
+    )
+
+
+def _point_from_message(
+    msg: dict[str, Any],
+    msg_metrics: dict[str, Any],
+) -> _RunPoint | None:
+    """Convert a legacy assistant message into a :class:`_RunPoint`, or None."""
+    ts_raw = msg.get("timestamp")
+    if isinstance(ts_raw, str):
+        try:
+            ts = datetime.fromisoformat(ts_raw)
+        except ValueError:
+            ts = datetime.now(timezone.utc)
+    elif isinstance(ts_raw, datetime):
+        ts = ts_raw
+    else:
+        ts = datetime.now(timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    return _RunPoint(
+        execution_id=msg.get("execution_id"),
+        timestamp=ts,
+        tokens=int(msg_metrics.get("total_tokens", 0)),
+        cost=float(msg_metrics.get("cost_usd", 0.0)),
+        latency=float(msg_metrics.get("elapsed_seconds", 0.0)),
+        mode=msg.get("mode_used", "unknown") or "unknown",
+        provider=msg.get("provider", "unknown") or "unknown",
+        chat_provider_name=msg.get("chat_provider_name"),
+    )
+
+
+def _build_metrics_response(
+    session_id: str,
+    points: list[_RunPoint],
+) -> MetricsResponse:
+    """Aggregate a list of :class:`_RunPoint` rows into a ``MetricsResponse``."""
     total_tokens = 0
     total_cost = 0.0
     total_latency = 0.0
     query_count = 0
-    by_mode: dict[str, dict] = {}
-    by_provider: dict[str, dict] = {}
-    by_chat_provider: dict[str, dict] = {}
-    timeline = []
 
-    for msg in session.messages:
-        if msg["role"] != "assistant":
-            continue
-        m = msg.get("metrics")
-        if not m:
-            continue
+    by_mode: dict[str, _GroupAcc] = {}
+    by_provider: dict[str, _GroupAcc] = {}
+    by_chat_provider: dict[str, _GroupAcc] = {}
+    timeline: list[TimelineEntry] = []
 
+    for point in points:
         query_count += 1
-        tokens = m.get("total_tokens", 0)
-        cost = m.get("cost_usd", 0.0)
-        latency = m.get("elapsed_seconds", 0.0)
-        mode = msg.get("mode_used", "unknown")
-        provider = msg.get("provider", "unknown")
+        total_tokens += point.tokens
+        total_cost += point.cost
+        total_latency += point.latency
 
-        total_tokens += tokens
-        total_cost += cost
-        total_latency += latency
-
-        if mode not in by_mode:
-            by_mode[mode] = {
-                "queries": 0,
-                "total_tokens": 0,
-                "total_cost_usd": 0.0,
-                "latencies": [],
-            }
-        by_mode[mode]["queries"] += 1
-        by_mode[mode]["total_tokens"] += tokens
-        by_mode[mode]["total_cost_usd"] += cost
-        by_mode[mode]["latencies"].append(latency)
-
-        if provider not in by_provider:
-            by_provider[provider] = {
-                "queries": 0,
-                "total_tokens": 0,
-                "total_cost_usd": 0.0,
-                "latencies": [],
-            }
-        by_provider[provider]["queries"] += 1
-        by_provider[provider]["total_tokens"] += tokens
-        by_provider[provider]["total_cost_usd"] += cost
-        by_provider[provider]["latencies"].append(latency)
-
-        # Aggregate by Chat Provider (if present)
-        cp_name = msg.get("chat_provider_name")
-        if cp_name:
-            if cp_name not in by_chat_provider:
-                by_chat_provider[cp_name] = {
-                    "queries": 0,
-                    "total_tokens": 0,
-                    "total_cost_usd": 0.0,
-                    "latencies": [],
-                }
-            by_chat_provider[cp_name]["queries"] += 1
-            by_chat_provider[cp_name]["total_tokens"] += tokens
-            by_chat_provider[cp_name]["total_cost_usd"] += cost
-            by_chat_provider[cp_name]["latencies"].append(latency)
+        _acc(by_mode, point.mode, point.tokens, point.cost, point.latency)
+        _acc(by_provider, point.provider, point.tokens, point.cost, point.latency)
+        if point.chat_provider_name:
+            _acc(
+                by_chat_provider,
+                point.chat_provider_name,
+                point.tokens,
+                point.cost,
+                point.latency,
+            )
 
         timeline.append(
             TimelineEntry(
-                timestamp=datetime.fromisoformat(msg["timestamp"]),
-                tokens=tokens,
-                cost_usd=cost,
-                latency_seconds=latency,
-                mode=mode,
-                provider=provider,
-                chat_provider_name=cp_name,
-                execution_id=msg.get("execution_id"),
+                timestamp=point.timestamp,
+                tokens=point.tokens,
+                cost_usd=point.cost,
+                latency_seconds=point.latency,
+                mode=point.mode,
+                provider=point.provider,
+                chat_provider_name=point.chat_provider_name,
+                execution_id=point.execution_id,
             )
         )
 
+    # Sort timeline chronologically (oldest → newest) so UI charts draw
+    # left-to-right regardless of which source the row came from.
+    timeline.sort(key=lambda e: e.timestamp)
+
     avg_latency = total_latency / query_count if query_count else 0.0
 
-    mode_summaries = {}
-    for mode, data in by_mode.items():
-        lats = data.pop("latencies")
-        avg_lat = sum(lats) / len(lats) if lats else 0.0
-        mode_summaries[mode] = ModeSummary(
-            queries=data["queries"],
-            total_tokens=data["total_tokens"],
-            total_cost_usd=data["total_cost_usd"],
-            avg_latency_seconds=round(avg_lat, 2),
-        )
+    mode_summaries = {key: _to_mode_summary(acc) for key, acc in by_mode.items()}
+    provider_summaries = {key: _to_provider_summary(acc) for key, acc in by_provider.items()}
+    chat_provider_summaries = {
+        key: _to_provider_summary(acc) for key, acc in by_chat_provider.items()
+    }
 
-    provider_summaries = {}
-    for p, d in by_provider.items():
-        lats = d.pop("latencies")
-        avg_lat = sum(lats) / len(lats) if lats else 0.0
-        provider_summaries[p] = ProviderSummary(
-            queries=d["queries"],
-            total_tokens=d["total_tokens"],
-            total_cost_usd=d["total_cost_usd"],
-            avg_latency_seconds=round(avg_lat, 2),
-        )
-
-    chat_provider_summaries = {}
-    for cp_key, cpd in by_chat_provider.items():
-        lats = cpd.pop("latencies")
-        avg_lat = sum(lats) / len(lats) if lats else 0.0
-        chat_provider_summaries[cp_key] = ProviderSummary(
-            queries=cpd["queries"],
-            total_tokens=cpd["total_tokens"],
-            total_cost_usd=cpd["total_cost_usd"],
-            avg_latency_seconds=round(avg_lat, 2),
-        )
-
-    # Token savings: compare RLM tokens vs Direct tokens (lower is better)
+    # Token savings: compare RLM vs Direct total tokens (lower is better).
     rlm_tokens = mode_summaries.get("rlm", ModeSummary()).total_tokens
     direct_tokens = mode_summaries.get("direct", ModeSummary()).total_tokens
     if direct_tokens > 0 and rlm_tokens > 0:
@@ -163,4 +216,61 @@ async def get_metrics(
         by_provider=provider_summaries,
         by_chat_provider=chat_provider_summaries,
         timeline=timeline,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internals
+# ---------------------------------------------------------------------------
+
+
+class _GroupAcc:
+    """Mutable accumulator for one aggregation bucket."""
+
+    __slots__ = ("queries", "total_tokens", "total_cost_usd", "latencies")
+
+    def __init__(self) -> None:
+        self.queries: int = 0
+        self.total_tokens: int = 0
+        self.total_cost_usd: float = 0.0
+        self.latencies: list[float] = []
+
+
+def _acc(
+    bucket: dict[str, _GroupAcc],
+    key: str,
+    tokens: int,
+    cost: float,
+    latency: float,
+) -> None:
+    """Add one run's numbers into the right bucket, creating it on demand."""
+    acc = bucket.get(key)
+    if acc is None:
+        acc = _GroupAcc()
+        bucket[key] = acc
+    acc.queries += 1
+    acc.total_tokens += tokens
+    acc.total_cost_usd += cost
+    acc.latencies.append(latency)
+
+
+def _avg(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def _to_mode_summary(acc: _GroupAcc) -> ModeSummary:
+    return ModeSummary(
+        queries=acc.queries,
+        total_tokens=acc.total_tokens,
+        total_cost_usd=acc.total_cost_usd,
+        avg_latency_seconds=round(_avg(acc.latencies), 2),
+    )
+
+
+def _to_provider_summary(acc: _GroupAcc) -> ProviderSummary:
+    return ProviderSummary(
+        queries=acc.queries,
+        total_tokens=acc.total_tokens,
+        total_cost_usd=acc.total_cost_usd,
+        avg_latency_seconds=round(_avg(acc.latencies), 2),
     )

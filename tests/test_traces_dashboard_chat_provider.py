@@ -107,6 +107,44 @@ def _make_session(
     )
 
 
+def _record_run(
+    session_id: str,
+    *,
+    provider: str = "openai",
+    model: str = "gpt-4o",
+    mode: str = "direct",
+    chat_provider_id: str | None = None,
+    chat_provider_name: str | None = None,
+    total_tokens: int = 100,
+    cost_usd: float = 0.01,
+    elapsed_seconds: float = 1.0,
+    created_offset: float = 0.0,
+) -> None:
+    """Persist a completed run to the telemetry store for the metrics tests.
+
+    The metrics route reads from ``state.telemetry``, so tests that used to
+    seed ``session.messages`` directly must now push rows through the store.
+    """
+    state = get_state()
+    state.telemetry.record_run(
+        created_at=_now().timestamp() + created_offset,
+        mode=mode,
+        provider=provider,
+        model=model,
+        query="q",
+        answer="Answer",
+        input_tokens=80,
+        output_tokens=20,
+        total_tokens=total_tokens,
+        total_cost=cost_usd,
+        elapsed_seconds=elapsed_seconds,
+        success=True,
+        session_id=session_id,
+        chat_provider_id=chat_provider_id,
+        chat_provider_name=chat_provider_name,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Test 1: ExecutionRecord stores chat_provider_id/name
 # ---------------------------------------------------------------------------
@@ -210,17 +248,14 @@ class TestGetTrace:
 class TestMetricsByChatProvider:
     def test_by_chat_provider_populated(self, client: TestClient) -> None:
         state = get_state()
-        state.sessions["sess-1"] = _make_session(
-            session_id="sess-1",
-            messages=[
-                _make_assistant_message(
-                    provider="anthropic",
-                    chat_provider_name="DIRECT-CLAUDE",
-                    total_tokens=200,
-                    cost_usd=0.02,
-                    elapsed_seconds=1.5,
-                ),
-            ],
+        state.sessions["sess-1"] = _make_session(session_id="sess-1")
+        _record_run(
+            "sess-1",
+            provider="anthropic",
+            chat_provider_name="DIRECT-CLAUDE",
+            total_tokens=200,
+            cost_usd=0.02,
+            elapsed_seconds=1.5,
         )
 
         resp = client.get("/api/metrics/sess-1")
@@ -246,30 +281,23 @@ class TestMetricsByChatProvider:
 class TestSameLLMProviderTwoChatProviders:
     def test_separate_by_chat_provider_merged_by_provider(self, client: TestClient) -> None:
         state = get_state()
-        state.sessions["sess-2"] = _make_session(
-            session_id="sess-2",
-            messages=[
-                {
-                    **_make_assistant_message(
-                        provider="anthropic",
-                        chat_provider_name="DIRECT-CLAUDE",
-                        total_tokens=100,
-                        cost_usd=0.01,
-                        elapsed_seconds=1.0,
-                    ),
-                    "id": "msg-a",
-                },
-                {
-                    **_make_assistant_message(
-                        provider="anthropic",
-                        chat_provider_name="RLM-CLAUDE",
-                        total_tokens=300,
-                        cost_usd=0.03,
-                        elapsed_seconds=3.0,
-                    ),
-                    "id": "msg-b",
-                },
-            ],
+        state.sessions["sess-2"] = _make_session(session_id="sess-2")
+        _record_run(
+            "sess-2",
+            provider="anthropic",
+            chat_provider_name="DIRECT-CLAUDE",
+            total_tokens=100,
+            cost_usd=0.01,
+            elapsed_seconds=1.0,
+        )
+        _record_run(
+            "sess-2",
+            provider="anthropic",
+            chat_provider_name="RLM-CLAUDE",
+            total_tokens=300,
+            cost_usd=0.03,
+            elapsed_seconds=3.0,
+            created_offset=1.0,
         )
 
         resp = client.get("/api/metrics/sess-2")
@@ -304,15 +332,14 @@ class TestSameLLMProviderTwoChatProviders:
 class TestLegacyMessagesWithoutChatProvider:
     def test_appear_in_by_provider_not_by_chat_provider(self, client: TestClient) -> None:
         state = get_state()
-        state.sessions["sess-3"] = _make_session(
-            session_id="sess-3",
-            messages=[
-                _make_assistant_message(
-                    provider="openai",
-                    chat_provider_name=None,
-                    total_tokens=150,
-                ),
-            ],
+        state.sessions["sess-3"] = _make_session(session_id="sess-3")
+        # Runs without chat_provider_name still land in by_provider but
+        # should be invisible to by_chat_provider.
+        _record_run(
+            "sess-3",
+            provider="openai",
+            chat_provider_name=None,
+            total_tokens=150,
         )
 
         resp = client.get("/api/metrics/sess-3")
@@ -329,26 +356,19 @@ class TestLegacyMessagesWithoutChatProvider:
 
     def test_mixed_legacy_and_chat_provider_messages(self, client: TestClient) -> None:
         state = get_state()
-        state.sessions["sess-4"] = _make_session(
-            session_id="sess-4",
-            messages=[
-                {
-                    **_make_assistant_message(
-                        provider="openai",
-                        chat_provider_name=None,
-                        total_tokens=100,
-                    ),
-                    "id": "msg-legacy",
-                },
-                {
-                    **_make_assistant_message(
-                        provider="anthropic",
-                        chat_provider_name="DIRECT-CLAUDE",
-                        total_tokens=200,
-                    ),
-                    "id": "msg-new",
-                },
-            ],
+        state.sessions["sess-4"] = _make_session(session_id="sess-4")
+        _record_run(
+            "sess-4",
+            provider="openai",
+            chat_provider_name=None,
+            total_tokens=100,
+        )
+        _record_run(
+            "sess-4",
+            provider="anthropic",
+            chat_provider_name="DIRECT-CLAUDE",
+            total_tokens=200,
+            created_offset=1.0,
         )
 
         resp = client.get("/api/metrics/sess-4")

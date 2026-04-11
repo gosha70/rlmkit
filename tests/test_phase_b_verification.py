@@ -131,45 +131,41 @@ class TestTraceTokenMetrics:
 
 class TestDashboardMetrics:
     def test_metrics_aggregates_by_provider(self, client: TestClient) -> None:
-        """Metrics endpoint populates by_provider from assistant messages."""
+        """Metrics endpoint populates by_provider from the telemetry store."""
         from rlmkit.server.dependencies import get_state
 
         state = get_state()
         session = state.get_or_create_session()
         now = datetime.now(timezone.utc)
 
-        # Add two assistant messages from different providers
-        state.add_message(
-            session.id,
-            {
-                "role": "assistant",
-                "content": "answer 1",
-                "mode_used": "direct",
-                "provider": "openai",
-                "chat_provider_name": "GPT-4o Config",
-                "metrics": {
-                    "total_tokens": 200,
-                    "cost_usd": 0.003,
-                    "elapsed_seconds": 1.0,
-                },
-                "timestamp": now.isoformat(),
-            },
+        # Two completed runs from different providers, persisted via telemetry.
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            model="gpt-4o",
+            query="q1",
+            answer="answer 1",
+            total_tokens=200,
+            total_cost=0.003,
+            elapsed_seconds=1.0,
+            success=True,
+            session_id=session.id,
+            chat_provider_name="GPT-4o Config",
         )
-        state.add_message(
-            session.id,
-            {
-                "role": "assistant",
-                "content": "answer 2",
-                "mode_used": "direct",
-                "provider": "anthropic",
-                "chat_provider_name": "Claude Config",
-                "metrics": {
-                    "total_tokens": 300,
-                    "cost_usd": 0.005,
-                    "elapsed_seconds": 2.0,
-                },
-                "timestamp": now.isoformat(),
-            },
+        state.telemetry.record_run(
+            created_at=now.timestamp() + 1,
+            mode="direct",
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            query="q2",
+            answer="answer 2",
+            total_tokens=300,
+            total_cost=0.005,
+            elapsed_seconds=2.0,
+            success=True,
+            session_id=session.id,
+            chat_provider_name="Claude Config",
         )
 
         resp = client.get(f"/api/metrics/{session.id}")
@@ -184,28 +180,26 @@ class TestDashboardMetrics:
         assert data["by_provider"]["anthropic"]["queries"] == 1
 
     def test_metrics_aggregates_by_chat_provider(self, client: TestClient) -> None:
-        """Metrics endpoint populates by_chat_provider from assistant messages."""
+        """Metrics endpoint populates by_chat_provider from the telemetry store."""
         from rlmkit.server.dependencies import get_state
 
         state = get_state()
         session = state.get_or_create_session()
         now = datetime.now(timezone.utc)
 
-        state.add_message(
-            session.id,
-            {
-                "role": "assistant",
-                "content": "answer",
-                "mode_used": "direct",
-                "provider": "openai",
-                "chat_provider_name": "My GPT Config",
-                "metrics": {
-                    "total_tokens": 100,
-                    "cost_usd": 0.001,
-                    "elapsed_seconds": 0.5,
-                },
-                "timestamp": now.isoformat(),
-            },
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            model="gpt-4o",
+            query="q",
+            answer="answer",
+            total_tokens=100,
+            total_cost=0.001,
+            elapsed_seconds=0.5,
+            success=True,
+            session_id=session.id,
+            chat_provider_name="My GPT Config",
         )
 
         resp = client.get(f"/api/metrics/{session.id}")

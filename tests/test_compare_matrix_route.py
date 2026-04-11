@@ -663,3 +663,151 @@ class TestPerSlotRLMSettings:
         assert cfg.mode == "direct"
         # The direct slot should NOT inherit rlm_max_steps=999
         assert cfg.max_steps != 999
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: matrix → follow-up /api/chat on one of the providers
+# ---------------------------------------------------------------------------
+
+
+class _CapturingLLMAdapter(_FakeLLMAdapter):
+    """FakeLLMAdapter that records every ``messages`` list it receives.
+
+    Used to prove that a follow-up ``/api/chat`` request, after a matrix
+    run, builds its prompt from a balanced per-provider history (not from
+    the flat session.messages list or an empty conversation).
+    """
+
+    def __init__(self, response: str = "follow-up-ok") -> None:
+        super().__init__(response=response)
+        self.captured_calls: list[list[dict[str, str]]] = []
+
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        # Copy so subsequent mutations to the input list don't retroactively
+        # change what we captured.
+        self.captured_calls.append([dict(m) for m in messages])
+        return super().complete(messages)
+
+
+class TestMatrixThenFollowUpChat:
+    """Run compare-matrix, then run /api/chat on one of the matrix providers,
+    and verify the follow-up chat consumes the balanced per-provider history.
+
+    This closes the residual integration gap flagged during review: the
+    state-level seeding test covers what lands in ``session.conversations``,
+    but this test proves that the *next* LLM call actually sees it.
+    """
+
+    def test_follow_up_chat_uses_matrix_history(self, client: TestClient) -> None:
+        import asyncio
+
+        from rlmkit.server.dependencies import ExecutionRecord
+        from rlmkit.server.routes.chat import _run_execution
+
+        state = get_state()
+
+        # Two chat providers registered in the matrix.
+        cp_a = _make_chat_provider("A", backend="openai", model="gpt-4o")
+        cp_b = _make_chat_provider("B", backend="anthropic", model="claude")
+        state.config.chat_providers.append(cp_a)
+        state.config.chat_providers.append(cp_b)
+
+        # Capturing adapter for provider A; vanilla fake for provider B.
+        capturing_llm = _CapturingLLMAdapter(response="A-reply")
+        adapters: dict[str, Any] = {
+            cp_a.id: capturing_llm,
+            cp_b.id: _FakeLLMAdapter(response="B-reply"),
+        }
+
+        def _fake_factory(cp_id: str, num_retries: int | None = None) -> Any:
+            return adapters[cp_id]
+
+        state.create_llm_adapter_for_chat_provider = _fake_factory  # type: ignore[method-assign]
+
+        # --- Step 1: matrix run seeds both per-provider conversations ---
+        resp = client.post(
+            "/api/chat/compare-matrix",
+            json={
+                "query": "what are the key risks?",
+                "content": "document body",
+                "chat_provider_ids": [cp_a.id, cp_b.id],
+                "modes": ["direct"],
+            },
+        )
+        assert resp.status_code == 200
+        session_id = resp.json()["session_id"]
+
+        # Sanity: provider A's per-provider conversation has [user, assistant]
+        conv_a = state.get_conversation(session_id, cp_a.id)
+        assert [m["role"] for m in conv_a] == ["user", "assistant"]
+        assert conv_a[1]["content"] == "A-reply"
+
+        # Clear captured calls from the matrix run (we only care about the
+        # follow-up chat's LLM input).
+        capturing_llm.captured_calls.clear()
+
+        # --- Step 2: a direct follow-up chat on provider A ---
+        # Instead of going through POST /api/chat (which spawns a background
+        # task we'd have to poll), we replicate what the handler does up to
+        # _run_execution and then call it directly.  This is deterministic
+        # and the test fails if the history-reading logic ever regresses.
+        follow_up_query = "and which one is most urgent?"
+        now = datetime.now(timezone.utc)
+        follow_up_msg = {
+            "id": str(uuid.uuid4()),
+            "role": "user",
+            "content": follow_up_query,
+            "file_ids": [],
+            "mode": "direct",
+            "chat_provider_id": cp_a.id,
+            "timestamp": now.isoformat(),
+        }
+        state.add_message(session_id, follow_up_msg, cp_a.id)
+
+        execution = ExecutionRecord(
+            execution_id=str(uuid.uuid4()),
+            session_id=session_id,
+            query=follow_up_query,
+            mode="direct",
+            status="running",
+            started_at=now,
+            chat_provider_id=cp_a.id,
+            chat_provider_name=cp_a.name,
+        )
+        state.executions[execution.execution_id] = execution
+
+        asyncio.run(
+            _run_execution(
+                state=state,
+                execution=execution,
+                content="document body",
+                query=follow_up_query,
+                mode="direct",
+                chat_provider_id=cp_a.id,
+            )
+        )
+
+        # --- Step 3: assert the follow-up LLM saw balanced history ---
+        assert len(capturing_llm.captured_calls) == 1, (
+            "follow-up chat must have called the LLM exactly once"
+        )
+        call = capturing_llm.captured_calls[0]
+        user_msgs = [m for m in call if m["role"] == "user"]
+        assert len(user_msgs) == 1, "direct mode sends a single user message"
+        user_content = user_msgs[0]["content"]
+
+        # The full_query built by chat.py looks like:
+        #   "Previous conversation:\nUser: <q1>\n\nAssistant: <a1>\n\n
+        #    Current question: <q2>"
+        # — so both the matrix user turn AND the matrix assistant turn must
+        # be visible, and the current question must follow.
+        assert "Previous conversation:" in user_content
+        assert "what are the key risks?" in user_content  # matrix user
+        assert "A-reply" in user_content  # matrix assistant (provider A only)
+        assert "B-reply" not in user_content  # provider B's reply must NOT leak
+        assert "Current question: and which one is most urgent?" in user_content
+
+        # And the execution succeeded end-to-end
+        assert execution.status == "complete"
+        assert execution.result is not None
+        assert execution.result["success"] is True

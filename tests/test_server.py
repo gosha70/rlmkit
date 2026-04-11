@@ -426,7 +426,8 @@ class TestMetrics:
         data = resp.json()
         assert data["summary"]["total_queries"] == 0
 
-    def test_metrics_with_messages(self, client: TestClient) -> None:
+    def test_metrics_with_runs(self, client: TestClient) -> None:
+        """Metrics are aggregated from the telemetry store, not session messages."""
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -434,24 +435,22 @@ class TestMetrics:
             name="S1",
             created_at=now,
             updated_at=now,
-            messages=[
-                {"id": "m1", "role": "user", "content": "q", "timestamp": now.isoformat()},
-                {
-                    "id": "m2",
-                    "role": "assistant",
-                    "content": "a",
-                    "mode_used": "rlm",
-                    "timestamp": now.isoformat(),
-                    "metrics": {
-                        "input_tokens": 100,
-                        "output_tokens": 50,
-                        "total_tokens": 150,
-                        "cost_usd": 0.015,
-                        "elapsed_seconds": 2.5,
-                        "steps": 3,
-                    },
-                },
-            ],
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="rlm",
+            provider="openai",
+            model="gpt-4o",
+            query="q",
+            answer="a",
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+            total_cost=0.015,
+            elapsed_seconds=2.5,
+            success=True,
+            session_id="s1",
+            steps_count=3,
         )
         resp = client.get("/api/metrics/s1")
         assert resp.status_code == 200
@@ -911,8 +910,200 @@ class TestSessionPersistence:
 # ---------------------------------------------------------------------------
 
 
-class TestMetricsByProvider:
-    def test_metrics_include_by_provider(self, client: TestClient) -> None:
+class TestMetricsFromTelemetry:
+    """Additional telemetry-backed metrics coverage: timeline ordering,
+    by_chat_provider grouping, and RLM-vs-Direct token savings."""
+
+    def test_timeline_sorted_chronologically(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+        )
+        # Insert runs out of order; metrics route should return timeline
+        # chronologically (oldest → newest) regardless of insertion order.
+        state.telemetry.record_run(
+            run_id="r-mid",
+            created_at=now.timestamp() + 10,
+            mode="direct",
+            provider="openai",
+            query="q-mid",
+            total_tokens=100,
+            success=True,
+            session_id="s1",
+        )
+        state.telemetry.record_run(
+            run_id="r-old",
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            query="q-old",
+            total_tokens=50,
+            success=True,
+            session_id="s1",
+        )
+        state.telemetry.record_run(
+            run_id="r-new",
+            created_at=now.timestamp() + 20,
+            mode="direct",
+            provider="openai",
+            query="q-new",
+            total_tokens=150,
+            success=True,
+            session_id="s1",
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        ids = [entry["execution_id"] for entry in data["timeline"]]
+        assert ids == ["r-old", "r-mid", "r-new"]
+
+    def test_by_chat_provider_grouped_by_display_name(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            query="q",
+            total_tokens=100,
+            total_cost=0.01,
+            elapsed_seconds=1.0,
+            success=True,
+            session_id="s1",
+            chat_provider_id="cp-1",
+            chat_provider_name="FAST-CLAUDE",
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp() + 1,
+            mode="direct",
+            provider="openai",
+            query="q2",
+            total_tokens=200,
+            total_cost=0.02,
+            elapsed_seconds=2.0,
+            success=True,
+            session_id="s1",
+            chat_provider_id="cp-1",
+            chat_provider_name="FAST-CLAUDE",
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp() + 2,
+            mode="direct",
+            provider="openai",
+            query="q3",
+            total_tokens=300,
+            total_cost=0.03,
+            elapsed_seconds=3.0,
+            success=True,
+            session_id="s1",
+            chat_provider_id="cp-2",
+            chat_provider_name="CHEAP-OLLAMA",
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        by_cp = data["by_chat_provider"]
+        assert set(by_cp.keys()) == {"FAST-CLAUDE", "CHEAP-OLLAMA"}
+        assert by_cp["FAST-CLAUDE"]["queries"] == 2
+        assert by_cp["FAST-CLAUDE"]["total_tokens"] == 300
+        assert by_cp["FAST-CLAUDE"]["avg_latency_seconds"] == 1.5
+        assert by_cp["CHEAP-OLLAMA"]["queries"] == 1
+
+    def test_token_savings_rlm_vs_direct(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            query="q",
+            total_tokens=1000,
+            success=True,
+            session_id="s1",
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp() + 1,
+            mode="rlm",
+            provider="openai",
+            query="q",
+            total_tokens=200,
+            success=True,
+            session_id="s1",
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        # 1 - 200/1000 = 0.8 → 80% savings
+        assert data["summary"]["avg_token_savings_percent"] == 80.0
+
+    def test_session_with_no_runs_has_empty_metrics(self, client: TestClient) -> None:
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["empty-session"] = SessionRecord(
+            id="empty-session",
+            name="Empty",
+            created_at=now,
+            updated_at=now,
+        )
+        resp = client.get("/api/metrics/empty-session")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total_queries"] == 0
+        assert data["summary"]["total_tokens"] == 0
+        assert data["by_mode"] == {}
+        assert data["by_provider"] == {}
+        assert data["timeline"] == []
+        assert data["summary"]["avg_token_savings_percent"] is None
+
+    def test_runs_from_other_sessions_not_counted(self, client: TestClient) -> None:
+        """Metrics must filter by session_id so cross-session totals
+        don't bleed into each other."""
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(id="s1", name="S1", created_at=now, updated_at=now)
+        state.sessions["s2"] = SessionRecord(id="s2", name="S2", created_at=now, updated_at=now)
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            total_tokens=100,
+            session_id="s1",
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            total_tokens=500,
+            session_id="s2",
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["total_tokens"] == 100
+
+
+class TestMetricsLegacyMessageFallback:
+    """Sessions persisted before Bet 2 carried per-run metrics inline on
+    assistant messages.  Those rows were never backfilled into the telemetry
+    store, so the metrics route must still walk session messages as a
+    fallback to avoid a regression after restart."""
+
+    def test_legacy_message_with_metrics_is_counted(self, client: TestClient) -> None:
         state = get_state()
         now = datetime.now(timezone.utc)
         state.sessions["s1"] = SessionRecord(
@@ -921,27 +1112,174 @@ class TestMetricsByProvider:
             created_at=now,
             updated_at=now,
             messages=[
-                {"id": "m1", "role": "user", "content": "q", "timestamp": now.isoformat()},
+                {"id": "u1", "role": "user", "content": "q", "timestamp": now.isoformat()},
                 {
-                    "id": "m2",
+                    "id": "a1",
+                    "role": "assistant",
+                    "content": "a",
+                    "mode_used": "rlm",
+                    "provider": "anthropic",
+                    "chat_provider_name": "LEGACY-CLAUDE",
+                    "timestamp": now.isoformat(),
+                    "metrics": {
+                        "input_tokens": 100,
+                        "output_tokens": 50,
+                        "total_tokens": 150,
+                        "cost_usd": 0.015,
+                        "elapsed_seconds": 2.5,
+                        "steps": 3,
+                    },
+                },
+            ],
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total_queries"] == 1
+        assert data["summary"]["total_tokens"] == 150
+        assert "rlm" in data["by_mode"]
+        assert "anthropic" in data["by_provider"]
+        assert "LEGACY-CLAUDE" in data["by_chat_provider"]
+
+    def test_message_duplicating_telemetry_row_not_double_counted(self, client: TestClient) -> None:
+        """An assistant message whose ``execution_id`` matches a telemetry
+        row must NOT be counted twice (post-Bet-2 writes both sources)."""
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {
+                    "id": "a1",
                     "role": "assistant",
                     "content": "a",
                     "mode_used": "direct",
-                    "provider": "anthropic",
-                    "timestamp": now.isoformat(),
-                    "metrics": {"total_tokens": 200, "cost_usd": 0.02, "elapsed_seconds": 1.0},
-                },
-                {"id": "m3", "role": "user", "content": "q2", "timestamp": now.isoformat()},
-                {
-                    "id": "m4",
-                    "role": "assistant",
-                    "content": "a2",
-                    "mode_used": "direct",
                     "provider": "openai",
+                    "execution_id": "exec-123",
                     "timestamp": now.isoformat(),
-                    "metrics": {"total_tokens": 300, "cost_usd": 0.03, "elapsed_seconds": 0.5},
+                    "metrics": {"total_tokens": 200, "cost_usd": 0.02},
                 },
             ],
+        )
+        # Same execution_id persisted to telemetry with a different token
+        # count — the telemetry row wins, the legacy message is dropped.
+        state.telemetry.record_run(
+            run_id="exec-123",
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="openai",
+            total_tokens=250,
+            session_id="s1",
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total_queries"] == 1
+        assert data["summary"]["total_tokens"] == 250  # telemetry, not message
+
+    def test_mixed_legacy_and_new_runs_aggregated_together(self, client: TestClient) -> None:
+        """A session with one legacy message and one new telemetry row
+        (different execution_ids) counts both."""
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {
+                    "id": "a1",
+                    "role": "assistant",
+                    "content": "old",
+                    "mode_used": "direct",
+                    "provider": "openai",
+                    "execution_id": "legacy-exec",
+                    "timestamp": now.isoformat(),
+                    "metrics": {"total_tokens": 100, "cost_usd": 0.01},
+                },
+            ],
+        )
+        state.telemetry.record_run(
+            run_id="new-exec",
+            created_at=now.timestamp() + 10,
+            mode="rlm",
+            provider="anthropic",
+            total_tokens=300,
+            total_cost=0.03,
+            session_id="s1",
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total_queries"] == 2
+        assert data["summary"]["total_tokens"] == 400
+        assert set(data["by_mode"].keys()) == {"direct", "rlm"}
+        assert set(data["by_provider"].keys()) == {"openai", "anthropic"}
+
+    def test_legacy_message_without_metrics_is_ignored(self, client: TestClient) -> None:
+        """Assistant messages without a ``metrics`` dict are skipped."""
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+            messages=[
+                {
+                    "id": "a1",
+                    "role": "assistant",
+                    "content": "a",
+                    "timestamp": now.isoformat(),
+                    # No metrics key — should be skipped.
+                },
+            ],
+        )
+        resp = client.get("/api/metrics/s1")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["total_queries"] == 0
+
+
+class TestMetricsByProvider:
+    def test_metrics_include_by_provider(self, client: TestClient) -> None:
+        """``by_provider`` groups by the backend key stored in telemetry."""
+        state = get_state()
+        now = datetime.now(timezone.utc)
+        state.sessions["s1"] = SessionRecord(
+            id="s1",
+            name="S1",
+            created_at=now,
+            updated_at=now,
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp(),
+            mode="direct",
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+            query="q",
+            answer="a",
+            total_tokens=200,
+            total_cost=0.02,
+            elapsed_seconds=1.0,
+            success=True,
+            session_id="s1",
+        )
+        state.telemetry.record_run(
+            created_at=now.timestamp() + 1,
+            mode="direct",
+            provider="openai",
+            model="gpt-4o",
+            query="q2",
+            answer="a2",
+            total_tokens=300,
+            total_cost=0.03,
+            elapsed_seconds=0.5,
+            success=True,
+            session_id="s1",
         )
         resp = client.get("/api/metrics/s1")
         assert resp.status_code == 200
