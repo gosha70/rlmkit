@@ -20,6 +20,11 @@ from rlmkit.application.use_cases.run_comparison import (
     RunComparisonUseCase,
 )
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+from rlmkit.application.use_cases.run_matrix_comparison import (
+    MatrixComparisonResultDTO,
+    MatrixSlotDTO,
+    RunMatrixComparisonUseCase,
+)
 from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 from rlmkit.infrastructure.embedding.litellm_embedding_adapter import LiteLLMEmbeddingAdapter
@@ -71,6 +76,91 @@ class InteractResult:
             "metrics": self.metrics,
             "has_trace": self.trace is not None,
         }
+
+
+@dataclass
+class MatrixSlotResult:
+    """Public result for one slot in a :func:`compare_matrix` run.
+
+    Attributes:
+        slot_id: Stable identifier for this slot (unique within the matrix).
+        label: Human-readable label (e.g. ``"openai/gpt-4o · direct"``).
+        provider: Backend key (e.g. ``"openai"``, ``"anthropic"``).
+        model: Model identifier (e.g. ``"gpt-4o"``).
+        mode: Execution mode (``"direct"`` | ``"rag"`` | ``"rlm"``).
+        answer: Final answer text.
+        success: Whether the slot's execution succeeded.
+        error: Error message if the slot failed, else ``None``.
+        input_tokens: Input tokens consumed.
+        output_tokens: Output tokens consumed.
+        total_tokens: ``input_tokens + output_tokens``.
+        total_cost: Cost in USD for this slot.
+        elapsed_time: Wall-clock seconds for this slot.
+        steps: Number of execution steps.
+        trace: Serialized execution trace (may be ``None`` for failed slots).
+    """
+
+    slot_id: str
+    label: str
+    provider: str
+    model: str
+    mode: str
+    answer: str
+    success: bool
+    error: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    elapsed_time: float = 0.0
+    steps: int = 0
+    trace: list[dict[str, Any]] | None = None
+
+
+@dataclass
+class MatrixCompareResult:
+    """Public result from a :func:`compare_matrix` call.
+
+    Attributes:
+        comparison_group_id: UUID identifying this matrix run. All slots
+            share this ID so callers can cross-reference them later.
+        slots: One :class:`MatrixSlotResult` per input slot, in input order.
+        ranking: List of slot indices (into ``slots``) ordered best → worst
+            by ``ranking_metric``. Failed slots are placed at the end.
+        ranking_metric: The metric used to produce ``ranking``
+            (``"cost"`` | ``"tokens"`` | ``"latency"`` | ``"answer_per_cost"``).
+        total_elapsed: Wall-clock seconds from first slot start to last finish.
+    """
+
+    comparison_group_id: str
+    slots: list[MatrixSlotResult] = field(default_factory=list)
+    ranking: list[int] = field(default_factory=list)
+    ranking_metric: str = "cost"
+    total_elapsed: float = 0.0
+
+    def get_slot(self, slot_id: str) -> MatrixSlotResult | None:
+        """Return the slot with *slot_id*, or ``None`` if not present."""
+        for s in self.slots:
+            if s.slot_id == slot_id:
+                return s
+        return None
+
+    @property
+    def best(self) -> MatrixSlotResult | None:
+        """Return the top-ranked *successful* slot, or ``None`` if none
+        succeeded.
+
+        The matrix ranking always places failed slots after successful ones,
+        but when every slot fails the first-ranked entry is still a failure.
+        This helper guards against that: callers can treat a non-``None``
+        return as a genuine winner they can display to users.
+        """
+        if not self.ranking or not self.slots:
+            return None
+        top = self.slots[self.ranking[0]]
+        if not top.success:
+            return None
+        return top
 
 
 def _estimate_tokens(text: str) -> int:
@@ -559,6 +649,330 @@ async def interact_async(
 
     result = await _dispatch_async(actual_mode, llm, config, content, query, emb_key)
     return _build_result(actual_mode, result, verbose)
+
+
+# ---------------------------------------------------------------------------
+# Matrix comparison (N providers × M modes)
+# ---------------------------------------------------------------------------
+
+
+_MATRIX_MODE_SET: frozenset[str] = frozenset({"direct", "rag", "rlm"})
+_MATRIX_RANKING_METRICS: frozenset[str] = frozenset(
+    {"cost", "tokens", "latency", "answer_per_cost"}
+)
+
+
+def _parse_provider_spec(spec: str) -> tuple[str, str]:
+    """Split a ``"provider/model"`` string into ``(provider, model)``.
+
+    Splits on the *first* ``/`` only, so HuggingFace-style model IDs
+    with embedded slashes are preserved in the model portion:
+
+    - ``"openai/gpt-4o"`` → ``("openai", "gpt-4o")``
+    - ``"vllm/Qwen/Qwen2.5-7B-Instruct"`` → ``("vllm", "Qwen/Qwen2.5-7B-Instruct")``
+
+    Callers using HF-style IDs should still pass ``api_base`` (for vLLM)
+    and make sure the provider prefix matches the backend, just like the
+    single-provider :func:`interact` path.
+    """
+    if not isinstance(spec, str) or "/" not in spec:
+        raise ValueError(
+            f"Provider spec must be 'provider/model' (got {spec!r}). Example: 'openai/gpt-4o'."
+        )
+    provider, _, model = spec.partition("/")
+    if not provider or not model:
+        raise ValueError(f"Invalid provider spec: {spec!r}")
+    return provider, model
+
+
+def _build_matrix_slots(
+    providers: list[str],
+    modes: list[str],
+    *,
+    api_key: str | None,
+    api_base: str | None,
+    temperature: float,
+    max_tokens: int | None,
+    timeout: float | None,
+    max_steps: int,
+    num_retries: int | None,
+    embedding_api_key: str | None,
+) -> list[MatrixSlotDTO]:
+    """Build per-slot :class:`MatrixSlotDTO`s from the public API args.
+
+    Each slot gets its own :class:`LiteLLMAdapter` so one slot's streaming
+    state cannot bleed into another's, a fresh sandbox for ``rlm`` slots,
+    and a fresh in-memory :class:`SQLiteStorageAdapter` +
+    :class:`LiteLLMEmbeddingAdapter` for ``rag`` slots.
+    """
+    slots: list[MatrixSlotDTO] = []
+    for spec in providers:
+        provider, raw_model = _parse_provider_spec(spec)
+        prefixed_model = _resolve_model(provider, raw_model, api_base)
+
+        for mode in modes:
+            llm = LiteLLMAdapter(
+                model=prefixed_model,
+                api_key=api_key,
+                api_base=api_base,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout if timeout is not None else 120.0,
+                num_retries=(
+                    num_retries
+                    if num_retries is not None
+                    else 0
+                    if provider in _LOCAL_PROVIDERS
+                    else 2
+                ),
+            )
+
+            sandbox = create_sandbox() if mode == "rlm" else None
+
+            embedder: LiteLLMEmbeddingAdapter | None = None
+            storage: SQLiteStorageAdapter | None = None
+            extra: dict[str, Any] = {}
+            if mode == "rag":
+                emb_key = _resolve_embedding_key(provider, api_key, embedding_api_key)
+                embedder = LiteLLMEmbeddingAdapter(api_key=emb_key)
+                storage = SQLiteStorageAdapter(":memory:")
+                extra = {"collection": f"rag_{uuid.uuid4().hex}"}
+
+            slot_config = RunConfigDTO(
+                mode=mode,
+                provider=provider,
+                model=prefixed_model,
+                api_key=api_key,
+                max_steps=max_steps,
+                extra=extra,
+            )
+
+            slots.append(
+                MatrixSlotDTO(
+                    slot_id=uuid.uuid4().hex[:12],
+                    mode=mode,  # type: ignore[arg-type]
+                    llm=llm,
+                    sandbox=sandbox,
+                    embedder=embedder,
+                    storage=storage,
+                    label=f"{provider}/{raw_model} · {mode}",
+                    provider=provider,
+                    model=raw_model,
+                    config=slot_config,
+                )
+            )
+    return slots
+
+
+def _to_public_matrix_result(dto: MatrixComparisonResultDTO) -> MatrixCompareResult:
+    """Convert an internal :class:`MatrixComparisonResultDTO` to the public type."""
+    return MatrixCompareResult(
+        comparison_group_id=dto.comparison_group_id,
+        slots=[
+            MatrixSlotResult(
+                slot_id=s.slot_id,
+                label=s.label,
+                provider=s.provider,
+                model=s.model,
+                mode=s.mode,
+                answer=s.result.answer,
+                success=s.result.success,
+                error=s.result.error,
+                input_tokens=s.result.input_tokens,
+                output_tokens=s.result.output_tokens,
+                total_tokens=s.result.total_tokens,
+                total_cost=s.result.total_cost,
+                elapsed_time=s.result.elapsed_time,
+                steps=s.result.steps,
+                trace=s.result.trace or None,
+            )
+            for s in dto.slots
+        ],
+        ranking=list(dto.ranking),
+        ranking_metric=dto.ranking_metric,
+        total_elapsed=dto.total_elapsed,
+    )
+
+
+def _validate_matrix_inputs(
+    content: str,
+    query: str,
+    providers: list[str],
+    modes: list[str],
+    ranking_metric: str,
+) -> None:
+    """Validate :func:`compare_matrix` inputs, raising ``ValueError`` on bad args.
+
+    Runs before any adapters are built or slots are executed, so a typo
+    in ``ranking_metric`` fails immediately instead of after spending
+    tokens and money on the whole matrix.
+    """
+    if not content:
+        raise ValueError("content cannot be empty")
+    if not query:
+        raise ValueError("query cannot be empty")
+    if not providers:
+        raise ValueError("providers must be a non-empty list")
+    if not modes:
+        raise ValueError("modes must be a non-empty list")
+    for mode in modes:
+        if mode not in _MATRIX_MODE_SET:
+            raise ValueError(f"Invalid matrix mode: {mode!r}. Valid: 'direct', 'rag', 'rlm'.")
+    if ranking_metric not in _MATRIX_RANKING_METRICS:
+        raise ValueError(
+            f"Invalid ranking_metric: {ranking_metric!r}. Valid: {sorted(_MATRIX_RANKING_METRICS)}."
+        )
+    # Validate every provider spec up front so a typo in the third entry
+    # doesn't fire only after the first two slots have already run.
+    for spec in providers:
+        _parse_provider_spec(spec)
+    total_slots = len(providers) * len(modes)
+    if total_slots > RunMatrixComparisonUseCase.MAX_SLOTS:
+        raise ValueError(
+            f"Too many slots: {total_slots} (= {len(providers)} providers × "
+            f"{len(modes)} modes) exceeds MAX_SLOTS="
+            f"{RunMatrixComparisonUseCase.MAX_SLOTS}"
+        )
+
+
+def compare_matrix(
+    content: str,
+    query: str,
+    providers: list[str],
+    modes: list[str] | None = None,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    max_steps: int = 16,
+    embedding_api_key: str | None = None,
+    ranking_metric: str = "cost",
+    num_retries: int | None = None,
+    verbose: bool = False,
+) -> MatrixCompareResult:
+    """Run the same query across N providers × M modes in parallel.
+
+    Each slot builds its own :class:`LiteLLMAdapter` so provider state is
+    fully isolated, then all slots fan out through a thread pool.  Slot
+    failures become failed :class:`MatrixSlotResult`s — they never fail
+    the whole matrix run.
+
+    Args:
+        content: Document text to analyze.
+        query: User question.
+        providers: Provider specs in ``"backend/model"`` format (e.g.
+            ``["openai/gpt-4o", "anthropic/claude-sonnet-4-6"]``).  The
+            split is on the *first* ``/`` only, so HuggingFace-style IDs
+            work via ``"vllm/Qwen/Qwen2.5-7B-Instruct"`` — pass
+            ``api_base`` for the vLLM server alongside.
+        modes: Execution modes to run for each provider (default
+            ``["direct"]``).  Valid: ``"direct"``, ``"rag"``, ``"rlm"``.
+        api_key: API key applied to every slot.
+        api_base: API base URL applied to every slot.
+        temperature: Sampling temperature.
+        max_tokens: Max output tokens per LLM call.
+        timeout: Request timeout in seconds.
+        max_steps: RLM budget for ``rlm`` slots.
+        embedding_api_key: API key for RAG embeddings (OpenAI by default).
+        ranking_metric: Metric for ranking successful slots. One of
+            ``"cost"`` | ``"tokens"`` | ``"latency"`` | ``"answer_per_cost"``.
+        num_retries: Retry count per LLM call.
+        verbose: Print progress to stdout.
+
+    Returns:
+        :class:`MatrixCompareResult` with per-slot results and a ranking.
+
+    Raises:
+        ValueError: If inputs are invalid, a provider spec is malformed,
+            or the total slot count exceeds ``MAX_SLOTS=10``.
+    """
+    if modes is None:
+        modes = ["direct"]
+    _validate_matrix_inputs(content, query, providers, modes, ranking_metric)
+
+    slots = _build_matrix_slots(
+        providers,
+        modes,
+        api_key=api_key,
+        api_base=api_base,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        max_steps=max_steps,
+        num_retries=num_retries,
+        embedding_api_key=embedding_api_key,
+    )
+
+    uc = RunMatrixComparisonUseCase()
+    result = uc.execute(
+        content,
+        query,
+        slots,
+        ranking_metric=ranking_metric,  # type: ignore[arg-type]
+    )
+
+    if verbose:
+        print(
+            f"[Matrix] Ran {len(result.slots)} slot(s), "
+            f"group={result.comparison_group_id[:8]}, "
+            f"elapsed={result.total_elapsed:.2f}s"
+        )
+        for rank_pos, slot_idx in enumerate(result.ranking, start=1):
+            s = result.slots[slot_idx]
+            marker = "✓" if s.result.success else "✗"
+            print(
+                f"  #{rank_pos} {marker} {s.label}: "
+                f"{s.result.total_tokens} tokens, ${s.result.total_cost:.4f}, "
+                f"{s.result.elapsed_time:.2f}s"
+            )
+
+    return _to_public_matrix_result(result)
+
+
+async def compare_matrix_async(
+    content: str,
+    query: str,
+    providers: list[str],
+    modes: list[str] | None = None,
+    *,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+    max_steps: int = 16,
+    embedding_api_key: str | None = None,
+    ranking_metric: str = "cost",
+    num_retries: int | None = None,
+    verbose: bool = False,
+) -> MatrixCompareResult:
+    """Async version of :func:`compare_matrix`.
+
+    Internally offloads the synchronous fan-out to a worker thread via
+    :func:`asyncio.to_thread`, so this coroutine is safe to call from
+    async contexts without blocking the event loop.
+    """
+    import asyncio
+
+    return await asyncio.to_thread(
+        compare_matrix,
+        content,
+        query,
+        providers,
+        modes,
+        api_key=api_key,
+        api_base=api_base,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        max_steps=max_steps,
+        embedding_api_key=embedding_api_key,
+        ranking_metric=ranking_metric,
+        num_retries=num_retries,
+        verbose=verbose,
+    )
 
 
 def complete(content: str, query: str, **kwargs: Any) -> str:

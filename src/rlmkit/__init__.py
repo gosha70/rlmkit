@@ -28,7 +28,17 @@ from .config import ExecutionConfig, MonitoringConfig, RLMConfig, SecurityConfig
 from .llm import BaseLLMProvider, LLMResponse, MockLLMClient
 from .llm.config import LLMConfig, LLMProviderConfig, ModelPricing
 from .prompts import format_system_prompt, get_default_system_prompt
-from .api import InteractResult, complete, complete_async, interact, interact_async
+from .api import (
+    InteractResult,
+    MatrixCompareResult,
+    MatrixSlotResult,
+    compare_matrix,
+    compare_matrix_async,
+    complete,
+    complete_async,
+    interact,
+    interact_async,
+)
 
 # Optional external LLM providers — assigned None when the dependency is missing,
 # so the variable type is ``type[X] | None``.  mypy cannot express that cleanly
@@ -114,7 +124,11 @@ __all__ = [
     "interact_async",
     "complete",
     "complete_async",
+    "compare_matrix",
+    "compare_matrix_async",
     "InteractResult",
+    "MatrixCompareResult",
+    "MatrixSlotResult",
     # Core RLM
     "RLM",
     "RLMResult",
