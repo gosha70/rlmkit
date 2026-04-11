@@ -532,47 +532,65 @@ class TelemetryStore:
     # ------------------------------------------------------------------
 
     def export_jsonl(self, run_id: str) -> str | None:
-        """Export a run as JSONL string (compatible with ExecutionTrace format).
+        """Export a run as JSONL compatible with the upstream RLM visualizer.
 
-        Returns None if the run is not found.
+        The output schema matches ``visualizer/src/lib/types.ts`` in
+        ``alexzhang13/rlm``: one optional ``{"type": "metadata", ...}`` line
+        at the top, followed by one line per iteration with ``iteration``,
+        ``timestamp``, ``prompt``, ``response``, ``code_blocks``,
+        ``final_answer``, and ``iteration_time`` fields.
+
+        Our internal step model is finer-grained than upstream iterations:
+        each assistant turn is an ``inspect`` or ``final`` step, and each
+        code execution is a ``subcall`` step.  We group them into upstream
+        iterations here — one iteration per assistant turn, with any
+        trailing ``subcall`` steps collapsed into its ``code_blocks``.
+
+        Fields we don't capture in telemetry are populated with empty
+        stand-ins the visualizer accepts:
+        - ``prompt`` → ``[]`` (we never stored the full message array)
+        - ``result.stderr`` → ``""`` (stdout+stderr are merged in ``output``)
+        - ``result.locals`` → ``{}`` (not tracked)
+        - ``result.rlm_calls`` → ``[]`` (nested-RLM telemetry is separate)
+
+        Returns ``None`` if the run is not found.
         """
         detail = self.get_run(run_id)
         if detail is None:
             return None
 
         lines: list[str] = []
-        # Metadata line (matches ExecutionTrace.to_jsonl format)
-        metadata = {
-            "metadata": {
-                "start_time": detail.created_at,
-                "end_time": detail.created_at + detail.elapsed_seconds,
-                "total_duration": detail.elapsed_seconds,
-                "total_tokens": detail.total_tokens,
-                "total_cost": detail.total_cost,
-                "total_steps": detail.steps_count,
-                "mode": detail.mode,
-                "provider": detail.provider,
-                "model": detail.model,
-                "query": detail.query,
-                "success": detail.success,
-            }
+
+        # --- Metadata line (upstream schema: {"type": "metadata", ...}) ---
+        metadata: dict[str, Any] = {
+            "type": "metadata",
+            "root_model": detail.model or None,
+            "max_depth": None,
+            "max_iterations": detail.steps_count or None,
+            "backend": detail.provider or None,
+            "backend_kwargs": None,
+            "environment_type": "subprocess",
+            "environment_kwargs": None,
+            "other_backends": None,
+            # Non-standard extras — the visualizer's parseJSONL ignores
+            # unknown fields, and keeping them lets us round-trip without
+            # losing telemetry context.
+            "rlmkit_query": detail.query,
+            "rlmkit_success": detail.success,
+            "rlmkit_total_tokens": detail.total_tokens,
+            "rlmkit_total_cost": detail.total_cost,
+            "rlmkit_elapsed_seconds": detail.elapsed_seconds,
         }
         lines.append(json.dumps(metadata))
 
-        # Step lines
-        for step in detail.steps:
-            step_out: dict[str, Any] = {
-                "index": step.get("step_index", 0),
-                "action_type": step.get("action_type", "inspect"),
-                "code": step.get("code"),
-                "output": step.get("output"),
-                "tokens_used": step.get("tokens", 0),
-                "cost": step.get("cost", 0.0),
-                "duration": step.get("duration", 0.0),
-                "model": step.get("model"),
-                "recursion_depth": step.get("recursion_depth", 0),
-            }
-            lines.append(json.dumps(step_out))
+        # --- Iteration lines ---
+        iterations = _group_steps_into_iterations(
+            detail.steps,
+            run_created_at=detail.created_at,
+            final_answer=detail.answer,
+        )
+        for iteration in iterations:
+            lines.append(json.dumps(iteration))
 
         return "\n".join(lines) + "\n"
 
@@ -615,3 +633,121 @@ class TelemetryStore:
             answer_length=row["answer_length"],
             comparison_group_id=row["comparison_group_id"],
         )
+
+
+# ---------------------------------------------------------------------------
+# Upstream-visualizer JSONL helpers
+# ---------------------------------------------------------------------------
+
+
+def _group_steps_into_iterations(
+    steps: list[dict[str, Any]],
+    *,
+    run_created_at: float,
+    final_answer: str,
+) -> list[dict[str, Any]]:
+    """Group flat RLMKit steps into upstream-visualizer iterations.
+
+    Our step model stores one row per action (``inspect`` / ``subcall`` /
+    ``final`` / ``error``).  The upstream visualizer groups execution
+    rounds into iterations where each iteration is *one LLM turn plus
+    the code blocks executed from that turn's response*.
+
+    Mapping:
+        - Assistant turns (``inspect`` / ``final`` / ``error``) start a
+          new iteration.
+        - Following ``subcall`` steps attach to the current iteration as
+          ``code_blocks`` entries.
+        - ``final`` iterations carry ``final_answer``; others set it to
+          ``null``.
+
+    Fields we don't have in telemetry are populated with empty
+    stand-ins the visualizer accepts:
+        - ``prompt`` is always ``[]`` (we never stored the message array)
+        - ``result.stderr`` is always ``""``
+        - ``result.locals`` is always ``{}``
+        - ``result.rlm_calls`` is always ``[]``
+    """
+    from datetime import datetime, timezone
+
+    iterations: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+
+    def _new_iteration(index: int, step: dict[str, Any]) -> dict[str, Any]:
+        # Upstream iteration.timestamp is a string.  We synthesize one
+        # from the run's created_at plus the step's duration accumulator;
+        # since our steps don't store absolute timestamps, we use the
+        # run's creation time as the anchor.
+        ts = datetime.fromtimestamp(run_created_at, tz=timezone.utc).isoformat()
+        return {
+            "iteration": index,
+            "timestamp": ts,
+            "prompt": [],  # not captured by telemetry
+            "response": step.get("output") or "",
+            "code_blocks": [],
+            "final_answer": None,
+            "iteration_time": float(step.get("duration") or 0.0),
+        }
+
+    for step in steps:
+        action = step.get("action_type") or "inspect"
+
+        if action in ("inspect", "final", "error"):
+            # Assistant turn → new iteration.
+            if current is not None:
+                iterations.append(current)
+            current = _new_iteration(len(iterations), step)
+            if action == "final":
+                # Prefer the run-level answer when available; falls back
+                # to the step's output so a trimmed answer in the store
+                # is still visible in the visualizer.
+                current["final_answer"] = final_answer or (step.get("output") or "")
+            elif action == "error":
+                current["final_answer"] = None  # explicit: no answer
+
+            # Inspect steps often carry ``code`` — treat that as the
+            # first code_block of this iteration so the visualizer
+            # shows it alongside the LLM response.
+            code = step.get("code")
+            if action == "inspect" and code:
+                current["code_blocks"].append(
+                    {
+                        "code": code,
+                        "result": {
+                            "stdout": "",
+                            "stderr": "",
+                            "locals": {},
+                            "execution_time": 0.0,
+                            "rlm_calls": [],
+                        },
+                    }
+                )
+        elif action == "subcall":
+            # Execution result → attach to current iteration.
+            if current is None:
+                # Orphaned subcall with no preceding assistant turn.
+                # Synthesize a minimal iteration wrapper so nothing is lost.
+                current = _new_iteration(len(iterations), {})
+            code_block: dict[str, Any] = {
+                "code": step.get("code") or "",
+                "result": {
+                    "stdout": step.get("output") or "",
+                    "stderr": "",  # merged into stdout by our sandbox
+                    "locals": {},
+                    "execution_time": float(step.get("duration") or 0.0),
+                    "rlm_calls": [],
+                },
+            }
+            current["code_blocks"].append(code_block)
+            # Fold the subcall's duration into the iteration's total.
+            current["iteration_time"] = float(current.get("iteration_time") or 0.0) + float(
+                step.get("duration") or 0.0
+            )
+        else:
+            # Unknown action — skip rather than crash.
+            logger.debug("Skipping step with unknown action_type=%r", action)
+
+    if current is not None:
+        iterations.append(current)
+
+    return iterations

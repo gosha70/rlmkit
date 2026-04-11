@@ -226,14 +226,20 @@ class TestAggregation:
 
 
 class TestExportJsonl:
-    """JSONL export."""
+    """JSONL export — matches the upstream RLM visualizer schema.
+
+    See ``alexzhang13/rlm/visualizer/src/lib/types.ts`` for the exact
+    interface definitions we're targeting.
+    """
 
     def test_export_not_found(self, store: TelemetryStore) -> None:
         assert store.export_jsonl("nonexistent") is None
 
-    def test_export_format(self, store: TelemetryStore) -> None:
+    def test_metadata_line_is_upstream_compatible(self, store: TelemetryStore) -> None:
+        """Line 1 must be ``{"type": "metadata", ...}`` — upstream's
+        parseJSONL branches on ``parsed.type === 'metadata'``."""
         rid = store.record_run(
-            run_id="export-test",
+            run_id="meta-test",
             created_at=1000.0,
             mode="rlm",
             provider="openai",
@@ -244,26 +250,197 @@ class TestExportJsonl:
             elapsed_seconds=1.5,
             success=True,
             steps_count=2,
+            answer="final answer",
         )
-        store.record_step(run_id=rid, step_index=0, action_type="inspect", code="x=1", output="ok")
+        store.record_step(run_id=rid, step_index=0, action_type="final", output="done")
+
+        jsonl = store.export_jsonl(rid)
+        assert jsonl is not None
+        lines = jsonl.strip().split("\n")
+        assert len(lines) >= 1
+
+        metadata = json.loads(lines[0])
+        # Upstream discriminator
+        assert metadata["type"] == "metadata"
+        # Upstream RLMConfigMetadata fields (all must be present, even if null)
+        for key in (
+            "root_model",
+            "max_depth",
+            "max_iterations",
+            "backend",
+            "backend_kwargs",
+            "environment_type",
+            "environment_kwargs",
+            "other_backends",
+        ):
+            assert key in metadata, f"missing required metadata key: {key}"
+        # Concrete values we do populate
+        assert metadata["root_model"] == "gpt-4o"
+        assert metadata["backend"] == "openai"
+        assert metadata["max_iterations"] == 2
+        assert metadata["environment_type"] == "subprocess"
+        # Non-standard extras are allowed (upstream ignores unknown fields)
+        assert metadata["rlmkit_query"] == "test query"
+        assert metadata["rlmkit_total_tokens"] == 100
+
+    def test_iteration_line_shape(self, store: TelemetryStore) -> None:
+        """Each iteration line must have the upstream RLMIteration fields."""
+        rid = store.record_run(
+            run_id="iter-test",
+            created_at=2000.0,
+            mode="rlm",
+            provider="openai",
+            model="gpt-4o",
+            query="q",
+            success=True,
+            steps_count=2,
+            answer="done",
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=0,
+            action_type="inspect",
+            code="print(len(P))",
+            output="LLM response text",
+            duration=0.3,
+        )
         store.record_step(run_id=rid, step_index=1, action_type="final", output="done")
 
         jsonl = store.export_jsonl(rid)
         assert jsonl is not None
         lines = jsonl.strip().split("\n")
-        assert len(lines) == 3  # 1 metadata + 2 steps
+        # 1 metadata + 2 iterations (one inspect, one final)
+        assert len(lines) == 3
 
-        metadata = json.loads(lines[0])
-        assert "metadata" in metadata
-        assert metadata["metadata"]["total_tokens"] == 100
-        assert metadata["metadata"]["mode"] == "rlm"
+        iter0 = json.loads(lines[1])
+        # Upstream RLMIteration required fields
+        for key in (
+            "iteration",
+            "timestamp",
+            "prompt",
+            "response",
+            "code_blocks",
+            "final_answer",
+            "iteration_time",
+        ):
+            assert key in iter0, f"missing required iteration key: {key}"
+        assert iter0["iteration"] == 0
+        assert isinstance(iter0["prompt"], list)  # upstream expects []
+        assert iter0["response"] == "LLM response text"
+        assert iter0["final_answer"] is None  # inspect, not final
+        assert iter0["iteration_time"] == 0.3
+        # The inspect step's code should appear as a code_block
+        assert len(iter0["code_blocks"]) == 1
+        assert iter0["code_blocks"][0]["code"] == "print(len(P))"
 
-        step0 = json.loads(lines[1])
-        assert step0["action_type"] == "inspect"
-        assert step0["code"] == "x=1"
+        iter1 = json.loads(lines[2])
+        assert iter1["iteration"] == 1
+        assert iter1["final_answer"] == "done"
 
-        step1 = json.loads(lines[2])
-        assert step1["action_type"] == "final"
+    def test_subcall_steps_collapse_into_code_blocks(self, store: TelemetryStore) -> None:
+        """Following ``subcall`` steps must attach to the preceding
+        assistant iteration's ``code_blocks``, not spawn new iterations."""
+        rid = store.record_run(
+            run_id="subcall-test",
+            created_at=3000.0,
+            mode="rlm",
+            provider="openai",
+            model="gpt-4o",
+            success=True,
+            steps_count=3,
+            answer="done",
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=0,
+            action_type="inspect",
+            code="print(x)",
+            output="assistant says run this",
+            duration=0.1,
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=1,
+            action_type="subcall",
+            code="print(x)",
+            output="42",
+            duration=0.2,
+        )
+        store.record_step(run_id=rid, step_index=2, action_type="final", output="done")
+
+        jsonl = store.export_jsonl(rid)
+        assert jsonl is not None
+        lines = jsonl.strip().split("\n")
+        # 1 metadata + 2 iterations (the subcall collapses into iter 0)
+        assert len(lines) == 3, f"expected 3 lines, got {len(lines)}"
+
+        iter0 = json.loads(lines[1])
+        # Iter 0 should have 2 code blocks: one from inspect (empty result),
+        # one from subcall (real stdout).
+        assert len(iter0["code_blocks"]) == 2
+        inspect_block, subcall_block = iter0["code_blocks"]
+        assert inspect_block["code"] == "print(x)"
+        assert inspect_block["result"]["stdout"] == ""
+        assert subcall_block["result"]["stdout"] == "42"
+        assert subcall_block["result"]["execution_time"] == 0.2
+        # Execution time rolls up into iteration_time (float sum approx)
+        assert iter0["iteration_time"] == pytest.approx(0.3)  # 0.1 + 0.2
+
+    def test_code_block_result_has_all_upstream_fields(self, store: TelemetryStore) -> None:
+        """Each ``code_blocks[i].result`` must have the upstream REPLResult
+        shape even when we don't have data for every field."""
+        rid = store.record_run(
+            run_id="repl-shape-test",
+            created_at=4000.0,
+            mode="rlm",
+            provider="openai",
+            model="gpt-4o",
+            success=True,
+            steps_count=1,
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=0,
+            action_type="subcall",
+            code="y = 1",
+            output="ran",
+            duration=0.05,
+        )
+
+        jsonl = store.export_jsonl(rid)
+        assert jsonl is not None
+        iter_line = json.loads(jsonl.strip().split("\n")[1])
+        result = iter_line["code_blocks"][0]["result"]
+        for key in ("stdout", "stderr", "locals", "execution_time", "rlm_calls"):
+            assert key in result, f"missing required REPLResult key: {key}"
+        assert result["stdout"] == "ran"
+        assert result["stderr"] == ""
+        assert result["locals"] == {}
+        assert result["rlm_calls"] == []
+        assert result["execution_time"] == 0.05
+
+    def test_error_step_yields_iteration_without_final_answer(self, store: TelemetryStore) -> None:
+        """An ``error`` step becomes an iteration whose ``final_answer`` is null."""
+        rid = store.record_run(
+            run_id="err-test",
+            created_at=5000.0,
+            mode="rlm",
+            provider="openai",
+            model="gpt-4o",
+            success=False,
+            error="budget exceeded",
+            steps_count=1,
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=0,
+            action_type="error",
+            output="Something went wrong",
+        )
+        jsonl = store.export_jsonl(rid)
+        assert jsonl is not None
+        iter_line = json.loads(jsonl.strip().split("\n")[1])
+        assert iter_line["final_answer"] is None
 
 
 class TestDeleteRun:
