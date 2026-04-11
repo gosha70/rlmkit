@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import pytest
 
@@ -326,3 +327,159 @@ class TestAsyncExecution:
         result = await sandbox.execute_async('print("async hello")')
         assert result.success
         assert "async hello" in result.stdout
+
+
+class TestTopLevelScriptEntrypoint:
+    """Regression coverage for the ``__main__`` script path.
+
+    Pytest itself runs the adapter from imported test modules, so it never
+    exercises what happens when a plain ``python script.py`` invocation
+    drives the adapter.  That is exactly the path that broke twice during
+    this work:
+
+    1. The original spawn-based implementation required an
+       ``if __name__ == '__main__':`` guard; scripts without it raised
+       ``RuntimeError: An attempt has been made to start a new process
+       before the current process has finished its bootstrapping phase``.
+    2. A subsequent "fix" switched to fork to remove that requirement,
+       but fork from the multi-threaded server parent is unsafe.
+
+    These tests pin both the working idiom and the failing idiom so any
+    future change to ``_MP_CTX`` is caught in CI instead of at runtime.
+    """
+
+    _SANDBOX_IMPORT = (
+        "from rlmkit.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxAdapter"
+    )
+
+    def _run_script(
+        self, tmp_path: Any, source: str, timeout: float = 60.0
+    ) -> tuple[int, str, str]:
+        """Write *source* to a .py file and run it under the current Python.
+
+        Uses :mod:`subprocess` (stdlib) rather than invoking pytest from
+        within pytest, so the child is a genuinely fresh interpreter.
+        Returns ``(returncode, stdout, stderr)``.
+        """
+        import subprocess  # noqa: S404 — stdlib, only used to spawn ourselves
+        import sys as _sys
+
+        script = tmp_path / "uc_script.py"
+        script.write_text(source)
+        proc = subprocess.run(  # noqa: S603 — executable is sys.executable, trusted
+            [_sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+
+    def test_top_level_script_with_main_guard_succeeds(self, tmp_path: Any) -> None:
+        """The documented ``if __name__ == '__main__':`` idiom works end-to-end.
+
+        This is the contract for anyone using the adapter from a plain
+        Python script: wrap entrypoint calls in ``main()`` under the
+        standard guard, and execute() returns normally.
+        """
+        source = f"""
+{self._SANDBOX_IMPORT}
+
+
+def main() -> None:
+    sb = SubprocessSandboxAdapter(max_exec_time_s=5.0)
+    result = sb.execute("print('hello from child')")
+    assert result.success, f"execute failed: {{result.exception}}"
+    assert "hello from child" in result.stdout, result.stdout
+    print("SCRIPT_OK")
+
+
+if __name__ == "__main__":
+    main()
+"""
+        rc, out, err = self._run_script(tmp_path, source)
+        assert rc == 0, f"script exited {rc}\nstdout:\n{out}\nstderr:\n{err}"
+        assert "SCRIPT_OK" in out, f"missing sentinel; stdout:\n{out}"
+
+    def test_top_level_script_without_main_guard_fails_cleanly(self, tmp_path: Any) -> None:
+        """Without the ``__main__`` guard, spawn's re-import recursion must
+        raise the documented ``RuntimeError`` — not hang or segfault.
+
+        This pins the failure mode so a future "let's use fork to make
+        unguarded scripts work" change trips this test on the way in.
+        The assertion checks for the canonical multiprocessing error
+        string; Python 3.13 emits it via
+        ``_check_not_importing_main`` during child bootstrap.
+        """
+        source = f"""
+{self._SANDBOX_IMPORT}
+
+# Intentionally NO `if __name__ == '__main__':` guard.  This replicates
+# the exact scenario a user hits when they copy the adapter into a
+# quick debug script and run `python uc_script.py`.
+sb = SubprocessSandboxAdapter(max_exec_time_s=5.0)
+sb.execute("print('this never runs')")
+"""
+        rc, out, err = self._run_script(tmp_path, source)
+        # The parent script fails — either the exception bubbles up
+        # (non-zero rc) or the child's RuntimeError shows in stderr.
+        assert rc != 0 or "bootstrapping phase" in err, (
+            f"expected script failure or bootstrapping error\n"
+            f"rc={rc}\nstdout:\n{out}\nstderr:\n{err}"
+        )
+        assert "bootstrapping phase" in err or "_check_not_importing_main" in err, (
+            f"expected spawn's bootstrapping-phase error in stderr\nstderr:\n{err}"
+        )
+
+    def test_documented_uc_script_passes(self, tmp_path: Any) -> None:
+        """Exact replica of the manual-test script from the docs — this is
+        UC-1.1 + UC-1.2 + UC-1.3 rolled into one fresh-interpreter run.
+
+        If anyone updates the adapter and silently breaks the scripted
+        entry path, this test fails loudly.
+        """
+        source = f"""
+import time
+
+{self._SANDBOX_IMPORT}
+
+
+def test_timeout() -> None:
+    sb = SubprocessSandboxAdapter(max_exec_time_s=2.0)
+    start = time.monotonic()
+    result = sb.execute("while True: pass")
+    elapsed = time.monotonic() - start
+    assert result.timeout, f"expected timeout=True, got {{result}}"
+    assert elapsed < 6.0, f"took too long: {{elapsed:.2f}}s"
+
+
+def test_persistence() -> None:
+    sb = SubprocessSandboxAdapter()
+    sb.set_variable("x", 0)
+    sb.execute("x = x + 42")
+    assert sb.get_variable("x") == 42
+    sb.execute("x = x * 2")
+    assert sb.get_variable("x") == 84
+
+
+def test_non_serializable() -> None:
+    sb = SubprocessSandboxAdapter()
+    sb.set_variable("f", lambda y: y + 1)
+    sb.set_variable("n", 10)
+    result = sb.execute("print(n)")
+    assert result.success, result.exception
+    assert "10" in result.stdout
+
+
+def main() -> None:
+    test_timeout()
+    test_persistence()
+    test_non_serializable()
+    print("ALL_UC_PASSED")
+
+
+if __name__ == "__main__":
+    main()
+"""
+        rc, out, err = self._run_script(tmp_path, source, timeout=90.0)
+        assert rc == 0, f"script exited {rc}\nstdout:\n{out}\nstderr:\n{err}"
+        assert "ALL_UC_PASSED" in out, f"missing sentinel; stdout:\n{out}"

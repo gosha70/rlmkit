@@ -26,6 +26,57 @@ logger = logging.getLogger(__name__)
 _SERIALIZABLE_TYPES = (str, int, float, bool, type(None), list, dict)
 
 
+# ---------------------------------------------------------------------------
+# Multiprocessing context
+# ---------------------------------------------------------------------------
+#
+# We deliberately use ``spawn`` on every platform, not fork or forkserver.
+#
+# This adapter exists specifically to serve the off-main-thread FastAPI
+# worker path (see sandbox_factory.create_sandbox auto-selection and
+# AppState.create_sandbox).  That parent process is multi-threaded: async
+# workers, background telemetry writes, WebSocket handlers, etc.
+#
+# Python 3.12+ deprecated fork from a multi-threaded parent because the
+# child inherits the parent's address space — including locks held by
+# threads that did not survive the fork.  In this adapter specifically,
+# the child immediately imports ``rlmkit.tools.content`` (and, in safe
+# mode, ``rlmkit.envs.sandbox``) at the top of ``_child_worker``.  Module
+# imports acquire Python's import lock, and if that lock was held by
+# another parent thread at the instant of fork, the child hangs.  Short
+# child lifetime does not help: the deadlock happens on the very first
+# import before any timeout can fire.
+#
+# Spawn and forkserver avoid this by starting the child from a fresh
+# interpreter that does not inherit any parent lock state.  We use
+# ``spawn`` (universal across Linux, macOS, Windows) so behavior is the
+# same in production (Linux) and development (macOS).
+#
+# Trade-off: spawn re-imports the caller's ``__main__`` module in the
+# child as part of its bootstrap.  That means any manual-test script
+# driving this adapter must use the standard multiprocessing idiom:
+#
+#     from rlmkit.infrastructure.sandbox.subprocess_sandbox import ...
+#
+#     def main():
+#         sb = SubprocessSandboxAdapter()
+#         sb.execute("...")
+#
+#     if __name__ == "__main__":
+#         main()
+#
+# Without the ``if __name__ == '__main__':`` guard, the child's re-import
+# of the script recursively hits ``execute()`` again and multiprocessing
+# raises ``RuntimeError: An attempt has been made to start a new process
+# before the current process has finished its bootstrapping phase``.
+# This is the documented Python requirement for spawn-based tooling and
+# applies equally to pytest, joblib, concurrent.futures.ProcessPoolExecutor,
+# etc.  Pytest and the FastAPI server never hit this because both invoke
+# the adapter from imported modules, not from ``__main__``.
+
+_MP_CTX = mp.get_context("spawn")
+
+
 def _is_json_serializable(value: Any) -> bool:
     """Check whether *value* can survive a JSON round-trip."""
     try:
@@ -232,9 +283,14 @@ class SubprocessSandboxAdapter:
         """
         namespace_json = json.dumps(_serialize_namespace(self._namespace))
 
-        parent_conn, child_conn = mp.Pipe(duplex=False)
+        # Use the explicit spawn context (_MP_CTX) rather than the platform
+        # default so the server path is safe on Linux too — see the
+        # module-level comment above _MP_CTX for why spawn is required and
+        # why user scripts must guard top-level code with
+        # ``if __name__ == '__main__':``.
+        parent_conn, child_conn = _MP_CTX.Pipe(duplex=False)  # type: ignore[attr-defined]
 
-        process = mp.Process(
+        process = _MP_CTX.Process(  # type: ignore[attr-defined]
             target=_child_worker,
             args=(
                 child_conn,
