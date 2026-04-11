@@ -249,7 +249,7 @@ class TestExportJsonl:
             total_cost=0.01,
             elapsed_seconds=1.5,
             success=True,
-            steps_count=2,
+            steps_count=1,  # one raw step → one grouped iteration
             answer="final answer",
         )
         store.record_step(run_id=rid, step_index=0, action_type="final", output="done")
@@ -257,7 +257,7 @@ class TestExportJsonl:
         jsonl = store.export_jsonl(rid)
         assert jsonl is not None
         lines = jsonl.strip().split("\n")
-        assert len(lines) >= 1
+        assert len(lines) == 2  # 1 metadata + 1 iteration
 
         metadata = json.loads(lines[0])
         # Upstream discriminator
@@ -277,11 +277,18 @@ class TestExportJsonl:
         # Concrete values we do populate
         assert metadata["root_model"] == "gpt-4o"
         assert metadata["backend"] == "openai"
-        assert metadata["max_iterations"] == 2
+        # max_iterations must match the number of iteration lines actually
+        # emitted — not detail.steps_count, which is the raw pre-grouping
+        # step count and can diverge whenever inspect/subcall steps fold
+        # into one upstream iteration.
+        assert metadata["max_iterations"] == len(lines) - 1  # == 1 here
         assert metadata["environment_type"] == "subprocess"
         # Non-standard extras are allowed (upstream ignores unknown fields)
         assert metadata["rlmkit_query"] == "test query"
         assert metadata["rlmkit_total_tokens"] == 100
+        # The raw step count is still available as an extra, for
+        # cross-referencing with the telemetry store.
+        assert metadata["rlmkit_raw_steps_count"] == 1
 
     def test_iteration_line_shape(self, store: TelemetryStore) -> None:
         """Each iteration line must have the upstream RLMIteration fields."""
@@ -374,6 +381,13 @@ class TestExportJsonl:
         # 1 metadata + 2 iterations (the subcall collapses into iter 0)
         assert len(lines) == 3, f"expected 3 lines, got {len(lines)}"
 
+        # ``max_iterations`` in metadata must match the number of
+        # iteration lines (2), NOT the raw step count (3).  Regression
+        # guard for the "metadata says 3, body has 2" inconsistency.
+        metadata = json.loads(lines[0])
+        assert metadata["max_iterations"] == 2
+        assert metadata["rlmkit_raw_steps_count"] == 3
+
         iter0 = json.loads(lines[1])
         # Iter 0 should have 2 code blocks: one from inspect (empty result),
         # one from subcall (real stdout).
@@ -441,6 +455,88 @@ class TestExportJsonl:
         assert jsonl is not None
         iter_line = json.loads(jsonl.strip().split("\n")[1])
         assert iter_line["final_answer"] is None
+
+    def test_iteration_timestamps_advance_monotonically(self, store: TelemetryStore) -> None:
+        """Each iteration's ``timestamp`` must advance by the previous
+        iteration's ``iteration_time``, not repeat ``run_created_at``.
+
+        Regression guard: the original implementation used
+        ``run_created_at`` as-is for every ``_new_iteration()`` call,
+        so a multi-step run emitted identical timestamps for every
+        line and the visualizer lost per-iteration timing/order.
+        """
+        from datetime import datetime, timezone
+
+        rid = store.record_run(
+            run_id="ts-test",
+            created_at=1_000_000.0,
+            mode="rlm",
+            provider="openai",
+            model="gpt-4o",
+            success=True,
+            steps_count=4,
+            answer="done",
+        )
+        # Iteration 0: inspect (0.5s) + subcall (1.0s) → iteration_time 1.5s
+        store.record_step(
+            run_id=rid,
+            step_index=0,
+            action_type="inspect",
+            code="print(1)",
+            output="first assistant reply",
+            duration=0.5,
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=1,
+            action_type="subcall",
+            code="print(1)",
+            output="42",
+            duration=1.0,
+        )
+        # Iteration 1: inspect (0.25s) + subcall (0.75s) → iteration_time 1.0s
+        store.record_step(
+            run_id=rid,
+            step_index=2,
+            action_type="inspect",
+            code="print(2)",
+            output="second assistant reply",
+            duration=0.25,
+        )
+        store.record_step(
+            run_id=rid,
+            step_index=3,
+            action_type="subcall",
+            code="print(2)",
+            output="84",
+            duration=0.75,
+        )
+
+        jsonl = store.export_jsonl(rid)
+        assert jsonl is not None
+        lines = jsonl.strip().split("\n")
+        # 1 metadata + 2 iterations
+        assert len(lines) == 3
+
+        iter0 = json.loads(lines[1])
+        iter1 = json.loads(lines[2])
+
+        ts0 = datetime.fromisoformat(iter0["timestamp"])
+        ts1 = datetime.fromisoformat(iter1["timestamp"])
+
+        # Iteration 0 must start at run_created_at exactly.
+        expected_start = datetime.fromtimestamp(1_000_000.0, tz=timezone.utc)
+        assert ts0 == expected_start
+
+        # Iteration 1 must start at run_created_at + iteration_time(iter0),
+        # i.e. 1_000_001.5, not duplicate iter0's timestamp.
+        delta = (ts1 - ts0).total_seconds()
+        assert delta == pytest.approx(1.5), (
+            f"iteration 1 should start 1.5s after iteration 0, got delta={delta:.3f}s"
+        )
+
+        # And the iteration_time of iter1 must reflect its own 1.0s span.
+        assert iter1["iteration_time"] == pytest.approx(1.0)
 
 
 class TestDeleteRun:

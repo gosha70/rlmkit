@@ -559,6 +559,15 @@ class TelemetryStore:
         if detail is None:
             return None
 
+        # Group first so the metadata line can cite the real iteration
+        # count (not the raw step count, which differs whenever
+        # inspect/subcall steps collapse into one upstream iteration).
+        iterations = _group_steps_into_iterations(
+            detail.steps,
+            run_created_at=detail.created_at,
+            final_answer=detail.answer,
+        )
+
         lines: list[str] = []
 
         # --- Metadata line (upstream schema: {"type": "metadata", ...}) ---
@@ -566,7 +575,10 @@ class TelemetryStore:
             "type": "metadata",
             "root_model": detail.model or None,
             "max_depth": None,
-            "max_iterations": detail.steps_count or None,
+            # Must match the number of iteration lines that follow or
+            # consumers using this for progress/validation see an
+            # internally inconsistent trace.
+            "max_iterations": len(iterations) or None,
             "backend": detail.provider or None,
             "backend_kwargs": None,
             "environment_type": "subprocess",
@@ -580,15 +592,14 @@ class TelemetryStore:
             "rlmkit_total_tokens": detail.total_tokens,
             "rlmkit_total_cost": detail.total_cost,
             "rlmkit_elapsed_seconds": detail.elapsed_seconds,
+            # The raw (pre-grouping) step count is still useful for
+            # cross-referencing against the telemetry store, so keep it
+            # as a non-standard extra.
+            "rlmkit_raw_steps_count": detail.steps_count,
         }
         lines.append(json.dumps(metadata))
 
         # --- Iteration lines ---
-        iterations = _group_steps_into_iterations(
-            detail.steps,
-            run_created_at=detail.created_at,
-            final_answer=detail.answer,
-        )
         for iteration in iterations:
             lines.append(json.dumps(iteration))
 
@@ -672,16 +683,20 @@ def _group_steps_into_iterations(
 
     iterations: list[dict[str, Any]] = []
     current: dict[str, Any] | None = None
+    # Running offset (in seconds) from the run's start.  Every completed
+    # iteration advances this by its own ``iteration_time``, so the next
+    # iteration's ``timestamp`` reflects when it actually started rather
+    # than repeating ``run_created_at`` for every line.  This preserves
+    # per-iteration timing/order in the visualizer.
+    time_offset: float = 0.0
 
-    def _new_iteration(index: int, step: dict[str, Any]) -> dict[str, Any]:
-        # Upstream iteration.timestamp is a string.  We synthesize one
-        # from the run's created_at plus the step's duration accumulator;
-        # since our steps don't store absolute timestamps, we use the
-        # run's creation time as the anchor.
-        ts = datetime.fromtimestamp(run_created_at, tz=timezone.utc).isoformat()
+    def _iso_at_offset(offset: float) -> str:
+        return datetime.fromtimestamp(run_created_at + offset, tz=timezone.utc).isoformat()
+
+    def _new_iteration(index: int, step: dict[str, Any], start_offset: float) -> dict[str, Any]:
         return {
             "iteration": index,
-            "timestamp": ts,
+            "timestamp": _iso_at_offset(start_offset),
             "prompt": [],  # not captured by telemetry
             "response": step.get("output") or "",
             "code_blocks": [],
@@ -693,10 +708,13 @@ def _group_steps_into_iterations(
         action = step.get("action_type") or "inspect"
 
         if action in ("inspect", "final", "error"):
-            # Assistant turn → new iteration.
+            # Assistant turn → new iteration.  Advance the time offset
+            # by the previous iteration's accumulated time first so the
+            # new iteration's start timestamp is monotonic.
             if current is not None:
+                time_offset += float(current.get("iteration_time") or 0.0)
                 iterations.append(current)
-            current = _new_iteration(len(iterations), step)
+            current = _new_iteration(len(iterations), step, time_offset)
             if action == "final":
                 # Prefer the run-level answer when available; falls back
                 # to the step's output so a trimmed answer in the store
@@ -727,7 +745,7 @@ def _group_steps_into_iterations(
             if current is None:
                 # Orphaned subcall with no preceding assistant turn.
                 # Synthesize a minimal iteration wrapper so nothing is lost.
-                current = _new_iteration(len(iterations), {})
+                current = _new_iteration(len(iterations), {}, time_offset)
             code_block: dict[str, Any] = {
                 "code": step.get("code") or "",
                 "result": {
