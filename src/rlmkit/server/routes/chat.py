@@ -415,10 +415,20 @@ async def _run_execution(
         )
 
         # Build conversation context from Chat Provider history.
-        # RLM and RAG derive all context from the document on each call — they do not
-        # benefit from prior answers, and including them causes context-window overflow
-        # on small models (e.g. 8K-context vLLM).  Only direct/compare modes need
-        # conversational memory.
+        #
+        # ⚠️ RLM, RAG, and Auto modes intentionally receive NO prior-turn
+        # context.  Each call re-derives its working context from the
+        # document, and stuffing previous turns into the prompt causes
+        # context-window overflow on small-context models (e.g. 8K vLLM
+        # Qwen-7B).  Direct and Compare modes DO carry the last ~3 turns.
+        #
+        # User-visible consequence: a follow-up question like "what did
+        # I just ask you?" against an RLM-mode Chat Provider will see a
+        # standalone question with no prior context and usually echo or
+        # refuse.  This is documented in doc_internal/v1.0.0/MANUAL_TEST_PLAN.md
+        # section C.3 (UC-3.3) and is NOT a bug.  If we want RLM/RAG/Auto
+        # to carry bounded history in a future change, add a per-profile
+        # flag and check adapter.context_length_chars before injecting.
         conversation_history: list[dict[str, str]] = []
         if chat_provider_id and mode in ("direct", "compare"):
             prev_msgs = state.get_conversation(execution.session_id, chat_provider_id)
