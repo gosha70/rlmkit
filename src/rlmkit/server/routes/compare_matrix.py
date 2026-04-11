@@ -1,0 +1,489 @@
+"""POST /api/chat/compare-matrix — run a query across N chat providers × M modes.
+
+Unlike the single-provider ``/api/chat`` endpoint, this route fans out
+execution across an arbitrary list of ``(chat_provider_id × mode)`` slots,
+runs them in parallel via :class:`RunMatrixComparisonUseCase`, records each
+slot to the telemetry store under a shared ``comparison_group_id``, and
+returns the full matrix so the client can render it.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import uuid
+from datetime import datetime, timezone
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from rlmkit.application.dto import RunConfigDTO
+from rlmkit.application.use_cases.run_matrix_comparison import (
+    MatrixComparisonResultDTO,
+    MatrixSlotDTO,
+    MatrixSlotResultDTO,
+    RunMatrixComparisonUseCase,
+)
+from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+    LiteLLMEmbeddingAdapter,
+)
+from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
+from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
+from rlmkit.server.models import ChatProviderConfig
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+SlotMode = Literal["direct", "rlm", "rag"]
+
+# Supported ranking metrics are the same set the use case exposes, restated
+# here so the request schema can validate them at the HTTP boundary.
+_RANKING_METRICS = ("cost", "tokens", "latency", "answer_per_cost")
+
+
+# ---------------------------------------------------------------------------
+# Request / response models
+# ---------------------------------------------------------------------------
+
+
+class CompareMatrixRequest(BaseModel):
+    """Body for ``POST /api/chat/compare-matrix``."""
+
+    content: str | None = None
+    file_ids: list[str] | None = None
+    query: str = Field(..., min_length=1)
+    chat_provider_ids: list[str] = Field(..., min_length=1, max_length=10)
+    modes: list[SlotMode] = Field(..., min_length=1, max_length=3)
+    session_id: str | None = None
+    ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+
+
+class CompareMatrixSlotResponse(BaseModel):
+    slot_id: str
+    label: str
+    mode: str
+    provider: str
+    model: str
+    chat_provider_id: str
+    chat_provider_name: str | None = None
+    execution_id: str
+    success: bool
+    answer: str
+    error: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    elapsed_seconds: float = 0.0
+    steps: int = 0
+
+
+class CompareMatrixResponse(BaseModel):
+    comparison_group_id: str
+    session_id: str
+    slots: list[CompareMatrixSlotResponse]
+    ranking: list[int]
+    ranking_metric: str
+    total_elapsed: float
+
+
+# ---------------------------------------------------------------------------
+# Endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/chat/compare-matrix")
+async def compare_matrix(
+    req: CompareMatrixRequest,
+    state: AppState = Depends(get_state),  # noqa: B008
+) -> CompareMatrixResponse:
+    """Run the same (content, query) across ``chat_provider_ids × modes``."""
+    # --- Validate input content ---------------------------------------
+    effective_file_ids: list[str] = req.file_ids or []
+    if req.content is None and not effective_file_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Either content or file_ids must be provided",
+        )
+
+    content = req.content or ""
+    if effective_file_ids:
+        from rlmkit.server.routes.chat import _resolve_file_content
+
+        file_content = _resolve_file_content(effective_file_ids, state)
+        content = (content + "\n\n" + file_content).strip() if content else file_content
+
+    # --- Resolve session and append the user message ------------------
+    session = state.get_or_create_session(req.session_id)
+    started_at = datetime.now(timezone.utc)
+    user_msg_id = str(uuid.uuid4())
+    user_msg = {
+        "id": user_msg_id,
+        "role": "user",
+        "content": req.query,
+        "file_id": effective_file_ids[0] if effective_file_ids else None,
+        "file_ids": effective_file_ids,
+        "mode": "compare",  # matrix mode marker for UI
+        "chat_provider_id": None,  # fan-out across multiple providers
+        "timestamp": started_at.isoformat(),
+    }
+    # Append once to the flat session.messages (legacy / compare views).
+    session.messages.append(user_msg)
+    # Also seed each affected chat provider's per-provider conversation so
+    # that a follow-up /api/chat on any of those providers sees a balanced
+    # user→assistant history.  Without this, get_conversation(cp_id) would
+    # return only the matrix assistant answer with no preceding user turn.
+    for cp_id in dict.fromkeys(req.chat_provider_ids):  # preserve order, dedupe
+        if cp_id not in session.conversations:
+            session.conversations[cp_id] = []
+        session.conversations[cp_id].append(user_msg)
+    session.updated_at = started_at
+
+    # --- Cartesian product: chat_provider × mode ----------------------
+    total_slots = len(req.chat_provider_ids) * len(req.modes)
+    if total_slots > RunMatrixComparisonUseCase.MAX_SLOTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many slots: {total_slots} exceeds max of "
+                f"{RunMatrixComparisonUseCase.MAX_SLOTS}"
+            ),
+        )
+
+    slots: list[MatrixSlotDTO] = []
+    slot_meta: dict[str, _SlotMeta] = {}
+
+    for cp_id in req.chat_provider_ids:
+        cp = state.get_chat_provider(cp_id)
+        if cp is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chat Provider {cp_id} not found",
+            )
+        cp = state.resolve_chat_provider(cp)
+
+        lp = state.get_llm_provider(cp.llm_provider_id) if cp.llm_provider_id else None
+        backend = (lp.backend if lp else None) or cp.llm_provider or "unknown"
+        model_name = (lp.model if lp else None) or cp.llm_model or ""
+
+        for mode in req.modes:
+            # Each slot gets its own LLM adapter so one slot's streaming
+            # state cannot bleed into another's.
+            llm = state.create_llm_adapter_for_chat_provider(cp_id)
+            sandbox = state.create_sandbox() if mode == "rlm" else None
+
+            embedder = None
+            storage = None
+            slot_extra: dict[str, object] = {}
+            if mode == "rag":
+                embedding_api_key = _resolve_embedding_api_key(state, cp)
+                rag_cfg = state.config.mode_config.rag_config
+                embedder = LiteLLMEmbeddingAdapter(
+                    model=rag_cfg.embedding_model,
+                    api_key=embedding_api_key,
+                )
+                # Each slot gets its own in-memory store so collections
+                # never collide across slots.
+                storage = SQLiteStorageAdapter(":memory:")
+                slot_extra = {
+                    "collection": f"rag_{uuid.uuid4().hex}",
+                    "chunk_size": rag_cfg.chunk_size,
+                    "top_k": rag_cfg.top_k,
+                }
+
+            # Per-slot run config: start from the server default, then apply
+            # the chat provider's profile-specific RLM knobs for rlm slots
+            # (mirrors the single-chat /api/chat path).
+            slot_config = _build_slot_run_config(state, cp, mode, slot_extra)
+
+            slot_id = uuid.uuid4().hex[:12]
+            execution_id = uuid.uuid4().hex
+            slots.append(
+                MatrixSlotDTO(
+                    slot_id=slot_id,
+                    mode=mode,
+                    llm=llm,
+                    sandbox=sandbox,
+                    embedder=embedder,
+                    storage=storage,
+                    label=f"{cp.name} · {mode}",
+                    provider=backend,
+                    model=model_name,
+                    config=slot_config,
+                )
+            )
+
+            # Register an in-memory ExecutionRecord up front so the run is
+            # visible to /api/executions and resolve_execution_context while
+            # the matrix is in flight.  We'll fill in result/status after.
+            execution = ExecutionRecord(
+                execution_id=execution_id,
+                session_id=session.id,
+                query=req.query,
+                mode=mode,
+                status="running",
+                started_at=started_at,
+                chat_provider_id=cp_id,
+                chat_provider_name=cp.name,
+            )
+            state.executions[execution_id] = execution
+
+            slot_meta[slot_id] = _SlotMeta(
+                chat_provider_id=cp_id,
+                chat_provider_name=cp.name,
+                execution_id=execution_id,
+            )
+
+    # --- Fan out via the use case (ThreadPoolExecutor under the hood) -
+    uc = RunMatrixComparisonUseCase()
+    result: MatrixComparisonResultDTO = await asyncio.to_thread(
+        uc.execute,
+        content,
+        req.query,
+        slots,
+        None,  # each slot carries its own config
+        req.ranking_metric,
+    )
+
+    # --- Finalize execution records, persist telemetry, add messages --
+    finish = datetime.now(timezone.utc)
+    for slot_result in result.slots:
+        meta = slot_meta[slot_result.slot_id]
+        execution = state.executions[meta.execution_id]
+
+        # Update in-memory ExecutionRecord so judge/best-pick/quality see it.
+        _update_execution_record(execution, slot_result, finish)
+
+        # Persist to telemetry store.
+        _record_slot_telemetry(
+            state=state,
+            slot_result=slot_result,
+            meta=meta,
+            session_id=session.id,
+            comparison_group_id=result.comparison_group_id,
+            query=req.query,
+            created_at=started_at,
+        )
+
+        # Append assistant message per slot so session metrics / judge
+        # flows can find them via state.add_message / session.messages.
+        answer_content = slot_result.result.answer
+        if not slot_result.result.success and not answer_content:
+            answer_content = f"Error: {slot_result.result.error or 'Execution failed'}"
+        assistant_msg = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": answer_content,
+            "mode_used": slot_result.mode,
+            "provider": slot_result.provider,
+            "execution_id": meta.execution_id,
+            "chat_provider_id": meta.chat_provider_id,
+            "chat_provider_name": meta.chat_provider_name,
+            "metrics": {
+                "input_tokens": slot_result.result.input_tokens,
+                "output_tokens": slot_result.result.output_tokens,
+                "total_tokens": slot_result.result.total_tokens,
+                "cost_usd": slot_result.result.total_cost,
+                "elapsed_seconds": slot_result.result.elapsed_time,
+                "steps": slot_result.result.steps,
+            },
+            "timestamp": finish.isoformat(),
+            "comparison_group_id": result.comparison_group_id,
+        }
+        state.add_message(session.id, assistant_msg, meta.chat_provider_id)
+
+    session.updated_at = finish
+    state.save_sessions()
+
+    # --- Build response -----------------------------------------------
+    response_slots = [
+        CompareMatrixSlotResponse(
+            slot_id=s.slot_id,
+            label=s.label,
+            mode=s.mode,
+            provider=s.provider,
+            model=s.model,
+            chat_provider_id=slot_meta[s.slot_id].chat_provider_id,
+            chat_provider_name=slot_meta[s.slot_id].chat_provider_name,
+            execution_id=slot_meta[s.slot_id].execution_id,
+            success=s.result.success,
+            answer=s.result.answer,
+            error=s.result.error,
+            input_tokens=s.result.input_tokens,
+            output_tokens=s.result.output_tokens,
+            total_tokens=s.result.total_tokens,
+            total_cost=s.result.total_cost,
+            elapsed_seconds=s.result.elapsed_time,
+            steps=s.result.steps,
+        )
+        for s in result.slots
+    ]
+
+    return CompareMatrixResponse(
+        comparison_group_id=result.comparison_group_id,
+        session_id=session.id,
+        slots=response_slots,
+        ranking=result.ranking,
+        ranking_metric=result.ranking_metric,
+        total_elapsed=result.total_elapsed,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+class _SlotMeta(BaseModel):
+    """Per-slot metadata that is not part of the use-case layer."""
+
+    chat_provider_id: str
+    chat_provider_name: str | None = None
+    execution_id: str
+
+
+def _record_slot_telemetry(
+    *,
+    state: AppState,
+    slot_result: MatrixSlotResultDTO,
+    meta: _SlotMeta,
+    session_id: str,
+    comparison_group_id: str,
+    query: str,
+    created_at: datetime,
+) -> None:
+    """Persist one matrix slot as a telemetry ``runs`` row + steps."""
+    try:
+        result = slot_result.result
+        state.telemetry.record_run(
+            run_id=meta.execution_id,
+            created_at=created_at.timestamp(),
+            mode=slot_result.mode,
+            provider=slot_result.provider,
+            model=slot_result.model,
+            query=query,
+            answer=result.answer,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            total_cost=result.total_cost,
+            elapsed_seconds=result.elapsed_time,
+            success=result.success,
+            error=result.error,
+            session_id=session_id,
+            chat_provider_id=meta.chat_provider_id,
+            chat_provider_name=meta.chat_provider_name,
+            comparison_group_id=comparison_group_id,
+            steps_count=result.steps,
+        )
+        # Canonicalize action types to match in-memory traces / JSONL exports.
+        from rlmkit.server.routes.chat import _canonical_action_type
+
+        total = len(result.trace)
+        for i, step_data in enumerate(result.trace):
+            action_type = _canonical_action_type(
+                step_data.get("role"),
+                is_last=(i == total - 1),
+                success=result.success,
+            )
+            state.telemetry.record_step(
+                run_id=meta.execution_id,
+                step_index=i,
+                action_type=action_type,
+                code=step_data.get("code"),
+                output=step_data.get("content"),
+                input_tokens=step_data.get("input_tokens", 0),
+                output_tokens=step_data.get("output_tokens", 0),
+                duration=step_data.get("elapsed_seconds", 0.0),
+                model=step_data.get("model"),
+            )
+    except Exception:
+        # Telemetry failures must never break the user's matrix response.
+        logger.exception("Failed to record telemetry for slot %s", slot_result.slot_id)
+
+
+def _resolve_embedding_api_key(
+    state: AppState,
+    cp: ChatProviderConfig,
+) -> str | None:
+    """Resolve the embedding API key using the same fallback as ``/api/chat``.
+
+    Preference order:
+    1. ``OPENAI_API_KEY`` from the process environment.
+    2. The stored secret for this chat provider's LLM provider instance,
+       when that provider's backend is ``openai``.
+    """
+    api_key: str | None = os.environ.get("OPENAI_API_KEY")
+    if api_key:
+        return api_key
+
+    lp = state.get_llm_provider(cp.llm_provider_id) if cp.llm_provider_id else None
+    if lp and lp.backend == "openai":
+        from rlmkit.server.routes.llm_providers import _get_api_key
+
+        api_key = _get_api_key(lp.id, lp.backend)
+
+    return api_key
+
+
+def _build_slot_run_config(
+    state: AppState,
+    cp: ChatProviderConfig,
+    mode: str,
+    extra: dict[str, object] | None = None,
+) -> RunConfigDTO:
+    """Build a per-slot :class:`RunConfigDTO` with the chat provider's profile
+    settings applied (mirrors ``/api/chat`` for RLM) and optional RAG extras.
+    """
+    run_config = state.create_run_config(mode=mode)
+
+    # Apply per-provider RLM knobs the same way /api/chat does.
+    if mode == "rlm":
+        run_config.max_steps = cp.rlm_max_steps
+        run_config.max_time_seconds = float(cp.rlm_timeout_seconds)
+        run_config.repeat_limit = cp.rlm_repeat_limit
+        run_config.nudge_at_fraction = cp.rlm_nudge_at_fraction
+        if cp.profile_id:
+            profile = state.find_profile(cp.profile_id)
+            if profile:
+                from rlmkit.server.routes.chat import _resolve_profile_prompt
+
+                prompt_extra = _resolve_profile_prompt(profile, "rlm")
+                if prompt_extra:
+                    run_config.system_prompt_extra = prompt_extra
+
+    if extra:
+        run_config.extra.update(extra)
+
+    return run_config
+
+
+def _update_execution_record(
+    execution: ExecutionRecord,
+    slot_result: MatrixSlotResultDTO,
+    completed_at: datetime,
+) -> None:
+    """Fill in the in-memory :class:`ExecutionRecord` from a slot result.
+
+    Mirrors the shape of ``_run_execution`` in ``chat.py`` so downstream
+    features (resolve_execution_context, get_execution_ids_for_turn,
+    quality engine, judge flows) see a consistent record.
+    """
+    result = slot_result.result
+    execution.status = "complete" if result.success else "error"
+    execution.completed_at = completed_at
+    execution.result = {
+        "answer": result.answer,
+        "success": result.success,
+        "error": result.error,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "total_tokens": result.total_tokens,
+        "total_cost": result.total_cost,
+        "elapsed_time": result.elapsed_time,
+        "steps_count": result.steps,
+    }
+    execution.steps = list(result.trace)

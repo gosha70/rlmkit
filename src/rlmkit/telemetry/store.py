@@ -118,6 +118,7 @@ class RunSummary:
     chat_provider_name: str | None
     steps_count: int
     answer_length: int
+    comparison_group_id: str | None = None
 
 
 @dataclass
@@ -398,6 +399,7 @@ class TelemetryStore:
         mode: str | None = None,
         session_id: str | None = None,
         chat_provider_id: str | None = None,
+        comparison_group_id: str | None = None,
         success: bool | None = None,
     ) -> list[RunSummary]:
         """List runs ordered by created_at descending."""
@@ -412,6 +414,9 @@ class TelemetryStore:
         if chat_provider_id is not None:
             clauses.append("chat_provider_id = ?")
             params.append(chat_provider_id)
+        if comparison_group_id is not None:
+            clauses.append("comparison_group_id = ?")
+            params.append(comparison_group_id)
         if success is not None:
             clauses.append("success = ?")
             params.append(int(success))
@@ -464,6 +469,7 @@ class TelemetryStore:
             chat_provider_name=row["chat_provider_name"],
             steps_count=row["steps_count"],
             answer_length=row["answer_length"],
+            comparison_group_id=row["comparison_group_id"],
             answer=row["answer"],
             input_tokens=row["input_tokens"],
             output_tokens=row["output_tokens"],
@@ -607,4 +613,5 @@ class TelemetryStore:
             chat_provider_name=row["chat_provider_name"],
             steps_count=row["steps_count"],
             answer_length=row["answer_length"],
+            comparison_group_id=row["comparison_group_id"],
         )

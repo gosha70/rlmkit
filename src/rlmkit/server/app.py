@@ -18,6 +18,7 @@ from rlmkit.server.models import HealthResponse
 from rlmkit.server.routes import (
     chat,
     chat_providers,
+    compare_matrix,
     config,
     evaluations,
     files,
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
 
     # Include route modules
     app.include_router(chat.router)
+    app.include_router(compare_matrix.router)
     app.include_router(files.router)
     app.include_router(sessions.router)
     app.include_router(metrics.router)
