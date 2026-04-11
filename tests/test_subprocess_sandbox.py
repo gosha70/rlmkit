@@ -12,8 +12,22 @@ from rlmkit.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxAd
 
 @pytest.fixture
 def sandbox() -> SubprocessSandboxAdapter:
-    """Create a fresh subprocess sandbox with a short timeout."""
-    return SubprocessSandboxAdapter(max_exec_time_s=3.0, max_stdout_chars=5000)
+    """Create a fresh subprocess sandbox with a generous timeout.
+
+    10 s is chosen to absorb ``spawn`` cold-start jitter on macOS
+    Python 3.13 under full-suite load.  Spawn re-launches a fresh
+    interpreter for every ``process.start()``, which normally takes
+    ~200-500 ms but can spike above 3 s when the suite runs many
+    subprocess sandbox tests back-to-back (observed intermittent
+    "Code execution timed out after 3.0s" failures on unrelated
+    tests like ``test_variable_persists_across_calls``).
+
+    Tests that explicitly verify timeout behavior (e.g.
+    ``TestTimeoutEnforcement.test_infinite_loop_times_out``) create
+    their own ``SubprocessSandboxAdapter(max_exec_time_s=1.0)``
+    outside this fixture, so they are unaffected by the bump.
+    """
+    return SubprocessSandboxAdapter(max_exec_time_s=10.0, max_stdout_chars=5000)
 
 
 class TestBasicExecution:
@@ -99,8 +113,11 @@ class TestTimeoutEnforcement:
         assert result.timeout
         assert not result.success
         assert "timed out" in (result.exception or "").lower()
-        # Should complete within timeout + 2s grace period
-        assert elapsed < 1.0 + 3.0, f"Took too long: {elapsed:.1f}s"
+        # Should complete within the timeout plus a generous spawn
+        # cold-start budget — see the ``sandbox`` fixture docstring.
+        # What this test actually verifies is that the hard-kill fires,
+        # not that spawn is fast.
+        assert elapsed < 1.0 + 9.0, f"Took too long: {elapsed:.1f}s"
 
     def test_sleep_within_timeout(self, sandbox: SubprocessSandboxAdapter) -> None:
         result = sandbox.execute("import time; time.sleep(0.1); print('done')")
@@ -187,7 +204,10 @@ class TestStdoutTruncation:
     """Stdout truncation when output exceeds max_stdout_chars."""
 
     def test_large_output_truncated(self) -> None:
-        sandbox = SubprocessSandboxAdapter(max_exec_time_s=3.0, max_stdout_chars=100)
+        # 10 s budget — same reason as the shared ``sandbox`` fixture:
+        # spawn cold-start on macOS Python 3.13 can spike above 3 s
+        # under load and cause spurious timeout failures.
+        sandbox = SubprocessSandboxAdapter(max_exec_time_s=10.0, max_stdout_chars=100)
         result = sandbox.execute("print('x' * 500)")
         assert result.truncated
         assert len(result.stdout) < 200  # truncated + marker
@@ -274,7 +294,8 @@ class TestSafeMode:
 
     @pytest.fixture
     def safe_sandbox(self) -> SubprocessSandboxAdapter:
-        return SubprocessSandboxAdapter(safe_mode=True, max_exec_time_s=3.0)
+        # 10 s budget — see sandbox fixture above for rationale.
+        return SubprocessSandboxAdapter(safe_mode=True, max_exec_time_s=10.0)
 
     def test_safe_mode_blocks_os_import(self, safe_sandbox: SubprocessSandboxAdapter) -> None:
         result = safe_sandbox.execute("import os")
@@ -449,7 +470,9 @@ def test_timeout() -> None:
     result = sb.execute("while True: pass")
     elapsed = time.monotonic() - start
     assert result.timeout, f"expected timeout=True, got {{result}}"
-    assert elapsed < 6.0, f"took too long: {{elapsed:.2f}}s"
+    # Generous upper bound: 2 s budget + 10 s spawn slack.  The test
+    # verifies hard-kill fires, not that spawn is fast.
+    assert elapsed < 12.0, f"took too long: {{elapsed:.2f}}s"
 
 
 def test_persistence() -> None:
