@@ -298,3 +298,123 @@ class TestSessionPersistence:
         assert "add_message" in after_except, (
             "_ws_execute error path must add error message to session"
         )
+
+
+# ---------------------------------------------------------------------------
+# File persistence (regression: uploaded files must survive server restarts)
+# ---------------------------------------------------------------------------
+
+
+class TestFilePersistence:
+    """Uploaded files must survive ``uvicorn --reload`` and process restarts,
+    otherwise any session whose messages reference ``file_ids`` will 404 on
+    the next chat turn (the "File not found" bug)."""
+
+    def test_files_round_trip_through_disk(self, tmp_path: object) -> None:
+        """AppState.save_files() + _load_files() round-trip preserves all
+        FileRecord fields so ``/api/chat`` can still resolve file_ids after
+        a restart."""
+        from unittest.mock import patch
+
+        from rlmkit.server.dependencies import AppState, FileRecord
+
+        files_path = tmp_path / "files.json"  # type: ignore[operator]
+        with patch("rlmkit.server.dependencies._FILES_FILE", files_path):
+            # Producer: upload a file, persist.
+            src = AppState(load_from_disk=False)
+            now = datetime.now(timezone.utc)
+            src.files["f-1"] = FileRecord(
+                id="f-1",
+                name="doc.pdf",
+                size_bytes=1024,
+                content_type="application/pdf",
+                text_content="Hello world",
+                token_count=3,
+                created_at=now,
+            )
+            src.save_files()
+            assert files_path.exists()
+
+            # Consumer: fresh AppState (simulates restart), load from disk.
+            dst = AppState(load_from_disk=False)
+            assert dst.files == {}  # fresh
+            dst._load_files()
+
+            assert "f-1" in dst.files
+            rec = dst.files["f-1"]
+            assert rec.name == "doc.pdf"
+            assert rec.size_bytes == 1024
+            assert rec.content_type == "application/pdf"
+            assert rec.text_content == "Hello world"
+            assert rec.token_count == 3
+            # created_at round-trips via isoformat
+            assert rec.created_at == now
+
+    def test_upload_endpoint_persists_to_disk(self, tmp_path: object, client: TestClient) -> None:
+        """POST /api/files/upload must call save_files() so the file
+        survives an immediate restart (the actual bug the user reported)."""
+        from unittest.mock import patch
+
+        from rlmkit.server.dependencies import AppState, get_state
+
+        # reset_state() stubs save_files = lambda: None on the singleton to
+        # avoid polluting the user's ~/.rlmkit/ during test runs.  For this
+        # test we need the real method so the upload actually writes disk.
+        state = get_state()
+        state.save_files = AppState.save_files.__get__(state, AppState)  # type: ignore[method-assign]
+
+        files_path = tmp_path / "files.json"  # type: ignore[operator]
+        with patch("rlmkit.server.dependencies._FILES_FILE", files_path):
+            resp = client.post(
+                "/api/files/upload",
+                files={"file": ("doc.txt", b"Hello world", "text/plain")},
+            )
+            assert resp.status_code == 201
+            file_id = resp.json()["id"]
+
+            # Disk file should now contain the uploaded record.
+            assert files_path.exists()
+            data = json.loads(files_path.read_text())
+            assert len(data) == 1
+            assert data[0]["id"] == file_id
+            assert data[0]["name"] == "doc.txt"
+            assert data[0]["text_content"] == "Hello world"
+
+    def test_chat_resolves_file_after_reload(self, tmp_path: object, client: TestClient) -> None:
+        """End-to-end regression: upload a file, wipe in-memory state to
+        simulate a restart, reload from disk, and verify the file can still
+        be resolved for a chat request."""
+        from unittest.mock import patch
+
+        from rlmkit.server.dependencies import AppState, get_state
+
+        # Restore the real save_files on the singleton (reset_state stubs it).
+        state = get_state()
+        state.save_files = AppState.save_files.__get__(state, AppState)  # type: ignore[method-assign]
+
+        files_path = tmp_path / "files.json"  # type: ignore[operator]
+        with patch("rlmkit.server.dependencies._FILES_FILE", files_path):
+            # Step 1: upload a file (the real upload path persists it).
+            upload_resp = client.post(
+                "/api/files/upload",
+                files={"file": ("doc.txt", b"The quick brown fox", "text/plain")},
+            )
+            assert upload_resp.status_code == 201
+            file_id = upload_resp.json()["id"]
+
+            # Step 2: wipe state.files in place to simulate a process restart.
+            # (The real AppState singleton persists across requests, so we
+            # clear its dict rather than replacing the instance.)
+            state = get_state()
+            assert file_id in state.files
+            state.files.clear()
+            assert file_id not in state.files
+
+            # Step 3: load from disk and assert the file came back.
+            state._load_files()
+            assert file_id in state.files, (
+                "File persistence broken: restarted state did not restore "
+                "the uploaded file from disk"
+            )
+            rec = state.files[file_id]
+            assert rec.text_content == "The quick brown fox"

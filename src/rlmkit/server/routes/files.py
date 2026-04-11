@@ -80,6 +80,10 @@ async def upload_file(
         created_at=now,
     )
     state.files[file_id] = record
+    # Persist so the file survives a server restart (uvicorn --reload in dev,
+    # process restart in prod).  Without this, any restored session whose
+    # messages reference this file_id will 404 on the next chat turn.
+    state.save_files()
 
     return FileUploadResponse(
         id=file_id,

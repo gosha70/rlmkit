@@ -55,10 +55,12 @@ _RLMKIT_DIR = Path.home() / ".rlmkit"
 _CONFIG_FILE = _RLMKIT_DIR / "config.json"
 _SESSIONS_FILE = _RLMKIT_DIR / "sessions.json"
 _EVALUATIONS_FILE = _RLMKIT_DIR / "evaluations.json"
+_FILES_FILE = _RLMKIT_DIR / "files.json"
 _LEGACY_CONFIG_FILE = Path(".rlmkit_config.json")
 _LEGACY_SESSIONS_FILE = Path(".rlmkit_sessions.json")
 _LEGACY_EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
 _MAX_PERSISTED_SESSIONS = 50
+_MAX_PERSISTED_FILES = 100
 
 # ---------------------------------------------------------------------------
 # In-memory stores (replaced by real persistence in production)
@@ -126,6 +128,7 @@ class AppState:
         if load_from_disk:
             self._load_config()
             self._load_sessions()
+            self._load_files()
             self._load_evaluations()
             self._migrate_chat_providers()
             self._assign_default_profiles()
@@ -710,6 +713,67 @@ class AppState:
             logger.warning("Failed to save sessions: %s", exc)
 
     # ------------------------------------------------------------------
+    # File persistence
+    # ------------------------------------------------------------------
+
+    def _load_files(self) -> None:
+        """Load persisted uploaded files from disk if available.
+
+        Files must survive server restarts so that a user who uploads a
+        document, gets rescheduled (e.g. dev-server ``--reload``), and then
+        continues chatting in a persisted session can still reference the
+        file by id.  Without this, ``_resolve_file_content`` returns 404
+        for every restored session that has ``file_ids`` in its messages.
+        """
+        if not _FILES_FILE.exists():
+            return
+        try:
+            raw = json.loads(_FILES_FILE.read_text())
+            for f in raw:
+                rec = FileRecord(
+                    id=f["id"],
+                    name=f["name"],
+                    size_bytes=f["size_bytes"],
+                    content_type=f["content_type"],
+                    text_content=f["text_content"],
+                    token_count=f["token_count"],
+                    created_at=datetime.fromisoformat(f["created_at"]),
+                )
+                self.files[rec.id] = rec
+            logger.info("Loaded %d files from disk", len(self.files))
+        except Exception as exc:
+            logger.warning("Failed to load files: %s", exc)
+
+    def save_files(self) -> None:
+        """Persist uploaded files to disk (most recent N only).
+
+        Capped at :data:`_MAX_PERSISTED_FILES` by ``created_at`` descending
+        so the on-disk JSON never grows unbounded on long-running servers.
+        """
+        try:
+            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+            sorted_files = sorted(
+                self.files.values(),
+                key=lambda f: f.created_at,
+                reverse=True,
+            )[:_MAX_PERSISTED_FILES]
+            data = [
+                {
+                    "id": f.id,
+                    "name": f.name,
+                    "size_bytes": f.size_bytes,
+                    "content_type": f.content_type,
+                    "text_content": f.text_content,
+                    "token_count": f.token_count,
+                    "created_at": f.created_at.isoformat(),
+                }
+                for f in sorted_files
+            ]
+            _FILES_FILE.write_text(json.dumps(data, indent=2, default=str))
+        except Exception as exc:
+            logger.warning("Failed to save files: %s", exc)
+
+    # ------------------------------------------------------------------
     # Execution persistence (SQLite via TelemetryStore)
     # ------------------------------------------------------------------
 
@@ -870,4 +934,5 @@ def reset_state() -> None:
     _state = AppState(load_from_disk=False)
     _state.save_config = lambda: None  # type: ignore[assignment]
     _state.save_sessions = lambda: None  # type: ignore[assignment]
+    _state.save_files = lambda: None  # type: ignore[assignment]
     _state.save_evaluations = lambda: None  # type: ignore[assignment]
