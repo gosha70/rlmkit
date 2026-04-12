@@ -69,22 +69,30 @@ async def create_chat_provider(
             )
 
     now = datetime.now(timezone.utc)
-    cp = ChatProviderConfig(
-        id=str(uuid.uuid4()),
-        name=req.name,
-        llm_provider_id=req.llm_provider_id,
-        llm_provider_name=lp.name,
-        profile_id=req.profile_id,
-        execution_mode=req.execution_mode,
-        rag_config=req.rag_config,
-        rlm_max_steps=req.rlm_max_steps or 16,
-        rlm_timeout_seconds=req.rlm_timeout_seconds or 60,
-        rlm_repeat_limit=req.rlm_repeat_limit or 2,
-        rlm_nudge_at_fraction=req.rlm_nudge_at_fraction or 0.4,
-        num_retries=req.num_retries,
-        created_at=now,
-        updated_at=now,
-    )
+    cp_kwargs: dict = {
+        "id": str(uuid.uuid4()),
+        "name": req.name,
+        "llm_provider_id": req.llm_provider_id,
+        "llm_provider_name": lp.name,
+        "profile_id": req.profile_id,
+        "execution_mode": req.execution_mode,
+        "rag_config": req.rag_config,
+        "rlm_max_steps": req.rlm_max_steps or 16,
+        "rlm_timeout_seconds": req.rlm_timeout_seconds or 60,
+        "rlm_repeat_limit": req.rlm_repeat_limit or 2,
+        "rlm_nudge_at_fraction": req.rlm_nudge_at_fraction or 0.4,
+        "num_retries": req.num_retries,
+        "created_at": now,
+        "updated_at": now,
+    }
+    # Only forward conversation_memory_* when the client supplied them;
+    # otherwise let ChatProviderConfig use its defaults (enabled=True,
+    # fraction=0.30) so the feature is opt-out rather than opt-in.
+    if req.conversation_memory_enabled is not None:
+        cp_kwargs["conversation_memory_enabled"] = req.conversation_memory_enabled
+    if req.conversation_memory_fraction is not None:
+        cp_kwargs["conversation_memory_fraction"] = req.conversation_memory_fraction
+    cp = ChatProviderConfig(**cp_kwargs)
     state.config.chat_providers.append(cp)
     state.save_config()
     return state.resolve_chat_provider(cp)
@@ -147,6 +155,10 @@ async def update_chat_provider(
         cp.rlm_nudge_at_fraction = req.rlm_nudge_at_fraction
     if "num_retries" in req.model_fields_set:
         cp.num_retries = req.num_retries  # None clears back to provider-default chain
+    if req.conversation_memory_enabled is not None:
+        cp.conversation_memory_enabled = req.conversation_memory_enabled
+    if req.conversation_memory_fraction is not None:
+        cp.conversation_memory_fraction = req.conversation_memory_fraction
     cp.updated_at = datetime.now(timezone.utc)
 
     state.save_config()

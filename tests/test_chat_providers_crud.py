@@ -799,3 +799,194 @@ class TestGetChatProviderById:
         fake_id = str(uuid.uuid4())
         resp = client.get(f"/api/chat-providers/{fake_id}")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# conversation_memory_enabled + conversation_memory_fraction
+#
+# These tests pin the API contract the frontend Settings toggle will
+# consume in a later session.  They cover POST/PATCH/GET round-trip,
+# persistence model_dump/model_validate round-trip, legacy-config
+# load (no field = default True), and validation bounds.  No execution
+# code reads the field yet — that is wired in Commit 4.
+# ---------------------------------------------------------------------------
+
+
+class TestConversationMemoryField:
+    def test_create_defaults_to_enabled_true(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """POST without the field → feature defaults to enabled."""
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-DEFAULT",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "direct",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["conversation_memory_enabled"] is True
+        assert data["conversation_memory_fraction"] == 0.30
+
+    def test_create_honours_disabled_flag(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """POST with conversation_memory_enabled: false round-trips via GET."""
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-STATELESS",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "direct",
+                "conversation_memory_enabled": False,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        cp_id = resp.json()["id"]
+
+        get_resp = client.get(f"/api/chat-providers/{cp_id}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["conversation_memory_enabled"] is False
+
+    def test_create_honours_custom_fraction(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-TIGHT",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "direct",
+                "conversation_memory_fraction": 0.15,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["conversation_memory_fraction"] == 0.15
+
+    def test_update_toggles_enabled_flag(
+        self, client: TestClient, created_provider: dict[str, Any]
+    ) -> None:
+        """PATCH toggles conversation_memory_enabled, GET reflects the change."""
+        cp_id = created_provider["id"]
+        # Provider was created with the default (True); flip it off.
+        put_resp = client.put(
+            f"/api/chat-providers/{cp_id}",
+            json={"conversation_memory_enabled": False},
+        )
+        assert put_resp.status_code == 200, put_resp.text
+        assert put_resp.json()["conversation_memory_enabled"] is False
+
+        # Flip it back on.
+        put_resp = client.put(
+            f"/api/chat-providers/{cp_id}",
+            json={"conversation_memory_enabled": True},
+        )
+        assert put_resp.status_code == 200, put_resp.text
+        assert put_resp.json()["conversation_memory_enabled"] is True
+
+    def test_update_fraction_bounds_rejected(
+        self, client: TestClient, created_provider: dict[str, Any]
+    ) -> None:
+        """PATCH with fraction > 0.9 is a 422 validation error."""
+        cp_id = created_provider["id"]
+        resp = client.put(
+            f"/api/chat-providers/{cp_id}",
+            json={"conversation_memory_fraction": 1.5},
+        )
+        assert resp.status_code == 422
+
+    def test_create_fraction_bounds_rejected(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """POST with fraction > 0.9 is a 422 validation error."""
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-BAD-FRAC",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "direct",
+                "conversation_memory_fraction": -0.1,
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_legacy_config_without_field_defaults_to_enabled(self) -> None:
+        """A JSON config written before this commit must load with memory on.
+
+        This protects users who upgrade the server while an older
+        ``~/.rlmkit/config.json`` exists on disk.  Pydantic fills the
+        default; no migration script required.
+        """
+        from rlmkit.server.models import ChatProviderConfig
+
+        legacy_payload = {
+            "id": "legacy-cp",
+            "name": "LEGACY-CP",
+            "llm_provider_id": "some-uuid",
+            "execution_mode": "direct",
+        }
+        cp = ChatProviderConfig.model_validate(legacy_payload)
+        assert cp.conversation_memory_enabled is True
+        assert cp.conversation_memory_fraction == 0.30
+
+    def test_model_dump_round_trip_preserves_field(self) -> None:
+        """save_config writes model_dump(); load reads model_validate().
+
+        Pins that the full save→load cycle preserves a non-default
+        value, which is the actual contract ``AppState.save_config()``
+        relies on.
+        """
+        from rlmkit.server.models import ChatProviderConfig
+
+        original = ChatProviderConfig(
+            id="cp-1",
+            name="TEST",
+            llm_provider_id="lp-1",
+            execution_mode="rlm",
+            conversation_memory_enabled=False,
+            conversation_memory_fraction=0.10,
+        )
+        dumped = original.model_dump()
+        assert dumped["conversation_memory_enabled"] is False
+        assert dumped["conversation_memory_fraction"] == 0.10
+
+        reloaded = ChatProviderConfig.model_validate(dumped)
+        assert reloaded.conversation_memory_enabled is False
+        assert reloaded.conversation_memory_fraction == 0.10
+
+    def test_fraction_boundary_values_accepted(self) -> None:
+        """0.0 and 0.9 are both inclusive boundaries."""
+        from rlmkit.server.models import ChatProviderConfig
+
+        zero = ChatProviderConfig(
+            id="cp-0",
+            name="ZERO",
+            llm_provider_id="lp",
+            conversation_memory_fraction=0.0,
+        )
+        assert zero.conversation_memory_fraction == 0.0
+
+        nine = ChatProviderConfig(
+            id="cp-9",
+            name="NINE",
+            llm_provider_id="lp",
+            conversation_memory_fraction=0.9,
+        )
+        assert nine.conversation_memory_fraction == 0.9
+
+    def test_fraction_rejects_bool(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """JSON false/true must not be silently coerced to 0.0/1.0."""
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-BOOL-FRAC",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "direct",
+                "conversation_memory_fraction": False,
+            },
+        )
+        assert resp.status_code == 422

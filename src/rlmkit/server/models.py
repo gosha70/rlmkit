@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Error
@@ -429,8 +429,35 @@ class ChatProviderConfig(BaseModel):
     )
     rlm_nudge_at_fraction: float = 0.4  # only for RLM mode — fraction of max_steps for soft nudge
     num_retries: int | None = Field(default=None, ge=0)
+    # Per-provider conversation history (SDD_RLM_CONVERSATION_HISTORY).
+    # When True (default), follow-up turns on this provider carry prior
+    # context — either as an in-prompt replay (Direct/Compare) or as a
+    # bound `history` REPL variable (RLM/RAG/Auto).  Set to False for a
+    # stateless provider whose every turn starts from scratch.
+    conversation_memory_enabled: bool = True
+    # Fraction of the model's context window the in-prompt replay is
+    # allowed to spend on prior turns before the budget squeezes.  Only
+    # affects Direct/Compare modes; the REPL path is byte-capped, not
+    # token-capped.  Accepts [0.0, 0.9].
+    conversation_memory_fraction: float = 0.30
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @field_validator("conversation_memory_fraction", mode="before")
+    @classmethod
+    def _reject_bool_conversation_memory_fraction(cls, v: Any) -> Any:
+        # bool is a subclass of int is a subclass of float, so Pydantic
+        # would otherwise coerce True/False to 1.0/0.0 silently.
+        if isinstance(v, bool):
+            raise ValueError("conversation_memory_fraction must be a number, not a bool")
+        return v
+
+    @field_validator("conversation_memory_fraction")
+    @classmethod
+    def _validate_conversation_memory_fraction(cls, v: float) -> float:
+        if not 0.0 <= v <= 0.9:
+            raise ValueError("conversation_memory_fraction must be between 0.0 and 0.9")
+        return v
 
 
 class ChatProviderCreateRequest(BaseModel):
@@ -444,6 +471,22 @@ class ChatProviderCreateRequest(BaseModel):
     rlm_repeat_limit: int | None = None
     rlm_nudge_at_fraction: float | None = None
     num_retries: int | None = Field(default=None, ge=0)
+    conversation_memory_enabled: bool | None = None
+    conversation_memory_fraction: float | None = None
+
+    @field_validator("conversation_memory_fraction", mode="before")
+    @classmethod
+    def _reject_bool_conversation_memory_fraction(cls, v: Any) -> Any:
+        if isinstance(v, bool):
+            raise ValueError("conversation_memory_fraction must be a number, not a bool")
+        return v
+
+    @field_validator("conversation_memory_fraction")
+    @classmethod
+    def _validate_conversation_memory_fraction(cls, v: float | None) -> float | None:
+        if v is not None and not 0.0 <= v <= 0.9:
+            raise ValueError("conversation_memory_fraction must be between 0.0 and 0.9")
+        return v
 
 
 class ChatProviderUpdateRequest(BaseModel):
@@ -457,6 +500,22 @@ class ChatProviderUpdateRequest(BaseModel):
     rlm_repeat_limit: int | None = None
     rlm_nudge_at_fraction: float | None = None
     num_retries: int | None = Field(default=None, ge=0)
+    conversation_memory_enabled: bool | None = None
+    conversation_memory_fraction: float | None = None
+
+    @field_validator("conversation_memory_fraction", mode="before")
+    @classmethod
+    def _reject_bool_conversation_memory_fraction(cls, v: Any) -> Any:
+        if isinstance(v, bool):
+            raise ValueError("conversation_memory_fraction must be a number, not a bool")
+        return v
+
+    @field_validator("conversation_memory_fraction")
+    @classmethod
+    def _validate_conversation_memory_fraction(cls, v: float | None) -> float | None:
+        if v is not None and not 0.0 <= v <= 0.9:
+            raise ValueError("conversation_memory_fraction must be between 0.0 and 0.9")
+        return v
 
 
 class ConfigResponse(BaseModel):
