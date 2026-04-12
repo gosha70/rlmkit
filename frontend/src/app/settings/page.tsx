@@ -36,6 +36,7 @@ import {
   updateLLMProvider,
   deleteLLMProvider,
   testLLMProvider,
+  getProviderModels,
   type AppConfig,
   type RunProfile,
   type ChatProviderConfig,
@@ -43,8 +44,9 @@ import {
   type RAGConfig,
   type LLMProviderConfig,
   type LLMProviderCreateRequest,
+  type ModelInfo,
 } from "@/lib/api";
-import { Plus, Edit2, Trash2, Upload, Check, X, Wifi } from "lucide-react";
+import { Plus, Edit2, Trash2, Upload, Check, X, Wifi, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -99,9 +101,36 @@ export default function SettingsPage() {
     context_window: "",
   });
   const [savingLLMProvider, setSavingLLMProvider] = useState(false);
+  const [llmProviderModels, setLLMProviderModels] = useState<ModelInfo[]>([]);
+  const [loadingLLMModels, setLoadingLLMModels] = useState(false);
+  const llmModelFetchSeqRef = useRef(0);
   const [deletingLLMProviderId, setDeletingLLMProviderId] = useState<string | null>(null);
   const [testingLLMProviderId, setTestingLLMProviderId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { connected: boolean; error?: string | null; latency_ms?: number | null }>>({});
+
+  // Fetch available models when backend or endpoint changes in the LLM Provider form.
+  // Uses a sequence counter to discard stale responses from concurrent fetches.
+  const fetchLLMProviderModels = async (backend: string, ep?: string) => {
+    const seq = ++llmModelFetchSeqRef.current;
+    setLLMProviderModels([]);
+    setLoadingLLMModels(true);
+    try {
+      const models = await getProviderModels(backend, ep || undefined);
+      if (seq === llmModelFetchSeqRef.current) setLLMProviderModels(models);
+    } catch {
+      if (seq === llmModelFetchSeqRef.current) setLLMProviderModels([]);
+    } finally {
+      if (seq === llmModelFetchSeqRef.current) setLoadingLLMModels(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showLLMProviderForm && llmProviderForm.backend) {
+      const localBackends = ["ollama", "lmstudio", "vllm"];
+      const ep = localBackends.includes(llmProviderForm.backend) ? llmProviderForm.endpoint : undefined;
+      fetchLLMProviderModels(llmProviderForm.backend, ep);
+    }
+  }, [showLLMProviderForm, llmProviderForm.backend, llmProviderForm.endpoint]);
 
   const { data: config, mutate: mutateConfig } = useSWR<AppConfig>("config", getConfig);
   const { data: profiles = [], mutate: mutateProfiles } = useSWR<RunProfile[]>("profiles", getProfiles);
@@ -290,10 +319,12 @@ export default function SettingsPage() {
   const resetLLMProviderForm = () => {
     setLLMProviderForm({ name: "", backend: "openai", model: "", api_key: "", endpoint: "", context_window: "" });
     setEditingLLMProviderId(null);
+    setLLMProviderModels([]);
   };
 
   const handleEditLLMProvider = (lp: LLMProviderConfig) => {
     setEditingLLMProviderId(lp.id);
+    setLLMProviderModels([]);
     setLLMProviderForm({
       name: lp.name,
       backend: lp.backend,
@@ -438,7 +469,7 @@ export default function SettingsPage() {
                     <FieldLabel htmlFor="llmp-backend" tooltip="The inference backend. Cloud providers (OpenAI, Anthropic) require an API key; local providers (Ollama, LM Studio, vLLM) connect to a local endpoint.">Backend</FieldLabel>
                     <Select
                       value={llmProviderForm.backend}
-                      onValueChange={(v) => setLLMProviderForm({ ...llmProviderForm, backend: v, model: "", endpoint: "" })}
+                      onValueChange={(v) => { setLLMProviderForm({ ...llmProviderForm, backend: v, model: "", endpoint: "" }); setLLMProviderModels([]); }}
                       disabled={!!editingLLMProviderId}
                     >
                       <SelectTrigger id="llmp-backend">
@@ -455,17 +486,65 @@ export default function SettingsPage() {
                   </div>
                   <div className="space-y-2">
                     <FieldLabel htmlFor="llmp-model" tooltip="The model identifier. For cloud providers, use the official model name (e.g., gpt-4o). For local, use the model name as loaded in your server.">Model</FieldLabel>
-                    <Input
-                      id="llmp-model"
-                      placeholder={
-                        llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
-                        llmProviderForm.backend === "anthropic" ? "e.g., claude-3-5-sonnet-20241022" :
-                        llmProviderForm.backend === "vllm" ? "e.g., Qwen/Qwen2.5-7B-Instruct" :
-                        "e.g., llama3.2"
-                      }
-                      value={llmProviderForm.model}
-                      onChange={(e) => setLLMProviderForm({ ...llmProviderForm, model: e.target.value })}
-                    />
+                    {llmProviderModels.length > 0 ? (
+                      <div className="flex gap-2">
+                        <Select
+                          value={llmProviderForm.model || undefined}
+                          onValueChange={(v) => setLLMProviderForm({ ...llmProviderForm, model: v })}
+                        >
+                          <SelectTrigger id="llmp-model" className="flex-1">
+                            <SelectValue placeholder={
+                              llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
+                              llmProviderForm.backend === "anthropic" ? "e.g., claude-sonnet-4-5" :
+                              llmProviderForm.backend === "vllm" ? "e.g., Qwen/Qwen2.5-7B-Instruct" :
+                              "e.g., llama3.2"
+                            } />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {llmProviderModels.map((m) => (
+                              <SelectItem key={m.name} value={m.name}>
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fetchLLMProviderModels(llmProviderForm.backend, llmProviderForm.endpoint || undefined)}
+                          disabled={loadingLLMModels}
+                          aria-label="Refresh model list"
+                          className="shrink-0"
+                        >
+                          <RefreshCw className={cn("h-4 w-4", loadingLLMModels && "animate-spin")} aria-hidden="true" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Input
+                          id="llmp-model"
+                          className="flex-1"
+                          placeholder={
+                            llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
+                            llmProviderForm.backend === "anthropic" ? "e.g., claude-sonnet-4-5" :
+                            llmProviderForm.backend === "vllm" ? "e.g., Qwen/Qwen2.5-7B-Instruct" :
+                            "e.g., llama3.2"
+                          }
+                          value={llmProviderForm.model}
+                          onChange={(e) => setLLMProviderForm({ ...llmProviderForm, model: e.target.value })}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fetchLLMProviderModels(llmProviderForm.backend, llmProviderForm.endpoint || undefined)}
+                          disabled={loadingLLMModels}
+                          aria-label="Fetch available models"
+                          className="shrink-0"
+                        >
+                          <RefreshCw className={cn("h-4 w-4", loadingLLMModels && "animate-spin")} aria-hidden="true" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   {LOCAL_BACKENDS.includes(llmProviderForm.backend) && (
                     <div className="space-y-2">

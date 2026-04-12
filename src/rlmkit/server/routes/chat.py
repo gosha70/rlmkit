@@ -190,6 +190,17 @@ def _prepare_history_context(
             "context_window": context_window,
             "conversation_memory_fraction": fraction,
         }
+        logger.info(
+            "History [%s/%s]: path=%s, turns_used=%d/%d, budget=%d tok, query_len=%d→%d",
+            mode,
+            chat_provider_id,
+            HISTORY_PATH_INPROMPT,
+            assembly.turns_used,
+            assembly.turns_available,
+            budget,
+            len(current_query),
+            len(full_query),
+        )
         return (full_query, {}, history_info)
 
     if mode in MODES_REPL_VARIABLE:
@@ -210,6 +221,14 @@ def _prepare_history_context(
             "turns_available": len(turns),
             **var_info,
         }
+        logger.info(
+            "History [%s/%s]: path=%s, turns=%d, history_var_entries=%d",
+            mode,
+            chat_provider_id,
+            HISTORY_PATH_REPL_VARIABLE,
+            len(turns),
+            len(history_var),
+        )
         return (current_query, extra_overlay, history_info)
 
     # Unknown mode — pass through unchanged
