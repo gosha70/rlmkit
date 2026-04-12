@@ -114,16 +114,23 @@ class RunRAGUseCase:
             context = "\n\n---\n\n".join(context_chunks)
 
             # 6. Generate answer
-            messages = [
+            from rlmkit.application.sandbox_vars import EXTRA_KEY_HISTORY_MESSAGES
+
+            messages: list[dict[str, str]] = [
                 {
                     "role": "system",
                     "content": get_mode_system_prompt("rag"),
                 },
+            ]
+            history_msgs = config.extra.get(EXTRA_KEY_HISTORY_MESSAGES)
+            if history_msgs:
+                messages.extend(history_msgs)
+            messages.append(
                 {
                     "role": "user",
                     "content": (f"Context:\n{context}\n\nQuestion: {query}"),
                 },
-            ]
+            )
 
             response: LLMResponseDTO = self._llm.complete(messages)
             elapsed = time.time() - start

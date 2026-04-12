@@ -793,19 +793,18 @@ class TestMatrixThenFollowUpChat:
         )
         call = capturing_llm.captured_calls[0]
         user_msgs = [m for m in call if m["role"] == "user"]
-        assert len(user_msgs) == 1, "direct mode sends a single user message"
-        user_content = user_msgs[0]["content"]
+        assistant_msgs = [m for m in call if m["role"] == "assistant"]
 
-        # The full_query built by chat.py looks like:
-        #   "Previous conversation:\nUser: <q1>\n\nAssistant: <a1>\n\n
-        #    Current question: <q2>"
-        # — so both the matrix user turn AND the matrix assistant turn must
-        # be visible, and the current question must follow.
-        assert "Previous conversation:" in user_content
-        assert "what are the key risks?" in user_content  # matrix user
-        assert "A-reply" in user_content  # matrix assistant (provider A only)
-        assert "B-reply" not in user_content  # provider B's reply must NOT leak
-        assert "Current question: and which one is most urgent?" in user_content
+        # Native chat messages: prior turn is injected as separate
+        # user/assistant messages before the current user message.
+        assert len(user_msgs) == 2, "history user + current user"
+        assert user_msgs[0]["content"] == "what are the key risks?"  # matrix user
+        assert "and which one is most urgent?" in user_msgs[1]["content"]  # current
+
+        assert len(assistant_msgs) == 1
+        assert "A-reply" in assistant_msgs[0]["content"]  # provider A only
+        # provider B's reply must NOT leak into provider A's history
+        assert "B-reply" not in assistant_msgs[0]["content"]
 
         # And the execution succeeded end-to-end
         assert execution.status == "complete"

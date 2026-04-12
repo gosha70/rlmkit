@@ -56,11 +56,20 @@ class RunDirectUseCase:
         config = config or RunConfigDTO(mode="direct")
         start = time.time()
 
+        from rlmkit.application.sandbox_vars import EXTRA_KEY_HISTORY_MESSAGES
+
         system_prompt = get_mode_system_prompt("direct")
-        messages = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
         ]
+        # Prepend prior turns as native chat messages so the model sees
+        # proper user/assistant alternation (works with all model sizes).
+        history_msgs = config.extra.get(EXTRA_KEY_HISTORY_MESSAGES)
+        if history_msgs:
+            messages.extend(history_msgs)
+        messages.append(
+            {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
+        )
 
         try:
             response: LLMResponseDTO = self._llm.complete(messages)
@@ -115,11 +124,18 @@ class RunDirectUseCase:
         config = config or RunConfigDTO(mode="direct")
         start = time.time()
 
+        from rlmkit.application.sandbox_vars import EXTRA_KEY_HISTORY_MESSAGES
+
         system_prompt = get_mode_system_prompt("direct")
-        messages = [
+        messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
         ]
+        history_msgs = config.extra.get(EXTRA_KEY_HISTORY_MESSAGES)
+        if history_msgs:
+            messages.extend(history_msgs)
+        messages.append(
+            {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
+        )
 
         try:
             if event_emitter and hasattr(self._llm, "complete_stream_async"):

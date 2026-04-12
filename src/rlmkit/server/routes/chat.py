@@ -14,18 +14,23 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 
 from rlmkit.application.dto import RunResultDTO
 from rlmkit.application.sandbox_vars import (
+    EXTRA_KEY_HISTORY_MESSAGES,
     EXTRA_KEY_HISTORY_VARIABLE,
     HISTORY_PATH_DISABLED,
     HISTORY_PATH_EMPTY,
     HISTORY_PATH_INPROMPT,
     HISTORY_PATH_REPL_VARIABLE,
+    MODE_AUTO,
+    MODE_COMPARE,
+    MODE_RAG,
+    MODE_RLM,
     MODES_INPROMPT,
     MODES_REPL_VARIABLE,
+    MODES_RLM_INTERNAL,
 )
 from rlmkit.application.services.history_context import (
     assemble_inprompt_history_within_budget,
     build_history_variable,
-    compose_inprompt_prefix,
     compute_history_cap_bytes,
     compute_inprompt_budget,
     extract_final_qa_pairs,
@@ -139,11 +144,22 @@ def _prepare_history_context(
         # cost for the RLM half, risking context-window overflow on small-window
         # providers (the same Qwen/vLLM failure class the clamp was designed to
         # catch).
-        budget_mode = "rlm" if mode == "compare" else "direct"
+        budget_mode = MODE_RLM if mode == MODE_COMPARE else mode
         sys_prompt = get_mode_system_prompt(budget_mode)
         if system_prompt_extra:
             sys_prompt = sys_prompt + "\n\n" + system_prompt_extra
-        user_text = f"Content:\n{content}\n\nQuestion: {current_query}"
+
+        # For RAG, the use case replaces the full document with retrieved
+        # chunks (typically chunk_size * top_k chars).  Budget against
+        # that estimate instead of the raw document, which would zero
+        # out the history budget on large docs even though the actual
+        # RAG prompt has plenty of room.
+        if mode == MODE_RAG:
+            rag_cfg = state.config.mode_config.rag_config
+            estimated_context_chars = rag_cfg.chunk_size * rag_cfg.top_k + 200
+            user_text = f"Context:\n{'x' * estimated_context_chars}\n\nQuestion: {current_query}"
+        else:
+            user_text = f"Content:\n{content}\n\nQuestion: {current_query}"
         try:
             fixed_tokens = adapter.count_tokens(
                 messages=[
@@ -176,7 +192,27 @@ def _prepare_history_context(
             token_counter=_token_counter,
         )
 
-        full_query = compose_inprompt_prefix(assembly.messages, current_query)
+        # Pass prior turns as native chat messages via extra_overlay.
+        # The use case prepends them before the current user message,
+        # so the model sees proper user/assistant alternation instead
+        # of a text prefix that small models tend to ignore.
+        inprompt_overlay: dict[str, Any] = {}
+        if assembly.messages:
+            inprompt_overlay[EXTRA_KEY_HISTORY_MESSAGES] = assembly.messages
+
+        # Compare mode runs BOTH RunDirectUseCase and RunRLMUseCase with
+        # the same run_config.  Direct reads EXTRA_KEY_HISTORY_MESSAGES;
+        # RLM reads EXTRA_KEY_HISTORY_VARIABLE (sandbox binding).  We
+        # must populate both so neither half is blind to prior turns.
+        # Use the same budgeted turn slice for both keys so the two
+        # branches see identical history scope (apples-to-apples).
+        if mode == MODE_COMPARE and assembly.turns_used > 0:
+            budgeted_turns = turns[-assembly.turns_used :]
+            history_var, _ = build_history_variable(
+                prev_turns=budgeted_turns,
+                cap_bytes=compute_history_cap_bytes(),
+            )
+            inprompt_overlay[EXTRA_KEY_HISTORY_VARIABLE] = history_var
 
         history_info: dict[str, Any] = {
             "path": HISTORY_PATH_INPROMPT,
@@ -191,17 +227,16 @@ def _prepare_history_context(
             "conversation_memory_fraction": fraction,
         }
         logger.info(
-            "History [%s/%s]: path=%s, turns_used=%d/%d, budget=%d tok, query_len=%d→%d",
+            "History [%s/%s]: path=%s, turns_used=%d/%d, budget=%d tok, messages=%d",
             mode,
             chat_provider_id,
             HISTORY_PATH_INPROMPT,
             assembly.turns_used,
             assembly.turns_available,
             budget,
-            len(current_query),
-            len(full_query),
+            len(assembly.messages),
         )
-        return (full_query, {}, history_info)
+        return (current_query, inprompt_overlay, history_info)
 
     if mode in MODES_REPL_VARIABLE:
         # REPL-variable path: bind a `history` Python list in the
@@ -594,7 +629,7 @@ async def _run_execution(
 
         # Build run config, using Chat Provider settings if available.
         # Apply RLM-specific knobs for rlm, auto, and compare (all run RLM internally).
-        if cp and mode in ("rlm", "auto", "compare"):
+        if cp and mode in MODES_RLM_INTERNAL:
             run_config = state.create_run_config(mode)
             run_config.max_steps = cp.rlm_max_steps
             run_config.max_time_seconds = float(cp.rlm_timeout_seconds)
@@ -604,7 +639,7 @@ async def _run_execution(
             if cp.profile_id:
                 _prof = state.find_profile(cp.profile_id)
                 if _prof:
-                    _extra = _resolve_profile_prompt(_prof, "rlm")
+                    _extra = _resolve_profile_prompt(_prof, MODE_RLM)
                     if _extra:
                         run_config.system_prompt_extra = _extra
                         logger.info(
@@ -631,7 +666,7 @@ async def _run_execution(
         if extra_overlay:
             run_config.extra.update(extra_overlay)
 
-        if mode == "compare":
+        if mode == MODE_COMPARE:
             # Run both RLM and Direct, store two assistant messages
             sandbox = state.create_sandbox()
             uc_rlm = RunRLMUseCase(llm, sandbox)
@@ -641,7 +676,7 @@ async def _run_execution(
                 uc_direct.execute, content, full_query, run_config
             )
             results = [result_rlm, result_direct]
-        elif mode == "rag":
+        elif mode == MODE_RAG:
             rag_cfg = state.config.mode_config.rag_config
             # Resolve embedding API key: OpenAI key covers embeddings for any provider
             embedding_api_key: str | None = os.environ.get("OPENAI_API_KEY")
@@ -681,7 +716,7 @@ async def _run_execution(
             # Populate cache after successful first index
             if cache_key and not skip_indexing and results[0].success:
                 _rag_index_cache[cache_key] = (storage, collection, rag_cfg.embedding_model)
-        elif mode in ("rlm", "auto"):
+        elif mode in MODES_REPL_VARIABLE:
             sandbox = state.create_sandbox()
             uc = RunRLMUseCase(llm, sandbox)
             results = [await asyncio.to_thread(uc.execute, content, full_query, run_config)]
@@ -877,7 +912,7 @@ async def websocket_chat(
                 ws_file_ids: list[str] = data.get("file_ids") or (
                     [data["file_id"]] if data.get("file_id") else []
                 )
-                mode = data.get("mode", "auto")
+                mode = data.get("mode", MODE_AUTO)
                 ws_chat_provider_id = data.get("chat_provider_id")
 
                 if ws_file_ids:
@@ -1013,7 +1048,7 @@ async def websocket_chat(
                         )
                         cfg = state.create_run_config(m)
                         # Thread Chat Provider RLM settings into run config
-                        if ws_cp and m in ("rlm", "auto", "compare"):
+                        if ws_cp and m in MODES_RLM_INTERNAL:
                             cfg.max_steps = ws_cp.rlm_max_steps
                             cfg.max_time_seconds = float(ws_cp.rlm_timeout_seconds)
                             cfg.repeat_limit = ws_cp.rlm_repeat_limit
@@ -1022,7 +1057,7 @@ async def websocket_chat(
                             if ws_cp.profile_id:
                                 _prof = state.find_profile(ws_cp.profile_id)
                                 if _prof:
-                                    _extra = _resolve_profile_prompt(_prof, "rlm")
+                                    _extra = _resolve_profile_prompt(_prof, MODE_RLM)
                                     if _extra:
                                         cfg.system_prompt_extra = _extra
                                         logger.info(
@@ -1047,7 +1082,7 @@ async def websocket_chat(
                         if extra_overlay:
                             cfg.extra.update(extra_overlay)
 
-                        if m == "compare":
+                        if m == MODE_COMPARE:
                             sandbox = state.create_sandbox()
                             uc_rlm = RunRLMUseCase(llm, sandbox)
                             uc_direct = RunDirectUseCase(llm)
@@ -1058,7 +1093,7 @@ async def websocket_chat(
                                 cnt, full_query, cfg, event_emitter=emitter
                             )
                             results = [result_rlm, result_direct]
-                        elif m == "rag":
+                        elif m == MODE_RAG:
                             rag_cfg = state.config.mode_config.rag_config
                             emb_key: str | None = os.environ.get("OPENAI_API_KEY")
                             if not emb_key and ws_cp:
@@ -1084,7 +1119,7 @@ async def websocket_chat(
                             results = [
                                 await asyncio.to_thread(uc_rag.execute, cnt, full_query, cfg)
                             ]
-                        elif m in ("rlm", "auto"):
+                        elif m in MODES_REPL_VARIABLE:
                             sandbox = state.create_sandbox()
                             uc = RunRLMUseCase(llm, sandbox)
                             results = [

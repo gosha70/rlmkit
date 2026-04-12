@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from rlmkit.application.sandbox_vars import MODE_RLM, MODES_RLM_INTERNAL
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
     ChatProviderConfig,
@@ -35,7 +36,7 @@ def _check_rlm_context_window(
     resolved = state.resolve_chat_provider(cp)
     effective_mode = resolved.execution_mode
 
-    if effective_mode not in ("rlm", "auto", "compare"):
+    if effective_mode not in MODES_RLM_INTERNAL:
         return None
 
     # Get linked provider's context window
@@ -54,7 +55,7 @@ def _check_rlm_context_window(
     if cp.profile_id:
         profile = state.find_profile(cp.profile_id)
         if profile:
-            extra = _resolve_profile_prompt(profile, "rlm") or ""
+            extra = _resolve_profile_prompt(profile, MODE_RLM) or ""
     full_prompt = base_prompt + ("\n\n" + extra if extra else "")
 
     from rlmkit.infrastructure.llm.litellm_adapter import (

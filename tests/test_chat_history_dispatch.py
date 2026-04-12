@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from rlmkit.application.sandbox_vars import (
+    EXTRA_KEY_HISTORY_MESSAGES,
     EXTRA_KEY_HISTORY_VARIABLE,
     HISTORY_PATH_DISABLED,
     HISTORY_PATH_EMPTY,
@@ -37,7 +38,22 @@ class FakeAdapter:
         return max(1, len(text or "") // 4)
 
 
+class _FakeRAGConfig:
+    chunk_size: int = 512
+    top_k: int = 5
+
+
+class _FakeModeConfig:
+    rag_config = _FakeRAGConfig()
+
+
+class _FakeConfig:
+    mode_config = _FakeModeConfig()
+
+
 class FakeState:
+    config = _FakeConfig()
+
     def __init__(self, conversations: dict[str, list[dict[str, Any]]] | None = None):
         self._conversations = conversations or {}
 
@@ -144,14 +160,18 @@ class TestInpromptPath:
             content="doc text",
             current_query="q3",
         )
-        assert full_query.startswith("Previous conversation:")
-        assert "Current question: q3" in full_query
-        assert overlay == {}
+        # Query is unchanged — history is in the overlay as native messages
+        assert full_query == "q3"
+        assert EXTRA_KEY_HISTORY_MESSAGES in overlay
+        msgs = overlay[EXTRA_KEY_HISTORY_MESSAGES]
+        assert len(msgs) == 4  # 2 turns × 2 messages
+        assert msgs[0] == {"role": "user", "content": "q1"}
+        assert msgs[1] == {"role": "assistant", "content": "a1"}
         assert info["path"] == HISTORY_PATH_INPROMPT
         assert info["mode"] == "direct"
         assert info["conversation_memory_enabled"] is True
         assert info["turns_available"] == 2
-        assert info["history_turns_used"] > 0
+        assert info["history_turns_used"] == 2
 
     def test_compare_mode_uses_inprompt(self) -> None:
         conv = _make_conversation([("hi", "hello")], trailing_user="bye")
@@ -167,7 +187,52 @@ class TestInpromptPath:
             current_query="bye",
         )
         assert info["path"] == HISTORY_PATH_INPROMPT
-        assert full_query.startswith("Previous conversation:")
+        assert full_query == "bye"
+        assert EXTRA_KEY_HISTORY_MESSAGES in overlay
+
+    def test_compare_mode_populates_both_history_keys(self) -> None:
+        """Compare runs Direct + RLM with the same config.extra.
+
+        Direct reads EXTRA_KEY_HISTORY_MESSAGES, RLM reads
+        EXTRA_KEY_HISTORY_VARIABLE.  Both must be present so
+        neither half is blind to prior turns.
+        """
+        conv = _make_conversation([("q1", "a1")], trailing_user="q2")
+        state = FakeState({"s1:cp1": conv})
+        _, overlay, _ = _prepare_history_context(
+            state=state,
+            session_id="s1",
+            chat_provider_id="cp1",
+            cp=FakeChatProvider(),
+            mode="compare",
+            adapter=FakeAdapter(),
+            content="doc",
+            current_query="q2",
+        )
+        # Direct half
+        assert EXTRA_KEY_HISTORY_MESSAGES in overlay
+        assert len(overlay[EXTRA_KEY_HISTORY_MESSAGES]) == 2  # user + assistant
+        # RLM half
+        assert EXTRA_KEY_HISTORY_VARIABLE in overlay
+        assert overlay[EXTRA_KEY_HISTORY_VARIABLE][0]["user"] == "q1"
+
+    def test_rag_mode_uses_inprompt(self) -> None:
+        conv = _make_conversation([("q1", "a1")], trailing_user="q2")
+        state = FakeState({"s1:cp1": conv})
+        full_query, overlay, info = _prepare_history_context(
+            state=state,
+            session_id="s1",
+            chat_provider_id="cp1",
+            cp=FakeChatProvider(),
+            mode="rag",
+            adapter=FakeAdapter(),
+            content="doc",
+            current_query="q2",
+        )
+        assert info["path"] == HISTORY_PATH_INPROMPT
+        assert full_query == "q2"
+        assert EXTRA_KEY_HISTORY_MESSAGES in overlay
+        assert len(overlay[EXTRA_KEY_HISTORY_MESSAGES]) == 2
 
     def test_history_info_contains_expected_fields(self) -> None:
         conv = _make_conversation([("q1", "a1")], trailing_user="q2")
@@ -228,10 +293,22 @@ class TestCompareFollowUp:
         assert info["path"] == HISTORY_PATH_INPROMPT
         assert info["turns_available"] == 2
         assert info["history_turns_used"] == 2
-        # The prefix must contain the RLM answers, not the "(direct)" ones
-        assert "A0-rlm" in full_query
-        assert "A1-rlm" in full_query
-        assert "(direct)" not in full_query
+        # The overlay messages must contain the RLM answers, not the "(direct)" ones
+        _, overlay, _ = _prepare_history_context(
+            state=state,
+            session_id="s1",
+            chat_provider_id="cp1",
+            cp=FakeChatProvider(),
+            mode="compare",
+            adapter=FakeAdapter(),
+            content="doc",
+            current_query="Q2",
+        )
+        msgs = overlay[EXTRA_KEY_HISTORY_MESSAGES]
+        assistant_contents = [m["content"] for m in msgs if m["role"] == "assistant"]
+        assert "A0-rlm" in assistant_contents
+        assert "A1-rlm" in assistant_contents
+        assert all("(direct)" not in c for c in assistant_contents)
 
     def test_compare_budget_uses_rlm_system_prompt(self) -> None:
         """Compare budget must be computed against the RLM prompt, not Direct.
@@ -332,7 +409,7 @@ class TestSystemPromptContainsHistoryParagraph:
 
 
 class TestReplVariablePath:
-    @pytest.mark.parametrize("mode", ["rlm", "rag", "auto"])
+    @pytest.mark.parametrize("mode", ["rlm", "auto"])
     def test_mode_returns_repl_variable(self, mode: str) -> None:
         conv = _make_conversation([("q1", "a1")], trailing_user="q2")
         state = FakeState({"s1:cp1": conv})
