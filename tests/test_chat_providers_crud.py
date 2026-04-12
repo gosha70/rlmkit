@@ -976,6 +976,118 @@ class TestConversationMemoryField:
         )
         assert nine.conversation_memory_fraction == 0.9
 
+    def test_create_rlm_with_small_context_window_returns_warning(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """RLM mode + small context window → response includes warning."""
+        # Set the LLM Provider's context_window to something tiny
+        from rlmkit.server.dependencies import get_state
+
+        state = get_state()
+        lp = state.get_llm_provider(created_llm_provider["id"])
+        assert lp is not None
+        lp.context_window = 4096  # too small for RLM
+
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-RLM-SMALL-CTX",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "rlm",
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert "context_window_warning" in data
+        assert "too small for RLM" in data["context_window_warning"]
+
+    def test_create_direct_with_small_context_window_no_warning(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """Direct mode + small context window → no warning."""
+        from rlmkit.server.dependencies import get_state
+
+        state = get_state()
+        lp = state.get_llm_provider(created_llm_provider["id"])
+        assert lp is not None
+        lp.context_window = 4096
+
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-DIRECT-SMALL-CTX",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "direct",
+            },
+        )
+        assert resp.status_code == 201
+        assert "context_window_warning" not in resp.json()
+
+    def test_create_rlm_unknown_context_window_no_warning(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """Unknown context window → no warning (can't validate)."""
+        from rlmkit.server.dependencies import get_state
+
+        state = get_state()
+        lp = state.get_llm_provider(created_llm_provider["id"])
+        assert lp is not None
+        lp.context_window = None  # auto-discover, unknown at creation time
+
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-RLM-UNKNOWN-CTX",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "rlm",
+            },
+        )
+        assert resp.status_code == 201
+        assert "context_window_warning" not in resp.json()
+
+    def test_create_rlm_large_context_window_no_warning(
+        self, client: TestClient, created_llm_provider: dict[str, Any]
+    ) -> None:
+        """RLM mode + large context window → no warning."""
+        from rlmkit.server.dependencies import get_state
+
+        state = get_state()
+        lp = state.get_llm_provider(created_llm_provider["id"])
+        assert lp is not None
+        lp.context_window = 32768
+
+        resp = client.post(
+            "/api/chat-providers",
+            json={
+                "name": "CP-RLM-LARGE-CTX",
+                "llm_provider_id": created_llm_provider["id"],
+                "execution_mode": "rlm",
+            },
+        )
+        assert resp.status_code == 201
+        assert "context_window_warning" not in resp.json()
+
+    def test_update_to_rlm_with_small_context_returns_warning(
+        self, client: TestClient, created_provider: dict[str, Any]
+    ) -> None:
+        """Updating execution_mode to rlm + small context → warning on update."""
+        from rlmkit.server.dependencies import get_state
+
+        state = get_state()
+        cp = state.get_chat_provider(created_provider["id"])
+        assert cp is not None
+        lp = state.get_llm_provider(cp.llm_provider_id) if cp.llm_provider_id else None
+        if lp:
+            lp.context_window = 4096
+
+        resp = client.put(
+            f"/api/chat-providers/{created_provider['id']}",
+            json={"execution_mode": "rlm"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "context_window_warning" in data
+
     def test_fraction_rejects_bool(
         self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:

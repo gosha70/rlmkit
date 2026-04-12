@@ -710,14 +710,18 @@ export const getPromptTemplates = () =>
 // Chat Providers CRUD
 export const getChatProviders = () => fetchJSON<ChatProviderConfig[]>("/api/chat-providers");
 
+export type ChatProviderSaveResponse = ChatProviderConfig & {
+  context_window_warning?: string;
+};
+
 export const createChatProvider = (req: ChatProviderCreateRequest) =>
-  fetchJSON<ChatProviderConfig>("/api/chat-providers", {
+  fetchJSON<ChatProviderSaveResponse>("/api/chat-providers", {
     method: "POST",
     body: JSON.stringify(req),
   });
 
 export const updateChatProvider = (id: string, req: ChatProviderUpdateRequest) =>
-  fetchJSON<ChatProviderConfig>(`/api/chat-providers/${id}`, {
+  fetchJSON<ChatProviderSaveResponse>(`/api/chat-providers/${id}`, {
     method: "PUT",
     body: JSON.stringify(req),
   });

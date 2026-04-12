@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -14,7 +16,72 @@ from rlmkit.server.models import (
     ChatProviderUpdateRequest,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _check_rlm_context_window(
+    state: AppState,
+    cp: ChatProviderConfig,
+) -> str | None:
+    """Return a warning string if the resolved Chat Provider will run in
+    RLM mode but the linked LLM Provider's context window is too small
+    to fit the RLM system prompt + minimum working room.
+
+    Returns ``None`` when no warning is needed (non-RLM mode, unknown
+    context window, or sufficient headroom).
+    """
+    resolved = state.resolve_chat_provider(cp)
+    effective_mode = resolved.execution_mode
+
+    if effective_mode not in ("rlm", "auto", "compare"):
+        return None
+
+    # Get linked provider's context window
+    lp = state.get_llm_provider(cp.llm_provider_id) if cp.llm_provider_id else None
+    if not lp or not lp.context_window:
+        return None  # unknown — can't warn
+
+    context_window = lp.context_window
+
+    # Compute minimum from the actual RLM system prompt + profile extras
+    from rlmkit.prompts import format_system_prompt
+    from rlmkit.server.routes.chat import _resolve_profile_prompt
+
+    base_prompt = format_system_prompt(prompt_length=0)
+    extra = ""
+    if cp.profile_id:
+        profile = state.find_profile(cp.profile_id)
+        if profile:
+            extra = _resolve_profile_prompt(profile, "rlm") or ""
+    full_prompt = base_prompt + ("\n\n" + extra if extra else "")
+
+    from rlmkit.infrastructure.llm.litellm_adapter import (
+        CONTEXT_WINDOW_RESERVE_FLOOR,
+        CONTEXT_WINDOW_RESERVE_FRACTION,
+        MIN_OUTPUT_TOKENS,
+    )
+
+    # Conservative token estimate: chars / 3 + overhead
+    prompt_tokens = len(full_prompt) // 3 + 50
+
+    # Minimum viable budget: prompt + modest content room + min_output + reserve
+    reserve = max(
+        int(context_window * CONTEXT_WINDOW_RESERVE_FRACTION), CONTEXT_WINDOW_RESERVE_FLOOR
+    )
+    min_viable = prompt_tokens + 500 + MIN_OUTPUT_TOKENS + reserve
+
+    if context_window < min_viable:
+        return (
+            f"Context window ({context_window} tokens) may be too small for RLM mode. "
+            f"The RLM system prompt alone needs ~{prompt_tokens} tokens, "
+            f"leaving little room for document content and multi-step exploration. "
+            f"Recommended minimum: {min_viable} tokens. "
+            f"Consider increasing the context window on the LLM Provider, "
+            f"or using Direct mode for this provider."
+        )
+    return None
 
 
 @router.get("/api/chat-providers")
@@ -37,11 +104,11 @@ async def get_chat_provider(
     return state.resolve_chat_provider(cp)
 
 
-@router.post("/api/chat-providers", status_code=201)
+@router.post("/api/chat-providers", status_code=201, response_model=None)
 async def create_chat_provider(
     req: ChatProviderCreateRequest,
     state: AppState = Depends(get_state),  # noqa: B008
-) -> ChatProviderConfig:
+) -> dict[str, Any]:
     """Create a new Chat Provider."""
     # Validate that the referenced LLM Provider exists
     lp = state.get_llm_provider(req.llm_provider_id)
@@ -95,15 +162,21 @@ async def create_chat_provider(
     cp = ChatProviderConfig(**cp_kwargs)
     state.config.chat_providers.append(cp)
     state.save_config()
-    return state.resolve_chat_provider(cp)
+
+    result: dict[str, Any] = state.resolve_chat_provider(cp).model_dump()
+    warning = _check_rlm_context_window(state, cp)
+    if warning:
+        result["context_window_warning"] = warning
+        logger.warning("Chat Provider '%s': %s", cp.name, warning)
+    return result
 
 
-@router.put("/api/chat-providers/{chat_provider_id}")
+@router.put("/api/chat-providers/{chat_provider_id}", response_model=None)
 async def update_chat_provider(
     chat_provider_id: str,
     req: ChatProviderUpdateRequest,
     state: AppState = Depends(get_state),  # noqa: B008
-) -> ChatProviderConfig:
+) -> dict[str, Any]:
     """Update an existing Chat Provider."""
     cp = state.get_chat_provider(chat_provider_id)
     if not cp:
@@ -162,7 +235,13 @@ async def update_chat_provider(
     cp.updated_at = datetime.now(timezone.utc)
 
     state.save_config()
-    return state.resolve_chat_provider(cp)
+
+    result: dict[str, Any] = state.resolve_chat_provider(cp).model_dump()
+    warning = _check_rlm_context_window(state, cp)
+    if warning:
+        result["context_window_warning"] = warning
+        logger.warning("Chat Provider '%s': %s", cp.name, warning)
+    return result
 
 
 @router.delete("/api/chat-providers/{chat_provider_id}", status_code=204)

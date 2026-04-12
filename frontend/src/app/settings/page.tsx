@@ -228,10 +228,12 @@ export default function SettingsPage() {
         payload.rag_config = formData.rag_config;
       }
 
-      if (editingId) {
-        await updateChatProvider(editingId, payload);
-      } else {
-        await createChatProvider(payload);
+      const result = editingId
+        ? await updateChatProvider(editingId, payload)
+        : await createChatProvider(payload);
+
+      if (result.context_window_warning) {
+        toast.warning(result.context_window_warning, { duration: 10000 });
       }
 
       setShowCreateForm(false);

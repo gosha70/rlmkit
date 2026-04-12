@@ -37,13 +37,13 @@ _CONNECTION_KEYWORDS = (
 # enough: Qwen2.5-7B on vLLM showed a 33-token divergence in practice.
 # Using 5% of context_window (floor 64) covers tokenizer differences,
 # chat template special tokens, and BOS/EOS overhead safely.
-_CONTEXT_WINDOW_RESERVE_FRACTION = 0.05
-_CONTEXT_WINDOW_RESERVE_FLOOR = 64
+CONTEXT_WINDOW_RESERVE_FRACTION = 0.05
+CONTEXT_WINDOW_RESERVE_FLOOR = 64
 
 # Minimum output budget the clamp will leave intact.  The model needs at
 # least this many tokens to produce a useful response (a JSON action or
 # short final answer) — anything less and the clamp refuses proactively.
-_MIN_OUTPUT_TOKENS = 128
+MIN_OUTPUT_TOKENS = 128
 
 
 def _is_connection_error(exc: BaseException) -> bool:
@@ -405,7 +405,7 @@ class LiteLLMAdapter:
         response (a JSON action or a short final answer); anything less
         and the clamp refuses proactively with a ``ValueError``.
         """
-        return _MIN_OUTPUT_TOKENS
+        return MIN_OUTPUT_TOKENS
 
     @property
     def root_model(self) -> str:
@@ -538,12 +538,12 @@ class LiteLLMAdapter:
                 # Llama-3) and chat templates often use <3 chars per token.
                 estimated_prompt_tokens = prompt_chars // 3 + 50  # +50 for chat template overhead
             reserve = max(
-                int(self._context_window * _CONTEXT_WINDOW_RESERVE_FRACTION),
-                _CONTEXT_WINDOW_RESERVE_FLOOR,
+                int(self._context_window * CONTEXT_WINDOW_RESERVE_FRACTION),
+                CONTEXT_WINDOW_RESERVE_FLOOR,
             )
             remaining = self._context_window - estimated_prompt_tokens - reserve
             configured_max = effective_max_tokens
-            min_output_tokens = _MIN_OUTPUT_TOKENS
+            min_output_tokens = MIN_OUTPUT_TOKENS
             clamped = False
             if remaining < min_output_tokens:
                 # Prompt + reserve exceeds context window.  Calculate hard
