@@ -299,6 +299,38 @@ class TestCompareFollowUp:
         assert info_with_extra["history_budget_tokens"] <= info_no_extra["history_budget_tokens"]
 
 
+class TestSystemPromptContainsHistoryParagraph:
+    """Pin that the RLM system prompt tells the model about the `history` variable."""
+
+    def test_rlm_system_prompt_mentions_history(self) -> None:
+        from rlmkit.prompts import format_system_prompt
+
+        prompt = format_system_prompt(prompt_length=1000)
+        assert "history" in prompt
+        # The example uses v1 Python code (not a v2 JSON inspect action)
+        assert "print(history[-1])" in prompt
+        # Must NOT contain the invalid v2 JSON form
+        assert '"code": "print(history' not in prompt
+
+    def test_rlm_system_prompt_version_is_2_1(self) -> None:
+        import importlib.resources as pkg_resources
+
+        import yaml
+
+        pkg = pkg_resources.files("rlmkit.prompts")
+        raw = (pkg / "system_prompt_v2_0.yaml").read_text(encoding="utf-8")
+        data = yaml.safe_load(raw)
+        assert data["version"] == "2.1"
+
+    def test_history_paragraph_warns_against_tool_use(self) -> None:
+        """The prompt must warn not to pass history to peek/grep/outline_file."""
+        from rlmkit.prompts import format_system_prompt
+
+        prompt = format_system_prompt(prompt_length=1000)
+        assert "Do NOT pass" in prompt
+        assert "only work on" in prompt
+
+
 class TestReplVariablePath:
     @pytest.mark.parametrize("mode", ["rlm", "rag", "auto"])
     def test_mode_returns_repl_variable(self, mode: str) -> None:

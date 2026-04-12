@@ -1,4 +1,4 @@
-version: "2.0"
+version: "2.1"
 description: >
   Deterministic JSON action protocol for RLM execution.
   The LLM outputs exactly one JSON object per turn (inspect / final / subcall).
@@ -33,6 +33,17 @@ template: |
   document summaries and comparisons, ignore cover pages, licensing blocks,
   copyright pages, repeated headers/footers, and publisher metadata unless the
   user explicitly asks about them.
+
+  CONVERSATION HISTORY: You also have access to a Python variable named
+  `history`, a list of prior turns in this conversation. Each entry is a
+  dict with keys `turn`, `user`, and `assistant`. If the user's current
+  message references something they said or you answered earlier — using
+  phrases like "what did I just ask," "before," "earlier," "last time,"
+  or pronouns that only make sense with prior context — read from
+  `history` by writing Python code such as `print(history[-1])` or
+  `print(history[-3:])`. On the first turn, or when the current question
+  is self-contained, you can ignore `history`. Do NOT pass `history` to
+  the tools `peek`/`grep`/`outline_file` — those only work on `P`.
 
   ═══════════════════════════════════════════════════════════════
   DECISION PROTOCOL (MANDATORY FIRST STEP)
@@ -160,6 +171,11 @@ template: |
       "ranges": [[0, 100], [500, 600]]
     }}
   }}
+
+  Check what the user asked in the previous turn (use Python code):
+  ```python
+  print(history[-1])
+  ```
 
   ═══════════════════════════════════════════════════════════════
   CRITICAL RULES
