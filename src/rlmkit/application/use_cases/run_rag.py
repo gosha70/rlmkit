@@ -44,6 +44,31 @@ def _humanize_rag_error(exc: Exception) -> str:
     return str(exc)
 
 
+def _format_rag_warning(exc: Exception, human_msg: str) -> str:
+    """Format a ⚠️ warning card for RAG errors."""
+    from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
+
+    exc_str = str(exc)
+    exc_lower = exc_str.lower()
+    if (
+        exc_str.startswith(TIMEOUT_ERROR_PREFIX)
+        or "timeout" in exc_lower
+        or "timed out" in exc_lower
+    ):
+        return (
+            "⚠️ **RAG request timed out**.\n\n"
+            f"{human_msg}\n\n"
+            "**How to fix** — in Settings → Profile → Runtime Settings:\n"
+            "- Increase **Timeout (s)** (try 300 or higher for large documents).\n"
+            "- Or reduce **chunk_size** in Settings → Modes → RAG."
+        )
+    if "context" in exc_str.lower() and "window" in exc_str.lower():
+        return f"⚠️ **RAG context window exceeded**.\n\n{human_msg}"
+    if "api key" in exc_str.lower() or "401" in exc_str:
+        return f"⚠️ **RAG embedding authentication failed**.\n\n{human_msg}"
+    return ""
+
+
 class RunRAGUseCase:
     """Orchestrates a RAG pipeline through ports.
 
@@ -177,8 +202,9 @@ class RunRAGUseCase:
         except Exception as exc:
             elapsed = time.time() - start
             error_msg = _humanize_rag_error(exc)
+            answer = _format_rag_warning(exc, error_msg)
             return RunResultDTO(
-                answer="",
+                answer=answer,
                 mode_used="rag",
                 success=False,
                 error=error_msg,

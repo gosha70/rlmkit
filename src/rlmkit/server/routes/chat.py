@@ -767,10 +767,14 @@ async def _run_execution(
         session = state.sessions.get(execution.session_id)
         if session:
             for res in results:
-                # Surface errors so the user can see what went wrong
+                # Surface errors so the user can see what went wrong.
+                # When the use case already produced a formatted ⚠️ warning
+                # (timeout, budget, context overflow), use it as-is.  Only
+                # prepend "Error:" when the answer is empty or raw text.
                 answer_content = res.answer
                 if not res.success and not answer_content:
-                    answer_content = f"Error: {res.error or 'Execution failed'}"
+                    error_detail = res.error or "Execution failed (no details available)"
+                    answer_content = f"Error: {error_detail}"
 
                 cp_name = cp.name if cp else None
                 lp = (
@@ -1162,7 +1166,10 @@ async def websocket_chat(
                         for res in results:
                             answer = res.answer
                             if not res.success and not answer:
-                                answer = f"Error: {res.error or 'Execution failed'}"
+                                error_detail = (
+                                    res.error or "Execution failed (no details available)"
+                                )
+                                answer = f"Error: {error_detail}"
 
                             cp_name = ws_cp.name if ws_cp else None
                             provider_name = (

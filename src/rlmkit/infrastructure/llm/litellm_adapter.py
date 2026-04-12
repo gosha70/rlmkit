@@ -52,6 +52,25 @@ def _is_connection_error(exc: BaseException) -> bool:
     return any(kw in msg for kw in _CONNECTION_KEYWORDS)
 
 
+_TIMEOUT_KEYWORDS = (
+    "timed out",
+    "timeout",
+    "apitimeouterror",
+    "request timed out",
+)
+
+# Prefix stamped on all timeout RuntimeErrors raised by this adapter.
+# Other layers (use cases, routes) check for this prefix to detect
+# timeouts without re-parsing the exception message.
+TIMEOUT_ERROR_PREFIX = "LLM_TIMEOUT:"
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    """Return True when *exc* looks like a request timeout."""
+    msg = str(exc).lower()
+    return any(kw in msg for kw in _TIMEOUT_KEYWORDS)
+
+
 def _connection_error_message(api_base: str | None, exc: BaseException) -> str:
     """Build a human-readable message for connection failures."""
     location = f" at '{api_base}'" if api_base else ""
@@ -61,6 +80,16 @@ def _connection_error_message(api_base: str | None, exc: BaseException) -> str:
         else " Check your provider credentials and network connectivity."
     )
     return f"Cannot connect to the LLM server{location}.{hint} (Detail: {exc})"
+
+
+def _timeout_error_message(timeout: float, exc: BaseException) -> str:
+    """Build an actionable message for timeout failures.
+
+    The message is prefixed with ``TIMEOUT_ERROR_PREFIX`` so callers
+    can detect timeouts via ``str(exc).startswith(TIMEOUT_ERROR_PREFIX)``
+    without re-parsing keywords.
+    """
+    return f"{TIMEOUT_ERROR_PREFIX} LLM request timed out after {timeout:.0f}s. (Detail: {exc})"
 
 
 class LiteLLMAdapter:
@@ -154,6 +183,8 @@ class LiteLLMAdapter:
         try:
             response = litellm.completion(**params)
         except Exception as exc:
+            if _is_timeout_error(exc):
+                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
             if _is_connection_error(exc):
                 raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM completion failed: {exc}") from exc
@@ -191,6 +222,8 @@ class LiteLLMAdapter:
                 if delta and delta.content:
                     yield delta.content
         except Exception as exc:
+            if _is_timeout_error(exc):
+                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
             if _is_connection_error(exc):
                 raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM streaming failed: {exc}") from exc
@@ -289,6 +322,8 @@ class LiteLLMAdapter:
         try:
             response = await litellm.acompletion(**params)
         except Exception as exc:
+            if _is_timeout_error(exc):
+                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
             if _is_connection_error(exc):
                 raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM async completion failed: {exc}") from exc
@@ -325,6 +360,8 @@ class LiteLLMAdapter:
                 if delta and delta.content:
                     yield delta.content
         except Exception as exc:
+            if _is_timeout_error(exc):
+                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
             if _is_connection_error(exc):
                 raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
             raise RuntimeError(f"LiteLLM async streaming failed: {exc}") from exc

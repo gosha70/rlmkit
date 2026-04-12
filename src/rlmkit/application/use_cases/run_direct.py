@@ -101,11 +101,27 @@ class RunDirectUseCase:
             )
         except Exception as exc:
             elapsed = time.time() - start
+            from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
+
+            error_str = str(exc)
+            error_lower = error_str.lower()
+            answer = ""
+            if (
+                error_str.startswith(TIMEOUT_ERROR_PREFIX)
+                or "timeout" in error_lower
+                or "timed out" in error_lower
+            ):
+                answer = (
+                    "⚠️ **LLM request timed out**.\n\n"
+                    "The model did not respond within the configured timeout.\n\n"
+                    "**How to fix** — in Settings → Profile → Runtime Settings:\n"
+                    "- Increase **Timeout (s)** (try 300 or higher for large documents)."
+                )
             return RunResultDTO(
-                answer="",
+                answer=answer,
                 mode_used="direct",
                 success=False,
-                error=str(exc),
+                error=error_str,
                 elapsed_time=elapsed,
             )
 
@@ -200,10 +216,26 @@ class RunDirectUseCase:
             )
         except Exception as exc:
             elapsed = time.time() - start
+            from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
+
+            error_str = str(exc)
+            error_lower = error_str.lower()
+            answer = ""
+            if (
+                error_str.startswith(TIMEOUT_ERROR_PREFIX)
+                or "timeout" in error_lower
+                or "timed out" in error_lower
+            ):
+                answer = (
+                    "⚠️ **LLM request timed out**.\n\n"
+                    "The model did not respond within the configured timeout.\n\n"
+                    "**How to fix** — in Settings → Profile → Runtime Settings:\n"
+                    "- Increase **Timeout (s)** (try 300 or higher for large documents)."
+                )
             return RunResultDTO(
-                answer="",
+                answer=answer,
                 mode_used="direct",
                 success=False,
-                error=str(exc),
+                error=error_str,
                 elapsed_time=elapsed,
             )

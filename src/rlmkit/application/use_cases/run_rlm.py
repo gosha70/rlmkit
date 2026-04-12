@@ -797,11 +797,36 @@ class RunRLMUseCase:
                     elapsed_time=elapsed,
                     trace=trace,
                 )
+            from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
+
+            error_str = str(exc)
+            error_lower = error_str.lower()
+            if (
+                error_str.startswith(TIMEOUT_ERROR_PREFIX)
+                or "timeout" in error_lower
+                or "timed out" in error_lower
+            ):
+                answer = self._format_timeout_warning(
+                    timeout_seconds=config.max_time_seconds,
+                    steps_used=budget_state.steps,
+                )
+                return RunResultDTO(
+                    answer=answer,
+                    mode_used="rlm",
+                    success=False,
+                    error=error_str,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
             return RunResultDTO(
                 answer="",
                 mode_used="rlm",
                 success=False,
-                error=str(exc),
+                error=error_str,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
@@ -1571,11 +1596,36 @@ class RunRLMUseCase:
                     elapsed_time=elapsed,
                     trace=trace,
                 )
+            from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
+
+            error_str = str(exc)
+            error_lower = error_str.lower()
+            if (
+                error_str.startswith(TIMEOUT_ERROR_PREFIX)
+                or "timeout" in error_lower
+                or "timed out" in error_lower
+            ):
+                answer = self._format_timeout_warning(
+                    timeout_seconds=config.max_time_seconds,
+                    steps_used=budget_state.steps,
+                )
+                return RunResultDTO(
+                    answer=answer,
+                    mode_used="rlm",
+                    success=False,
+                    error=error_str,
+                    steps=budget_state.steps,
+                    input_tokens=cumulative_input,
+                    output_tokens=cumulative_output,
+                    total_cost=cumulative_cost,
+                    elapsed_time=elapsed,
+                    trace=trace,
+                )
             return RunResultDTO(
                 answer="",
                 mode_used="rlm",
                 success=False,
-                error=str(exc),
+                error=error_str,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
                 output_tokens=cumulative_output,
@@ -2233,6 +2283,18 @@ class RunRLMUseCase:
             "**How to fix** — in Settings → Chat Providers → [this provider]:\n"
             "- Increase **Max Steps** to allow deeper document analysis.\n"
             "- Or ask a more focused question."
+        )
+
+    @staticmethod
+    def _format_timeout_warning(timeout_seconds: float | None, steps_used: int) -> str:
+        """Return a user-friendly warning when the LLM request times out."""
+        limit_str = f" ({int(timeout_seconds)}s limit)" if timeout_seconds else ""
+        return (
+            f"⚠️ **LLM request timed out** after {steps_used} steps{limit_str}.\n\n"
+            "The model did not respond within the configured timeout.\n\n"
+            "**How to fix** — in Settings → Profile → Runtime Settings:\n"
+            "- Increase **Timeout (s)** (try 300 or higher for large documents).\n"
+            "- Or ask a more focused question to reduce processing time."
         )
 
     @staticmethod
