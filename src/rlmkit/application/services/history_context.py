@@ -140,27 +140,40 @@ def extract_final_qa_pairs(prev_msgs: list[dict[str, Any]]) -> list[HistoryTurn]
     turns: list[HistoryTurn] = []
     i = 0
     turn_index = 0
-    while i < len(body) - 1:
+    while i < len(body):
         user = body[i]
-        assistant = body[i + 1]
-        if (
-            user.get("role") == "user"
-            and assistant.get("role") == "assistant"
-            and _is_usable_content(user.get("content"))
-            and _is_usable_content(assistant.get("content"))
-        ):
+        if user.get("role") != "user" or not _is_usable_content(user.get("content")):
+            i += 1
+            continue
+
+        # Found a usable user message.  Scan forward through all
+        # consecutive assistant messages and pick the *first usable*
+        # one.  This handles:
+        #
+        #  - Normal (1 assistant): pair immediately.
+        #  - Compare (2 assistants, both OK): pair with first (RLM).
+        #  - Compare (RLM errored, Direct OK): skip the "Error: ..."
+        #    and pair with the Direct answer.
+        #  - Both errored: no pair — orphan user dropped.
+        j = i + 1
+        paired_assistant = None
+        while j < len(body) and body[j].get("role") == "assistant":
+            if paired_assistant is None and _is_usable_content(body[j].get("content")):
+                paired_assistant = body[j]
+            j += 1
+
+        if paired_assistant is not None:
             turns.append(
                 HistoryTurn(
                     index=turn_index,
                     user_content=str(user["content"]),
-                    assistant_content=str(assistant["content"]),
+                    assistant_content=str(paired_assistant["content"]),
                 )
             )
             turn_index += 1
-            i += 2
-        else:
-            # Skip the offending message and resynchronise.
-            i += 1
+
+        # Advance past the user + all its assistant messages.
+        i = max(j, i + 1)
 
     return turns
 

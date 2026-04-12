@@ -149,6 +149,70 @@ class TestExtractFinalQAPairs:
         # Turn indices are 0 and 1 — errored turns do not occupy a slot.
         assert [t.index for t in turns] == [0, 1]
 
+    def test_compare_mode_double_assistant_keeps_first_skips_second(self):
+        """Compare mode stores two assistant messages per user turn (RLM + Direct).
+
+        The extractor must pair the user with the first assistant and
+        skip the second, not desync pairing for subsequent turns.
+        """
+        msgs = [
+            {"role": "user", "content": "Q0"},
+            {"role": "assistant", "content": "A0-rlm"},
+            {"role": "assistant", "content": "A0-direct"},  # second answer
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1-rlm"},
+            {"role": "assistant", "content": "A1-direct"},
+            {"role": "user", "content": "current query"},  # excluded
+        ]
+        turns = extract_final_qa_pairs(msgs)
+        assert len(turns) == 2
+        assert turns[0].user_content == "Q0"
+        assert turns[0].assistant_content == "A0-rlm"
+        assert turns[1].user_content == "Q1"
+        assert turns[1].assistant_content == "A1-rlm"
+        assert turns[0].index == 0
+        assert turns[1].index == 1
+
+    def test_compare_rlm_error_direct_success_keeps_direct(self):
+        """Compare: RLM half errors, Direct half succeeds.
+
+        The extractor must skip the errored first assistant and pair
+        the user with the second (Direct) answer instead of dropping
+        the entire turn.
+        """
+        msgs = [
+            {"role": "user", "content": "Q0"},
+            {"role": "assistant", "content": "Error: LLM timeout"},
+            {"role": "assistant", "content": "good direct answer"},
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1-rlm"},
+            {"role": "assistant", "content": "A1-direct"},
+            {"role": "user", "content": "current"},  # excluded
+        ]
+        turns = extract_final_qa_pairs(msgs)
+        assert len(turns) == 2
+        # Turn 0 pairs with the Direct answer (the first usable one)
+        assert turns[0].user_content == "Q0"
+        assert turns[0].assistant_content == "good direct answer"
+        # Turn 1 pairs normally with the RLM answer
+        assert turns[1].user_content == "Q1"
+        assert turns[1].assistant_content == "A1-rlm"
+
+    def test_compare_both_errors_drops_turn(self):
+        """Compare: both RLM and Direct fail → turn is dropped."""
+        msgs = [
+            {"role": "user", "content": "Q0"},
+            {"role": "assistant", "content": "Error: timeout"},
+            {"role": "assistant", "content": "Error: rate limit"},
+            {"role": "user", "content": "Q1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "current"},
+        ]
+        turns = extract_final_qa_pairs(msgs)
+        assert len(turns) == 1
+        assert turns[0].user_content == "Q1"
+        assert turns[0].assistant_content == "A1"
+
     def test_non_user_assistant_role_mid_stream_resyncs(self):
         """A stray system/tool role in the middle does not corrupt extraction."""
         msgs = [

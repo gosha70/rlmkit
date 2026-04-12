@@ -13,6 +13,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from rlmkit.application.dto import RunResultDTO
+from rlmkit.application.services.history_context import (
+    assemble_inprompt_history_within_budget,
+    compose_inprompt_prefix,
+    compute_inprompt_budget,
+    extract_final_qa_pairs,
+)
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
@@ -20,6 +26,7 @@ from rlmkit.core.trace import ExecutionTrace
 from rlmkit.core.trace import TraceStep as CoreTraceStep
 from rlmkit.infrastructure.embedding.litellm_embedding_adapter import LiteLLMEmbeddingAdapter
 from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
+from rlmkit.prompts import get_mode_system_prompt
 from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
 from rlmkit.server.models import (
     ChatRequest,
@@ -55,6 +62,139 @@ def _resolve_profile_prompt(profile: _RunProfile, mode: str) -> str | None:
         if tpl:
             return tpl.get(mode) or None
     return None
+
+
+def _prepare_history_context(
+    *,
+    state: AppState,
+    session_id: str,
+    chat_provider_id: str | None,
+    cp: Any,  # ChatProviderConfig | None
+    mode: str,
+    adapter: Any,  # LiteLLMAdapter
+    content: str,
+    current_query: str,
+    system_prompt_extra: str = "",
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Build conversation-history context for the current turn.
+
+    Returns ``(full_query, extra_config_overlay, history_info)`` where:
+
+    - ``full_query`` is the query string to pass to the use case (may
+      have a "Previous conversation:" prefix prepended for in-prompt modes).
+    - ``extra_config_overlay`` is a dict to merge into ``run_config.extra``
+      (currently always empty; reserved for the REPL-variable path in Commit 5).
+    - ``history_info`` is a diagnostics dict for telemetry / logging.
+    """
+    disabled_result: tuple[str, dict[str, Any], dict[str, Any]] = (
+        current_query,
+        {},
+        {"path": "disabled"},
+    )
+
+    if not chat_provider_id or cp is None:
+        return disabled_result
+
+    if not cp.conversation_memory_enabled:
+        return disabled_result
+
+    prev_msgs = state.get_conversation(session_id, chat_provider_id)
+    turns = extract_final_qa_pairs(prev_msgs)
+
+    if not turns:
+        return (
+            current_query,
+            {},
+            {
+                "path": "empty",
+                "conversation_memory_enabled": True,
+                "turns_available": 0,
+            },
+        )
+
+    if mode in ("direct", "compare"):
+        # --- In-prompt replay path ---
+        context_window = getattr(adapter, "context_window", None) or 4096
+        min_output = getattr(adapter, "min_output_tokens", None) or 128
+        fraction = getattr(cp, "conversation_memory_fraction", 0.30)
+        fraction_cap = int(context_window * fraction)
+
+        # Estimate fixed token cost (system prompt + user message the use case
+        # will construct) so the budget computation knows how much room is left.
+        # For compare mode, both RunRLMUseCase and RunDirectUseCase receive the
+        # same full_query, so the budget must be conservative against the *larger*
+        # system prompt — the RLM one (which may also carry system_prompt_extra
+        # from a profile).  Using the Direct prompt here would underestimate the
+        # cost for the RLM half, risking context-window overflow on small-window
+        # providers (the same Qwen/vLLM failure class the clamp was designed to
+        # catch).
+        budget_mode = "rlm" if mode == "compare" else "direct"
+        sys_prompt = get_mode_system_prompt(budget_mode)
+        if system_prompt_extra:
+            sys_prompt = sys_prompt + "\n\n" + system_prompt_extra
+        user_text = f"Content:\n{content}\n\nQuestion: {current_query}"
+        try:
+            fixed_tokens = adapter.count_tokens(
+                messages=[
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_text},
+                ]
+            )
+        except Exception:
+            # Fallback: rough char-based heuristic
+            fixed_tokens = (len(sys_prompt) + len(user_text)) // 4 + 10
+
+        budget = compute_inprompt_budget(
+            system_prompt_tokens=fixed_tokens,
+            current_query_tokens=0,
+            reply_reserve=min_output,
+            fraction_cap_tokens=fraction_cap,
+            context_window=context_window,
+        )
+
+        def _token_counter(*, messages: list[dict[str, str]]) -> int:
+            try:
+                return int(adapter.count_tokens(messages=messages))
+            except Exception:
+                # Fallback: rough char-based heuristic
+                return sum(len(m.get("content", "")) // 4 + 3 for m in messages)
+
+        assembly = assemble_inprompt_history_within_budget(
+            prev_turns=turns,
+            budget_tokens=budget,
+            token_counter=_token_counter,
+        )
+
+        full_query = compose_inprompt_prefix(assembly.messages, current_query)
+
+        history_info: dict[str, Any] = {
+            "path": "inprompt",
+            "mode": mode,
+            "conversation_memory_enabled": True,
+            "turns_available": assembly.turns_available,
+            "history_turns_used": assembly.turns_used,
+            "history_turns_dropped": assembly.turns_dropped,
+            "history_tokens_used": assembly.tokens_used,
+            "history_budget_tokens": budget,
+            "context_window": context_window,
+            "conversation_memory_fraction": fraction,
+        }
+        return (full_query, {}, history_info)
+
+    if mode in ("rlm", "rag", "auto"):
+        # REPL-variable path — wired in Commit 5
+        return (
+            current_query,
+            {},
+            {
+                "path": "repl_variable_pending",
+                "conversation_memory_enabled": True,
+                "turns_available": len(turns),
+            },
+        )
+
+    # Unknown mode — pass through unchanged
+    return disabled_result
 
 
 # Per-message attachment limits
@@ -414,40 +554,6 @@ async def _run_execution(
             query,
         )
 
-        # Build conversation context from Chat Provider history.
-        #
-        # ⚠️ RLM, RAG, and Auto modes intentionally receive NO prior-turn
-        # context.  Each call re-derives its working context from the
-        # document, and stuffing previous turns into the prompt causes
-        # context-window overflow on small-context models (e.g. 8K vLLM
-        # Qwen-7B).  Direct and Compare modes DO carry the last ~3 turns.
-        #
-        # User-visible consequence: a follow-up question like "what did
-        # I just ask you?" against an RLM-mode Chat Provider will see a
-        # standalone question with no prior context and usually echo or
-        # refuse.  This is documented in doc_internal/v1.0.0/MANUAL_TEST_PLAN.md
-        # section C.3 (UC-3.3) and is NOT a bug.  If we want RLM/RAG/Auto
-        # to carry bounded history in a future change, add a per-profile
-        # flag and check adapter.context_length_chars before injecting.
-        conversation_history: list[dict[str, str]] = []
-        if chat_provider_id and mode in ("direct", "compare"):
-            prev_msgs = state.get_conversation(execution.session_id, chat_provider_id)
-            # Keep last 3 turns; exclude error messages; trim long assistant answers
-            eligible = [
-                msg
-                for msg in prev_msgs[:-1]
-                if msg.get("role") in ("user", "assistant")
-                and msg.get("content", "")
-                and not str(msg.get("content", "")).startswith("Error:")
-            ]
-            for msg in eligible[-6:]:  # last 3 exchanges (6 messages)
-                msg_content = msg.get("content", "")
-                if len(msg_content) > 500:
-                    msg_content = msg_content[:500] + "…"
-                conversation_history.append(
-                    {"role": msg.get("role", "user"), "content": msg_content}
-                )
-
         # Build run config, using Chat Provider settings if available.
         # Apply RLM-specific knobs for rlm, auto, and compare (all run RLM internally).
         if cp and mode in ("rlm", "auto", "compare"):
@@ -472,15 +578,20 @@ async def _run_execution(
         else:
             run_config = state.create_run_config(mode)
 
-        # Build full query with conversation context
-        full_query = query
-        if conversation_history:
-            context_parts = []
-            for msg in conversation_history:
-                prefix = "User" if msg["role"] == "user" else "Assistant"
-                context_parts.append(f"{prefix}: {msg['content']}")
-            context_str = "\n\n".join(context_parts)
-            full_query = f"Previous conversation:\n{context_str}\n\nCurrent question: {query}"
+        # Prepare conversation history via the budgeted helper
+        full_query, extra_overlay, _history_info = _prepare_history_context(
+            state=state,
+            session_id=execution.session_id,
+            chat_provider_id=chat_provider_id,
+            cp=cp,
+            mode=mode,
+            adapter=llm,
+            content=content,
+            system_prompt_extra=getattr(run_config, "system_prompt_extra", "") or "",
+            current_query=query,
+        )
+        if extra_overlay:
+            run_config.extra.update(extra_overlay)
 
         if mode == "compare":
             # Run both RLM and Direct, store two assistant messages
@@ -883,15 +994,30 @@ async def websocket_chat(
                                             len(_extra),
                                         )
 
+                        # Prepare conversation history
+                        full_query, extra_overlay, _ws_history_info = _prepare_history_context(
+                            state=state,
+                            session_id=sess.id,
+                            chat_provider_id=cp_id,
+                            cp=ws_cp,
+                            mode=m,
+                            adapter=llm,
+                            content=cnt,
+                            current_query=q,
+                            system_prompt_extra=getattr(cfg, "system_prompt_extra", "") or "",
+                        )
+                        if extra_overlay:
+                            cfg.extra.update(extra_overlay)
+
                         if m == "compare":
                             sandbox = state.create_sandbox()
                             uc_rlm = RunRLMUseCase(llm, sandbox)
                             uc_direct = RunDirectUseCase(llm)
                             result_rlm = await uc_rlm.execute_async(
-                                cnt, q, cfg, event_emitter=emitter
+                                cnt, full_query, cfg, event_emitter=emitter
                             )
                             result_direct = await uc_direct.execute_async(
-                                cnt, q, cfg, event_emitter=emitter
+                                cnt, full_query, cfg, event_emitter=emitter
                             )
                             results = [result_rlm, result_direct]
                         elif m == "rag":
@@ -917,14 +1043,22 @@ async def websocket_chat(
                             )
                             ws_storage = SQLiteStorageAdapter(":memory:")
                             uc_rag = RunRAGUseCase(llm, ws_embedder, ws_storage)
-                            results = [await asyncio.to_thread(uc_rag.execute, cnt, q, cfg)]
+                            results = [
+                                await asyncio.to_thread(uc_rag.execute, cnt, full_query, cfg)
+                            ]
                         elif m in ("rlm", "auto"):
                             sandbox = state.create_sandbox()
                             uc = RunRLMUseCase(llm, sandbox)
-                            results = [await uc.execute_async(cnt, q, cfg, event_emitter=emitter)]
+                            results = [
+                                await uc.execute_async(cnt, full_query, cfg, event_emitter=emitter)
+                            ]
                         else:
                             uc_d = RunDirectUseCase(llm)
-                            results = [await uc_d.execute_async(cnt, q, cfg, event_emitter=emitter)]
+                            results = [
+                                await uc_d.execute_async(
+                                    cnt, full_query, cfg, event_emitter=emitter
+                                )
+                            ]
 
                         finish = datetime.now(timezone.utc)
                         result = results[0]
