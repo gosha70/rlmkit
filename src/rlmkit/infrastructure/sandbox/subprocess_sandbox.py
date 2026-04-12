@@ -155,8 +155,10 @@ def _child_worker(
             "select": select,
         }
 
-        # Bind tools to content variable P if present.
-        content = namespace.get("P")
+        # Bind tools to the document variable if present.
+        from rlmkit.application.sandbox_vars import SANDBOX_VAR_DOCUMENT
+
+        content = namespace.get(SANDBOX_VAR_DOCUMENT)
         if isinstance(content, str):
             tool_globals["peek"] = partial(peek, content)
             tool_globals["peek_file"] = partial(peek_file, content)
@@ -202,7 +204,9 @@ def _child_worker(
     # -- Collect updated namespace (primitives only) --
     # Exclude parent-injected content keys (P, _FILE_INDEX) to avoid
     # round-tripping potentially large document payloads back.
-    skip_return = {"P", "_FILE_INDEX"}
+    from rlmkit.application.sandbox_vars import SANDBOX_SKIP_RETURN_VARS
+
+    skip_return = SANDBOX_SKIP_RETURN_VARS
     updated_ns: dict[str, Any] = {}
     for key, value in exec_globals.items():
         if key.startswith("_") or key == "__builtins__":
@@ -354,8 +358,10 @@ class SubprocessSandboxAdapter:
         # e.g. lambdas) are preserved as-is.  Content keys (P, _FILE_INDEX)
         # are intentionally excluded from the child return to avoid O(doc-size)
         # round-trips, so we also exclude them from deletion detection.
+        from rlmkit.application.sandbox_vars import SANDBOX_SKIP_RETURN_VARS
+
         updated_ns: dict[str, Any] = result.get("namespace", {})
-        skip_keys = {"P", "_FILE_INDEX"}
+        skip_keys = SANDBOX_SKIP_RETURN_VARS
         sent_keys = set(_serialize_namespace(self._namespace).keys()) - skip_keys
         for key in sent_keys - set(updated_ns.keys()):
             self._namespace.pop(key, None)

@@ -6,6 +6,13 @@ from typing import Any
 
 import pytest
 
+from rlmkit.application.sandbox_vars import (
+    EXTRA_KEY_HISTORY_VARIABLE,
+    HISTORY_PATH_DISABLED,
+    HISTORY_PATH_EMPTY,
+    HISTORY_PATH_INPROMPT,
+    HISTORY_PATH_REPL_VARIABLE,
+)
 from rlmkit.server.routes.chat import _prepare_history_context
 
 
@@ -83,7 +90,7 @@ class TestDisabledPaths:
         )
         assert full_query == "what is this?"
         assert overlay == {}
-        assert info["path"] == "disabled"
+        assert info["path"] == HISTORY_PATH_DISABLED
 
     def test_disabled_when_conversation_memory_false(self) -> None:
         full_query, overlay, info = _prepare_history_context(
@@ -98,7 +105,7 @@ class TestDisabledPaths:
         )
         assert full_query == "hello"
         assert overlay == {}
-        assert info["path"] == "disabled"
+        assert info["path"] == HISTORY_PATH_DISABLED
 
 
 class TestEmptyHistory:
@@ -116,7 +123,7 @@ class TestEmptyHistory:
         )
         assert full_query == "current q"
         assert overlay == {}
-        assert info["path"] == "empty"
+        assert info["path"] == HISTORY_PATH_EMPTY
         assert info["turns_available"] == 0
 
 
@@ -140,7 +147,7 @@ class TestInpromptPath:
         assert full_query.startswith("Previous conversation:")
         assert "Current question: q3" in full_query
         assert overlay == {}
-        assert info["path"] == "inprompt"
+        assert info["path"] == HISTORY_PATH_INPROMPT
         assert info["mode"] == "direct"
         assert info["conversation_memory_enabled"] is True
         assert info["turns_available"] == 2
@@ -159,7 +166,7 @@ class TestInpromptPath:
             content="doc",
             current_query="bye",
         )
-        assert info["path"] == "inprompt"
+        assert info["path"] == HISTORY_PATH_INPROMPT
         assert full_query.startswith("Previous conversation:")
 
     def test_history_info_contains_expected_fields(self) -> None:
@@ -218,7 +225,7 @@ class TestCompareFollowUp:
             content="doc",
             current_query="Q2",
         )
-        assert info["path"] == "inprompt"
+        assert info["path"] == HISTORY_PATH_INPROMPT
         assert info["turns_available"] == 2
         assert info["history_turns_used"] == 2
         # The prefix must contain the RLM answers, not the "(direct)" ones
@@ -292,9 +299,9 @@ class TestCompareFollowUp:
         assert info_with_extra["history_budget_tokens"] <= info_no_extra["history_budget_tokens"]
 
 
-class TestReplVariablePending:
+class TestReplVariablePath:
     @pytest.mark.parametrize("mode", ["rlm", "rag", "auto"])
-    def test_mode_returns_pending(self, mode: str) -> None:
+    def test_mode_returns_repl_variable(self, mode: str) -> None:
         conv = _make_conversation([("q1", "a1")], trailing_user="q2")
         state = FakeState({"s1:cp1": conv})
         full_query, overlay, info = _prepare_history_context(
@@ -307,7 +314,52 @@ class TestReplVariablePending:
             content="doc",
             current_query="q2",
         )
-        assert full_query == "q2"
-        assert overlay == {}
-        assert info["path"] == "repl_variable_pending"
+        assert full_query == "q2"  # query unchanged — history is not in the prompt
+        assert info["path"] == HISTORY_PATH_REPL_VARIABLE
         assert info["turns_available"] == 1
+
+    def test_repl_overlay_contains_history_variable(self) -> None:
+        """The extra_overlay must contain the history list for sandbox binding."""
+        conv = _make_conversation(
+            [("What is X?", "X is foo"), ("And Y?", "Y is bar")],
+            trailing_user="current",
+        )
+        state = FakeState({"s1:cp1": conv})
+        _, overlay, info = _prepare_history_context(
+            state=state,
+            session_id="s1",
+            chat_provider_id="cp1",
+            cp=FakeChatProvider(),
+            mode="rlm",
+            adapter=FakeAdapter(),
+            content="doc",
+            current_query="current",
+        )
+        # overlay carries the history_variable for the use case to bind
+        assert EXTRA_KEY_HISTORY_VARIABLE in overlay
+        hv = overlay[EXTRA_KEY_HISTORY_VARIABLE]
+        assert isinstance(hv, list)
+        assert len(hv) == 2
+        assert hv[0] == {"turn": 0, "user": "What is X?", "assistant": "X is foo"}
+        assert hv[1] == {"turn": 1, "user": "And Y?", "assistant": "Y is bar"}
+        # info reports the REPL-variable diagnostics
+        assert info["history_variable_turn_count"] == 2
+        assert info["history_variable_byte_size"] > 0
+        assert info["history_turns_evicted"] == 0
+
+    def test_repl_path_query_unchanged(self) -> None:
+        """The REPL path must NOT prepend 'Previous conversation:' to the query."""
+        conv = _make_conversation([("q1", "a1")] * 10, trailing_user="current")
+        state = FakeState({"s1:cp1": conv})
+        full_query, _, _ = _prepare_history_context(
+            state=state,
+            session_id="s1",
+            chat_provider_id="cp1",
+            cp=FakeChatProvider(),
+            mode="rlm",
+            adapter=FakeAdapter(),
+            content="doc",
+            current_query="current",
+        )
+        assert full_query == "current"
+        assert "Previous conversation" not in full_query

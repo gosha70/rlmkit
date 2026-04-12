@@ -94,10 +94,19 @@ class RunRLMUseCase:
             "steps": 0.0,
             "time_start": start,  # fixed: the parent's wall-clock start time
         }
-        self._sandbox.set_variable("P", content)
+        from rlmkit.application.sandbox_vars import (
+            EXTRA_KEY_HISTORY_VARIABLE,
+            SANDBOX_VAR_DOCUMENT,
+            SANDBOX_VAR_HISTORY,
+        )
+
+        self._sandbox.set_variable(SANDBOX_VAR_DOCUMENT, content)
         self._sandbox.set_variable(
             "subcall", self._make_subcall(config, subcall_usage, parent_budget_snapshot)
         )
+        history_var = config.extra.get(EXTRA_KEY_HISTORY_VARIABLE)
+        if history_var is not None:
+            self._sandbox.set_variable(SANDBOX_VAR_HISTORY, history_var)
 
         # Build initial messages
         system_prompt = self._build_system_prompt(len(content))
@@ -834,10 +843,19 @@ class RunRLMUseCase:
             "steps": 0.0,
             "time_start": start,  # fixed: the parent's wall-clock start time
         }
-        self._sandbox.set_variable("P", content)
+        from rlmkit.application.sandbox_vars import (
+            EXTRA_KEY_HISTORY_VARIABLE,
+            SANDBOX_VAR_DOCUMENT,
+            SANDBOX_VAR_HISTORY,
+        )
+
+        self._sandbox.set_variable(SANDBOX_VAR_DOCUMENT, content)
         self._sandbox.set_variable(
             "subcall", self._make_subcall(config, subcall_usage, parent_budget_snapshot)
         )
+        history_var = config.extra.get(EXTRA_KEY_HISTORY_VARIABLE)
+        if history_var is not None:
+            self._sandbox.set_variable(SANDBOX_VAR_HISTORY, history_var)
 
         system_prompt = self._build_system_prompt(len(content))
         if config.system_prompt_extra:

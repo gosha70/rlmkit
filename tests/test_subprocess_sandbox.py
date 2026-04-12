@@ -101,6 +101,55 @@ class TestVariablePersistence:
         assert sandbox.get_variable("items") == [1, 2, 3, 4]
 
 
+class TestHistoryVariableSurvivesMultipleExecutions:
+    """Regression: ``history`` must persist across consecutive execute() calls.
+
+    The subprocess sandbox excludes ``history`` from the child → parent
+    return payload (``skip_return``) to avoid bandwidth cost.  But the
+    parent-side namespace merge must also exclude it from deletion
+    detection (``skip_keys``), otherwise the first ``execute()`` deletes
+    ``history`` from the parent namespace and subsequent steps hit
+    ``NameError``.  This is the exact multi-step RLM failure mode that
+    the ``SANDBOX_SKIP_RETURN_VARS`` fix in ``subprocess_sandbox.py``
+    prevents.
+    """
+
+    def test_history_readable_across_three_executions(self, sandbox: SubprocessSandboxAdapter):
+        history = [
+            {"turn": 0, "user": "What is X?", "assistant": "X is foo"},
+            {"turn": 1, "user": "And Y?", "assistant": "Y is bar"},
+        ]
+        sandbox.set_variable("history", history)
+
+        # Step 1: read history
+        r1 = sandbox.execute("step1_result = history[-1]['user']")
+        assert r1.success, r1.exception
+        assert sandbox.get_variable("step1_result") == "And Y?"
+
+        # Step 2: history must still be accessible (this was the bug)
+        r2 = sandbox.execute("step2_result = len(history)")
+        assert r2.success, r2.exception
+        assert sandbox.get_variable("step2_result") == 2
+
+        # Step 3: read first entry
+        r3 = sandbox.execute("step3_result = history[0]['assistant']")
+        assert r3.success, r3.exception
+        assert sandbox.get_variable("step3_result") == "X is foo"
+
+    def test_history_survives_alongside_regular_variable_changes(
+        self, sandbox: SubprocessSandboxAdapter
+    ):
+        """history persists even when other variables are created/deleted."""
+        sandbox.set_variable("history", [{"turn": 0, "user": "Q", "assistant": "A"}])
+
+        sandbox.execute("x = 42")
+        sandbox.execute("del x")
+        # history must survive despite x being created then deleted
+        r = sandbox.execute("result = history[0]['user']")
+        assert r.success, r.exception
+        assert sandbox.get_variable("result") == "Q"
+
+
 class TestTimeoutEnforcement:
     """Timeout enforcement with hard kill."""
 

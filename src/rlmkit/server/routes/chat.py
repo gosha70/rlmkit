@@ -13,9 +13,20 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from rlmkit.application.dto import RunResultDTO
+from rlmkit.application.sandbox_vars import (
+    EXTRA_KEY_HISTORY_VARIABLE,
+    HISTORY_PATH_DISABLED,
+    HISTORY_PATH_EMPTY,
+    HISTORY_PATH_INPROMPT,
+    HISTORY_PATH_REPL_VARIABLE,
+    MODES_INPROMPT,
+    MODES_REPL_VARIABLE,
+)
 from rlmkit.application.services.history_context import (
     assemble_inprompt_history_within_budget,
+    build_history_variable,
     compose_inprompt_prefix,
+    compute_history_cap_bytes,
     compute_inprompt_budget,
     extract_final_qa_pairs,
 )
@@ -89,7 +100,7 @@ def _prepare_history_context(
     disabled_result: tuple[str, dict[str, Any], dict[str, Any]] = (
         current_query,
         {},
-        {"path": "disabled"},
+        {"path": HISTORY_PATH_DISABLED},
     )
 
     if not chat_provider_id or cp is None:
@@ -106,13 +117,13 @@ def _prepare_history_context(
             current_query,
             {},
             {
-                "path": "empty",
+                "path": HISTORY_PATH_EMPTY,
                 "conversation_memory_enabled": True,
                 "turns_available": 0,
             },
         )
 
-    if mode in ("direct", "compare"):
+    if mode in MODES_INPROMPT:
         # --- In-prompt replay path ---
         context_window = getattr(adapter, "context_window", None) or 4096
         min_output = getattr(adapter, "min_output_tokens", None) or 128
@@ -168,7 +179,7 @@ def _prepare_history_context(
         full_query = compose_inprompt_prefix(assembly.messages, current_query)
 
         history_info: dict[str, Any] = {
-            "path": "inprompt",
+            "path": HISTORY_PATH_INPROMPT,
             "mode": mode,
             "conversation_memory_enabled": True,
             "turns_available": assembly.turns_available,
@@ -181,17 +192,25 @@ def _prepare_history_context(
         }
         return (full_query, {}, history_info)
 
-    if mode in ("rlm", "rag", "auto"):
-        # REPL-variable path — wired in Commit 5
-        return (
-            current_query,
-            {},
-            {
-                "path": "repl_variable_pending",
-                "conversation_memory_enabled": True,
-                "turns_available": len(turns),
-            },
+    if mode in MODES_REPL_VARIABLE:
+        # REPL-variable path: bind a `history` Python list in the
+        # sandbox rather than stuffing prior turns into the prompt.
+        # Token cost is zero unless the model inspects `history`.
+        history_var, var_info = build_history_variable(
+            prev_turns=turns,
+            cap_bytes=compute_history_cap_bytes(),
         )
+        extra_overlay: dict[str, Any] = {
+            EXTRA_KEY_HISTORY_VARIABLE: history_var,
+        }
+        history_info = {
+            "path": HISTORY_PATH_REPL_VARIABLE,
+            "mode": mode,
+            "conversation_memory_enabled": True,
+            "turns_available": len(turns),
+            **var_info,
+        }
+        return (current_query, extra_overlay, history_info)
 
     # Unknown mode — pass through unchanged
     return disabled_result
