@@ -3095,6 +3095,8 @@ eval = [
 ]
 server = [
     { name = "fastapi" },
+    { name = "pypdf" },
+    { name = "python-docx" },
     { name = "python-multipart" },
     { name = "uvicorn" },
 ]
@@ -3103,8 +3105,6 @@ ui = [
     { name = "ollama" },
     { name = "openai" },
     { name = "plotly" },
-    { name = "pypdf" },
-    { name = "python-docx" },
     { name = "requests" },
     { name = "streamlit" },
 ]
@@ -3127,12 +3127,12 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "pypdf", marker = "extra == 'ui'", specifier = ">=3.0.0" },
+    { name = "pypdf", marker = "extra == 'server'", specifier = ">=3.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
-    { name = "python-docx", marker = "extra == 'ui'", specifier = ">=1.1.0" },
+    { name = "python-docx", marker = "extra == 'server'", specifier = ">=1.1.0" },
     { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.6" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", marker = "extra == 'dev'", specifier = ">=2.33.0" },
