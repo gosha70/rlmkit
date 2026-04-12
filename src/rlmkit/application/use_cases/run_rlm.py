@@ -544,11 +544,13 @@ class RunRLMUseCase:
                     if consecutive_no_progress >= stall_limit:
                         # Circuit breaker: if the model wrote a real answer but skipped
                         # the FINAL: format, accept it rather than discarding it.
+                        # Check missing_files (dynamic — reflects actual inspection
+                        # state) not enforce_multi_file_coverage (static flag that
+                        # stays True even after all files have been inspected).
                         if (
                             last_plain_answer
                             and not self._looks_like_action(last_plain_answer)
                             and not missing_files
-                            and not enforce_multi_file_coverage
                         ):
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
@@ -1342,11 +1344,13 @@ class RunRLMUseCase:
                             )
 
                     if consecutive_no_progress >= stall_limit:
+                        # Circuit breaker: same fix as sync path — check
+                        # missing_files (dynamic) not enforce_multi_file_coverage
+                        # (static).
                         if (
                             last_plain_answer
                             and not self._looks_like_action(last_plain_answer)
                             and not missing_files
-                            and not enforce_multi_file_coverage
                         ):
                             if hasattr(self._llm, "use_root_model"):
                                 self._llm.use_root_model()
