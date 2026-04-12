@@ -1992,7 +1992,31 @@ class RunRLMUseCase:
                 return ParsedResponse(code=code, raw_text=text)
             # unknown action type: fall through to markdown
         except (ParseError, Exception):
-            pass
+            # Retry: if the text contains a JSON object with trailing prose
+            # (model emitted a valid action + extra explanation), extract just
+            # the balanced JSON and try parsing that in isolation.
+            try:
+                from rlmkit.core.actions import _extract_balanced_json
+
+                json_only = _extract_balanced_json(text)
+                if json_only:
+                    action_type, action_obj = parse_action(json_only)
+                    if action_type == "final":
+                        return ParsedResponse(final_answer=action_obj.answer, raw_text=text)
+                    elif action_type == "inspect":
+                        code = self._inspect_to_code(action_obj)
+                        if code:
+                            return ParsedResponse(code=code, raw_text=text, is_inspect=True)
+                    elif action_type == "subcall":
+                        code = (
+                            f"_sub_result = subcall("
+                            f"content={repr(action_obj.prompt)}, "
+                            f"query={repr(action_obj.query)})\n"
+                            f"print(_sub_result)"
+                        )
+                        return ParsedResponse(code=code, raw_text=text)
+            except Exception:
+                pass
 
         # v1.0 markdown / plain-text fallback.
         # Re-use is_inspect so the synthesis fallback works for models that

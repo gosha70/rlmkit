@@ -338,31 +338,10 @@ class RLM:
             if action_type == "final":
                 return ParsedResponse(final_answer=action_obj.answer, raw_text=response)
             elif action_type == "inspect":
-                # Convert inspect action to executable code
-                tool = action_obj.tool
-                args = action_obj.args
-
-                # Build code to call the tool
-                # Note: Tools are wrapped with partial() in PyReplEnv, so content is auto-passed
-                if tool == "grep":
-                    code = f"print(grep(pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
-                elif tool == "peek":
-                    code = f"print(peek(start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
-                elif tool == "peek_file":
-                    code = f"print(peek_file(file_no={args.get('file_no')}, start={args.get('start', 0)}, end={args.get('end')}, max_chars={args.get('max_chars', 10000)}))"
-                elif tool == "grep_file":
-                    code = f"print(grep_file(file_no={args.get('file_no')}, pattern={repr(args.get('pattern'))}, context_lines={args.get('context_lines', 2)}, max_matches={args.get('max_matches', 100)}, ignore_case={args.get('ignore_case', False)}, use_regex={args.get('use_regex', False)}))"
-                elif tool == "outline_file":
-                    code = f"print(outline_file(file_no={args.get('file_no')}, max_lines={args.get('max_lines', 40)}, max_chars={args.get('max_chars', 8000)}))"
-                elif tool == "select":
-                    code = f"print(select(ranges={args.get('ranges')}))"
-                elif tool == "chunk":
-                    code = f"print(chunk(size={args.get('size', 1000)}, overlap={args.get('overlap', 0)}, by={repr(args.get('by', 'chars'))}, max_chunks={args.get('max_chunks', 100)}))"
-                else:
-                    # Unknown tool, return as text
-                    return ParsedResponse(raw_text=response)
-
-                return ParsedResponse(code=code, raw_text=response)
+                code = self._inspect_to_code(action_obj)
+                if code:
+                    return ParsedResponse(code=code, raw_text=response)
+                return ParsedResponse(raw_text=response)
             elif action_type == "subcall":
                 # Execute subcall via the bound function
                 subcall_func = self.env.env_globals.get("subcall") if self.env else None
@@ -389,11 +368,103 @@ class RLM:
                     return ParsedResponse(raw_text=response)
 
         except (ParseError, Exception):
-            # JSON parsing failed, fall back to markdown format (v1.0)
-            pass
+            # Retry: extract just the balanced JSON, ignoring trailing prose.
+            try:
+                from rlmkit.core.actions import _extract_balanced_json
+
+                json_only = _extract_balanced_json(response)
+                if json_only:
+                    action_type, action_obj = parse_action(json_only)
+                    if action_type == "final":
+                        return ParsedResponse(final_answer=action_obj.answer, raw_text=response)
+                    elif action_type == "inspect":
+                        code = self._inspect_to_code(action_obj)
+                        if code:
+                            return ParsedResponse(code=code, raw_text=response)
+                    elif action_type == "subcall":
+                        subcall_func = self.env.env_globals.get("subcall") if self.env else None
+                        if (
+                            subcall_func
+                            and hasattr(action_obj, "query")
+                            and hasattr(action_obj, "prompt")
+                        ):
+                            code = f"subcall(content={repr(action_obj.prompt)}, query={repr(action_obj.query)})"
+                            try:
+                                sub_answer = subcall_func(
+                                    content=action_obj.prompt, query=action_obj.query
+                                )
+                                return ParsedResponse(
+                                    code=code, final_answer=str(sub_answer), raw_text=response
+                                )
+                            except Exception as e:
+                                return ParsedResponse(
+                                    code=code,
+                                    final_answer=f"Error in subcall: {e}",
+                                    raw_text=response,
+                                )
+            except Exception:
+                pass
 
         # Fall back to markdown parsing (v1.0)
         return parse_response(response)
+
+    @staticmethod
+    def _inspect_to_code(action_obj: Any) -> str | None:
+        """Convert a JSON inspect action to executable Python code."""
+        tool: str = action_obj.tool
+        args: dict[str, Any] = action_obj.args
+        if tool == "grep":
+            return (
+                f"print(grep("
+                f"pattern={repr(args.get('pattern'))}, "
+                f"context_lines={args.get('context_lines', 2)}, "
+                f"max_matches={args.get('max_matches', 100)}, "
+                f"ignore_case={args.get('ignore_case', False)}, "
+                f"use_regex={args.get('use_regex', False)}))"
+            )
+        elif tool == "peek":
+            return (
+                f"print(peek("
+                f"start={args.get('start', 0)}, "
+                f"end={args.get('end')}, "
+                f"max_chars={args.get('max_chars', 10000)}))"
+            )
+        elif tool == "peek_file":
+            return (
+                f"print(peek_file("
+                f"file_no={args.get('file_no')}, "
+                f"start={args.get('start', 0)}, "
+                f"end={args.get('end')}, "
+                f"max_chars={args.get('max_chars', 10000)}))"
+            )
+        elif tool == "grep_file":
+            return (
+                f"print(grep_file("
+                f"file_no={args.get('file_no')}, "
+                f"pattern={repr(args.get('pattern'))}, "
+                f"context_lines={args.get('context_lines', 2)}, "
+                f"max_matches={args.get('max_matches', 100)}, "
+                f"ignore_case={args.get('ignore_case', False)}, "
+                f"use_regex={args.get('use_regex', False)}))"
+            )
+        elif tool == "outline_file":
+            return (
+                f"print(outline_file("
+                f"file_no={args.get('file_no')}, "
+                f"max_lines={args.get('max_lines', 40)}, "
+                f"max_chars={args.get('max_chars', 8000)}))"
+            )
+        elif tool == "select":
+            return f"print(select(ranges={args.get('ranges')}))"
+        elif tool == "chunk":
+            return (
+                f"print(chunk("
+                f"size={args.get('size', 1000)}, "
+                f"overlap={args.get('overlap', 0)}, "
+                f"by={repr(args.get('by', 'chars'))}, "
+                f"max_chunks={args.get('max_chunks', 100)}))"
+            )
+        return None
 
     def _build_system_prompt(self, prompt_length: int) -> str:
         """

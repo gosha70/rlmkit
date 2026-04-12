@@ -1400,6 +1400,67 @@ class TestExtractFirstJsonObject:
         assert result is not None
         assert result["answer"] == "done"
 
+    def test_trailing_extra_brace_ignored(self):
+        """Extra }} after valid JSON should not cause rejection."""
+        from rlmkit.core.actions import extract_first_json_object
+
+        text = '{"type": "final", "answer": "hello"}}'
+        result = extract_first_json_object(text)
+        assert result is not None
+        assert result["answer"] == "hello"
+
+    def test_trailing_prose_still_rejected(self):
+        """JSON followed by real prose should still be rejected."""
+        from rlmkit.core.actions import ParseError, extract_first_json_object
+
+        text = '{"type": "final", "answer": "hello"} Here is more explanation.'
+        raised = False
+        try:
+            extract_first_json_object(text)
+        except ParseError:
+            raised = True
+        assert raised, "Expected ParseError for trailing prose"
+
+
+class TestJsonWithTrailingContent:
+    """Models sometimes emit a valid JSON action followed by explanatory prose.
+
+    The retry path in _parse_rlm_response should extract the JSON action
+    even when extract_first_json_object rejects it for trailing content.
+    """
+
+    def test_final_json_with_trailing_prose_parsed(self):
+        """JSON final followed by prose → final answer is extracted."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = (
+            '{"type": "final", "answer": "Paris is the capital."}\n\n'
+            "Here is some additional context the model wanted to share."
+        )
+        parsed = uc._parse_rlm_response(text)
+        assert parsed.is_complete
+        assert parsed.final_answer == "Paris is the capital."
+
+    def test_final_json_with_double_brace_parsed(self):
+        """JSON final with }} typo → final answer is extracted."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = '{"type": "final", "answer": "Your previous question was: \'What?\'"}}'
+        parsed = uc._parse_rlm_response(text)
+        assert parsed.is_complete
+        assert "previous question" in parsed.final_answer
+
+    def test_final_json_with_think_block_and_trailing_prose(self):
+        """<think>...</think> + JSON final + trailing prose → final answer extracted."""
+        uc = RunRLMUseCase(FakeLLM([]), FakeSandbox())
+        text = (
+            "<think>\nLet me think about this.\n</think>\n\n"
+            '{"type": "final", "answer": "42"}\n\n'
+            "Wait, let me clarify that answer with a code example:\n"
+            "```python\nprint(42)\n```"
+        )
+        parsed = uc._parse_rlm_response(text)
+        assert parsed.is_complete
+        assert parsed.final_answer == "42"
+
 
 class TestLooksLikeAction:
     """Tests for _looks_like_action helper used by stall/fallback guards."""

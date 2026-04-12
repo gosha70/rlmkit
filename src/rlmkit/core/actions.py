@@ -105,6 +105,43 @@ class ParseError(Exception):
     pass
 
 
+def _extract_balanced_json(text: str) -> str | None:
+    """Extract just the first balanced ``{...}`` substring, ignoring everything after.
+
+    Unlike :func:`extract_first_json_object`, this does NOT reject trailing
+    content.  It is used as a retry path when a model emits a valid JSON
+    action followed by extra prose or code.
+    """
+    text = text.strip()
+    # Strip markdown code fences
+    if text.startswith("```"):
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1 :]
+        if text.rstrip().endswith("```"):
+            text = text.rstrip()[:-3]
+        text = text.strip()
+
+    # Strip <think>...</think> blocks (reasoning models)
+    import re
+
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    brace_count = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            brace_count += 1
+        elif text[i] == "}":
+            brace_count -= 1
+            if brace_count == 0:
+                return text[start : i + 1]
+    return None
+
+
 def extract_first_json_object(text: str) -> dict[str, Any] | None:
     """
     Extract the first JSON object from text.
@@ -162,9 +199,13 @@ def extract_first_json_object(text: str) -> dict[str, Any] | None:
     # Extract JSON string
     json_str = text[start:end]
 
-    # Check for trailing non-whitespace content
-    trailing = text[end:].strip()
-    if trailing:
+    # Check for trailing non-whitespace content.  Ignore stray closing
+    # braces / brackets — models frequently emit }} or }}} as typos.
+    # Only reject when the trailing text contains alphabetic characters
+    # (indicating prose mixed with JSON, which means the JSON is not
+    # the model's intended action).
+    trailing = text[end:].strip().rstrip("})],.")
+    if trailing and any(c.isalpha() for c in trailing):
         raise ParseError(f"Found trailing content after JSON: {trailing[:50]}...")
 
     # Parse JSON — first attempt as-is, then retry after sanitizing invalid
