@@ -26,9 +26,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from rlmkit.application.services.outcome_classifier import classify_execution_outcome
+from rlmkit.application.services.outcome_classifier import (
+    OutcomeCategory,
+    classify_execution_outcome,
+)
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
+    FailureCategorySummary,
+    FailureMetricsResponse,
     MetricsResponse,
     MetricsSummary,
     ModeSummary,
@@ -59,6 +64,37 @@ class _RunPoint:
     success: bool = True
     error: str | None = None
     answer: str = ""
+
+
+@router.get("/api/metrics/failures/{session_id}")
+async def get_failure_metrics(
+    session_id: str,
+    state: AppState = Depends(get_state),  # noqa: B008
+) -> FailureMetricsResponse:
+    """Get categorized failure breakdown for a session."""
+    session = state.sessions.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    telemetry_runs = state.telemetry.list_runs(session_id=session_id, limit=10_000)
+    telemetry_exec_ids: set[str] = {r.id for r in telemetry_runs}
+
+    points: list[_RunPoint] = [_point_from_telemetry(r) for r in telemetry_runs]
+
+    for msg in session.messages:
+        if msg.get("role") != "assistant":
+            continue
+        msg_metrics = msg.get("metrics")
+        if not isinstance(msg_metrics, dict):
+            continue
+        exec_id = msg.get("execution_id")
+        if exec_id and exec_id in telemetry_exec_ids:
+            continue
+        point = _point_from_message(msg, msg_metrics)
+        if point is not None:
+            points.append(point)
+
+    return _build_failure_response(session_id, points)
 
 
 @router.get("/api/metrics/{session_id}")
@@ -234,6 +270,55 @@ def _build_metrics_response(
         by_provider=provider_summaries,
         by_chat_provider=chat_provider_summaries,
         timeline=timeline,
+    )
+
+
+def _build_failure_response(
+    session_id: str,
+    points: list[_RunPoint],
+) -> FailureMetricsResponse:
+    """Aggregate failure data from a list of :class:`_RunPoint` rows."""
+    total_runs = len(points)
+
+    # category -> count
+    by_category: dict[str, int] = {}
+    # provider -> category -> count
+    by_provider: dict[str, dict[str, int]] = {}
+    # mode -> category -> count
+    by_mode: dict[str, dict[str, int]] = {}
+
+    # Only non-SUCCESS categories are failures
+    _failure_categories = {c for c in OutcomeCategory if c != OutcomeCategory.SUCCESS}
+
+    for point in points:
+        outcome = classify_execution_outcome(point.success, point.error, point.answer)
+        if outcome.category not in _failure_categories:
+            continue
+
+        cat = outcome.category.value
+        by_category[cat] = by_category.get(cat, 0) + 1
+
+        prov = point.chat_provider_name or point.provider
+        prov_cats = by_provider.setdefault(prov, {})
+        prov_cats[cat] = prov_cats.get(cat, 0) + 1
+
+        mode_cats = by_mode.setdefault(point.mode, {})
+        mode_cats[cat] = mode_cats.get(cat, 0) + 1
+
+    total_failures = sum(by_category.values())
+    failure_rate = total_failures / total_runs if total_runs else 0.0
+
+    def _to_summaries(bucket: dict[str, int]) -> list[FailureCategorySummary]:
+        return [FailureCategorySummary(category=k, count=v) for k, v in sorted(bucket.items())]
+
+    return FailureMetricsResponse(
+        session_id=session_id,
+        total_runs=total_runs,
+        total_failures=total_failures,
+        failure_rate=round(failure_rate, 4),
+        by_category=_to_summaries(by_category),
+        by_provider={k: _to_summaries(v) for k, v in sorted(by_provider.items())},
+        by_mode={k: _to_summaries(v) for k, v in sorted(by_mode.items())},
     )
 
 

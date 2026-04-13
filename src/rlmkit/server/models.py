@@ -195,6 +195,21 @@ class MetricsResponse(BaseModel):
     timeline: list[TimelineEntry] = Field(default_factory=list)
 
 
+class FailureCategorySummary(BaseModel):
+    category: str
+    count: int = 0
+
+
+class FailureMetricsResponse(BaseModel):
+    session_id: str
+    total_runs: int = 0
+    total_failures: int = 0
+    failure_rate: float = 0.0
+    by_category: list[FailureCategorySummary] = Field(default_factory=list)
+    by_provider: dict[str, list[FailureCategorySummary]] = Field(default_factory=dict)
+    by_mode: dict[str, list[FailureCategorySummary]] = Field(default_factory=dict)
+
+
 # ---------------------------------------------------------------------------
 # Traces
 # ---------------------------------------------------------------------------
