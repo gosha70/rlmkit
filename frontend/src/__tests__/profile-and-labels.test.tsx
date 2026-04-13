@@ -242,7 +242,8 @@ describe("ProfileCard — editing form", () => {
   test("Cancel closes the edit form", () => {
     openEditor();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
-    // After cancel, the Prompt Group label should no longer be visible
-    expect(screen.queryByText("Prompt Group")).not.toBeInTheDocument();
+    // After cancel, the Save button (edit-form-only) should not be visible;
+    // the read-only settings grid may still show labels like "Prompt Group".
+    expect(screen.queryByRole("button", { name: /^Save$/i })).not.toBeInTheDocument();
   });
 });

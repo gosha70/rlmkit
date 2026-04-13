@@ -16,7 +16,7 @@ const DEFAULTS: BudgetConfigType = {
   max_steps: 16,
   max_tokens: 50000,
   max_cost_usd: 2.0,
-  max_time_seconds: 30,
+  max_time_seconds: 600,
   max_recursion_depth: 5,
   repeat_limit: 2,
   nudge_at_fraction: 0.6,
@@ -83,9 +83,9 @@ export function BudgetConfig({ config, onChange }: BudgetConfigProps) {
         <FieldLabel htmlFor="max-time" tooltip="Wall-clock timeout per query. Includes LLM inference, code execution, and network latency. Increase for complex multi-step RLM queries.">Max Time (seconds): {local.max_time_seconds}</FieldLabel>
         <Slider
           id="max-time"
-          min={5}
-          max={120}
-          step={5}
+          min={10}
+          max={3600}
+          step={10}
           value={[local.max_time_seconds]}
           onValueChange={([v]) => update("max_time_seconds", v)}
           aria-label="Max time in seconds"

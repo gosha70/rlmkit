@@ -9,6 +9,7 @@ from typing import Literal, cast
 
 import streamlit as st
 
+from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
 from rlmkit.ui.app import _inject_rlmkit_desktop_css
 from rlmkit.ui.components.navigation import render_custom_navigation
 from rlmkit.ui.components.session_summary import render_session_summary
@@ -339,7 +340,9 @@ def _build_profile_from_session(name: str) -> RunProfile:
         top_p=st.session_state.get("default_top_p", 1.0),
         max_output_tokens=st.session_state.get("default_max_tokens", 2000),
         max_steps=st.session_state.get("max_steps", 16),
-        rlm_timeout_seconds=st.session_state.get("rlm_timeout", 60),
+        rlm_timeout_seconds=st.session_state.get(
+            "rlm_timeout", RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+        ),
         rag_top_k=rc.top_k,
         rag_chunk_size=rc.chunk_size,
         rag_chunk_overlap=rc.chunk_overlap,
@@ -570,10 +573,12 @@ def render_execution_settings() -> None:
             with col2:
                 rlm_timeout = st.slider(
                     "RLM Timeout (seconds)",
-                    min_value=5,
-                    max_value=300,
-                    value=st.session_state.get("rlm_timeout", 60),
-                    help="Total time budget for the RLM run",
+                    min_value=10,
+                    max_value=3600,
+                    value=st.session_state.get(
+                        "rlm_timeout", RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+                    ),
+                    help="Total wall-clock time budget for the entire RLM execution (all steps combined)",
                     key="run_rlm_timeout",
                 )
                 st.session_state.rlm_timeout = rlm_timeout

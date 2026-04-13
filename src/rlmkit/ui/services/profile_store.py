@@ -17,6 +17,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+
 
 @dataclass
 class RunProfile:
@@ -45,7 +47,7 @@ class RunProfile:
 
     # -- RLM --
     max_steps: int = 16
-    rlm_timeout_seconds: int = 60
+    rlm_timeout_seconds: int = RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
 
     # -- RAG --
     rag_top_k: int = 5
@@ -94,7 +96,7 @@ BUILTIN_PROFILES: list[RunProfile] = [
         temperature=0.5,
         max_output_tokens=1000,
         max_steps=8,
-        rlm_timeout_seconds=30,
+        rlm_timeout_seconds=RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
     ),
     RunProfile(
         name="Accurate",
@@ -107,7 +109,7 @@ BUILTIN_PROFILES: list[RunProfile] = [
         name="RLM deep",
         strategy="rlm",
         max_steps=32,
-        rlm_timeout_seconds=120,
+        rlm_timeout_seconds=RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
         temperature=0.4,
         max_output_tokens=4000,
     ),

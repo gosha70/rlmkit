@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from rlmkit.application.dto import RunConfigDTO
+from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 from rlmkit.infrastructure.llm import AnthropicAdapter, OllamaAdapter, OpenAIAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
@@ -367,7 +368,9 @@ class ChatManager:
             run_config = RunConfigDTO(
                 mode="rlm",
                 max_steps=int(self.session_state.get("max_steps", 16)),
-                max_time_seconds=float(self.session_state.get("rlm_timeout", 60)),
+                max_time_seconds=float(
+                    self.session_state.get("rlm_timeout", RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS)
+                ),
                 system_prompt_extra=resolve_system_prompt("rlm", self.session_state),
             )
 

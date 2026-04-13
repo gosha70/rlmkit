@@ -67,6 +67,29 @@ MODES_RLM_INTERNAL = frozenset({MODE_RLM, MODE_AUTO, MODE_COMPARE})
 # Mode groupings — which execution modes use which history path
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# RLM execution defaults
+# ---------------------------------------------------------------------------
+
+# Default configuration values — single source of truth so changing a
+# default doesn't require scanning every file in the repo.
+
+RLM_DEFAULT_MAX_STEPS = 16
+RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS = 600
+"""Total wall-clock budget for an entire RLM execution (all steps combined).
+Not the per-step LLM call timeout.  600s = 10 minutes, enough for ~6-7
+steps on slow local models at ~90s/step."""
+RLM_DEFAULT_REPEAT_LIMIT = 2
+RLM_DEFAULT_NUDGE_AT_FRACTION = 0.4
+RLM_DEFAULT_MAX_TOKENS_BUDGET = 50000
+RLM_DEFAULT_MAX_COST_USD = 2.0
+RLM_DEFAULT_MAX_RECURSION_DEPTH = 5
+
+RUNTIME_DEFAULT_TEMPERATURE = 0.7
+RUNTIME_DEFAULT_TOP_P = 1.0
+RUNTIME_DEFAULT_MAX_OUTPUT_TOKENS = 4096
+RUNTIME_DEFAULT_TIMEOUT_SECONDS = 120
+
 MODES_INPROMPT = frozenset({MODE_DIRECT, MODE_COMPARE, MODE_RAG})
 """Modes that carry history as native user/assistant chat messages."""
 

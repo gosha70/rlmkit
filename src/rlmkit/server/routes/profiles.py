@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
     BudgetConfig,
@@ -49,7 +50,7 @@ BUILTIN_PROFILES: list[RunProfile] = [
             max_steps=16,
             max_tokens=50000,
             max_cost_usd=2.0,
-            max_time_seconds=30,
+            max_time_seconds=RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
             max_recursion_depth=5,
         ),
     ),
@@ -66,7 +67,7 @@ BUILTIN_PROFILES: list[RunProfile] = [
             max_steps=32,
             max_tokens=100000,
             max_cost_usd=5.0,
-            max_time_seconds=120,
+            max_time_seconds=RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
             max_recursion_depth=8,
         ),
     ),

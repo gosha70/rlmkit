@@ -9,7 +9,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from rlmkit.application.sandbox_vars import MODE_RLM, MODES_RLM_INTERNAL
+from rlmkit.application.sandbox_vars import (
+    MODE_RLM,
+    MODES_RLM_INTERNAL,
+    RLM_DEFAULT_MAX_STEPS,
+    RLM_DEFAULT_NUDGE_AT_FRACTION,
+    RLM_DEFAULT_REPEAT_LIMIT,
+    RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+)
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
     ChatProviderConfig,
@@ -145,10 +152,10 @@ async def create_chat_provider(
         "profile_id": req.profile_id,
         "execution_mode": req.execution_mode,
         "rag_config": req.rag_config,
-        "rlm_max_steps": req.rlm_max_steps or 16,
-        "rlm_timeout_seconds": req.rlm_timeout_seconds or 60,
-        "rlm_repeat_limit": req.rlm_repeat_limit or 2,
-        "rlm_nudge_at_fraction": req.rlm_nudge_at_fraction or 0.4,
+        "rlm_max_steps": req.rlm_max_steps or RLM_DEFAULT_MAX_STEPS,
+        "rlm_timeout_seconds": req.rlm_timeout_seconds or RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+        "rlm_repeat_limit": req.rlm_repeat_limit or RLM_DEFAULT_REPEAT_LIMIT,
+        "rlm_nudge_at_fraction": req.rlm_nudge_at_fraction or RLM_DEFAULT_NUDGE_AT_FRACTION,
         "num_retries": req.num_retries,
         "created_at": now,
         "updated_at": now,

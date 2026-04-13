@@ -57,7 +57,7 @@ const DEFAULT_CONFIG: BudgetConfigType = {
   max_steps: 16,
   max_tokens: 50000,
   max_cost_usd: 2.0,
-  max_time_seconds: 30,
+  max_time_seconds: 600,
   max_recursion_depth: 5,
   repeat_limit: 2,
   nudge_at_fraction: 0.6,
@@ -85,7 +85,7 @@ describe("BudgetConfig", () => {
 
   test("renders Max Time label with current value", () => {
     render(<BudgetConfig config={DEFAULT_CONFIG} onChange={vi.fn()} />);
-    expect(screen.getByText(/Max Time.*: 30/)).toBeInTheDocument();
+    expect(screen.getByText(/Max Time.*: 600/)).toBeInTheDocument();
   });
 
   test("renders Max Recursion Depth label with current value", () => {
@@ -151,7 +151,7 @@ describe("BudgetConfig", () => {
       max_steps: 16,
       max_tokens: 50000,
       max_cost_usd: 2.0,
-      max_time_seconds: 30,
+      max_time_seconds: 600,
       max_recursion_depth: 5,
       repeat_limit: 2,
       nudge_at_fraction: 0.6,
@@ -190,7 +190,7 @@ describe("BudgetConfig", () => {
     render(<BudgetConfig config={DEFAULT_CONFIG} onChange={vi.fn()} />);
     const sliders = screen.getAllByRole("slider");
     const timeSlider = sliders.find(
-      (s) => s.getAttribute("aria-valuenow") === "30"
+      (s) => s.getAttribute("aria-valuenow") === "600"
     );
     expect(timeSlider).toBeInTheDocument();
   });

@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: ModeConfig = {
     embedding_model: "text-embedding-3-small",
   },
   rlm_max_steps: 16,
-  rlm_timeout_seconds: 60,
+  rlm_timeout_seconds: 600,
 };
 
 const EMBEDDING_MODELS = [
@@ -153,10 +153,10 @@ export function ExecutionConfig({ config, onChange }: ExecutionConfigProps) {
               type="number"
               value={local.rlm_timeout_seconds}
               onChange={(e) =>
-                setLocal({ ...local, rlm_timeout_seconds: parseInt(e.target.value) || 60 })
+                setLocal({ ...local, rlm_timeout_seconds: parseInt(e.target.value) || 600 })
               }
               min={10}
-              max={600}
+              max={3600}
               aria-label="RLM timeout in seconds"
             />
           </div>

@@ -213,6 +213,10 @@ export function ProfileCard({
       setMessage("Nudge at Fraction must be between 0.1 and 1.0");
       return;
     }
+    if (isNaN(maxTime) || maxTime < 10) {
+      setMessage("Max Execution Time must be at least 10 seconds");
+      return;
+    }
 
     setSaving(true);
     setMessage(null);
@@ -231,7 +235,7 @@ export function ProfileCard({
           max_steps: maxSteps,
           max_tokens: isNaN(maxTokensBudget) ? 0 : maxTokensBudget,
           max_cost_usd: maxCost,
-          max_time_seconds: isNaN(maxTime) ? 0 : maxTime,
+          max_time_seconds: maxTime,
           max_recursion_depth: isNaN(maxRecursion) ? 0 : maxRecursion,
           repeat_limit: repeatLimit,
           nudge_at_fraction: nudgeFraction,
@@ -465,6 +469,17 @@ export function ProfileCard({
                   className="h-8 text-xs"
                   value={editData.max_steps}
                   onChange={(e) => setEditData({ ...editData, max_steps: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <FieldLabel htmlFor={`edit-max-time-${profile.id}`} className="text-xs" tooltip="Total wall-clock time limit for the entire RLM execution (all steps combined). Not the per-step timeout — that is 'Timeout (s)' above. Set high (600+) for slow local models.">Max Execution Time (s)</FieldLabel>
+                <Input
+                  id={`edit-max-time-${profile.id}`}
+                  type="text"
+                  inputMode="numeric"
+                  className="h-8 text-xs"
+                  value={editData.max_time_seconds}
+                  onChange={(e) => setEditData({ ...editData, max_time_seconds: e.target.value })}
                 />
               </div>
               <div className="space-y-1">

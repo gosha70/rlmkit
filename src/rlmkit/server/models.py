@@ -7,6 +7,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from rlmkit.application.sandbox_vars import (
+    RLM_DEFAULT_MAX_COST_USD,
+    RLM_DEFAULT_MAX_RECURSION_DEPTH,
+    RLM_DEFAULT_MAX_STEPS,
+    RLM_DEFAULT_MAX_TOKENS_BUDGET,
+    RLM_DEFAULT_NUDGE_AT_FRACTION,
+    RLM_DEFAULT_REPEAT_LIMIT,
+    RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+    RUNTIME_DEFAULT_MAX_OUTPUT_TOKENS,
+    RUNTIME_DEFAULT_TEMPERATURE,
+    RUNTIME_DEFAULT_TIMEOUT_SECONDS,
+    RUNTIME_DEFAULT_TOP_P,
+)
+
 # ---------------------------------------------------------------------------
 # Error
 # ---------------------------------------------------------------------------
@@ -241,10 +255,10 @@ class TraceResponse(BaseModel):
 
 
 class RuntimeSettings(BaseModel):
-    temperature: float = 0.7
-    top_p: float = 1.0
-    max_output_tokens: int = 4096
-    timeout_seconds: int = 120
+    temperature: float = RUNTIME_DEFAULT_TEMPERATURE
+    top_p: float = RUNTIME_DEFAULT_TOP_P
+    max_output_tokens: int = RUNTIME_DEFAULT_MAX_OUTPUT_TOKENS
+    timeout_seconds: int = RUNTIME_DEFAULT_TIMEOUT_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -364,13 +378,13 @@ class LLMProviderUpdateRequest(BaseModel):
 
 
 class BudgetConfig(BaseModel):
-    max_steps: int = 16
-    max_tokens: int = 50000
-    max_cost_usd: float = 2.0
-    max_time_seconds: int = 30
-    max_recursion_depth: int = 5
-    repeat_limit: int = 2  # RLM: duplicate inspections before forced finalization
-    nudge_at_fraction: float = 0.4  # RLM: fraction of max_steps for soft nudge
+    max_steps: int = RLM_DEFAULT_MAX_STEPS
+    max_tokens: int = RLM_DEFAULT_MAX_TOKENS_BUDGET
+    max_cost_usd: float = RLM_DEFAULT_MAX_COST_USD
+    max_time_seconds: int = RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+    max_recursion_depth: int = RLM_DEFAULT_MAX_RECURSION_DEPTH
+    repeat_limit: int = RLM_DEFAULT_REPEAT_LIMIT
+    nudge_at_fraction: float = RLM_DEFAULT_NUDGE_AT_FRACTION
 
 
 class SandboxConfig(BaseModel):
@@ -398,8 +412,8 @@ class ModeConfig(BaseModel):
     enabled_modes: list[str] = Field(default_factory=lambda: ["direct", "rlm"])
     default_mode: str = "auto"
     rag_config: RAGConfig = Field(default_factory=RAGConfig)
-    rlm_max_steps: int = 16
-    rlm_timeout_seconds: int = 60
+    rlm_max_steps: int = RLM_DEFAULT_MAX_STEPS
+    rlm_timeout_seconds: int = RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -422,12 +436,10 @@ class ChatProviderConfig(BaseModel):
     execution_mode: Literal["direct", "rlm", "rag"] = "direct"
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     rag_config: RAGConfig | None = None  # only for RAG mode
-    rlm_max_steps: int = 16  # only for RLM mode
-    rlm_timeout_seconds: int = 60  # only for RLM mode
-    rlm_repeat_limit: int = (
-        2  # only for RLM mode — duplicate inspections before forced finalization
-    )
-    rlm_nudge_at_fraction: float = 0.4  # only for RLM mode — fraction of max_steps for soft nudge
+    rlm_max_steps: int = RLM_DEFAULT_MAX_STEPS
+    rlm_timeout_seconds: int = RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+    rlm_repeat_limit: int = RLM_DEFAULT_REPEAT_LIMIT
+    rlm_nudge_at_fraction: float = RLM_DEFAULT_NUDGE_AT_FRACTION
     num_retries: int | None = Field(default=None, ge=0)
     # Per-provider conversation history (SDD_RLM_CONVERSATION_HISTORY).
     # When True (default), follow-up turns on this provider carry prior
