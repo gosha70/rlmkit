@@ -53,6 +53,17 @@ vi.mock("recharts", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Mock ChartContainer — jsdom has no ResizeObserver / layout
+// ---------------------------------------------------------------------------
+
+vi.mock("@/components/metrics/chart-container", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ChartContainer: ({ children, ...props }: { children: (w: number, h: number) => any; className?: string; [k: string]: any }) => (
+    <div {...props}>{typeof children === "function" ? children(400, 200) : children}</div>
+  ),
+}));
+
+// ---------------------------------------------------------------------------
 // Mock next/navigation — used by DashboardPage (useRouter)
 // ---------------------------------------------------------------------------
 
@@ -133,9 +144,9 @@ describe("ComparisonChart", () => {
       />,
     );
     // Card title rendered
-    expect(screen.getByText("RLM vs Direct")).toBeInTheDocument();
+    expect(screen.getByText("Mode Comparison")).toBeInTheDocument();
     // Both split chart panels (tokens + cost) are rendered
-    const charts = screen.getAllByRole("img", { name: /Bar chart comparing RLM and Direct/ });
+    const charts = screen.getAllByRole("img", { name: /Bar chart comparing mode/ });
     expect(charts).toHaveLength(2);
   });
 
@@ -147,14 +158,14 @@ describe("ComparisonChart", () => {
       />,
     );
     // Both split chart panels have aria-labels containing mode names
-    const chartImgs = screen.getAllByRole("img", { name: /RLM and Direct/ });
+    const chartImgs = screen.getAllByRole("img", { name: /comparing mode/ });
     expect(chartImgs.length).toBeGreaterThanOrEqual(2);
   });
 
   test("handles empty data gracefully (undefined props)", () => {
     // Should render without throwing even with no data
     render(<ComparisonChart rlmData={undefined} directData={undefined} />);
-    expect(screen.getByText("RLM vs Direct")).toBeInTheDocument();
+    expect(screen.getByText("Mode Comparison")).toBeInTheDocument();
   });
 });
 
@@ -180,9 +191,9 @@ describe("PerformanceTrend", () => {
       makeTimelineEntry({ tokens: 500 }),
     ];
     render(<PerformanceTrend timeline={timeline} />);
-    expect(screen.getByText("Performance Over Time")).toBeInTheDocument();
+    expect(screen.getByText(/Performance Over Time/)).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: /Line chart showing tokens/ }),
+      screen.getByRole("img", { name: /Line chart showing latency/ }),
     ).toBeInTheDocument();
   });
 
@@ -193,7 +204,7 @@ describe("PerformanceTrend", () => {
 
   test("handles single data point without error", () => {
     render(<PerformanceTrend timeline={[makeTimelineEntry()]} />);
-    expect(screen.getByText("Performance Over Time")).toBeInTheDocument();
+    expect(screen.getByText(/Performance Over Time/)).toBeInTheDocument();
   });
 });
 
@@ -219,8 +230,8 @@ describe("CostBreakdown", () => {
     );
     expect(screen.getByText("Cost by Provider")).toBeInTheDocument();
     // Pie mock renders entry spans with the provider names
-    expect(screen.getByTestId("pie-entry-openai")).toBeInTheDocument();
-    expect(screen.getByTestId("pie-entry-anthropic")).toBeInTheDocument();
+    expect(screen.getByTestId("pie-entry-OpenAI")).toBeInTheDocument();
+    expect(screen.getByTestId("pie-entry-Anthropic")).toBeInTheDocument();
   });
 
   test("renders cost by mode", () => {
@@ -284,8 +295,8 @@ const makeMetrics = (): MetricsResponse => ({
   timeline: [],
 });
 
-// Helper: stub all four useSWR calls made by DashboardPage:
-//   1. sessions  2. metrics  3. evalSummary  4. evalDetail
+// Helper: stub all five useSWR calls made by DashboardPage:
+//   1. sessions  2. metrics  3. failureMetrics  4. evalSummary  5. evalDetail
 const noData = { data: undefined, isLoading: false } as ReturnType<typeof useSWR>;
 
 describe("DashboardPage", () => {
@@ -294,6 +305,7 @@ describe("DashboardPage", () => {
     mockUseSWR
       .mockReturnValueOnce({ data: makeSessions(), isLoading: false } as ReturnType<typeof useSWR>)
       .mockReturnValueOnce({ data: metrics, isLoading: false } as ReturnType<typeof useSWR>)
+      .mockReturnValueOnce(noData)  // failureMetrics
       .mockReturnValueOnce(noData)  // evalSummary
       .mockReturnValueOnce(noData); // evalDetail
 
@@ -309,18 +321,20 @@ describe("DashboardPage", () => {
     mockUseSWR
       .mockReturnValueOnce({ data: makeSessions(), isLoading: false } as ReturnType<typeof useSWR>)
       .mockReturnValueOnce({ data: metrics, isLoading: false } as ReturnType<typeof useSWR>)
+      .mockReturnValueOnce(noData)  // failureMetrics
       .mockReturnValueOnce(noData)  // evalSummary
       .mockReturnValueOnce(noData); // evalDetail
 
     render(<DashboardPage />);
-    expect(screen.getByText("RLM vs Direct")).toBeInTheDocument();
-    expect(screen.getByText("Cost by Provider")).toBeInTheDocument();
+    expect(screen.getByText("Mode Comparison")).toBeInTheDocument();
+    expect(screen.getByText("Cost by Chat Provider")).toBeInTheDocument();
   });
 
   test("shows empty state when no sessions exist", () => {
     mockUseSWR
       .mockReturnValueOnce({ data: [], isLoading: false } as ReturnType<typeof useSWR>)
       .mockReturnValueOnce(noData)  // metrics
+      .mockReturnValueOnce(noData)  // failureMetrics
       .mockReturnValueOnce(noData)  // evalSummary
       .mockReturnValueOnce(noData); // evalDetail
 
@@ -334,6 +348,7 @@ describe("DashboardPage", () => {
     mockUseSWR
       .mockReturnValueOnce({ data: makeSessions(), isLoading: false } as ReturnType<typeof useSWR>)
       .mockReturnValueOnce(noData)  // metrics
+      .mockReturnValueOnce(noData)  // failureMetrics
       .mockReturnValueOnce(noData)  // evalSummary
       .mockReturnValueOnce(noData); // evalDetail
 

@@ -36,7 +36,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",  # CVE-2025-71176 fix
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.24.0",
     # pytest-xdist parallelizes the sandbox suite across CPU cores.
