@@ -7,8 +7,11 @@ No other module should re-parse error strings for failure categorization.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
+
+_logger = logging.getLogger(__name__)
 
 
 class OutcomeCategory(Enum):
@@ -57,7 +60,12 @@ def classify_execution_outcome(
 
 
 def _classify_hard_failure(error: str | None) -> ExecutionOutcome:
-    """Classify a hard failure (success=False) from the error string."""
+    """Classify a hard failure (success=False) from the error string.
+
+    Keyword priority: timeout > context overflow > budget > general.
+    If an error contains multiple keywords (e.g. "budget timeout"),
+    the first match wins.
+    """
     error_lower = (error or "").lower()
     if "timeout" in error_lower or "timed out" in error_lower:
         return ExecutionOutcome(OutcomeCategory.TIMEOUT, is_usable=False)
@@ -68,13 +76,29 @@ def _classify_hard_failure(error: str | None) -> ExecutionOutcome:
     return ExecutionOutcome(OutcomeCategory.GENERAL_ERROR, is_usable=False)
 
 
+# Keywords that indicate budget/step exhaustion in degraded warnings.
+# "step" alone is too broad — it false-positives on unrelated text
+# like "Follow these steps to recover."
+_BUDGET_KEYWORDS = ("budget", "step budget", "steps used")
+
+
 def _classify_degraded(answer: str) -> ExecutionOutcome:
-    """Classify a degraded outcome (success=True, answer starts with warning prefix)."""
+    """Classify a degraded outcome (success=True, answer starts with warning prefix).
+
+    Keyword priority matches _classify_hard_failure: timeout > context
+    overflow > budget > unrecognized (treated as usable success with log).
+    """
     answer_lower = answer.lower()
     if "timed out" in answer_lower:
         return ExecutionOutcome(OutcomeCategory.TIMEOUT, is_usable=False)
     if "context window" in answer_lower:
         return ExecutionOutcome(OutcomeCategory.CONTEXT_OVERFLOW, is_usable=False)
-    if "budget" in answer_lower or "step" in answer_lower:
+    if any(kw in answer_lower for kw in _BUDGET_KEYWORDS):
         return ExecutionOutcome(OutcomeCategory.BUDGET_EXHAUSTED, is_usable=False)
+    # Unrecognized ⚠️ prefix — treat as usable but log so new warning
+    # types are surfaced during development.
+    _logger.warning(
+        "Unrecognized degraded warning prefix (treating as usable): %.200s",
+        answer,
+    )
     return ExecutionOutcome(OutcomeCategory.SUCCESS, is_usable=True)

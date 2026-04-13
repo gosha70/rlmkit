@@ -196,7 +196,7 @@ class MetricsResponse(BaseModel):
 
 
 class FailureCategorySummary(BaseModel):
-    category: str
+    category: Literal["timeout", "budget_exhausted", "context_overflow", "general_error"]
     count: int = 0
 
 

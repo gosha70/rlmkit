@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from rlmkit.server.judge import _AUTO_SCORE_BUDGET_PARTIAL, _AUTO_SCORE_FAILURE, JudgeService
+from rlmkit.server.judge import AUTO_SCORE_BUDGET_PARTIAL, AUTO_SCORE_FAILURE, JudgeService
 
 
 class _FakeTelemetry:
@@ -73,7 +73,7 @@ class TestJudgeAutoScore:
     async def test_auto_score_timeout_failure(self) -> None:
         svc = self._make_service("", success=False, error="Request timeout")
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_FAILURE
+        assert score.overall_score == AUTO_SCORE_FAILURE
         assert score.judge_provider_id == "auto"
         assert "timeout" in score.reasoning.lower()
 
@@ -81,14 +81,14 @@ class TestJudgeAutoScore:
     async def test_auto_score_context_overflow_failure(self) -> None:
         svc = self._make_service("", success=False, error="context window exceeded")
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_FAILURE
+        assert score.overall_score == AUTO_SCORE_FAILURE
         assert score.judge_provider_id == "auto"
 
     @pytest.mark.asyncio
     async def test_auto_score_general_error(self) -> None:
         svc = self._make_service("", success=False, error="Unknown crash")
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_FAILURE
+        assert score.overall_score == AUTO_SCORE_FAILURE
         assert "general_error" in score.reasoning.lower()
 
     @pytest.mark.asyncio
@@ -96,7 +96,7 @@ class TestJudgeAutoScore:
         answer = "⚠️ **Execution timed out** after 5 steps.\n\nPartial results..."
         svc = self._make_service(answer, success=True)
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_FAILURE
+        assert score.overall_score == AUTO_SCORE_FAILURE
         assert score.judge_provider_id == "auto"
 
     @pytest.mark.asyncio
@@ -105,7 +105,7 @@ class TestJudgeAutoScore:
         answer = "⚠️ **Step budget exhausted** (16/16)."
         svc = self._make_service(answer, success=True)
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_FAILURE
+        assert score.overall_score == AUTO_SCORE_FAILURE
 
     @pytest.mark.asyncio
     async def test_auto_score_degraded_budget_with_partial(self) -> None:
@@ -114,7 +114,7 @@ class TestJudgeAutoScore:
         answer = f"⚠️ **Step budget exhausted** (16/16 steps used).\n\n{partial}"
         svc = self._make_service(answer, success=True)
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_BUDGET_PARTIAL
+        assert score.overall_score == AUTO_SCORE_BUDGET_PARTIAL
 
     @pytest.mark.asyncio
     async def test_auto_score_stored_in_evaluations(self) -> None:
@@ -149,5 +149,5 @@ class TestJudgeAutoScore:
         state.telemetry = _FakeTelemetryWithRun()  # type: ignore[assignment]
         svc = JudgeService(state)  # type: ignore[arg-type]
         score = await svc.score_pointwise("exec-1")
-        assert score.overall_score == _AUTO_SCORE_FAILURE
+        assert score.overall_score == AUTO_SCORE_FAILURE
         assert score.judge_provider_id == "auto"

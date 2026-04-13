@@ -43,6 +43,9 @@ from rlmkit.server.models import (
 
 router = APIRouter()
 
+# Non-SUCCESS categories — used to filter failure points.
+_FAILURE_CATEGORIES = frozenset(c for c in OutcomeCategory if c != OutcomeCategory.SUCCESS)
+
 
 @dataclass
 class _RunPoint:
@@ -147,7 +150,7 @@ def _point_from_telemetry(run: Any) -> _RunPoint:
         chat_provider_name=run.chat_provider_name,
         success=run.success,
         error=run.error,
-        answer=getattr(run, "answer", ""),
+        answer=run.answer,
     )
 
 
@@ -287,12 +290,9 @@ def _build_failure_response(
     # mode -> category -> count
     by_mode: dict[str, dict[str, int]] = {}
 
-    # Only non-SUCCESS categories are failures
-    _failure_categories = {c for c in OutcomeCategory if c != OutcomeCategory.SUCCESS}
-
     for point in points:
         outcome = classify_execution_outcome(point.success, point.error, point.answer)
-        if outcome.category not in _failure_categories:
+        if outcome.category not in _FAILURE_CATEGORIES:
             continue
 
         cat = outcome.category.value

@@ -25,8 +25,13 @@ _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 # Auto-scores for non-usable outcomes (1-5 scale).
 # Using 1 (worst) for hard failures and 2 for budget exhaustion with partial content.
-_AUTO_SCORE_FAILURE = 1.0
-_AUTO_SCORE_BUDGET_PARTIAL = 2.0
+# Auto-scores for non-usable outcomes (1-5 scale, matching LLM judge output).
+AUTO_SCORE_FAILURE = 1.0
+AUTO_SCORE_BUDGET_PARTIAL = 2.0
+# Minimum answer length to qualify as a "partial" budget-exhausted answer
+# rather than an empty failure. 50 chars covers a short sentence but
+# excludes bare error prefixes like "Error: ...".
+AUTO_SCORE_PARTIAL_THRESHOLD_CHARS = 50
 
 
 def _parse_json_from_response(text: str) -> dict[str, Any]:
@@ -95,11 +100,13 @@ class JudgeService:
     ) -> JudgeScore:
         """Build a JudgeScore with auto-assigned score for a non-usable outcome."""
         # Budget-exhausted with a partial answer gets a slightly higher score
-        has_partial = bool(response.strip()) and len(response.strip()) > 50
+        has_partial = (
+            bool(response.strip()) and len(response.strip()) > AUTO_SCORE_PARTIAL_THRESHOLD_CHARS
+        )
         if category == OutcomeCategory.BUDGET_EXHAUSTED and has_partial:
-            auto_score = _AUTO_SCORE_BUDGET_PARTIAL
+            auto_score = AUTO_SCORE_BUDGET_PARTIAL
         else:
-            auto_score = _AUTO_SCORE_FAILURE
+            auto_score = AUTO_SCORE_FAILURE
 
         score = JudgeScore(
             id=str(uuid.uuid4()),
