@@ -119,13 +119,13 @@ class RunSummary:
     steps_count: int
     answer_length: int
     comparison_group_id: str | None = None
+    answer: str = ""
 
 
 @dataclass
 class RunDetail(RunSummary):
     """Full run detail including steps."""
 
-    answer: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
     content_length: int = 0
@@ -643,6 +643,7 @@ class TelemetryStore:
             steps_count=row["steps_count"],
             answer_length=row["answer_length"],
             comparison_group_id=row["comparison_group_id"],
+            answer=row["answer"] or "",
         )
 
 

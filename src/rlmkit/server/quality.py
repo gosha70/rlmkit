@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rlmkit.application.services.outcome_classifier import classify_execution_outcome
 from rlmkit.server.models import ProviderQualityScore
 
 if TYPE_CHECKING:
@@ -21,6 +22,9 @@ def _collect_metrics_from_messages(
 
     Reads from persisted session messages (metrics field) so data survives
     restarts, then falls back to in-memory ExecutionRecords.
+
+    Non-usable runs (failures, degraded warnings) are excluded so they
+    don't skew provider cost/speed averages.
     """
     costs: list[float] = []
     speeds: list[float] = []
@@ -31,6 +35,14 @@ def _collect_metrics_from_messages(
             if msg.get("role") == "assistant" and msg.get("chat_provider_id") == cp_id:
                 metrics = msg.get("metrics")
                 if isinstance(metrics, dict):
+                    # Check usability via the classifier
+                    content = msg.get("content", "")
+                    msg_success = bool(metrics.get("success", True))
+                    msg_error = metrics.get("error")
+                    outcome = classify_execution_outcome(msg_success, msg_error, content)
+                    if not outcome.is_usable:
+                        continue
+
                     cost = metrics.get("cost_usd", 0.0)
                     elapsed = metrics.get("elapsed_seconds", 0.0)
                     if cost or elapsed:
@@ -49,6 +61,14 @@ def _collect_metrics_from_messages(
                 for msg in session.messages
             )
             if not already_captured:
+                # Check usability via the classifier
+                rec_success = bool(rec.result.get("success", True))
+                rec_error = rec.result.get("error")
+                rec_answer = rec.result.get("answer", "")
+                outcome = classify_execution_outcome(rec_success, rec_error, rec_answer)
+                if not outcome.is_usable:
+                    continue
+
                 costs.append(float(rec.result.get("total_cost", rec.result.get("cost_used", 0))))
                 speeds.append(
                     float(rec.result.get("elapsed_time", rec.result.get("elapsed_seconds", 0)))

@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from rlmkit.application.services.outcome_classifier import classify_execution_outcome
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import (
     MetricsResponse,
@@ -55,6 +56,9 @@ class _RunPoint:
     mode: str
     provider: str
     chat_provider_name: str | None
+    success: bool = True
+    error: str | None = None
+    answer: str = ""
 
 
 @router.get("/api/metrics/{session_id}")
@@ -105,6 +109,9 @@ def _point_from_telemetry(run: Any) -> _RunPoint:
         mode=run.mode or "unknown",
         provider=run.provider or "unknown",
         chat_provider_name=run.chat_provider_name,
+        success=run.success,
+        error=run.error,
+        answer=getattr(run, "answer", ""),
     )
 
 
@@ -135,6 +142,9 @@ def _point_from_message(
         mode=msg.get("mode_used", "unknown") or "unknown",
         provider=msg.get("provider", "unknown") or "unknown",
         chat_provider_name=msg.get("chat_provider_name"),
+        success=bool(msg_metrics.get("success", True)),
+        error=msg_metrics.get("error"),
+        answer=msg.get("content", ""),
     )
 
 
@@ -147,6 +157,7 @@ def _build_metrics_response(
     total_cost = 0.0
     total_latency = 0.0
     query_count = 0
+    usable_count = 0
 
     by_mode: dict[str, _GroupAcc] = {}
     by_provider: dict[str, _GroupAcc] = {}
@@ -155,20 +166,27 @@ def _build_metrics_response(
 
     for point in points:
         query_count += 1
-        total_tokens += point.tokens
-        total_cost += point.cost
-        total_latency += point.latency
 
-        _acc(by_mode, point.mode, point.tokens, point.cost, point.latency)
-        _acc(by_provider, point.provider, point.tokens, point.cost, point.latency)
-        if point.chat_provider_name:
-            _acc(
-                by_chat_provider,
-                point.chat_provider_name,
-                point.tokens,
-                point.cost,
-                point.latency,
-            )
+        # Classify to determine if this run should contribute to averages.
+        # Non-usable runs (failures, degraded warnings) are counted but
+        # excluded from cost/latency/token aggregations to avoid skewing.
+        outcome = classify_execution_outcome(point.success, point.error, point.answer)
+        if outcome.is_usable:
+            usable_count += 1
+            total_tokens += point.tokens
+            total_cost += point.cost
+            total_latency += point.latency
+
+            _acc(by_mode, point.mode, point.tokens, point.cost, point.latency)
+            _acc(by_provider, point.provider, point.tokens, point.cost, point.latency)
+            if point.chat_provider_name:
+                _acc(
+                    by_chat_provider,
+                    point.chat_provider_name,
+                    point.tokens,
+                    point.cost,
+                    point.latency,
+                )
 
         timeline.append(
             TimelineEntry(
@@ -187,7 +205,7 @@ def _build_metrics_response(
     # left-to-right regardless of which source the row came from.
     timeline.sort(key=lambda e: e.timestamp)
 
-    avg_latency = total_latency / query_count if query_count else 0.0
+    avg_latency = total_latency / usable_count if usable_count else 0.0
 
     mode_summaries = {key: _to_mode_summary(acc) for key, acc in by_mode.items()}
     provider_summaries = {key: _to_provider_summary(acc) for key, acc in by_provider.items()}
