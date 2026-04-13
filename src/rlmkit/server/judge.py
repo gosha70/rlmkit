@@ -9,6 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from rlmkit.application.services.outcome_classifier import (
+    OutcomeCategory,
+    classify_execution_outcome,
+)
 from rlmkit.prompts.templates import load_prompt_from_file
 from rlmkit.server.models import JudgePairwise, JudgeScore
 
@@ -18,6 +22,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+# Auto-scores for non-usable outcomes (1-5 scale).
+# Using 1 (worst) for hard failures and 2 for budget exhaustion with partial content.
+_AUTO_SCORE_FAILURE = 1.0
+_AUTO_SCORE_BUDGET_PARTIAL = 2.0
 
 
 def _parse_json_from_response(text: str) -> dict[str, Any]:
@@ -59,10 +68,81 @@ class JudgeService:
         chat_provider_id: str = ctx[3]
         return session_id, query, response_content, chat_provider_id
 
+    def _get_execution_result(self, execution_id: str) -> tuple[bool, str | None]:
+        """Return (success, error) for an execution.
+
+        Checks in-memory ExecutionRecord first, then falls back to the
+        telemetry store.
+        """
+        rec = self.state.executions.get(execution_id)
+        if rec and rec.result:
+            return bool(rec.result.get("success", True)), rec.result.get("error")
+
+        run = self.state.telemetry.get_run(execution_id)
+        if run:
+            return run.success, run.error
+
+        # Assume success if we can't find status — the judge will evaluate normally
+        return True, None
+
+    def _auto_score_for_outcome(
+        self,
+        execution_id: str,
+        session_id: str,
+        cp_id: str,
+        category: OutcomeCategory,
+        response: str,
+    ) -> JudgeScore:
+        """Build a JudgeScore with auto-assigned score for a non-usable outcome."""
+        # Budget-exhausted with a partial answer gets a slightly higher score
+        has_partial = bool(response.strip()) and len(response.strip()) > 50
+        if category == OutcomeCategory.BUDGET_EXHAUSTED and has_partial:
+            auto_score = _AUTO_SCORE_BUDGET_PARTIAL
+        else:
+            auto_score = _AUTO_SCORE_FAILURE
+
+        score = JudgeScore(
+            id=str(uuid.uuid4()),
+            execution_id=execution_id,
+            session_id=session_id,
+            chat_provider_id=cp_id,
+            judge_provider_id="auto",
+            dimensions={
+                "relevance": auto_score,
+                "correctness": auto_score,
+                "completeness": auto_score,
+                "coherence": auto_score,
+                "conciseness": auto_score,
+            },
+            overall_score=auto_score,
+            reasoning=f"Auto-scored: {category.value} (LLM judge skipped)",
+            created_at=datetime.now(timezone.utc),
+        )
+        self.state.evaluations["judge_scores"].append(score.model_dump(mode="json"))
+        self.state.save_evaluations()
+        return score
+
     async def score_pointwise(self, execution_id: str) -> JudgeScore:
-        """Score a single response on 5 dimensions using the judge LLM."""
+        """Score a single response on 5 dimensions using the judge LLM.
+
+        Non-usable outcomes (failures, degraded warnings) are auto-scored
+        without calling the judge LLM.
+        """
         judge_cp_id = self._get_judge_provider_id()
         session_id, query, response, cp_id = self._get_execution_context(execution_id)
+
+        # Check outcome before sending to the LLM judge
+        success, error = self._get_execution_result(execution_id)
+        outcome = classify_execution_outcome(success, error, response)
+        if not outcome.is_usable:
+            logger.info(
+                "Skipping LLM judge for non-usable execution %s (%s)",
+                execution_id[:8],
+                outcome.category.value,
+            )
+            return self._auto_score_for_outcome(
+                execution_id, session_id, cp_id, outcome.category, response
+            )
 
         template = load_prompt_from_file(_PROMPTS_DIR / "judge_pointwise.yaml")
         prompt = template.format(query=query, response=response)
