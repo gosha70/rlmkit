@@ -21,6 +21,7 @@ import {
   getSession,
   getChatProviders,
   getTrace,
+  getExecutions,
   submitChat,
   uploadFile,
   getLLMProviders,
@@ -135,15 +136,18 @@ export default function ChatPage() {
     }
   }, [sessionId]);
 
-  // Persist selected chat providers to localStorage
+  // Persist selected chat providers to localStorage (only after hydration
+  // to avoid overwriting the saved selection with the initial empty array).
   useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem("rlmkit_selected_chat_providers", JSON.stringify(selectedChatProviderIds));
-  }, [selectedChatProviderIds]);
+  }, [selectedChatProviderIds, hydrated]);
 
-  // Persist chip order
+  // Persist chip order (only after hydration)
   useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem("rlmkit-cp-order", JSON.stringify(chatProviderOrder));
-  }, [chatProviderOrder]);
+  }, [chatProviderOrder, hydrated]);
 
   // Hydrate uploaded files from localStorage.
   // Uses session-keyed storage when a session exists, or a "draft" key
@@ -369,11 +373,40 @@ export default function ChatPage() {
      * and backfill the `steps` field that is missing from persisted sessions.
      */
     function _hydrateStepsFromTraces(loadedTurns: ChatTurn[]) {
+      // Capture session generation so stale callbacks from a previous
+      // session don't register pollers after cancelAllPollers() runs.
+      const hydrateGen = sessionGenRef.current;
+
       for (const turn of loadedTurns) {
         for (const [cpId, resp] of Object.entries(turn.responses)) {
           if (!resp.executionId || resp.steps) continue;
           getTrace(resp.executionId)
             .then((trace) => {
+              if (sessionGenRef.current !== hydrateGen) return;
+              if (trace.status === "running") {
+                // Execution is still in progress — mark as streaming and
+                // restart polling so the result appears when it completes.
+                // Register in execMap and increment pending count so the
+                // streaming indicator and cancel logic work correctly.
+                execMapRef.current[resp.executionId] = { turnId: turn.id, chatProviderId: cpId };
+                pendingCountRef.current += 1;
+                setIsAnyStreaming(true);
+                setTurns((prev) =>
+                  prev.map((t) =>
+                    t.id === turn.id
+                      ? {
+                          ...t,
+                          responses: {
+                            ...t.responses,
+                            [cpId]: { ...t.responses[cpId], isStreaming: true },
+                          },
+                        }
+                      : t,
+                  ),
+                );
+                pollForResult(resp.executionId, cpId, turn.id);
+                return;
+              }
               if (trace.status !== "complete" || !trace.steps?.length) return;
               setTurns((prev) =>
                 prev.map((t) =>
@@ -409,6 +442,53 @@ export default function ChatPage() {
               // Trace not available (e.g. server restarted without persistence)
             });
         }
+      }
+
+      // Also check for running executions that have no response entry yet
+      // (user message stored, but assistant message not yet persisted because
+      // the execution is still in progress).
+      if (sessionId) {
+        getExecutions(100, undefined, sessionId).then((execs) => {
+          if (sessionGenRef.current !== hydrateGen) return;
+          const running = execs.filter((e) => e.status === "running");
+          for (const exec of running) {
+            const cpId = exec.chat_provider_id;
+            if (!cpId) continue;
+            // Find the latest turn matching this query that still needs
+            // a response for this provider.  Searching from the end
+            // handles repeated identical prompts correctly — older turns
+            // already have their responses, so we match the newest one.
+            const matchingTurn = [...loadedTurns]
+              .reverse()
+              .find((t) => t.userMessage.content === exec.query && !t.responses[cpId]);
+            if (!matchingTurn) continue;
+            // Register bookkeeping before polling
+            execMapRef.current[exec.execution_id] = { turnId: matchingTurn.id, chatProviderId: cpId };
+            pendingCountRef.current += 1;
+            setIsAnyStreaming(true);
+            // Add a streaming placeholder and start polling
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === matchingTurn.id
+                  ? {
+                      ...t,
+                      responses: {
+                        ...t.responses,
+                        [cpId]: {
+                          chatProviderId: cpId,
+                          chatProviderName: exec.chat_provider_name || cpId,
+                          executionId: exec.execution_id,
+                          content: "",
+                          isStreaming: true,
+                        },
+                      },
+                    }
+                  : t,
+              ),
+            );
+            pollForResult(exec.execution_id, cpId, matchingTurn.id);
+          }
+        }).catch(() => {});
       }
     }
   }, [sessionId]);
