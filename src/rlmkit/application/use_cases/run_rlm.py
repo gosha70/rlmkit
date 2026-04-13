@@ -2069,7 +2069,7 @@ class RunRLMUseCase:
                             f"print(_sub_result)"
                         )
                         return ParsedResponse(code=code, raw_text=text)
-            except Exception:
+            except Exception:  # nosec B110 — intentional: v2 JSON parse failure falls through to v1 markdown parser below
                 pass
 
         # v1.0 markdown / plain-text fallback.
