@@ -1,6 +1,7 @@
 "use client";
 
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
+import { ChartContainer } from "./chart-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useChartTooltipStyle } from "./use-chart-tooltip";
 
@@ -11,10 +12,23 @@ interface CostBreakdownProps {
 
 const COLORS = ["#2563eb", "#7c3aed", "#059669", "#d97706", "#dc2626", "#6366f1"];
 
+// Map raw backend keys to human-readable names
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  ollama: "Ollama",
+  lmstudio: "LM Studio",
+  vllm: "vLLM",
+};
+
+export function displayProviderName(key: string): string {
+  return PROVIDER_DISPLAY_NAMES[key] ?? key;
+}
+
 export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdownProps) {
   const tooltipStyle = useChartTooltipStyle();
   const chartData = Object.entries(data).map(([name, values]) => ({
-    name,
+    name: displayProviderName(name),
     value: values.total_cost_usd,
   }));
 
@@ -24,9 +38,9 @@ export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdow
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64" role="img" aria-label="Pie chart showing cost breakdown by provider">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <PieChart>
+        <ChartContainer className="h-64" role="img" aria-label="Pie chart showing cost breakdown by provider">
+          {(w, h) => (
+            <PieChart width={w} height={h}>
               <Pie
                 data={chartData}
                 cx="50%"
@@ -45,8 +59,8 @@ export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdow
               />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
             </PieChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ChartContainer>
       </CardContent>
     </Card>
   );

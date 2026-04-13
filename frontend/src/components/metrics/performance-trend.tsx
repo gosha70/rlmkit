@@ -1,6 +1,7 @@
 "use client";
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+import { ChartContainer } from "./chart-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TimelineEntry } from "@/lib/api";
 import { useChartTooltipStyle } from "./use-chart-tooltip";
@@ -9,37 +10,125 @@ interface PerformanceTrendProps {
   timeline: TimelineEntry[];
 }
 
+// Same palette as other dashboard charts
+const PROVIDER_COLORS = [
+  "#10b981", // emerald
+  "#6366f1", // indigo
+  "#a855f7", // purple
+  "#f97316", // orange
+  "#3b82f6", // blue
+  "#ec4899", // pink
+  "#14b8a6", // teal
+  "#eab308", // yellow
+];
+
 export function PerformanceTrend({ timeline }: PerformanceTrendProps) {
   const tooltipStyle = useChartTooltipStyle();
-  const data = timeline.map((entry, i) => ({
-    index: i + 1,
-    tokens: entry.tokens,
-    cost: entry.cost_usd,
-    latency: entry.latency_seconds,
-    mode: entry.mode,
-  }));
+
+  // Group timeline entries by chat provider, then build one data point
+  // per query index with separate keys per provider for latency.
+  const providers = [...new Set(
+    timeline.map((e) => e.chat_provider_name || e.provider || "unknown"),
+  )];
+
+  // Build per-provider sequences: each provider gets its own query counter
+  const providerCounters: Record<string, number> = {};
+  const dataPoints: Record<string, string | number>[] = [];
+
+  for (const entry of timeline) {
+    const name = entry.chat_provider_name || entry.provider || "unknown";
+    providerCounters[name] = (providerCounters[name] || 0) + 1;
+    const idx = providerCounters[name];
+
+    // Find or create data point for this query index
+    let point = dataPoints.find((p) => p._index === idx);
+    if (!point) {
+      point = { _index: idx };
+      dataPoints.push(point);
+    }
+    point[`${name} (latency)`] = entry.latency_seconds;
+    point[`${name} (tokens)`] = entry.tokens;
+  }
+
+  // Sort by index
+  dataPoints.sort((a, b) => (a._index as number) - (b._index as number));
+
+  if (dataPoints.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Performance Over Time</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+            No data yet.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Performance Over Time</CardTitle>
+        <CardTitle className="text-base">Performance Over Time (per Chat Provider)</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64" role="img" aria-label="Line chart showing tokens, cost, and latency trends over time">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <LineChart data={data}>
+        <ChartContainer className="h-64" role="img" aria-label="Line chart showing latency per provider over queries">
+          {(w, h) => (
+            <LineChart width={w} height={h} data={dataPoints}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis dataKey="index" label={{ value: "Query #", position: "insideBottomRight", offset: -5 }} className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
-              <YAxis yAxisId="left" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
-              <YAxis yAxisId="right" orientation="right" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
+              <XAxis
+                dataKey="_index"
+                label={{ value: "Query #", position: "insideBottomRight", offset: -5 }}
+                className="text-xs"
+                tick={{ fill: "var(--color-muted-foreground)" }}
+              />
+              <YAxis
+                yAxisId="latency"
+                className="text-xs"
+                tick={{ fill: "var(--color-muted-foreground)" }}
+                label={{ value: "Latency (s)", angle: -90, position: "insideLeft", style: { fill: "var(--color-muted-foreground)", fontSize: 11 } }}
+              />
+              <YAxis
+                yAxisId="tokens"
+                orientation="right"
+                className="text-xs"
+                tick={{ fill: "var(--color-muted-foreground)" }}
+                label={{ value: "Tokens", angle: 90, position: "insideRight", style: { fill: "var(--color-muted-foreground)", fontSize: 11 } }}
+              />
               <Tooltip contentStyle={tooltipStyle} />
               <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line yAxisId="left" type="monotone" dataKey="tokens" stroke="#2563eb" strokeWidth={2} dot={timeline.length < 20} name="Tokens" />
-              <Line yAxisId="right" type="monotone" dataKey="cost" stroke="#7c3aed" strokeWidth={2} dot={timeline.length < 20} name="Cost ($)" />
-              <Line yAxisId="right" type="monotone" dataKey="latency" stroke="#d97706" strokeWidth={2} dot={timeline.length < 20} name="Latency (s)" />
+              {providers.map((name, i) => (
+                <Line
+                  key={`${name}-latency`}
+                  yAxisId="latency"
+                  type="monotone"
+                  dataKey={`${name} (latency)`}
+                  stroke={PROVIDER_COLORS[i % PROVIDER_COLORS.length]}
+                  strokeWidth={2}
+                  dot={timeline.length < 30}
+                  connectNulls
+                  name={`${name} (latency)`}
+                />
+              ))}
+              {providers.map((name, i) => (
+                <Line
+                  key={`${name}-tokens`}
+                  yAxisId="tokens"
+                  type="monotone"
+                  dataKey={`${name} (tokens)`}
+                  stroke={PROVIDER_COLORS[i % PROVIDER_COLORS.length]}
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  connectNulls
+                  name={`${name} (tokens)`}
+                />
+              ))}
             </LineChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ChartContainer>
       </CardContent>
     </Card>
   );

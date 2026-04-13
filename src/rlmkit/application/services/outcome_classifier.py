@@ -95,6 +95,8 @@ def _classify_degraded(answer: str) -> ExecutionOutcome:
         return ExecutionOutcome(OutcomeCategory.CONTEXT_OVERFLOW, is_usable=False)
     if any(kw in answer_lower for kw in _BUDGET_KEYWORDS):
         return ExecutionOutcome(OutcomeCategory.BUDGET_EXHAUSTED, is_usable=False)
+    if "execution error" in answer_lower or "cannot connect" in answer_lower:
+        return ExecutionOutcome(OutcomeCategory.GENERAL_ERROR, is_usable=False)
     # Unrecognized ⚠️ prefix — treat as usable but log so new warning
     # types are surfaced during development.
     _logger.warning(

@@ -460,6 +460,24 @@ export interface HealthResponse {
   uptime_seconds: number;
 }
 
+// Failure metrics
+export type FailureCategory = "timeout" | "budget_exhausted" | "context_overflow" | "general_error";
+
+export interface FailureCategorySummary {
+  category: FailureCategory;
+  count: number;
+}
+
+export interface FailureMetricsResponse {
+  session_id: string;
+  total_runs: number;
+  total_failures: number;
+  failure_rate: number;
+  by_category: FailureCategorySummary[];
+  by_provider: Record<string, FailureCategorySummary[]>;
+  by_mode: Record<string, FailureCategorySummary[]>;
+}
+
 // ---------------------------------------------------------------------------
 // API functions
 // ---------------------------------------------------------------------------
@@ -543,6 +561,9 @@ export const renameSession = (id: string, name: string) =>
 // Metrics
 export const getMetrics = (sessionId: string) =>
   fetchJSON<MetricsResponse>(`/api/metrics/${sessionId}`);
+
+export const getFailureMetrics = (sessionId: string) =>
+  fetchJSON<FailureMetricsResponse>(`/api/metrics/failures/${sessionId}`);
 
 // Executions & Traces
 export interface ExecutionSummary {

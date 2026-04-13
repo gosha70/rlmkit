@@ -1,5 +1,6 @@
 "use client";
 
+import { ChartContainer } from "./chart-container";
 import {
   BarChart,
   Bar,
@@ -8,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -79,9 +79,9 @@ export function JudgeDimensionsChart({ judgeScores, providerNames }: JudgeDimens
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-56" role="img" aria-label="Grouped bar chart of judge dimension scores per provider">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <BarChart data={chartData} barCategoryGap="25%" barGap={2}>
+        <ChartContainer className="h-56" role="img" aria-label="Grouped bar chart of judge dimension scores per provider">
+          {(w, h) => (
+            <BarChart width={w} height={h} data={chartData} barCategoryGap="25%" barGap={2}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis
                 dataKey="dim"
@@ -107,8 +107,8 @@ export function JudgeDimensionsChart({ judgeScores, providerNames }: JudgeDimens
                 />
               ))}
             </BarChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ChartContainer>
       </CardContent>
     </Card>
   );

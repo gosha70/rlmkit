@@ -1,7 +1,9 @@
 "use client";
 
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
+import { ChartContainer } from "./chart-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { displayProviderName } from "./cost-breakdown";
 import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 interface ProviderPerformanceProps {
@@ -13,7 +15,7 @@ const COLORS = { tokens: "#2563eb", latency: "#d97706" };
 
 export function ProviderPerformance({ data, title = "Provider Performance" }: ProviderPerformanceProps) {
   const chartData = Object.entries(data).map(([name, values]) => ({
-    name,
+    name: displayProviderName(name),
     tokens: values.total_tokens,
     latency: values.avg_latency_seconds,
     queries: values.queries,
@@ -28,9 +30,9 @@ export function ProviderPerformance({ data, title = "Provider Performance" }: Pr
         <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-64" role="img" aria-label="Bar chart comparing provider performance by tokens and latency">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <BarChart data={chartData} barCategoryGap="20%">
+        <ChartContainer className="h-64" role="img" aria-label="Bar chart comparing provider performance by tokens and latency">
+          {(w, h) => (
+            <BarChart width={w} height={h} data={chartData} barCategoryGap="20%">
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis dataKey="name" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
               <YAxis yAxisId="left" className="text-xs" tick={{ fill: "var(--color-muted-foreground)" }} />
@@ -40,8 +42,8 @@ export function ProviderPerformance({ data, title = "Provider Performance" }: Pr
               <Bar yAxisId="left" dataKey="tokens" fill={COLORS.tokens} radius={[4, 4, 0, 0]} name="Tokens" />
               <Bar yAxisId="right" dataKey="latency" fill={COLORS.latency} radius={[4, 4, 0, 0]} name="Avg Latency (s)" />
             </BarChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ChartContainer>
       </CardContent>
     </Card>
   );

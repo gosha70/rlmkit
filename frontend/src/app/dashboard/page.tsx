@@ -15,8 +15,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getSessions, getMetrics, getEvaluationSummary, getSessionEvaluations, resetSessionEvaluations, type SessionSummary, type MetricsResponse, type EvaluationSummaryResponse, type SessionEvaluations } from "@/lib/api";
+import { getSessions, getMetrics, getFailureMetrics, getEvaluationSummary, getSessionEvaluations, resetSessionEvaluations, type SessionSummary, type MetricsResponse, type FailureMetricsResponse, type EvaluationSummaryResponse, type SessionEvaluations } from "@/lib/api";
 import { JudgeDimensionsChart } from "@/components/metrics/judge-dimensions-chart";
+import { FailureBreakdown } from "@/components/metrics/failure-breakdown";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -31,6 +32,11 @@ export default function DashboardPage() {
   const { data: metrics, isLoading } = useSWR<MetricsResponse>(
     effectiveSession ? `metrics-${effectiveSession}` : null,
     () => getMetrics(effectiveSession),
+  );
+
+  const { data: failureMetrics } = useSWR<FailureMetricsResponse>(
+    effectiveSession ? `failure-metrics-${effectiveSession}` : null,
+    () => getFailureMetrics(effectiveSession),
   );
 
   const { data: evalSummary } = useSWR<EvaluationSummaryResponse>(
@@ -118,27 +124,32 @@ export default function DashboardPage() {
             <ComparisonChart
               rlmData={metrics.by_mode.rlm}
               directData={metrics.by_mode.direct}
+              ragData={metrics.by_mode.rag}
             />
-            <CostBreakdown data={metrics.by_provider} />
+            <CostBreakdown
+              data={metrics.by_chat_provider && Object.keys(metrics.by_chat_provider).length > 0
+                ? metrics.by_chat_provider
+                : metrics.by_provider}
+              title="Cost by Chat Provider"
+            />
           </div>
         )}
 
-        {/* Provider performance */}
-        {metrics && Object.keys(metrics.by_provider).length > 0 && (
+        {/* Provider performance — prefer Chat Provider names when available */}
+        {metrics && metrics.by_chat_provider && Object.keys(metrics.by_chat_provider).length > 0 ? (
+          <ProviderPerformance data={metrics.by_chat_provider} title="Chat Provider Performance" />
+        ) : metrics && Object.keys(metrics.by_provider).length > 0 ? (
           <ProviderPerformance data={metrics.by_provider} />
-        )}
-
-        {/* Chat Provider performance */}
-        {metrics && metrics.by_chat_provider && Object.keys(metrics.by_chat_provider).length > 0 && (
-          <>
-            <ProviderPerformance data={metrics.by_chat_provider} title="Chat Provider Performance" />
-            <CostBreakdown data={metrics.by_chat_provider} title="Cost by Chat Provider" />
-          </>
-        )}
+        ) : null}
 
         {/* Performance trend */}
         {metrics && metrics.timeline.length > 0 && (
           <PerformanceTrend timeline={metrics.timeline} />
+        )}
+
+        {/* Failure breakdown */}
+        {failureMetrics && (
+          <FailureBreakdown data={failureMetrics} />
         )}
 
         {/* Recent executions table */}

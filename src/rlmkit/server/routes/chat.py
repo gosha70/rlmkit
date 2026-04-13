@@ -822,6 +822,7 @@ async def _run_execution(
         # Add error message to session so the user can see what went wrong
         session = state.sessions.get(execution.session_id)
         if session:
+            elapsed = (now - execution.started_at).total_seconds() if execution.started_at else 0.0
             error_msg = {
                 "id": str(uuid.uuid4()),
                 "role": "assistant",
@@ -830,6 +831,14 @@ async def _run_execution(
                 "execution_id": execution.execution_id,
                 "chat_provider_id": chat_provider_id,
                 "timestamp": now.isoformat(),
+                "metrics": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "cost_usd": 0.0,
+                    "elapsed_seconds": elapsed,
+                    "steps": 0,
+                },
             }
             state.add_message(execution.session_id, error_msg, chat_provider_id)
             session.updated_at = now
@@ -1249,6 +1258,11 @@ async def websocket_chat(
                         exec_rec.result = {"answer": "", "success": False, "error": str(exc)}
                         # Persist error message to session (mirrors REST path)
                         if sess:
+                            ws_elapsed = (
+                                (finish - exec_rec.started_at).total_seconds()
+                                if exec_rec.started_at
+                                else 0.0
+                            )
                             error_msg = {
                                 "id": str(uuid.uuid4()),
                                 "role": "assistant",
@@ -1257,6 +1271,14 @@ async def websocket_chat(
                                 "execution_id": exec_rec.execution_id,
                                 "chat_provider_id": cp_id,
                                 "timestamp": finish.isoformat(),
+                                "metrics": {
+                                    "input_tokens": 0,
+                                    "output_tokens": 0,
+                                    "total_tokens": 0,
+                                    "cost_usd": 0.0,
+                                    "elapsed_seconds": ws_elapsed,
+                                    "steps": 0,
+                                },
                             }
                             state.add_message(sess.id, error_msg, cp_id)
                             sess.updated_at = finish

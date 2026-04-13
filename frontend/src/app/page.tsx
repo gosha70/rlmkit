@@ -75,6 +75,13 @@ export default function ChatPage() {
   const [hydrated, setHydrated] = useState(false);
 
   // Hydrate from localStorage after mount to avoid SSR/client mismatch
+  // Track whether the provider-filter effect has seen the hydrated selection.
+  // Without this, React may batch setSelectedChatProviderIds and setHydrated
+  // together, causing the filter effect to see hydrated=true but still the
+  // initial empty [] for selectedChatProviderIds — then it overwrites the
+  // restored selection with the first available provider.
+  const selectionHydratedRef = useRef(false);
+
   useEffect(() => {
     try {
       const sid = localStorage.getItem("rlmkit_active_session");
@@ -82,7 +89,13 @@ export default function ChatPage() {
     } catch {}
     try {
       const saved = localStorage.getItem("rlmkit_selected_chat_providers");
-      if (saved) setSelectedChatProviderIds(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedChatProviderIds(parsed);
+          selectionHydratedRef.current = true;
+        }
+      }
     } catch {}
     try {
       const saved = localStorage.getItem("rlmkit-cp-order");
@@ -218,6 +231,13 @@ export default function ChatPage() {
   useEffect(() => {
     if (!hydrated) return;
     if (chatProviders.length === 0) return;
+    // On the first run after hydration, if a selection was restored from
+    // localStorage, skip the filter — React may not have flushed the
+    // hydrated selection into selectedChatProviderIds yet.
+    if (selectionHydratedRef.current) {
+      selectionHydratedRef.current = false;
+      return;
+    }
     let availableIds: Set<string>;
     if (llmProviders.length > 0) {
       const providerMap = new Map(llmProviders.map((p) => [p.id, p]));
@@ -609,6 +629,7 @@ export default function ChatPage() {
             delete execMapRef.current[executionId];
             pendingCountRef.current = Math.max(0, pendingCountRef.current - 1);
 
+            const errorAnswer = trace.result?.answer || "Error: Execution failed";
             setTurns((prev) =>
               prev.map((turn) =>
                 turn.id === turnId
@@ -618,8 +639,21 @@ export default function ChatPage() {
                         ...turn.responses,
                         [chatProviderId]: {
                           ...turn.responses[chatProviderId],
-                          content: `Error: ${trace.result?.answer || "Execution failed"}`,
+                          content: errorAnswer,
                           isStreaming: false,
+                          metrics: {
+                            input_tokens: trace.result?.input_tokens ?? 0,
+                            output_tokens: trace.result?.output_tokens ?? 0,
+                            total_tokens: trace.result?.input_tokens ?? 0,
+                            cost_usd: trace.result?.total_cost ?? 0,
+                            elapsed_seconds:
+                              trace.completed_at && trace.started_at
+                                ? (new Date(trace.completed_at).getTime() -
+                                    new Date(trace.started_at).getTime()) /
+                                  1000
+                                : 0,
+                            steps: 0,
+                          },
                         },
                       },
                     }
@@ -1101,7 +1135,7 @@ export default function ChatPage() {
                                         </button>
                                       )}
                                     </div>
-                                    {judgeScores[resp.executionId] && (
+                                    {judgeScores[resp.executionId] && judgeScores[resp.executionId].overall_score > 0 && (
                                       <JudgeScores
                                         dimensions={judgeScores[resp.executionId].dimensions}
                                         overallScore={judgeScores[resp.executionId].overall_score}
@@ -1147,18 +1181,27 @@ export default function ChatPage() {
                         ([, r]) => r?.metrics,
                       );
                       if (completed.length < 2) return null;
-                      const cheapest = completed.reduce((a, b) =>
-                        a[1].metrics!.cost_usd <= b[1].metrics!.cost_usd ? a : b,
-                      );
-                      const fastest = completed.reduce((a, b) =>
-                        a[1].metrics!.elapsed_seconds <= b[1].metrics!.elapsed_seconds ? a : b,
-                      );
+                      // Separate usable responses from failures/errors.
+                      // Failed responses start with ⚠️ or "Error:" — they
+                      // should appear in the summary but not compete for
+                      // Cheapest/Fastest/Best Quality rankings.
+                      const isUsable = (r: typeof completed[0][1]) =>
+                        r.content && !r.content.startsWith("⚠️") && !r.content.startsWith("Error:");
+                      const usable = completed.filter(([, r]) => isUsable(r));
+                      const cheapest = usable.length > 0
+                        ? usable.reduce((a, b) => a[1].metrics!.cost_usd <= b[1].metrics!.cost_usd ? a : b)
+                        : null;
+                      const fastest = usable.length > 0
+                        ? usable.reduce((a, b) => a[1].metrics!.elapsed_seconds <= b[1].metrics!.elapsed_seconds ? a : b)
+                        : null;
                       return (
                         <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
                           <div className="flex gap-6">
                             {completed.map(([cpId, r]) => (
                               <div key={cpId} className="space-y-0.5">
-                                <span className="font-medium text-foreground">{r.chatProviderName}</span>
+                                <span className={`font-medium ${isUsable(r) ? "text-foreground" : "text-destructive"}`}>
+                                  {r.chatProviderName}{!isUsable(r) ? " (failed)" : ""}
+                                </span>
                                 <div>
                                   {r.metrics!.total_tokens.toLocaleString()} tokens
                                   {" · "}${r.metrics!.cost_usd.toFixed(4)}
@@ -1167,18 +1210,20 @@ export default function ChatPage() {
                               </div>
                             ))}
                           </div>
+                          {(cheapest || fastest) && (
                           <p className="mt-1">
-                            Cheapest:{" "}
+                            {cheapest && (<>Cheapest:{" "}
                             <span className="font-medium text-emerald-600 dark:text-emerald-400">
                               {cheapest[1].chatProviderName}
-                            </span>
-                            {" · "}Fastest:{" "}
+                            </span></>)}
+                            {cheapest && fastest && " · "}
+                            {fastest && (<>Fastest:{" "}
                             <span className="font-medium text-blue-600 dark:text-blue-400">
                               {fastest[1].chatProviderName}
-                            </span>
+                            </span></>)}
                             {(() => {
-                              // Find best quality from judge scores
-                              const scored = completed
+                              // Find best quality from judge scores, excluding failures
+                              const scored = usable
                                 .filter(([, r]) => judgeScores[r.executionId])
                                 .map(([, r]) => ({
                                   name: r.chatProviderName,
@@ -1198,6 +1243,7 @@ export default function ChatPage() {
                               );
                             })()}
                           </p>
+                          )}
                           <div className="mt-2 flex items-center gap-3">
                             <PickWinner
                               sessionId={sessionId || ""}

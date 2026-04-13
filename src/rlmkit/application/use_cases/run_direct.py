@@ -12,7 +12,50 @@ import time
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
+from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
 from rlmkit.prompts import get_mode_system_prompt
+
+
+def _format_error_answer(error_str: str) -> str:
+    """Return a user-facing ⚠️ warning for the error, with actionable fix for known categories."""
+    error_lower = error_str.lower()
+    if (
+        error_str.startswith(TIMEOUT_ERROR_PREFIX)
+        or "timeout" in error_lower
+        or "timed out" in error_lower
+    ):
+        return (
+            "⚠️ **LLM request timed out**.\n\n"
+            "The model did not respond within the configured timeout.\n\n"
+            "**How to fix** — in Settings → Profile → Runtime Settings:\n"
+            "- Increase **Timeout (s)** (try 300 or higher for large documents)."
+        )
+    if (
+        "context window" in error_lower
+        or "context_length" in error_lower
+        or "contextwindowexceeded" in error_lower
+        or "prompt is too long" in error_lower
+        or "maximum context length" in error_lower
+    ):
+        return (
+            "⚠️ **Context window exceeded**.\n\n"
+            "The document is too large for this model's context limit.\n\n"
+            "**How to fix:**\n"
+            "- Use a model with a larger context window.\n"
+            "- Or reduce the document size (fewer/smaller files).\n"
+            "- Or use RAG mode, which retrieves only relevant chunks."
+        )
+    if "cannot connect" in error_lower or "connection" in error_lower:
+        return (
+            "⚠️ **Cannot connect to LLM server**.\n\n"
+            f"{error_str}\n\n"
+            "**How to fix:**\n"
+            "- Check that the LLM server is running and reachable.\n"
+            "- Verify the endpoint URL in Settings → LLM Providers."
+        )
+    # Fallback: show the raw error with a warning icon so the user
+    # always sees what went wrong instead of "Execution failed".
+    return f"⚠️ **Execution error**.\n\n{error_str}"
 
 
 class RunDirectUseCase:
@@ -101,24 +144,9 @@ class RunDirectUseCase:
             )
         except Exception as exc:
             elapsed = time.time() - start
-            from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
-
             error_str = str(exc)
-            error_lower = error_str.lower()
-            answer = ""
-            if (
-                error_str.startswith(TIMEOUT_ERROR_PREFIX)
-                or "timeout" in error_lower
-                or "timed out" in error_lower
-            ):
-                answer = (
-                    "⚠️ **LLM request timed out**.\n\n"
-                    "The model did not respond within the configured timeout.\n\n"
-                    "**How to fix** — in Settings → Profile → Runtime Settings:\n"
-                    "- Increase **Timeout (s)** (try 300 or higher for large documents)."
-                )
             return RunResultDTO(
-                answer=answer,
+                answer=_format_error_answer(error_str),
                 mode_used="direct",
                 success=False,
                 error=error_str,
@@ -216,24 +244,9 @@ class RunDirectUseCase:
             )
         except Exception as exc:
             elapsed = time.time() - start
-            from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
-
             error_str = str(exc)
-            error_lower = error_str.lower()
-            answer = ""
-            if (
-                error_str.startswith(TIMEOUT_ERROR_PREFIX)
-                or "timeout" in error_lower
-                or "timed out" in error_lower
-            ):
-                answer = (
-                    "⚠️ **LLM request timed out**.\n\n"
-                    "The model did not respond within the configured timeout.\n\n"
-                    "**How to fix** — in Settings → Profile → Runtime Settings:\n"
-                    "- Increase **Timeout (s)** (try 300 or higher for large documents)."
-                )
             return RunResultDTO(
-                answer=answer,
+                answer=_format_error_answer(error_str),
                 mode_used="direct",
                 success=False,
                 error=error_str,

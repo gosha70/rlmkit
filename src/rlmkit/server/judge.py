@@ -23,10 +23,11 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
-# Auto-scores for non-usable outcomes (1-5 scale, matching LLM judge output).
-# 1 (worst) for hard failures, 2 for budget exhaustion with partial content.
-AUTO_SCORE_FAILURE = 1.0
-AUTO_SCORE_BUDGET_PARTIAL = 2.0
+# Auto-scores for non-usable outcomes.
+# 0 for hard failures (not scored at all — excluded from quality math).
+# 1 for budget exhaustion with partial content (minimal credit).
+AUTO_SCORE_FAILURE = 0.0
+AUTO_SCORE_BUDGET_PARTIAL = 1.0
 # Minimum answer length to qualify as a "partial" budget-exhausted answer
 # rather than an empty failure. 50 chars covers a short sentence but
 # excludes bare error prefixes like "Error: ...".
