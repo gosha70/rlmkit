@@ -12,6 +12,7 @@ from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.embedding_port import EmbeddingPort
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.storage_port import StoragePort
+from rlmkit.application.sandbox_vars import MODE_RAG
 from rlmkit.prompts import get_mode_system_prompt
 
 
@@ -176,7 +177,7 @@ class RunRAGUseCase:
 
             return RunResultDTO(
                 answer=response.content,
-                mode_used="rag",
+                mode_used=MODE_RAG,
                 success=True,
                 steps=1,
                 input_tokens=response.input_tokens + embed_tokens,
@@ -205,7 +206,7 @@ class RunRAGUseCase:
             answer = _format_rag_warning(exc, error_msg)
             return RunResultDTO(
                 answer=answer,
-                mode_used="rag",
+                mode_used=MODE_RAG,
                 success=False,
                 error=error_msg,
                 elapsed_time=elapsed,

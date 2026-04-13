@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from rlmkit.application.dto import RunConfigDTO
+from rlmkit.application.sandbox_vars import MODE_COMPARE, MODE_RAG, MODE_RLM
 from rlmkit.application.use_cases.run_matrix_comparison import (
     MatrixComparisonResultDTO,
     MatrixSlotDTO,
@@ -126,7 +127,7 @@ async def compare_matrix(
         "content": req.query,
         "file_id": effective_file_ids[0] if effective_file_ids else None,
         "file_ids": effective_file_ids,
-        "mode": "compare",  # matrix mode marker for UI
+        "mode": MODE_COMPARE,  # matrix mode marker for UI
         "chat_provider_id": None,  # fan-out across multiple providers
         "timestamp": started_at.isoformat(),
     }
@@ -173,12 +174,12 @@ async def compare_matrix(
             # Each slot gets its own LLM adapter so one slot's streaming
             # state cannot bleed into another's.
             llm = state.create_llm_adapter_for_chat_provider(cp_id)
-            sandbox = state.create_sandbox() if mode == "rlm" else None
+            sandbox = state.create_sandbox() if mode == MODE_RLM else None
 
             embedder = None
             storage = None
             slot_extra: dict[str, object] = {}
-            if mode == "rag":
+            if mode == MODE_RAG:
                 embedding_api_key = _resolve_embedding_api_key(state, cp)
                 rag_cfg = state.config.mode_config.rag_config
                 embedder = LiteLLMEmbeddingAdapter(
@@ -441,7 +442,7 @@ def _build_slot_run_config(
     run_config = state.create_run_config(mode=mode)
 
     # Apply per-provider RLM knobs the same way /api/chat does.
-    if mode == "rlm":
+    if mode == MODE_RLM:
         run_config.max_steps = cp.rlm_max_steps
         run_config.max_time_seconds = float(cp.rlm_timeout_seconds)
         run_config.repeat_limit = cp.rlm_repeat_limit
@@ -451,7 +452,7 @@ def _build_slot_run_config(
             if profile:
                 from rlmkit.server.routes.chat import _resolve_profile_prompt
 
-                prompt_extra = _resolve_profile_prompt(profile, "rlm")
+                prompt_extra = _resolve_profile_prompt(profile, MODE_RLM)
                 if prompt_extra:
                     run_config.system_prompt_extra = prompt_extra
 

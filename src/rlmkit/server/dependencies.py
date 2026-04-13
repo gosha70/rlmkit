@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from rlmkit.application.dto import RunConfigDTO
+from rlmkit.application.sandbox_vars import MODE_AUTO, MODE_DIRECT, MODE_RAG, MODE_RLM
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 from rlmkit.server.models import (
@@ -249,7 +250,7 @@ class AppState:
                     name=f"{mode_label}-{pc.provider.upper()}",
                     llm_provider=pc.provider,
                     llm_model=pc.model,
-                    execution_mode="direct",
+                    execution_mode=MODE_DIRECT,
                     profile_id="builtin-accurate",
                     runtime_settings=pc.runtime_settings.model_copy(),
                     created_at=now,
@@ -350,9 +351,9 @@ class AppState:
         for cp in self.config.chat_providers:
             if cp.profile_id:
                 continue
-            if cp.execution_mode == "rlm":
+            if cp.execution_mode == MODE_RLM:
                 cp.profile_id = "builtin-rlm-deep"
-            elif cp.execution_mode == "rag":
+            elif cp.execution_mode == MODE_RAG:
                 cp.profile_id = "builtin-rag"
             else:
                 cp.profile_id = "builtin-accurate"
@@ -900,7 +901,7 @@ class AppState:
             sandbox_type = "subprocess"
         return create_sandbox(sandbox_type=sandbox_type)
 
-    def create_run_config(self, mode: str = "auto") -> RunConfigDTO:
+    def create_run_config(self, mode: str = MODE_AUTO) -> RunConfigDTO:
         b = self.config.budget
         return RunConfigDTO(
             mode=mode,

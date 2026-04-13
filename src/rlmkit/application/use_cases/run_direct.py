@@ -12,6 +12,7 @@ import time
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
+from rlmkit.application.sandbox_vars import MODE_DIRECT
 from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
 from rlmkit.prompts import get_mode_system_prompt
 
@@ -122,7 +123,7 @@ class RunDirectUseCase:
 
             return RunResultDTO(
                 answer=response.content,
-                mode_used="direct",
+                mode_used=MODE_DIRECT,
                 success=True,
                 steps=1,
                 input_tokens=response.input_tokens,
@@ -147,7 +148,7 @@ class RunDirectUseCase:
             error_str = str(exc)
             return RunResultDTO(
                 answer=_format_error_answer(error_str),
-                mode_used="direct",
+                mode_used=MODE_DIRECT,
                 success=False,
                 error=error_str,
                 elapsed_time=elapsed,
@@ -233,7 +234,7 @@ class RunDirectUseCase:
 
             return RunResultDTO(
                 answer=answer,
-                mode_used="direct",
+                mode_used=MODE_DIRECT,
                 success=True,
                 steps=1,
                 input_tokens=input_tokens,
@@ -247,7 +248,7 @@ class RunDirectUseCase:
             error_str = str(exc)
             return RunResultDTO(
                 answer=_format_error_answer(error_str),
-                mode_used="direct",
+                mode_used=MODE_DIRECT,
                 success=False,
                 error=error_str,
                 elapsed_time=elapsed,

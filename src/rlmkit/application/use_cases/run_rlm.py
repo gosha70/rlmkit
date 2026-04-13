@@ -22,6 +22,7 @@ from rlmkit.application.dto import (
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.sandbox_port import SandboxPort
+from rlmkit.application.sandbox_vars import MODE_RLM
 from rlmkit.domain.entities import BudgetConfig, BudgetState
 from rlmkit.domain.exceptions import BudgetExceededError
 from rlmkit.prompts import get_rlm_message
@@ -323,7 +324,7 @@ class RunRLMUseCase:
                     elapsed = time.time() - start
                     return RunResultDTO(
                         answer=self._extract_final_answer(parsed),
-                        mode_used="rlm",
+                        mode_used=MODE_RLM,
                         success=True,
                         steps=budget_state.steps,
                         input_tokens=cumulative_input,
@@ -531,7 +532,7 @@ class RunRLMUseCase:
                             elapsed = time.time() - start
                             return RunResultDTO(
                                 answer=answer,
-                                mode_used="rlm",
+                                mode_used=MODE_RLM,
                                 success=True,
                                 steps=budget_state.steps,
                                 input_tokens=cumulative_input,
@@ -558,7 +559,7 @@ class RunRLMUseCase:
                             answer = self._extract_final(last_plain_answer) or last_plain_answer
                             return RunResultDTO(
                                 answer=answer,
-                                mode_used="rlm",
+                                mode_used=MODE_RLM,
                                 success=True,
                                 steps=budget_state.steps,
                                 input_tokens=cumulative_input,
@@ -600,7 +601,7 @@ class RunRLMUseCase:
                 answer = self._extract_final(best_fallback) or best_fallback
                 return RunResultDTO(
                     answer=answer,
-                    mode_used="rlm",
+                    mode_used=MODE_RLM,
                     success=True,
                     steps=budget_state.steps,
                     input_tokens=cumulative_input,
@@ -666,7 +667,7 @@ class RunRLMUseCase:
                     elapsed = time.time() - start
                     return RunResultDTO(
                         answer=answer,
-                        mode_used="rlm",
+                        mode_used=MODE_RLM,
                         success=True,
                         steps=budget_state.steps,
                         input_tokens=cumulative_input,
@@ -687,7 +688,7 @@ class RunRLMUseCase:
                     steps_used=budget_state.steps,
                     config=budget_config,
                 ),
-                mode_used="rlm",
+                mode_used=MODE_RLM,
                 success=True,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
@@ -744,7 +745,7 @@ class RunRLMUseCase:
                     if not self._looks_like_action(answer) and answer != prior_plain:
                         return RunResultDTO(
                             answer=answer,
-                            mode_used="rlm",
+                            mode_used=MODE_RLM,
                             success=True,
                             steps=budget_state.steps,
                             input_tokens=cumulative_input,
@@ -762,7 +763,7 @@ class RunRLMUseCase:
             answer = (partial + "\n\n---\n\n" + warning) if partial else warning
             return RunResultDTO(
                 answer=answer,
-                mode_used="rlm",
+                mode_used=MODE_RLM,
                 success=True,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
@@ -790,7 +791,7 @@ class RunRLMUseCase:
                 answer = (partial + "\n\n---\n\n" + warning) if partial else warning
                 return RunResultDTO(
                     answer=answer,
-                    mode_used="rlm",
+                    mode_used=MODE_RLM,
                     success=True,
                     steps=budget_state.steps,
                     input_tokens=cumulative_input,
@@ -814,7 +815,7 @@ class RunRLMUseCase:
                 )
                 return RunResultDTO(
                     answer=answer,
-                    mode_used="rlm",
+                    mode_used=MODE_RLM,
                     success=False,
                     error=error_str,
                     steps=budget_state.steps,
@@ -826,7 +827,7 @@ class RunRLMUseCase:
                 )
             return RunResultDTO(
                 answer="",
-                mode_used="rlm",
+                mode_used=MODE_RLM,
                 success=False,
                 error=error_str,
                 steps=budget_state.steps,
@@ -1126,7 +1127,7 @@ class RunRLMUseCase:
                     elapsed = time.time() - start
                     return RunResultDTO(
                         answer=self._extract_final_answer(parsed),
-                        mode_used="rlm",
+                        mode_used=MODE_RLM,
                         success=True,
                         steps=budget_state.steps,
                         input_tokens=cumulative_input,
@@ -1333,7 +1334,7 @@ class RunRLMUseCase:
                             elapsed = time.time() - start
                             return RunResultDTO(
                                 answer=answer,
-                                mode_used="rlm",
+                                mode_used=MODE_RLM,
                                 success=True,
                                 steps=budget_state.steps,
                                 input_tokens=cumulative_input,
@@ -1358,7 +1359,7 @@ class RunRLMUseCase:
                             answer = self._extract_final(last_plain_answer) or last_plain_answer
                             return RunResultDTO(
                                 answer=answer,
-                                mode_used="rlm",
+                                mode_used=MODE_RLM,
                                 success=True,
                                 steps=budget_state.steps,
                                 input_tokens=cumulative_input,
@@ -1395,7 +1396,7 @@ class RunRLMUseCase:
                 answer = self._extract_final(best_fallback) or best_fallback
                 return RunResultDTO(
                     answer=answer,
-                    mode_used="rlm",
+                    mode_used=MODE_RLM,
                     success=True,
                     steps=budget_state.steps,
                     input_tokens=cumulative_input,
@@ -1461,7 +1462,7 @@ class RunRLMUseCase:
                     elapsed = time.time() - start
                     return RunResultDTO(
                         answer=answer,
-                        mode_used="rlm",
+                        mode_used=MODE_RLM,
                         success=True,
                         steps=budget_state.steps,
                         input_tokens=cumulative_input,
@@ -1482,7 +1483,7 @@ class RunRLMUseCase:
                     steps_used=budget_state.steps,
                     config=budget_config,
                 ),
-                mode_used="rlm",
+                mode_used=MODE_RLM,
                 success=True,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
@@ -1545,7 +1546,7 @@ class RunRLMUseCase:
                     if not self._looks_like_action(answer) and answer != prior_plain:
                         return RunResultDTO(
                             answer=answer,
-                            mode_used="rlm",
+                            mode_used=MODE_RLM,
                             success=True,
                             steps=budget_state.steps,
                             input_tokens=cumulative_input,
@@ -1563,7 +1564,7 @@ class RunRLMUseCase:
             answer = (partial + "\n\n---\n\n" + warning) if partial else warning
             return RunResultDTO(
                 answer=answer,
-                mode_used="rlm",
+                mode_used=MODE_RLM,
                 success=True,
                 steps=budget_state.steps,
                 input_tokens=cumulative_input,
@@ -1591,7 +1592,7 @@ class RunRLMUseCase:
                 answer = (partial + "\n\n---\n\n" + warning) if partial else warning
                 return RunResultDTO(
                     answer=answer,
-                    mode_used="rlm",
+                    mode_used=MODE_RLM,
                     success=True,
                     steps=budget_state.steps,
                     input_tokens=cumulative_input,
@@ -1615,7 +1616,7 @@ class RunRLMUseCase:
                 )
                 return RunResultDTO(
                     answer=answer,
-                    mode_used="rlm",
+                    mode_used=MODE_RLM,
                     success=False,
                     error=error_str,
                     steps=budget_state.steps,
@@ -1627,7 +1628,7 @@ class RunRLMUseCase:
                 )
             return RunResultDTO(
                 answer="",
-                mode_used="rlm",
+                mode_used=MODE_RLM,
                 success=False,
                 error=error_str,
                 steps=budget_state.steps,

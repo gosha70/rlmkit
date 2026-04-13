@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from rlmkit.application.sandbox_vars import (
+    MODE_AUTO,
+    MODE_DIRECT,
     RLM_DEFAULT_MAX_COST_USD,
     RLM_DEFAULT_MAX_RECURSION_DEPTH,
     RLM_DEFAULT_MAX_STEPS,
@@ -426,7 +428,7 @@ class ModeConfig(BaseModel):
     """Mode selection and per-mode settings."""
 
     enabled_modes: list[str] = Field(default_factory=lambda: ["direct", "rlm"])
-    default_mode: str = "auto"
+    default_mode: str = MODE_AUTO
     rag_config: RAGConfig = Field(default_factory=RAGConfig)
     rlm_max_steps: int = RLM_DEFAULT_MAX_STEPS
     rlm_timeout_seconds: int = RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
@@ -587,7 +589,7 @@ class RunProfile(BaseModel):
     id: str
     name: str
     description: str = ""
-    strategy: str = "direct"
+    strategy: str = MODE_DIRECT
     default_provider: str | None = None
     providers_enabled: list[str] = Field(default_factory=list)
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
@@ -602,7 +604,7 @@ class RunProfileCreate(BaseModel):
 
     name: str
     description: str = ""
-    strategy: str = "direct"
+    strategy: str = MODE_DIRECT
     default_provider: str | None = None
     providers_enabled: list[str] = Field(default_factory=list)
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
