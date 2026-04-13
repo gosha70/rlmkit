@@ -23,9 +23,8 @@ logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
-# Auto-scores for non-usable outcomes (1-5 scale).
-# Using 1 (worst) for hard failures and 2 for budget exhaustion with partial content.
 # Auto-scores for non-usable outcomes (1-5 scale, matching LLM judge output).
+# 1 (worst) for hard failures, 2 for budget exhaustion with partial content.
 AUTO_SCORE_FAILURE = 1.0
 AUTO_SCORE_BUDGET_PARTIAL = 2.0
 # Minimum answer length to qualify as a "partial" budget-exhausted answer
