@@ -11,6 +11,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT, MODE_RAG, MODE_RLM
 from rlmkit.ui.components.navigation import render_custom_navigation
 from rlmkit.ui.components.session_summary import render_session_summary
 from rlmkit.ui.services.chat_manager import ChatManager
@@ -746,7 +747,7 @@ def _render_execution_result(result, message: dict, message_index: int, tab_inde
     suffix_key = f"{message_index}_{tab_index}"
 
     # Build a synthetic message dict for the existing renderers
-    if mode == "rlm":
+    if mode == MODE_RLM:
         synth = {
             "rlm_response": result.response,
             "rlm_metrics": result.metrics,
@@ -754,14 +755,14 @@ def _render_execution_result(result, message: dict, message_index: int, tab_inde
             "rlm_user_rating": message.get(f"rating_{suffix_key}", 5),
         }
         render_rlm_response(synth, message_index=int(f"{message_index}{tab_index}"))
-    elif mode == "direct":
+    elif mode == MODE_DIRECT:
         synth = {
             "direct_response": result.response,
             "direct_metrics": result.metrics,
             "direct_user_rating": message.get(f"rating_{suffix_key}", 5),
         }
         render_direct_response(synth, message_index=int(f"{message_index}{tab_index}"))
-    elif mode == "rag":
+    elif mode == MODE_RAG:
         synth = {
             "rag_response": result.response,
             "rag_metrics": result.metrics,

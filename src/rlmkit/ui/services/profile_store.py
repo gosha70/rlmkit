@@ -17,7 +17,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+from rlmkit.application.sandbox_vars import (
+    MODE_DIRECT,
+    MODE_RAG,
+    MODE_RLM,
+    RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+)
 
 
 @dataclass
@@ -31,7 +36,7 @@ class RunProfile:
     run_mode: str = "single"
     """'single' or 'compare'."""
 
-    strategy: str = "direct"
+    strategy: str = MODE_DIRECT
     """'direct', 'rlm', or 'rag' (only used in single mode)."""
 
     default_provider: str | None = None
@@ -81,7 +86,11 @@ class RunProfile:
         custom = filtered.get("system_prompt_custom")
         if isinstance(custom, str):
             # Old format was a single string; apply it to all modes
-            filtered["system_prompt_custom"] = {"direct": custom, "rag": custom, "rlm": custom}
+            filtered["system_prompt_custom"] = {
+                MODE_DIRECT: custom,
+                MODE_RAG: custom,
+                MODE_RLM: custom,
+            }
         return cls(**filtered)
 
 
@@ -92,7 +101,7 @@ class RunProfile:
 BUILTIN_PROFILES: list[RunProfile] = [
     RunProfile(
         name="Fast & cheap",
-        strategy="direct",
+        strategy=MODE_DIRECT,
         temperature=0.5,
         max_output_tokens=1000,
         max_steps=8,
@@ -100,14 +109,14 @@ BUILTIN_PROFILES: list[RunProfile] = [
     ),
     RunProfile(
         name="Accurate",
-        strategy="direct",
+        strategy=MODE_DIRECT,
         temperature=0.2,
         max_output_tokens=4000,
         top_p=0.95,
     ),
     RunProfile(
         name="RLM deep",
-        strategy="rlm",
+        strategy=MODE_RLM,
         max_steps=32,
         rlm_timeout_seconds=RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
         temperature=0.4,
@@ -193,18 +202,18 @@ def load_custom_prompts(path: Path | None = None) -> dict[str, str]:
     """
     p = Path(path) if path else _DEFAULT_CUSTOM_PROMPTS_PATH
     if not p.exists():
-        return {"direct": "", "rag": "", "rlm": ""}
+        return {MODE_DIRECT: "", MODE_RAG: "", MODE_RLM: ""}
     try:
         with open(p) as f:
             data = json.load(f)
         # Ensure all keys exist
         return {
-            "direct": data.get("direct", ""),
-            "rag": data.get("rag", ""),
-            "rlm": data.get("rlm", ""),
+            MODE_DIRECT: data.get(MODE_DIRECT, ""),
+            MODE_RAG: data.get(MODE_RAG, ""),
+            MODE_RLM: data.get(MODE_RLM, ""),
         }
     except (OSError, json.JSONDecodeError):
-        return {"direct": "", "rag": "", "rlm": ""}
+        return {MODE_DIRECT: "", MODE_RAG: "", MODE_RLM: ""}
 
 
 def save_custom_prompts(

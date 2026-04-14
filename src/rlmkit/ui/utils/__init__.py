@@ -2,6 +2,8 @@
 
 from typing import Any  # noqa: F401 — re-exported
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT, MODE_RLM
+
 # Constants for UI
 APP_TITLE = "RLMKit Chat Studio"
 APP_DESCRIPTION = "Interactive chat comparing RLM with Direct LLM"
@@ -28,8 +30,8 @@ EXECUTION_MODES = {
 
 # Color scheme
 COLORS = {
-    "rlm": "#3B82F6",  # Blue
-    "direct": "#10B981",  # Green
+    MODE_RLM: "#3B82F6",  # Blue
+    MODE_DIRECT: "#10B981",  # Green
     "comparison": "#A855F7",  # Purple
     "success": "#22C55E",  # Light green
     "error": "#EF4444",  # Red

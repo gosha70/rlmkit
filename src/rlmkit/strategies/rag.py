@@ -6,6 +6,13 @@
 import math
 import time
 
+from rlmkit.application.sandbox_vars import (
+    MODE_RAG,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_MODE,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_STEP,
+)
 from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.core.rlm import LLMClient
 from rlmkit.prompts import get_mode_system_prompt
@@ -32,7 +39,7 @@ class RAGStrategy:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.top_k = top_k
-        self.system_prompt = system_prompt or get_mode_system_prompt("rag")
+        self.system_prompt = system_prompt or get_mode_system_prompt(MODE_RAG)
 
     @property
     def name(self) -> str:
@@ -46,7 +53,7 @@ class RAGStrategy:
             chunks = self._chunk_content(content)
             if not chunks:
                 return StrategyResult(
-                    strategy="rag",
+                    strategy=MODE_RAG,
                     answer="",
                     success=False,
                     error="No chunks produced from content",
@@ -73,7 +80,7 @@ class RAGStrategy:
 
         except Exception as e:
             return StrategyResult(
-                strategy="rag",
+                strategy=MODE_RAG,
                 answer="",
                 success=False,
                 error=str(e),
@@ -92,20 +99,25 @@ class RAGStrategy:
         embedding_tokens = estimate_tokens(embedding_input)
 
         return StrategyResult(
-            strategy="rag",
+            strategy=MODE_RAG,
             answer=answer,
             steps=1,
             tokens=tokens,
             elapsed_time=elapsed,
             trace=[
                 {
-                    "step": 1,
-                    "role": "retrieval",
+                    TRACE_KEY_STEP: 1,
+                    TRACE_KEY_ROLE: "retrieval",
                     "chunks_total": len(chunks),
                     "chunks_retrieved": len(top_chunks),
                     "top_scores": [round(s, 4) for s, _ in top_chunks],
                 },
-                {"step": 2, "role": "assistant", "content": answer, "mode": "rag"},
+                {
+                    TRACE_KEY_STEP: 2,
+                    TRACE_KEY_ROLE: "assistant",
+                    TRACE_KEY_CONTENT: answer,
+                    TRACE_KEY_MODE: MODE_RAG,
+                },
             ],
             metadata={
                 "chunks_total": len(chunks),

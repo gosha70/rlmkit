@@ -16,6 +16,14 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ..application.sandbox_vars import (
+    MODE_DIRECT,
+    MODE_RLM,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_MODE,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_STEP,
+)
 from ..config import RLMConfig
 from ..envs.pyrepl_env import PyReplEnv
 from ..prompts import format_system_prompt, get_mode_system_prompt, get_rlm_message
@@ -501,7 +509,7 @@ class RLM:
         messages = []
 
         if system_prompt is None:
-            system_prompt = get_mode_system_prompt("direct")
+            system_prompt = get_mode_system_prompt(MODE_DIRECT)
 
         messages.append({"role": "system", "content": system_prompt})
 
@@ -519,7 +527,14 @@ class RLM:
             return RLMResult(
                 answer=response,
                 steps=0,  # Direct mode = 0 steps
-                trace=[{"step": 0, "role": "assistant", "content": response, "mode": "direct"}],
+                trace=[
+                    {
+                        TRACE_KEY_STEP: 0,
+                        TRACE_KEY_ROLE: "assistant",
+                        TRACE_KEY_CONTENT: response,
+                        TRACE_KEY_MODE: MODE_DIRECT,
+                    }
+                ],
                 success=True,
             )
         except Exception as e:
@@ -565,7 +580,7 @@ class RLM:
                 rlm_tokens.add_input(estimate_tokens(prompt + query))
 
                 comparison.rlm_metrics = ExecutionMetrics(
-                    mode="rlm",
+                    mode=MODE_RLM,
                     answer=rlm_result.answer,
                     steps=rlm_result.steps,
                     tokens=rlm_tokens,
@@ -577,7 +592,7 @@ class RLM:
             except Exception as e:
                 rlm_elapsed = time.time() - rlm_start
                 comparison.rlm_metrics = ExecutionMetrics(
-                    mode="rlm",
+                    mode=MODE_RLM,
                     answer="",
                     steps=0,
                     tokens=TokenUsage(),
@@ -599,7 +614,7 @@ class RLM:
             direct_tokens.add_output(estimate_tokens(direct_result.answer))
 
             comparison.direct_metrics = ExecutionMetrics(
-                mode="direct",
+                mode=MODE_DIRECT,
                 answer=direct_result.answer,
                 steps=0,
                 tokens=direct_tokens,
@@ -611,7 +626,7 @@ class RLM:
         except Exception as e:
             direct_elapsed = time.time() - direct_start
             comparison.direct_metrics = ExecutionMetrics(
-                mode="direct",
+                mode=MODE_DIRECT,
                 answer="",
                 steps=0,
                 tokens=TokenUsage(),

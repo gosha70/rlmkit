@@ -12,7 +12,12 @@ from typing import Any
 from uuid import uuid4
 
 from rlmkit.application.dto import RunConfigDTO
-from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+from rlmkit.application.sandbox_vars import (
+    MODE_DIRECT,
+    MODE_RAG,
+    MODE_RLM,
+    RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+)
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 from rlmkit.infrastructure.llm import AnthropicAdapter, OllamaAdapter, OpenAIAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
@@ -366,12 +371,12 @@ class ChatManager:
             # Prepare content (use file_context if provided)
             content = file_context or "No content provided"
             run_config = RunConfigDTO(
-                mode="rlm",
+                mode=MODE_RLM,
                 max_steps=int(self.session_state.get("max_steps", 16)),
                 max_time_seconds=float(
                     self.session_state.get("rlm_timeout", RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS)
                 ),
-                system_prompt_extra=resolve_system_prompt("rlm", self.session_state),
+                system_prompt_extra=resolve_system_prompt(MODE_RLM, self.session_state),
             )
 
             # Run RLM
@@ -415,7 +420,7 @@ class ChatManager:
                 memory_peak_mb=peak_memory,
                 success=rlm_result.success,
                 error=rlm_result.error,
-                execution_type="rlm",
+                execution_type=MODE_RLM,
             )
 
             return {
@@ -440,7 +445,7 @@ class ChatManager:
                 memory_used_mb=0.0,
                 memory_peak_mb=0.0,
                 success=False,
-                execution_type="rlm",
+                execution_type=MODE_RLM,
             )
             return {
                 "response": response,
@@ -495,7 +500,7 @@ class ChatManager:
                 prompt = user_query
 
             # Resolve system prompt for direct mode
-            sys_prompt = resolve_system_prompt("direct", self.session_state)
+            sys_prompt = resolve_system_prompt(MODE_DIRECT, self.session_state)
             messages: list = []
             if sys_prompt:
                 messages.append({"role": "system", "content": sys_prompt})
@@ -547,7 +552,7 @@ class ChatManager:
                 memory_used_mb=peak_memory,
                 memory_peak_mb=peak_memory,
                 success=True,
-                execution_type="direct",
+                execution_type=MODE_DIRECT,
             )
 
             return {
@@ -574,7 +579,7 @@ class ChatManager:
                 memory_used_mb=0.0,
                 memory_peak_mb=0.0,
                 success=False,
-                execution_type="direct",
+                execution_type=MODE_DIRECT,
             )
             return {
                 "response": response,
@@ -631,7 +636,7 @@ class ChatManager:
             )
 
             # Resolve system prompt for RAG mode
-            sys_prompt = resolve_system_prompt("rag", self.session_state)
+            sys_prompt = resolve_system_prompt(MODE_RAG, self.session_state)
 
             # Use IndexedRAGStrategy when vector store is available
             vector_store = self.session_state.get("vector_store")
@@ -695,7 +700,7 @@ class ChatManager:
                 memory_peak_mb=peak_memory,
                 success=result.success,
                 error=result.error,
-                execution_type="rag",
+                execution_type=MODE_RAG,
             )
 
             return {
@@ -721,7 +726,7 @@ class ChatManager:
                 memory_used_mb=0.0,
                 memory_peak_mb=0.0,
                 success=False,
-                execution_type="rag",
+                execution_type=MODE_RAG,
             )
             return {
                 "response": response,
@@ -772,15 +777,15 @@ class ChatManager:
                 mgr = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
                 cfg = mgr.get_provider_config(slot.provider_name)
                 model_name = cfg.model if cfg else slot.provider_name
-                mode_label = {"rlm": "RLM", "direct": "Direct", "rag": "RAG"}[slot.mode]
+                mode_label = {MODE_RLM: "RLM", MODE_DIRECT: "Direct", MODE_RAG: "RAG"}[slot.mode]
                 slot.label = f"{mode_label} ({model_name})"
 
             try:
-                if slot.mode == "rlm":
+                if slot.mode == MODE_RLM:
                     raw = await self._execute_rlm(user_query, file_context, slot.provider_name)
-                elif slot.mode == "direct":
+                elif slot.mode == MODE_DIRECT:
                     raw = await self._execute_direct(user_query, file_context, slot.provider_name)
-                elif slot.mode == "rag":
+                elif slot.mode == MODE_RAG:
                     raw = await self._execute_rag(
                         user_query,
                         file_context,
@@ -828,14 +833,14 @@ class ChatManager:
 
         # Populate legacy fields for backward compat
         for r in results:
-            if r.slot.mode == "rlm" and message.rlm_response is None:
+            if r.slot.mode == MODE_RLM and message.rlm_response is None:
                 message.rlm_response = r.response
                 message.rlm_metrics = r.metrics
                 message.rlm_trace = r.trace
-            elif r.slot.mode == "direct" and message.direct_response is None:
+            elif r.slot.mode == MODE_DIRECT and message.direct_response is None:
                 message.direct_response = r.response
                 message.direct_metrics = r.metrics
-            elif r.slot.mode == "rag" and message.rag_response is None:
+            elif r.slot.mode == MODE_RAG and message.rag_response is None:
                 message.rag_response = r.response
                 message.rag_metrics = r.metrics
                 message.rag_trace = r.trace

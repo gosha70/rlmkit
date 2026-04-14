@@ -8,6 +8,8 @@ from typing import Any
 
 import streamlit as st
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT, MODE_RLM
+
 
 def render_chat_message(
     content: str,
@@ -57,8 +59,8 @@ def _get_avatar(role: str) -> str:
     avatars = {
         "user": "👤",
         "assistant": "🤖",
-        "rlm": "⚙️",
-        "direct": "📋",
+        MODE_RLM: "⚙️",
+        MODE_DIRECT: "📋",
         "system": "⚙️",
     }
     return avatars.get(role, "💬")

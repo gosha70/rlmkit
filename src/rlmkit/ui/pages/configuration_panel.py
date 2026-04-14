@@ -9,7 +9,13 @@ from typing import Literal, cast
 
 import streamlit as st
 
-from rlmkit.application.sandbox_vars import RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+from rlmkit.application.sandbox_vars import (
+    MODE_COMPARE,
+    MODE_DIRECT,
+    MODE_RAG,
+    MODE_RLM,
+    RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+)
 from rlmkit.ui.app import _inject_rlmkit_desktop_css
 from rlmkit.ui.components.navigation import render_custom_navigation
 from rlmkit.ui.components.session_summary import render_session_summary
@@ -329,11 +335,11 @@ def _build_profile_from_session(name: str) -> RunProfile:
     """Capture current session settings into a RunProfile."""
     rc = st.session_state.get("rag_config") or RAGConfig()
     # Get primary strategy from selected_strategies (first one)
-    strategies = st.session_state.get("selected_strategies", ["direct"])
-    primary_strategy = strategies[0] if strategies else "direct"
+    strategies = st.session_state.get("selected_strategies", [MODE_DIRECT])
+    primary_strategy = strategies[0] if strategies else MODE_DIRECT
     return RunProfile(
         name=name,
-        run_mode="compare" if len(strategies) > 1 else "single",
+        run_mode=MODE_COMPARE if len(strategies) > 1 else "single",
         strategy=primary_strategy,
         default_provider=st.session_state.get("selected_provider"),
         temperature=st.session_state.get("default_temperature", 0.7),
@@ -403,13 +409,13 @@ def render_execution_settings() -> None:
         # Default based on existing execution_mode
         mode = st.session_state.get("execution_mode", "Direct Only")
         if mode == "RLM Only":
-            st.session_state.selected_strategies = ["rlm"]
+            st.session_state.selected_strategies = [MODE_RLM]
         elif mode == "RAG Only":
-            st.session_state.selected_strategies = ["rag"]
+            st.session_state.selected_strategies = [MODE_RAG]
         elif mode == "Compare Both":
-            st.session_state.selected_strategies = ["rlm", "direct"]
+            st.session_state.selected_strategies = [MODE_RLM, MODE_DIRECT]
         else:
-            st.session_state.selected_strategies = ["direct"]
+            st.session_state.selected_strategies = [MODE_DIRECT]
 
     # Check if OpenAI provider is configured (required for RAG embeddings)
     openai_configured = any(
@@ -423,16 +429,16 @@ def render_execution_settings() -> None:
     with col_strategies:
         st.write("**Strategies**")
         rlm_checked = st.checkbox(
-            "RLM", value="rlm" in st.session_state.selected_strategies, key="strat_rlm"
+            "RLM", value=MODE_RLM in st.session_state.selected_strategies, key="strat_rlm"
         )
         direct_checked = st.checkbox(
-            "Direct", value="direct" in st.session_state.selected_strategies, key="strat_direct"
+            "Direct", value=MODE_DIRECT in st.session_state.selected_strategies, key="strat_direct"
         )
 
         # RAG requires OpenAI for embeddings
         if openai_configured:
             rag_checked = st.checkbox(
-                "RAG", value="rag" in st.session_state.selected_strategies, key="strat_rag"
+                "RAG", value=MODE_RAG in st.session_state.selected_strategies, key="strat_rag"
             )
         else:
             rag_checked = st.checkbox("RAG", value=False, disabled=True, key="strat_rag")
@@ -441,16 +447,16 @@ def render_execution_settings() -> None:
         # Build selected list
         selected_strategies = []
         if rlm_checked:
-            selected_strategies.append("rlm")
+            selected_strategies.append(MODE_RLM)
         if direct_checked:
-            selected_strategies.append("direct")
+            selected_strategies.append(MODE_DIRECT)
         if rag_checked and openai_configured:
-            selected_strategies.append("rag")
+            selected_strategies.append(MODE_RAG)
 
         # Require at least one selection
         if not selected_strategies:
             st.warning("Select at least one strategy.")
-            selected_strategies = ["direct"]  # fallback
+            selected_strategies = [MODE_DIRECT]  # fallback
 
         st.session_state.selected_strategies = selected_strategies
 
@@ -486,19 +492,19 @@ def render_execution_settings() -> None:
     if len(selected_strategies) == 1:
         # Single mode - no ExecutionPlan needed (legacy behavior)
         st.session_state.execution_plan = None
-        mode_map = {"rlm": "RLM Only", "direct": "Direct Only", "rag": "RAG Only"}
+        mode_map = {MODE_RLM: "RLM Only", MODE_DIRECT: "Direct Only", MODE_RAG: "RAG Only"}
         st.session_state.execution_mode = mode_map.get(selected_strategies[0], "Direct Only")
     else:
         # Multi mode - build ExecutionPlan
         plan_slots = []
         for mode in selected_strategies:
-            mode_label = {"rlm": "RLM", "direct": "Direct", "rag": "RAG"}[mode]
+            mode_label = {MODE_RLM: "RLM", MODE_DIRECT: "Direct", MODE_RAG: "RAG"}[mode]
             plan_slots.append(
                 ExecutionSlot(
                     mode=cast(Literal["rlm", "direct", "rag"], mode),
                     provider_name=provider_name,
                     label=f"{mode_label} ({model_name})",
-                    rag_config=rag_cfg if mode == "rag" else None,
+                    rag_config=rag_cfg if mode == MODE_RAG else None,
                 )
             )
         st.session_state.execution_plan = ExecutionPlan(slots=plan_slots)
@@ -510,7 +516,7 @@ def render_execution_settings() -> None:
     active_strategies = set(selected_strategies)
 
     # -- Direct settings (sampling) --
-    if "direct" in active_strategies or "rlm" in active_strategies:
+    if MODE_DIRECT in active_strategies or MODE_RLM in active_strategies:
         with st.container(border=True):
             st.write("**Sampling Settings**")
             st.caption("Applies to Direct calls and each RLM step.")
@@ -556,7 +562,7 @@ def render_execution_settings() -> None:
                 st.session_state.timeout = timeout_direct
 
     # -- RLM settings --
-    if "rlm" in active_strategies:
+    if MODE_RLM in active_strategies:
         with st.container(border=True):
             st.write("**RLM Settings**")
             col1, col2 = st.columns(2)
@@ -584,7 +590,7 @@ def render_execution_settings() -> None:
                 st.session_state.rlm_timeout = rlm_timeout
 
     # -- RAG settings --
-    if "rag" in active_strategies:
+    if MODE_RAG in active_strategies:
         with st.container(border=True):
             st.write("**RAG Settings**")
             _render_rag_settings_inline()
@@ -646,7 +652,7 @@ def _render_system_prompt_settings() -> None:
         st.markdown("**Direct**")
         direct_prompt = st.text_area(
             "Direct prompt",
-            value=current_custom.get("direct", ""),
+            value=current_custom.get(MODE_DIRECT, ""),
             height=100,
             key="run_prompt_custom_direct",
             placeholder="System prompt for Direct mode…",
@@ -656,7 +662,7 @@ def _render_system_prompt_settings() -> None:
         st.markdown("**RAG**")
         rag_prompt = st.text_area(
             "RAG prompt",
-            value=current_custom.get("rag", ""),
+            value=current_custom.get(MODE_RAG, ""),
             height=100,
             key="run_prompt_custom_rag",
             placeholder="System prompt for RAG mode…",
@@ -666,7 +672,7 @@ def _render_system_prompt_settings() -> None:
         st.markdown("**RLM**")
         rlm_prompt = st.text_area(
             "RLM prompt",
-            value=current_custom.get("rlm", ""),
+            value=current_custom.get(MODE_RLM, ""),
             height=100,
             key="run_prompt_custom_rlm",
             placeholder="System prompt for RLM mode…",
@@ -675,9 +681,9 @@ def _render_system_prompt_settings() -> None:
 
         # Update session state with current values
         st.session_state.system_prompt_custom = {
-            "direct": direct_prompt,
-            "rag": rag_prompt,
-            "rlm": rlm_prompt,
+            MODE_DIRECT: direct_prompt,
+            MODE_RAG: rag_prompt,
+            MODE_RLM: rlm_prompt,
         }
 
         # Save button
@@ -698,7 +704,7 @@ def _render_system_prompt_settings() -> None:
         st.markdown("**Direct**")
         st.text_area(
             "Direct prompt",
-            value=tpl_info.get("direct", "(built-in default)"),
+            value=tpl_info.get(MODE_DIRECT, "(built-in default)"),
             height=100,
             disabled=True,
             key=f"run_prompt_tpl_direct_{selected}",
@@ -708,7 +714,7 @@ def _render_system_prompt_settings() -> None:
         st.markdown("**RAG**")
         st.text_area(
             "RAG prompt",
-            value=tpl_info.get("rag", "(built-in default)"),
+            value=tpl_info.get(MODE_RAG, "(built-in default)"),
             height=100,
             disabled=True,
             key=f"run_prompt_tpl_rag_{selected}",
@@ -718,7 +724,7 @@ def _render_system_prompt_settings() -> None:
         st.markdown("**RLM**")
         st.text_area(
             "RLM prompt",
-            value=tpl_info.get("rlm", "(built-in default)"),
+            value=tpl_info.get(MODE_RLM, "(built-in default)"),
             height=100,
             disabled=True,
             key=f"run_prompt_tpl_rlm_{selected}",

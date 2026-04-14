@@ -6,6 +6,13 @@
 import hashlib
 import time
 
+from rlmkit.application.sandbox_vars import (
+    MODE_RAG,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_MODE,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_STEP,
+)
 from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.core.rlm import LLMClient
 from rlmkit.prompts import get_mode_system_prompt
@@ -43,7 +50,7 @@ class IndexedRAGStrategy:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.top_k = top_k
-        self.system_prompt = system_prompt or get_mode_system_prompt("rag")
+        self.system_prompt = system_prompt or get_mode_system_prompt(MODE_RAG)
 
     @property
     def name(self) -> str:
@@ -93,7 +100,7 @@ class IndexedRAGStrategy:
 
             if not results:
                 return StrategyResult(
-                    strategy="rag",
+                    strategy=MODE_RAG,
                     answer="",
                     success=False,
                     error="No indexed chunks found for query",
@@ -128,20 +135,25 @@ class IndexedRAGStrategy:
         tokens.add_output(estimate_tokens(answer))
 
         return StrategyResult(
-            strategy="rag",
+            strategy=MODE_RAG,
             answer=answer,
             steps=1,
             tokens=tokens,
             elapsed_time=elapsed,
             trace=[
                 {
-                    "step": 1,
-                    "role": "retrieval",
+                    TRACE_KEY_STEP: 1,
+                    TRACE_KEY_ROLE: "retrieval",
                     "chunks_retrieved": len(results),
                     "chunks_added": chunks_added,
                     "top_scores": [round(s, 4) for s, _, _ in results],
                 },
-                {"step": 2, "role": "assistant", "content": answer, "mode": "indexed_rag"},
+                {
+                    TRACE_KEY_STEP: 2,
+                    TRACE_KEY_ROLE: "assistant",
+                    TRACE_KEY_CONTENT: answer,
+                    TRACE_KEY_MODE: "indexed_rag",
+                },
             ],
             metadata={
                 "collection": self.collection,

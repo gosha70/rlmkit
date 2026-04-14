@@ -5,6 +5,7 @@
 
 import time
 
+from rlmkit.application.sandbox_vars import MODE_RLM
 from rlmkit.config import RLMConfig
 from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.core.rlm import RLM, LLMClient
@@ -35,7 +36,7 @@ class RLMStrategy:
             result = rlm.run(prompt=content, query=query)
         except Exception as e:
             return StrategyResult(
-                strategy="rlm",
+                strategy=MODE_RLM,
                 answer="",
                 success=False,
                 error=str(e),
@@ -54,7 +55,7 @@ class RLMStrategy:
                 tokens.add_input(estimate_tokens(item["content"]))
 
         return StrategyResult(
-            strategy="rlm",
+            strategy=MODE_RLM,
             answer=result.answer,
             success=result.success,
             error=result.error,

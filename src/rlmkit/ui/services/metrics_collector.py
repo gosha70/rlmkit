@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT, MODE_RLM
+
 from .models import ComparisonMetrics, ExecutionMetrics
 
 if TYPE_CHECKING:
@@ -97,7 +99,7 @@ class MetricsCollector:
             memory_used_mb=memory_used,
             memory_peak_mb=memory_peak,
             success=True,
-            execution_type="rlm",
+            execution_type=MODE_RLM,
         )
 
     async def collect_direct_metrics(
@@ -162,7 +164,7 @@ class MetricsCollector:
             memory_used_mb=memory_used,
             memory_peak_mb=memory_peak,
             success=True,
-            execution_type="direct",
+            execution_type=MODE_DIRECT,
         )
 
     def compare_metrics(

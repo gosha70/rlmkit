@@ -15,6 +15,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT, MODE_RAG, MODE_RLM
+
 from .models import ExecutionMetrics
 
 
@@ -83,9 +85,9 @@ class AnalyticsEngine:
         all_tokens: list[int] = []  # for outlier detection
 
         for idx, msg in enumerate(self._messages):
-            rlm_m = self._get_metrics(msg, "rlm")
-            direct_m = self._get_metrics(msg, "direct")
-            rag_m = self._get_metrics(msg, "rag")
+            rlm_m = self._get_metrics(msg, MODE_RLM)
+            direct_m = self._get_metrics(msg, MODE_DIRECT)
+            rag_m = self._get_metrics(msg, MODE_RAG)
 
             # --- Per-message token totals (across all modes in this message) ---
             msg_tokens = 0

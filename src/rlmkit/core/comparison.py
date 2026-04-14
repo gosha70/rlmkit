@@ -11,6 +11,7 @@ provides value and measure efficiency gains.
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..application.sandbox_vars import MODE_DIRECT, MODE_RLM
 from .budget import TokenUsage
 
 
@@ -175,12 +176,12 @@ class ComparisonResult:
 
             if token_savings and cost_savings:
                 if token_savings["savings_percent"] > 20:
-                    summary["recommendation"] = "rlm"
+                    summary["recommendation"] = MODE_RLM
                     summary["recommendation_reason"] = (
                         f"RLM saves {token_savings['savings_percent']:.1f}% tokens"
                     )
                 elif token_savings["savings_percent"] < -20:
-                    summary["recommendation"] = "direct"
+                    summary["recommendation"] = MODE_DIRECT
                     summary["recommendation_reason"] = (
                         f"Direct mode uses {-token_savings['savings_percent']:.1f}% fewer tokens"
                     )

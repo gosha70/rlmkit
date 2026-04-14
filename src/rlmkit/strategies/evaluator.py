@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT, MODE_RLM
+
 from .base import LLMStrategy, StrategyResult
 
 if TYPE_CHECKING:
@@ -70,10 +72,10 @@ class EvaluationResult:
         from rlmkit.core.comparison import ComparisonResult
 
         cr = ComparisonResult()
-        if "rlm" in self.results:
-            cr.rlm_metrics = self.results["rlm"].to_execution_metrics()
-        if "direct" in self.results:
-            cr.direct_metrics = self.results["direct"].to_execution_metrics()
+        if MODE_RLM in self.results:
+            cr.rlm_metrics = self.results[MODE_RLM].to_execution_metrics()
+        if MODE_DIRECT in self.results:
+            cr.direct_metrics = self.results[MODE_DIRECT].to_execution_metrics()
         return cr
 
 

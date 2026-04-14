@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import streamlit as st
 
+from rlmkit.application.sandbox_vars import MODE_DIRECT
 from rlmkit.storage import ConversationStore, Database, VectorStore
 
 from .services import ChatManager, LLMConfigManager, MemoryMonitor, MetricsCollector
@@ -53,7 +54,7 @@ def init_session_state() -> dict[str, Any]:
         st.session_state.rag_config = None  # Uses RAGConfig defaults when None
         st.session_state.execution_plan = None  # None = legacy single-provider mode
         st.session_state.selected_strategies = [
-            "direct"
+            MODE_DIRECT
         ]  # List of active strategies: "rlm", "direct", "rag"
         st.session_state.key_policy = "file"  # SecretStore policy: "env", "file", or "keyring"
 

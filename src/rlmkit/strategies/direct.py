@@ -5,6 +5,13 @@
 
 import time
 
+from rlmkit.application.sandbox_vars import (
+    MODE_DIRECT,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_MODE,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_STEP,
+)
 from rlmkit.core.budget import TokenUsage, estimate_tokens
 from rlmkit.core.rlm import LLMClient
 from rlmkit.prompts import get_mode_system_prompt
@@ -21,7 +28,7 @@ class DirectStrategy:
         system_prompt: str | None = None,
     ):
         self.client = client
-        self.system_prompt = system_prompt or get_mode_system_prompt("direct")
+        self.system_prompt = system_prompt or get_mode_system_prompt(MODE_DIRECT)
 
     @property
     def name(self) -> str:
@@ -38,7 +45,7 @@ class DirectStrategy:
             answer = self.client.complete(messages)
         except Exception as e:
             return StrategyResult(
-                strategy="direct",
+                strategy=MODE_DIRECT,
                 answer="",
                 success=False,
                 error=str(e),
@@ -52,10 +59,17 @@ class DirectStrategy:
         tokens.add_output(estimate_tokens(answer))
 
         return StrategyResult(
-            strategy="direct",
+            strategy=MODE_DIRECT,
             answer=answer,
             steps=1,
             tokens=tokens,
             elapsed_time=elapsed,
-            trace=[{"step": 1, "role": "assistant", "content": answer, "mode": "direct"}],
+            trace=[
+                {
+                    TRACE_KEY_STEP: 1,
+                    TRACE_KEY_ROLE: "assistant",
+                    TRACE_KEY_CONTENT: answer,
+                    TRACE_KEY_MODE: MODE_DIRECT,
+                }
+            ],
         )
