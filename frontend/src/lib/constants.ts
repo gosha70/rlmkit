@@ -48,7 +48,7 @@ export const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   [BACKEND_ANTHROPIC]: "Anthropic",
   [BACKEND_OLLAMA]: "Ollama",
   [BACKEND_LMSTUDIO]: "LM Studio",
-  [BACKEND_VLLM]: "vLLM (Self-hosted)",
+  [BACKEND_VLLM]: "vLLM",
 };
 
 /** Model placeholder text per backend. */
@@ -73,6 +73,5 @@ export const ENDPOINT_PLACEHOLDER: Record<string, string> = {
 
 /** Map a raw backend key to a human-readable name. */
 export function displayProviderName(key: string): string {
-  // Strip the "(Self-hosted)" suffix for chart labels
-  return { openai: "OpenAI", anthropic: "Anthropic", ollama: "Ollama", lmstudio: "LM Studio", vllm: "vLLM" }[key] ?? key;
+  return BACKEND_DISPLAY_NAMES[key] ?? key;
 }
