@@ -27,6 +27,13 @@ from rlmkit.application.sandbox_vars import (
     MODES_INPROMPT,
     MODES_REPL_VARIABLE,
     MODES_RLM_INTERNAL,
+    TRACE_KEY_CODE,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_ELAPSED_SECONDS,
+    TRACE_KEY_INPUT_TOKENS,
+    TRACE_KEY_MODEL,
+    TRACE_KEY_OUTPUT_TOKENS,
+    TRACE_KEY_ROLE,
 )
 from rlmkit.application.services.history_context import (
     assemble_inprompt_history_within_budget,
@@ -408,7 +415,7 @@ def _save_trajectory(
         total = len(result.trace)
         for i, step_data in enumerate(result.trace):
             action_type = _canonical_action_type(
-                step_data.get("role"),
+                step_data.get(TRACE_KEY_ROLE),
                 is_last=(i == total - 1),
                 success=result.success,
             )
@@ -416,12 +423,12 @@ def _save_trajectory(
                 CoreTraceStep(
                     index=i,
                     action_type=action_type,  # type: ignore[arg-type]
-                    code=step_data.get("code"),
-                    output=step_data.get("content", ""),
-                    tokens_used=step_data.get("input_tokens", 0)
-                    + step_data.get("output_tokens", 0),
-                    duration=step_data.get("elapsed_seconds", 0.0),
-                    model=step_data.get("model"),
+                    code=step_data.get(TRACE_KEY_CODE),
+                    output=step_data.get(TRACE_KEY_CONTENT, ""),
+                    tokens_used=step_data.get(TRACE_KEY_INPUT_TOKENS, 0)
+                    + step_data.get(TRACE_KEY_OUTPUT_TOKENS, 0),
+                    duration=step_data.get(TRACE_KEY_ELAPSED_SECONDS, 0.0),
+                    model=step_data.get(TRACE_KEY_MODEL),
                 )
             )
         trace.finalize()
@@ -564,7 +571,7 @@ def _record_telemetry(
     total = len(result.trace)
     for i, step_data in enumerate(result.trace):
         action_type = _canonical_action_type(
-            step_data.get("role"),
+            step_data.get(TRACE_KEY_ROLE),
             is_last=(i == total - 1),
             success=result.success,
         )
@@ -572,12 +579,12 @@ def _record_telemetry(
             run_id=run_id,
             step_index=i,
             action_type=action_type,
-            code=step_data.get("code"),
-            output=step_data.get("content"),
-            input_tokens=step_data.get("input_tokens", 0),
-            output_tokens=step_data.get("output_tokens", 0),
-            duration=step_data.get("elapsed_seconds", 0.0),
-            model=step_data.get("model"),
+            code=step_data.get(TRACE_KEY_CODE),
+            output=step_data.get(TRACE_KEY_CONTENT),
+            input_tokens=step_data.get(TRACE_KEY_INPUT_TOKENS, 0),
+            output_tokens=step_data.get(TRACE_KEY_OUTPUT_TOKENS, 0),
+            duration=step_data.get(TRACE_KEY_ELAPSED_SECONDS, 0.0),
+            model=step_data.get(TRACE_KEY_MODEL),
         )
 
 

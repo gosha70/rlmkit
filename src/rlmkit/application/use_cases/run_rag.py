@@ -12,7 +12,11 @@ from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.embedding_port import EmbeddingPort
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.storage_port import StoragePort
-from rlmkit.application.sandbox_vars import MODE_RAG
+from rlmkit.application.sandbox_vars import (
+    MODE_RAG,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_STEP,
+)
 from rlmkit.prompts import get_mode_system_prompt
 
 
@@ -186,8 +190,8 @@ class RunRAGUseCase:
                 elapsed_time=elapsed,
                 trace=[
                     {
-                        "step": 0,
-                        "role": "rag_retrieval",
+                        TRACE_KEY_STEP: 0,
+                        TRACE_KEY_ROLE: "rag_retrieval",
                         "chunks_retrieved": len(results),
                         "scores": [score for score, _, _ in results],
                         "embedding_tokens": embed_tokens,

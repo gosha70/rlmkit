@@ -22,7 +22,19 @@ from rlmkit.application.dto import (
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.sandbox_port import SandboxPort
-from rlmkit.application.sandbox_vars import MODE_RLM
+from rlmkit.application.sandbox_vars import (
+    MODE_RLM,
+    TRACE_KEY_CLAMP,
+    TRACE_KEY_CODE,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_ELAPSED_SECONDS,
+    TRACE_KEY_INPUT_TOKENS,
+    TRACE_KEY_MODEL,
+    TRACE_KEY_OUTPUT_TOKENS,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_SEQ,
+    TRACE_KEY_STEP,
+)
 from rlmkit.domain.entities import BudgetConfig, BudgetState
 from rlmkit.domain.exceptions import BudgetExceededError
 from rlmkit.prompts import get_rlm_message
@@ -269,18 +281,18 @@ class RunRLMUseCase:
                 trace_seq += 1
                 clamp_info = getattr(self._llm, "last_clamp_info", None) or {}
                 trace_entry: dict[str, Any] = {
-                    "step": budget_state.steps,
-                    "seq": trace_seq,
-                    "role": "assistant",
-                    "content": response.content,
-                    "input_tokens": response.input_tokens,
-                    "output_tokens": response.output_tokens,
-                    "code": parsed.code,
-                    "model": getattr(self._llm, "active_model", None) or response.model,
-                    "elapsed_seconds": time.time() - step_start,
+                    TRACE_KEY_STEP: budget_state.steps,
+                    TRACE_KEY_SEQ: trace_seq,
+                    TRACE_KEY_ROLE: "assistant",
+                    TRACE_KEY_CONTENT: response.content,
+                    TRACE_KEY_INPUT_TOKENS: response.input_tokens,
+                    TRACE_KEY_OUTPUT_TOKENS: response.output_tokens,
+                    TRACE_KEY_CODE: parsed.code,
+                    TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
+                    TRACE_KEY_ELAPSED_SECONDS: time.time() - step_start,
                 }
                 if clamp_info:
-                    trace_entry["clamp"] = clamp_info
+                    trace_entry[TRACE_KEY_CLAMP] = clamp_info
                 trace.append(trace_entry)
 
                 # Check for FINAL answer (handles both FINAL: and FINAL_VAR:)
@@ -309,10 +321,10 @@ class RunRLMUseCase:
                         trace_seq += 1
                         trace.append(
                             {
-                                "step": budget_state.steps,
-                                "seq": trace_seq,
-                                "role": "system",
-                                "content": (
+                                TRACE_KEY_STEP: budget_state.steps,
+                                TRACE_KEY_SEQ: trace_seq,
+                                TRACE_KEY_ROLE: "system",
+                                TRACE_KEY_CONTENT: (
                                     "⚠️ Warning: FINAL provided after execution failure. "
                                     "Model may have used direct reasoning instead of code execution."
                                 ),
@@ -372,11 +384,11 @@ class RunRLMUseCase:
                     trace_seq += 1
                     trace.append(
                         {
-                            "step": budget_state.steps,
-                            "seq": trace_seq,
-                            "role": "execution",
-                            "content": formatted,
-                            "code": parsed.code,
+                            TRACE_KEY_STEP: budget_state.steps,
+                            TRACE_KEY_SEQ: trace_seq,
+                            TRACE_KEY_ROLE: "execution",
+                            TRACE_KEY_CONTENT: formatted,
+                            TRACE_KEY_CODE: parsed.code,
                         }
                     )
 
@@ -487,10 +499,10 @@ class RunRLMUseCase:
                         trace_seq += 1
                         trace.append(
                             {
-                                "step": budget_state.steps,
-                                "seq": trace_seq,
-                                "role": "system",
-                                "content": (
+                                TRACE_KEY_STEP: budget_state.steps,
+                                TRACE_KEY_SEQ: trace_seq,
+                                TRACE_KEY_ROLE: "system",
+                                TRACE_KEY_CONTENT: (
                                     "Early synthesis: coverage complete but model "
                                     "did not finalize after 2 no-progress turns."
                                 ),
@@ -512,16 +524,16 @@ class RunRLMUseCase:
                         trace_seq += 1
                         trace.append(
                             {
-                                "step": budget_state.steps,
-                                "seq": trace_seq,
-                                "role": "assistant",
-                                "content": synth_response.content,
-                                "input_tokens": synth_response.input_tokens,
-                                "output_tokens": synth_response.output_tokens,
-                                "model": (
+                                TRACE_KEY_STEP: budget_state.steps,
+                                TRACE_KEY_SEQ: trace_seq,
+                                TRACE_KEY_ROLE: "assistant",
+                                TRACE_KEY_CONTENT: synth_response.content,
+                                TRACE_KEY_INPUT_TOKENS: synth_response.input_tokens,
+                                TRACE_KEY_OUTPUT_TOKENS: synth_response.output_tokens,
+                                TRACE_KEY_MODEL: (
                                     getattr(self._llm, "active_model", None) or synth_response.model
                                 ),
-                                "elapsed_seconds": time.time() - synth_step_start,
+                                TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
                                 "note": "early post-coverage synthesis",
                             }
                         )
@@ -647,14 +659,15 @@ class RunRLMUseCase:
                 trace_seq += 1
                 trace.append(
                     {
-                        "step": budget_state.steps,
-                        "seq": trace_seq,
-                        "role": "assistant",
-                        "content": synth_response.content,
-                        "input_tokens": synth_response.input_tokens,
-                        "output_tokens": synth_response.output_tokens,
-                        "model": getattr(self._llm, "active_model", None) or synth_response.model,
-                        "elapsed_seconds": time.time() - synth_step_start,
+                        TRACE_KEY_STEP: budget_state.steps,
+                        TRACE_KEY_SEQ: trace_seq,
+                        TRACE_KEY_ROLE: "assistant",
+                        TRACE_KEY_CONTENT: synth_response.content,
+                        TRACE_KEY_INPUT_TOKENS: synth_response.input_tokens,
+                        TRACE_KEY_OUTPUT_TOKENS: synth_response.output_tokens,
+                        TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
+                        or synth_response.model,
+                        TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
                         "note": "synthesis fallback",
                     }
                 )
@@ -726,15 +739,15 @@ class RunRLMUseCase:
                     trace_seq += 1
                     trace.append(
                         {
-                            "step": budget_state.steps,
-                            "seq": trace_seq,
-                            "role": "assistant",
-                            "content": synth_response.content,
-                            "input_tokens": synth_response.input_tokens,
-                            "output_tokens": synth_response.output_tokens,
-                            "model": getattr(self._llm, "active_model", None)
+                            TRACE_KEY_STEP: budget_state.steps,
+                            TRACE_KEY_SEQ: trace_seq,
+                            TRACE_KEY_ROLE: "assistant",
+                            TRACE_KEY_CONTENT: synth_response.content,
+                            TRACE_KEY_INPUT_TOKENS: synth_response.input_tokens,
+                            TRACE_KEY_OUTPUT_TOKENS: synth_response.output_tokens,
+                            TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                             or synth_response.model,
-                            "elapsed_seconds": time.time() - synth_step_start,
+                            TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
                             "note": "synthesis fallback",
                         }
                     )
@@ -1056,18 +1069,18 @@ class RunRLMUseCase:
                 trace_seq += 1
                 clamp_info = getattr(self._llm, "last_clamp_info", None) or {}
                 step_entry: dict[str, Any] = {
-                    "step": budget_state.steps,
-                    "seq": trace_seq,
-                    "role": "assistant",
-                    "content": response.content,
-                    "input_tokens": response.input_tokens,
-                    "output_tokens": response.output_tokens,
-                    "code": parsed.code,
-                    "model": getattr(self._llm, "active_model", None) or response.model,
-                    "elapsed_seconds": time.time() - step_start,
+                    TRACE_KEY_STEP: budget_state.steps,
+                    TRACE_KEY_SEQ: trace_seq,
+                    TRACE_KEY_ROLE: "assistant",
+                    TRACE_KEY_CONTENT: response.content,
+                    TRACE_KEY_INPUT_TOKENS: response.input_tokens,
+                    TRACE_KEY_OUTPUT_TOKENS: response.output_tokens,
+                    TRACE_KEY_CODE: parsed.code,
+                    TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
+                    TRACE_KEY_ELAPSED_SECONDS: time.time() - step_start,
                 }
                 if clamp_info:
-                    step_entry["clamp"] = clamp_info
+                    step_entry[TRACE_KEY_CLAMP] = clamp_info
                 trace.append(step_entry)
 
                 # Emit step event
@@ -1113,10 +1126,10 @@ class RunRLMUseCase:
                         trace_seq += 1
                         trace.append(
                             {
-                                "step": budget_state.steps,
-                                "seq": trace_seq,
-                                "role": "system",
-                                "content": (
+                                TRACE_KEY_STEP: budget_state.steps,
+                                TRACE_KEY_SEQ: trace_seq,
+                                TRACE_KEY_ROLE: "system",
+                                TRACE_KEY_CONTENT: (
                                     "⚠️ Warning: FINAL provided after execution failure. "
                                     "Model may have used direct reasoning instead of code execution."
                                 ),
@@ -1171,11 +1184,11 @@ class RunRLMUseCase:
                     trace_seq += 1
                     trace.append(
                         {
-                            "step": budget_state.steps,
-                            "seq": trace_seq,
-                            "role": "execution",
-                            "content": formatted,
-                            "code": parsed.code,
+                            TRACE_KEY_STEP: budget_state.steps,
+                            TRACE_KEY_SEQ: trace_seq,
+                            TRACE_KEY_ROLE: "execution",
+                            TRACE_KEY_CONTENT: formatted,
+                            TRACE_KEY_CODE: parsed.code,
                         }
                     )
 
@@ -1280,10 +1293,10 @@ class RunRLMUseCase:
                         )
                         trace_seq += 1
                         synth_note_entry = {
-                            "step": budget_state.steps,
-                            "seq": trace_seq,
-                            "role": "system",
-                            "content": (
+                            TRACE_KEY_STEP: budget_state.steps,
+                            TRACE_KEY_SEQ: trace_seq,
+                            TRACE_KEY_ROLE: "system",
+                            TRACE_KEY_CONTENT: (
                                 "Early synthesis: coverage complete but model "
                                 "did not finalize after 2 no-progress turns."
                             ),
@@ -1312,16 +1325,16 @@ class RunRLMUseCase:
                         ) / 1_000_000
                         trace_seq += 1
                         synth_entry = {
-                            "step": budget_state.steps,
-                            "seq": trace_seq,
-                            "role": "assistant",
-                            "content": synth_response.content,
-                            "input_tokens": synth_response.input_tokens,
-                            "output_tokens": synth_response.output_tokens,
-                            "model": (
+                            TRACE_KEY_STEP: budget_state.steps,
+                            TRACE_KEY_SEQ: trace_seq,
+                            TRACE_KEY_ROLE: "assistant",
+                            TRACE_KEY_CONTENT: synth_response.content,
+                            TRACE_KEY_INPUT_TOKENS: synth_response.input_tokens,
+                            TRACE_KEY_OUTPUT_TOKENS: synth_response.output_tokens,
+                            TRACE_KEY_MODEL: (
                                 getattr(self._llm, "active_model", None) or synth_response.model
                             ),
-                            "elapsed_seconds": time.time() - synth_step_start,
+                            TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
                             "note": "early post-coverage synthesis",
                         }
                         trace.append(synth_entry)
@@ -1442,14 +1455,15 @@ class RunRLMUseCase:
                 trace_seq += 1
                 trace.append(
                     {
-                        "step": budget_state.steps,
-                        "seq": trace_seq,
-                        "role": "assistant",
-                        "content": synth_response.content,
-                        "input_tokens": synth_response.input_tokens,
-                        "output_tokens": synth_response.output_tokens,
-                        "model": getattr(self._llm, "active_model", None) or synth_response.model,
-                        "elapsed_seconds": time.time() - synth_step_start,
+                        TRACE_KEY_STEP: budget_state.steps,
+                        TRACE_KEY_SEQ: trace_seq,
+                        TRACE_KEY_ROLE: "assistant",
+                        TRACE_KEY_CONTENT: synth_response.content,
+                        TRACE_KEY_INPUT_TOKENS: synth_response.input_tokens,
+                        TRACE_KEY_OUTPUT_TOKENS: synth_response.output_tokens,
+                        TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
+                        or synth_response.model,
+                        TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
                         "note": "synthesis fallback",
                     }
                 )
@@ -1526,14 +1540,15 @@ class RunRLMUseCase:
                     ) / 1_000_000
                     trace_seq += 1
                     synth_entry = {
-                        "step": budget_state.steps,
-                        "seq": trace_seq,
-                        "role": "assistant",
-                        "content": synth_response.content,
-                        "input_tokens": synth_response.input_tokens,
-                        "output_tokens": synth_response.output_tokens,
-                        "model": getattr(self._llm, "active_model", None) or synth_response.model,
-                        "elapsed_seconds": time.time() - synth_step_start,
+                        TRACE_KEY_STEP: budget_state.steps,
+                        TRACE_KEY_SEQ: trace_seq,
+                        TRACE_KEY_ROLE: "assistant",
+                        TRACE_KEY_CONTENT: synth_response.content,
+                        TRACE_KEY_INPUT_TOKENS: synth_response.input_tokens,
+                        TRACE_KEY_OUTPUT_TOKENS: synth_response.output_tokens,
+                        TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
+                        or synth_response.model,
+                        TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
                         "note": "synthesis fallback",
                     }
                     trace.append(synth_entry)
@@ -1666,10 +1681,10 @@ class RunRLMUseCase:
         configured_max_tokens = getattr(self._llm, "_max_tokens", None)
 
         fingerprint = {
-            "step": 0,
-            "seq": 0,
-            "role": "system",
-            "content": "Runtime fingerprint",
+            TRACE_KEY_STEP: 0,
+            TRACE_KEY_SEQ: 0,
+            TRACE_KEY_ROLE: "system",
+            TRACE_KEY_CONTENT: "Runtime fingerprint",
             "fingerprint": {
                 "adapter_class": adapter_class,
                 "active_model": str(active_model) if active_model else None,
@@ -1966,10 +1981,10 @@ class RunRLMUseCase:
         trace_seq += 1
         trace.append(
             {
-                "step": budget_state.steps,
-                "seq": trace_seq,
-                "role": "system",
-                "content": coverage_note,
+                TRACE_KEY_STEP: budget_state.steps,
+                TRACE_KEY_SEQ: trace_seq,
+                TRACE_KEY_ROLE: "system",
+                TRACE_KEY_CONTENT: coverage_note,
             }
         )
 
@@ -1986,11 +2001,11 @@ class RunRLMUseCase:
         trace_seq += 1
         trace.append(
             {
-                "step": budget_state.steps,
-                "seq": trace_seq,
-                "role": "execution",
-                "content": formatted,
-                "code": code,
+                TRACE_KEY_STEP: budget_state.steps,
+                TRACE_KEY_SEQ: trace_seq,
+                TRACE_KEY_ROLE: "execution",
+                TRACE_KEY_CONTENT: formatted,
+                TRACE_KEY_CODE: code,
                 "note": f"auto coverage inspect for file {target.file_no}",
             }
         )

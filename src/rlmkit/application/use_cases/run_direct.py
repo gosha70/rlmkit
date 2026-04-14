@@ -12,7 +12,17 @@ import time
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
 from rlmkit.application.ports.event_port import ExecutionEventEmitter
 from rlmkit.application.ports.llm_port import LLMPort
-from rlmkit.application.sandbox_vars import MODE_DIRECT
+from rlmkit.application.sandbox_vars import (
+    MODE_DIRECT,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_ELAPSED_SECONDS,
+    TRACE_KEY_INPUT_TOKENS,
+    TRACE_KEY_MODE,
+    TRACE_KEY_MODEL,
+    TRACE_KEY_OUTPUT_TOKENS,
+    TRACE_KEY_ROLE,
+    TRACE_KEY_STEP,
+)
 from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
 from rlmkit.prompts import get_mode_system_prompt
 
@@ -132,14 +142,14 @@ class RunDirectUseCase:
                 elapsed_time=elapsed,
                 trace=[
                     {
-                        "step": 0,
-                        "role": "assistant",
-                        "content": response.content,
-                        "mode": "direct",
-                        "input_tokens": response.input_tokens,
-                        "output_tokens": response.output_tokens,
-                        "model": getattr(self._llm, "active_model", None) or response.model,
-                        "elapsed_seconds": elapsed,
+                        TRACE_KEY_STEP: 0,
+                        TRACE_KEY_ROLE: "assistant",
+                        TRACE_KEY_CONTENT: response.content,
+                        TRACE_KEY_MODE: "direct",
+                        TRACE_KEY_INPUT_TOKENS: response.input_tokens,
+                        TRACE_KEY_OUTPUT_TOKENS: response.output_tokens,
+                        TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
+                        TRACE_KEY_ELAPSED_SECONDS: elapsed,
                     }
                 ],
             )
@@ -207,14 +217,14 @@ class RunDirectUseCase:
             elapsed = time.time() - start
 
             step_entry = {
-                "step": 0,
-                "role": "assistant",
-                "content": answer,
-                "mode": "direct",
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "model": getattr(self._llm, "active_model", None),
-                "elapsed_seconds": elapsed,
+                TRACE_KEY_STEP: 0,
+                TRACE_KEY_ROLE: "assistant",
+                TRACE_KEY_CONTENT: answer,
+                TRACE_KEY_MODE: "direct",
+                TRACE_KEY_INPUT_TOKENS: input_tokens,
+                TRACE_KEY_OUTPUT_TOKENS: output_tokens,
+                TRACE_KEY_MODEL: getattr(self._llm, "active_model", None),
+                TRACE_KEY_ELAPSED_SECONDS: elapsed,
             }
 
             total_cost = self._compute_cost(input_tokens, output_tokens)

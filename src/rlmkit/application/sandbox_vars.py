@@ -92,6 +92,24 @@ RUNTIME_DEFAULT_TOP_P = 1.0
 RUNTIME_DEFAULT_MAX_OUTPUT_TOKENS = 4096
 RUNTIME_DEFAULT_TIMEOUT_SECONDS = 120
 
+# ---------------------------------------------------------------------------
+# Trace entry keys — used in run_rlm.py, run_direct.py, run_rag.py trace
+# dicts and read by chat.py for telemetry recording.  NOT the same as
+# LLM chat message keys ("role"/"content") which are API conventions.
+# ---------------------------------------------------------------------------
+
+TRACE_KEY_STEP = "step"
+TRACE_KEY_SEQ = "seq"
+TRACE_KEY_ROLE = "role"
+TRACE_KEY_CONTENT = "content"
+TRACE_KEY_CODE = "code"
+TRACE_KEY_INPUT_TOKENS = "input_tokens"
+TRACE_KEY_OUTPUT_TOKENS = "output_tokens"
+TRACE_KEY_ELAPSED_SECONDS = "elapsed_seconds"
+TRACE_KEY_MODEL = "model"
+TRACE_KEY_MODE = "mode"
+TRACE_KEY_CLAMP = "clamp"
+
 MODES_INPROMPT = frozenset({MODE_DIRECT, MODE_COMPARE, MODE_RAG})
 """Modes that carry history as native user/assistant chat messages."""
 
