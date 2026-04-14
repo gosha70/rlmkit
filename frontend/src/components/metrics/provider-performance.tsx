@@ -3,7 +3,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { ChartContainer } from "./chart-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { displayProviderName } from "./cost-breakdown";
+import { displayProviderName } from "@/lib/constants";
 import { useChartTooltipStyle } from "./use-chart-tooltip";
 
 interface ProviderPerformanceProps {

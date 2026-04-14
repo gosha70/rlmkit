@@ -51,12 +51,13 @@ import {
   type MatrixRankingMetric,
   type MatrixSlotMode,
 } from "@/lib/api";
+import { ALL_EXECUTION_MODES, MODE_DIRECT } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const ALL_MODES: MatrixSlotMode[] = ["direct", "rlm", "rag"];
+const ALL_MODES: MatrixSlotMode[] = [...ALL_EXECUTION_MODES];
 const MODE_DESCRIPTIONS: Record<MatrixSlotMode, string> = {
   direct: "Single LLM call with full content",
   rlm: "Recursive exploration with sandbox",
@@ -104,7 +105,7 @@ export default function ComparePage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedChatProviderIds, setSelectedChatProviderIds] = useState<string[]>([]);
   const [selectedModes, setSelectedModes] = useState<Set<MatrixSlotMode>>(
-    new Set(["direct"]),
+    new Set([MODE_DIRECT]),
   );
   const [rankingMetric, setRankingMetric] = useState<MatrixRankingMetric>("cost");
 

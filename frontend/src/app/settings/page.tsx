@@ -49,12 +49,27 @@ import {
 import { Plus, Edit2, Trash2, Upload, Check, X, Wifi, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  BACKEND_OPENAI,
+  BACKEND_ANTHROPIC,
+  BACKEND_OLLAMA,
+  BACKEND_LMSTUDIO,
+  BACKEND_VLLM,
+  CLOUD_BACKENDS,
+  LOCAL_BACKENDS,
+  BACKEND_DISPLAY_NAMES,
+  MODEL_PLACEHOLDER,
+  ENDPOINT_PLACEHOLDER,
+  MODE_DIRECT,
+  MODE_RLM,
+  MODE_RAG,
+} from "@/lib/constants";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
-  const [newProfileStrategy, setNewProfileStrategy] = useState("direct");
+  const [newProfileStrategy, setNewProfileStrategy] = useState<string>(MODE_DIRECT);
   const [newProfileDescription, setNewProfileDescription] = useState("");
   const [creatingProfile, setCreatingProfile] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -94,7 +109,7 @@ export default function SettingsPage() {
     context_window: string;  // stored as string for input; parsed to int on save
   }>({
     name: "",
-    backend: "openai",
+    backend: BACKEND_OPENAI,
     model: "",
     api_key: "",
     endpoint: "",
@@ -126,8 +141,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (showLLMProviderForm && llmProviderForm.backend) {
-      const localBackends = ["ollama", "lmstudio", "vllm"];
-      const ep = localBackends.includes(llmProviderForm.backend) ? llmProviderForm.endpoint : undefined;
+      const ep = (LOCAL_BACKENDS as readonly string[]).includes(llmProviderForm.backend) ? llmProviderForm.endpoint : undefined;
       fetchLLMProviderModels(llmProviderForm.backend, ep);
     }
   }, [showLLMProviderForm, llmProviderForm.backend, llmProviderForm.endpoint]);
@@ -183,7 +197,7 @@ export default function SettingsPage() {
         description: newProfileDescription.trim() || undefined,
       });
       setNewProfileName("");
-      setNewProfileStrategy("direct");
+      setNewProfileStrategy(MODE_DIRECT);
       setNewProfileDescription("");
       mutateProfiles();
     } catch (err) {
@@ -224,7 +238,7 @@ export default function SettingsPage() {
         profile_id: formData.profile_id,
       };
 
-      if (selectedProfile?.strategy === "rag") {
+      if (selectedProfile?.strategy === MODE_RAG) {
         payload.rag_config = formData.rag_config;
       }
 
@@ -287,7 +301,7 @@ export default function SettingsPage() {
       await createProfile({
         name,
         description: data.description || "",
-        strategy: data.strategy || "direct",
+        strategy: data.strategy || MODE_DIRECT,
         runtime_settings: data.runtime_settings,
         budget: data.budget,
         system_prompts: data.system_prompts || {},
@@ -319,7 +333,7 @@ export default function SettingsPage() {
   };
 
   const resetLLMProviderForm = () => {
-    setLLMProviderForm({ name: "", backend: "openai", model: "", api_key: "", endpoint: "", context_window: "" });
+    setLLMProviderForm({ name: "", backend: BACKEND_OPENAI, model: "", api_key: "", endpoint: "", context_window: "" });
     setEditingLLMProviderId(null);
     setLLMProviderModels([]);
   };
@@ -404,16 +418,6 @@ export default function SettingsPage() {
     }
   };
 
-  const LOCAL_BACKENDS = ["ollama", "lmstudio", "vllm"];
-  const CLOUD_BACKENDS = ["openai", "anthropic"];
-  const BACKEND_LABELS: Record<string, string> = {
-    openai: "OpenAI",
-    anthropic: "Anthropic",
-    ollama: "Ollama",
-    lmstudio: "LM Studio",
-    vllm: "vLLM",
-  };
-
   const STATUS_COLORS: Record<string, string> = {
     connected: "bg-emerald-500",
     configured: "bg-amber-500",
@@ -478,11 +482,11 @@ export default function SettingsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="openai">OpenAI</SelectItem>
-                        <SelectItem value="anthropic">Anthropic</SelectItem>
-                        <SelectItem value="ollama">Ollama</SelectItem>
-                        <SelectItem value="lmstudio">LM Studio</SelectItem>
-                        <SelectItem value="vllm">vLLM (Self-hosted)</SelectItem>
+                        <SelectItem value={BACKEND_OPENAI}>OpenAI</SelectItem>
+                        <SelectItem value={BACKEND_ANTHROPIC}>Anthropic</SelectItem>
+                        <SelectItem value={BACKEND_OLLAMA}>Ollama</SelectItem>
+                        <SelectItem value={BACKEND_LMSTUDIO}>LM Studio</SelectItem>
+                        <SelectItem value={BACKEND_VLLM}>vLLM (Self-hosted)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -495,12 +499,7 @@ export default function SettingsPage() {
                           onValueChange={(v) => setLLMProviderForm({ ...llmProviderForm, model: v })}
                         >
                           <SelectTrigger id="llmp-model" className="flex-1">
-                            <SelectValue placeholder={
-                              llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
-                              llmProviderForm.backend === "anthropic" ? "e.g., claude-sonnet-4-5" :
-                              llmProviderForm.backend === "vllm" ? "e.g., Qwen/Qwen2.5-7B-Instruct" :
-                              "e.g., llama3.2"
-                            } />
+                            <SelectValue placeholder={MODEL_PLACEHOLDER[llmProviderForm.backend] ?? "e.g., model-name"} />
                           </SelectTrigger>
                           <SelectContent>
                             {llmProviderModels.map((m) => (
@@ -526,12 +525,7 @@ export default function SettingsPage() {
                         <Input
                           id="llmp-model"
                           className="flex-1"
-                          placeholder={
-                            llmProviderForm.backend === "openai" ? "e.g., gpt-4o" :
-                            llmProviderForm.backend === "anthropic" ? "e.g., claude-sonnet-4-5" :
-                            llmProviderForm.backend === "vllm" ? "e.g., Qwen/Qwen2.5-7B-Instruct" :
-                            "e.g., llama3.2"
-                          }
+                          placeholder={MODEL_PLACEHOLDER[llmProviderForm.backend] ?? "e.g., model-name"}
                           value={llmProviderForm.model}
                           onChange={(e) => setLLMProviderForm({ ...llmProviderForm, model: e.target.value })}
                         />
@@ -548,22 +542,18 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </div>
-                  {LOCAL_BACKENDS.includes(llmProviderForm.backend) && (
+                  {(LOCAL_BACKENDS as readonly string[]).includes(llmProviderForm.backend) && (
                     <div className="space-y-2">
                       <FieldLabel htmlFor="llmp-endpoint" tooltip="The HTTP endpoint of your local inference server. Default ports: Ollama 11434, LM Studio 1234, vLLM 8000.">Endpoint</FieldLabel>
                       <Input
                         id="llmp-endpoint"
-                        placeholder={
-                          llmProviderForm.backend === "ollama" ? "http://localhost:11434" :
-                          llmProviderForm.backend === "vllm" ? "http://<dgx-spark-ip>:8000/v1" :
-                          "http://localhost:1234/v1"
-                        }
+                        placeholder={ENDPOINT_PLACEHOLDER[llmProviderForm.backend] ?? "http://localhost:8000"}
                         value={llmProviderForm.endpoint}
                         onChange={(e) => setLLMProviderForm({ ...llmProviderForm, endpoint: e.target.value })}
                       />
                     </div>
                   )}
-                  {CLOUD_BACKENDS.includes(llmProviderForm.backend) && (
+                  {(CLOUD_BACKENDS as readonly string[]).includes(llmProviderForm.backend) && (
                     <div className="space-y-2">
                       <FieldLabel htmlFor="llmp-apikey" tooltip="Your provider API key. Stored in the OS keyring when available, otherwise in a local file. Leave blank to keep the current key.">API Key</FieldLabel>
                       <Input
@@ -623,7 +613,7 @@ export default function SettingsPage() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
+                          {BACKEND_DISPLAY_NAMES[lp.backend] || lp.backend} &middot; {lp.model}
                           {lp.endpoint && <> &middot; {lp.endpoint}</>}
                           {lp.context_window && <> &middot; {lp.context_window.toLocaleString()} tokens</>}
                         </p>
@@ -764,7 +754,7 @@ export default function SettingsPage() {
                           <SelectItem key={lp.id} value={lp.id}>
                             <span>{lp.name}</span>
                             <span className="ml-2 text-xs text-muted-foreground">
-                              {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
+                              {BACKEND_DISPLAY_NAMES[lp.backend] || lp.backend} &middot; {lp.model}
                             </span>
                           </SelectItem>
                         ))}
@@ -810,7 +800,7 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {selectedProfile?.strategy === "rag" && (
+                  {selectedProfile?.strategy === MODE_RAG && (
                     <div className="space-y-4 rounded-lg border border-muted p-4">
                       <h4 className="font-medium text-sm">RAG Settings</h4>
                       <div className="space-y-2">
@@ -961,8 +951,8 @@ export default function SettingsPage() {
                       <span>Temp: {provider.runtime_settings.temperature}</span>
                       <span>Max tokens: {provider.runtime_settings.max_output_tokens}</span>
                       <span>Timeout: {provider.runtime_settings.timeout_seconds}s</span>
-                      {provider.execution_mode === "rlm" && <span>Steps: {provider.rlm_max_steps}</span>}
-                      {provider.execution_mode === "rag" && provider.rag_config && (
+                      {provider.execution_mode === MODE_RLM && <span>Steps: {provider.rlm_max_steps}</span>}
+                      {provider.execution_mode === MODE_RAG && provider.rag_config && (
                         <span>Top K: {provider.rag_config.top_k}</span>
                       )}
                     </div>
@@ -990,7 +980,7 @@ export default function SettingsPage() {
                         <SelectContent>
                           {llmProviders.map((lp) => (
                             <SelectItem key={lp.id} value={lp.id}>
-                              {lp.name} &middot; {BACKEND_LABELS[lp.backend] || lp.backend} &middot; {lp.model}
+                              {lp.name} &middot; {BACKEND_DISPLAY_NAMES[lp.backend] || lp.backend} &middot; {lp.model}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1022,7 +1012,7 @@ export default function SettingsPage() {
                         <p>Temp {editProfile.runtime_settings.temperature} · Max tokens {editProfile.runtime_settings.max_output_tokens} · Steps {editProfile.budget.max_steps}</p>
                       </div>
                     )}
-                    {editProfile?.strategy === "rag" && (
+                    {editProfile?.strategy === MODE_RAG && (
                       <div className="space-y-3 rounded-lg border border-muted p-3">
                         <h4 className="font-medium text-sm">RAG Settings</h4>
                         <div className="grid grid-cols-2 gap-3">
@@ -1127,9 +1117,9 @@ export default function SettingsPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="direct">Direct</SelectItem>
-                      <SelectItem value="rlm">RLM</SelectItem>
-                      <SelectItem value="rag">RAG</SelectItem>
+                      <SelectItem value={MODE_DIRECT}>Direct</SelectItem>
+                      <SelectItem value={MODE_RLM}>RLM</SelectItem>
+                      <SelectItem value={MODE_RAG}>RAG</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button

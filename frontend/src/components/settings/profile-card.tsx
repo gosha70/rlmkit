@@ -31,6 +31,7 @@ import {
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Trash2, Lock, Edit2, Copy, Download, ChevronDown, ChevronUp } from "lucide-react";
+import { MODE_DIRECT, MODE_RLM, MODE_RAG } from "@/lib/constants";
 
 interface ProfileCardProps {
   profile: RunProfile;
@@ -396,9 +397,9 @@ export function ProfileCard({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="direct">Direct</SelectItem>
-                  <SelectItem value="rlm">RLM</SelectItem>
-                  <SelectItem value="rag">RAG</SelectItem>
+                  <SelectItem value={MODE_DIRECT}>Direct</SelectItem>
+                  <SelectItem value={MODE_RLM}>RLM</SelectItem>
+                  <SelectItem value={MODE_RAG}>RAG</SelectItem>
                 </SelectContent>
               </Select>
             </div>

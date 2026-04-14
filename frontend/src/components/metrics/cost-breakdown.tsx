@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import { ChartContainer } from "./chart-container";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useChartTooltipStyle } from "./use-chart-tooltip";
+import { displayProviderName } from "@/lib/constants";
 
 interface CostBreakdownProps {
   data: Record<string, { queries: number; total_tokens: number; total_cost_usd: number; avg_latency_seconds: number }>;
@@ -11,19 +12,6 @@ interface CostBreakdownProps {
 }
 
 const COLORS = ["#2563eb", "#7c3aed", "#059669", "#d97706", "#dc2626", "#6366f1"];
-
-// Map raw backend keys to human-readable names
-const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  ollama: "Ollama",
-  lmstudio: "LM Studio",
-  vllm: "vLLM",
-};
-
-export function displayProviderName(key: string): string {
-  return PROVIDER_DISPLAY_NAMES[key] ?? key;
-}
 
 export function CostBreakdown({ data, title = "Cost by Provider" }: CostBreakdownProps) {
   const tooltipStyle = useChartTooltipStyle();

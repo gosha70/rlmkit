@@ -16,12 +16,18 @@ import {
 } from "@/components/ui/select";
 import type { ModeConfig } from "@/lib/api";
 import { Save, RotateCcw } from "lucide-react";
-
-const ALL_MODES = ["direct", "rlm", "rag"] as const;
+import {
+  ALL_EXECUTION_MODES,
+  DEFAULT_ENABLED_MODES,
+  MODE_AUTO,
+  MODE_DIRECT,
+  MODE_RLM,
+  MODE_RAG,
+} from "@/lib/constants";
 
 const DEFAULT_CONFIG: ModeConfig = {
-  enabled_modes: ["direct", "rlm"],
-  default_mode: "auto",
+  enabled_modes: [...DEFAULT_ENABLED_MODES],
+  default_mode: MODE_AUTO,
   rag_config: {
     chunk_size: 1000,
     chunk_overlap: 200,
@@ -47,7 +53,7 @@ export function ExecutionConfig({ config, onChange }: ExecutionConfigProps) {
   const [local, setLocal] = useState<ModeConfig>(config);
   const [saving, setSaving] = useState(false);
 
-  const ragEnabled = local.enabled_modes.includes("rag");
+  const ragEnabled = local.enabled_modes.includes(MODE_RAG);
 
   const toggleMode = (mode: string) => {
     const current = local.enabled_modes;
@@ -81,16 +87,16 @@ export function ExecutionConfig({ config, onChange }: ExecutionConfigProps) {
             Select which execution modes are available for chat queries.
           </p>
           <div className="flex flex-col gap-3">
-            {ALL_MODES.map((mode) => (
+            {ALL_EXECUTION_MODES.map((mode) => (
               <div key={mode} className="flex items-center justify-between">
                 <div>
                   <Label htmlFor={`mode-${mode}`} className="capitalize font-medium">
                     {mode}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    {mode === "direct" && "Send query directly to LLM"}
-                    {mode === "rlm" && "Recursive Language Model with code execution"}
-                    {mode === "rag" && "Retrieval-Augmented Generation from uploaded files"}
+                    {mode === MODE_DIRECT && "Send query directly to LLM"}
+                    {mode === MODE_RLM && "Recursive Language Model with code execution"}
+                    {mode === MODE_RAG && "Retrieval-Augmented Generation from uploaded files"}
                   </p>
                 </div>
                 <Switch
@@ -113,8 +119,8 @@ export function ExecutionConfig({ config, onChange }: ExecutionConfigProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto (system decides)</SelectItem>
-                {ALL_MODES.map((mode) => (
+                <SelectItem value={MODE_AUTO}>Auto (system decides)</SelectItem>
+                {ALL_EXECUTION_MODES.map((mode) => (
                   <SelectItem key={mode} value={mode} className="capitalize">
                     {mode}
                   </SelectItem>
