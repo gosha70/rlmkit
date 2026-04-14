@@ -80,6 +80,8 @@ RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS = 600
 Not the per-step LLM call timeout.  600s = 10 minutes, enough for ~6-7
 steps on slow local models at ~90s/step."""
 RLM_DEFAULT_REPEAT_LIMIT = 2
+RLM_DEFAULT_STALL_LIMIT = 3
+"""Consecutive no-progress steps before the circuit-breaker fires."""
 RLM_DEFAULT_NUDGE_AT_FRACTION = 0.4
 RLM_DEFAULT_MAX_TOKENS_BUDGET = 50000
 RLM_DEFAULT_MAX_COST_USD = 2.0

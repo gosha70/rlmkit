@@ -9,6 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from rlmkit.application.sandbox_vars import (
+    MODE_AUTO,
+    RLM_DEFAULT_MAX_STEPS,
+    RLM_DEFAULT_NUDGE_AT_FRACTION,
+    RLM_DEFAULT_REPEAT_LIMIT,
+    RLM_DEFAULT_STALL_LIMIT,
+)
+
 
 @dataclass
 class LLMRequestDTO:
@@ -88,18 +96,18 @@ class RunConfigDTO:
         extra: Additional configuration passed through.
     """
 
-    mode: str = "auto"
+    mode: str = MODE_AUTO
     provider: str | None = None
     model: str | None = None
     api_key: str | None = None
-    max_steps: int = 16
+    max_steps: int = RLM_DEFAULT_MAX_STEPS
     max_tokens: int | None = None
     max_cost: float | None = None
     max_time_seconds: float | None = None
     max_recursion_depth: int = 1
-    stall_limit: int = 3  # consecutive no-progress steps before circuit-breaker fires
-    repeat_limit: int = 2  # duplicate inspect results before forced finalization
-    nudge_at_fraction: float = 0.4  # fraction of max_steps to send soft convergence nudge
+    stall_limit: int = RLM_DEFAULT_STALL_LIMIT
+    repeat_limit: int = RLM_DEFAULT_REPEAT_LIMIT
+    nudge_at_fraction: float = RLM_DEFAULT_NUDGE_AT_FRACTION
     system_prompt_extra: str | None = None  # appended to the built-in RLM system prompt
     verbose: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
