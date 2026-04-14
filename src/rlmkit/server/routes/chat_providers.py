@@ -96,8 +96,13 @@ def _check_rlm_context_window(
 async def list_chat_providers(
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> list[ChatProviderConfig]:
-    """List all Chat Providers (with profile settings resolved)."""
-    return [state.resolve_chat_provider(cp) for cp in state.config.chat_providers]
+    """List all Chat Providers (with profile settings resolved).
+
+    Ephemeral CPs created by compare-matrix are excluded.
+    """
+    return [
+        state.resolve_chat_provider(cp) for cp in state.config.chat_providers if not cp.ephemeral
+    ]
 
 
 @router.get("/api/chat-providers/{chat_provider_id}")
@@ -126,9 +131,9 @@ async def create_chat_provider(
             detail=f"LLM Provider not found: {req.llm_provider_id}",
         )
 
-    # Validate name uniqueness
+    # Validate name uniqueness (skip ephemeral CPs from compare-matrix)
     for existing in state.config.chat_providers:
-        if existing.name.lower() == req.name.lower():
+        if not existing.ephemeral and existing.name.lower() == req.name.lower():
             raise HTTPException(
                 status_code=409,
                 detail=f"Chat Provider with name '{req.name}' already exists",
@@ -190,10 +195,14 @@ async def update_chat_provider(
     if not cp:
         raise HTTPException(status_code=404, detail="Chat Provider not found")
 
-    # Validate name uniqueness if changing name
+    # Validate name uniqueness if changing name (skip ephemeral CPs)
     if req.name is not None and req.name.lower() != cp.name.lower():
         for existing in state.config.chat_providers:
-            if existing.id != chat_provider_id and existing.name.lower() == req.name.lower():
+            if (
+                not existing.ephemeral
+                and existing.id != chat_provider_id
+                and existing.name.lower() == req.name.lower()
+            ):
                 raise HTTPException(
                     status_code=409,
                     detail=f"Chat Provider with name '{req.name}' already exists",

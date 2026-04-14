@@ -14,13 +14,21 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from rlmkit.application.dto import RunConfigDTO
-from rlmkit.application.sandbox_vars import MODE_COMPARE, MODE_RAG, MODE_RLM
+from rlmkit.application.sandbox_vars import (
+    MODE_COMPARE,
+    MODE_RAG,
+    MODE_RLM,
+    RLM_DEFAULT_MAX_STEPS,
+    RLM_DEFAULT_NUDGE_AT_FRACTION,
+    RLM_DEFAULT_REPEAT_LIMIT,
+    RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
+)
 from rlmkit.application.use_cases.run_matrix_comparison import (
     MatrixComparisonResultDTO,
     MatrixSlotDTO,
@@ -32,7 +40,15 @@ from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
 )
 from rlmkit.infrastructure.storage.sqlite_adapter import SQLiteStorageAdapter
 from rlmkit.server.dependencies import AppState, ExecutionRecord, get_state
-from rlmkit.server.models import ChatProviderConfig
+from rlmkit.server.models import (
+    BudgetConfig,
+    ChatProviderConfig,
+    RAGConfig,
+    RuntimeSettings,
+)
+
+if TYPE_CHECKING:
+    from rlmkit.server.models import LLMProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +76,47 @@ class CompareMatrixRequest(BaseModel):
     modes: list[SlotMode] = Field(..., min_length=1, max_length=3)
     session_id: str | None = None
     ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+
+
+class CompareMatrixRequestV2(BaseModel):
+    """V2 request: selects LLM Providers + modes instead of Chat Providers."""
+
+    content: str | None = None
+    file_ids: list[str] | None = None
+    query: str = Field(..., min_length=1)
+    llm_provider_ids: list[str] = Field(..., min_length=1, max_length=10)
+    modes: list[SlotMode] = Field(..., min_length=1, max_length=3)
+    session_id: str | None = None
+    ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+    runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
+    rag_config: RAGConfig | None = None
+
+
+class CompareMatrixUnifiedRequest(BaseModel):
+    """Accepts either V1 (chat_provider_ids) or V2 (llm_provider_ids) shape."""
+
+    content: str | None = None
+    file_ids: list[str] | None = None
+    query: str = Field(..., min_length=1)
+    # V1 path
+    chat_provider_ids: list[str] | None = None
+    # V2 path
+    llm_provider_ids: list[str] | None = None
+    modes: list[SlotMode] = Field(default=["direct"], min_length=1, max_length=3)
+    session_id: str | None = None
+    ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+    # V2-only fields
+    runtime_settings: RuntimeSettings | None = None
+    budget: BudgetConfig | None = None
+    rag_config: RAGConfig | None = None
+
+    @model_validator(mode="after")
+    def _require_provider_ids(self) -> CompareMatrixUnifiedRequest:
+        if not self.chat_provider_ids and not self.llm_provider_ids:
+            msg = "Either chat_provider_ids (V1) or llm_provider_ids (V2) must be provided"
+            raise ValueError(msg)
+        return self
 
 
 class CompareMatrixSlotResponse(BaseModel):
@@ -92,16 +149,324 @@ class CompareMatrixResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Shared metadata model + V2 ephemeral-CP helpers
+# (all defined before the endpoint so mypy resolves them)
+# ---------------------------------------------------------------------------
+
+
+class _SlotMeta(BaseModel):
+    """Per-slot metadata that is not part of the use-case layer."""
+
+    chat_provider_id: str
+    chat_provider_name: str | None = None
+    execution_id: str
+
+
+_EPHEMERAL_PREFIX = "[compare] "
+
+
+def _get_or_create_ephemeral_cp(
+    state: AppState,
+    lp: LLMProviderConfig,
+    mode: str,
+    runtime_settings: RuntimeSettings | None,
+    budget: BudgetConfig | None,
+    rag_config: RAGConfig | None,
+) -> ChatProviderConfig:
+    """Create an ephemeral CP for this (lp, mode) pair.
+
+    Always returns a **fresh** ChatProviderConfig with a new ID so that
+    concurrent compare-matrix requests never share a mutable CP object.
+    To prevent unbounded growth, any previous ephemeral with the same
+    name is removed from the provider list first.
+    """
+    now = datetime.now(timezone.utc)
+    name = f"{_EPHEMERAL_PREFIX}{lp.name} \u00b7 {mode}"
+
+    # Remove stale ephemeral with the same name (dedup / garbage-collect).
+    state.config.chat_providers = [
+        cp for cp in state.config.chat_providers if not (cp.ephemeral and cp.name == name)
+    ]
+
+    cp = ChatProviderConfig(
+        id=str(uuid.uuid4()),
+        name=name,
+        llm_provider_id=lp.id,
+        execution_mode=mode,  # type: ignore[arg-type]
+        runtime_settings=runtime_settings or RuntimeSettings(),
+        rlm_max_steps=budget.max_steps if budget else RLM_DEFAULT_MAX_STEPS,
+        rlm_timeout_seconds=(
+            budget.max_time_seconds if budget else RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS
+        ),
+        rlm_repeat_limit=budget.repeat_limit if budget else RLM_DEFAULT_REPEAT_LIMIT,
+        rlm_nudge_at_fraction=(
+            budget.nudge_at_fraction if budget else RLM_DEFAULT_NUDGE_AT_FRACTION
+        ),
+        rag_config=rag_config,
+        ephemeral=True,
+        created_at=now,
+        updated_at=now,
+    )
+    state.config.chat_providers.append(cp)
+    return cp
+
+
+async def _compare_matrix_v2(
+    req: CompareMatrixUnifiedRequest,
+    state: AppState,
+) -> CompareMatrixResponse:
+    """V2 execution path: LLM Providers × modes via auto-created ephemeral CPs."""
+    assert req.llm_provider_ids is not None  # caller guarantees this
+
+    # --- Validate all LLM providers are connected ---------------------
+    lp_list: list[LLMProviderConfig] = []
+    for lp_id in req.llm_provider_ids:
+        lp = state.get_llm_provider(lp_id)
+        if not lp:
+            raise HTTPException(status_code=404, detail=f"LLM Provider {lp_id} not found")
+        if lp.status not in ("connected", "configured"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"LLM Provider '{lp.name}' is not connected",
+            )
+        lp_list.append(lp)
+
+    # --- Validate input content ---------------------------------------
+    effective_file_ids: list[str] = req.file_ids or []
+    if req.content is None and not effective_file_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Either content or file_ids must be provided",
+        )
+
+    content = req.content or ""
+    if effective_file_ids:
+        from rlmkit.server.routes.chat import _resolve_file_content
+
+        file_content = _resolve_file_content(effective_file_ids, state)
+        content = (content + "\n\n" + file_content).strip() if content else file_content
+
+    # --- Resolve or create ephemeral CPs and collect their IDs -------
+    cp_ids: list[str] = []
+    for lp in lp_list:
+        for mode in req.modes:
+            ecp = _get_or_create_ephemeral_cp(
+                state, lp, mode, req.runtime_settings, req.budget, req.rag_config
+            )
+            cp_ids.append(ecp.id)
+
+    # --- Resolve session and append user message ----------------------
+    session = state.get_or_create_session(req.session_id)
+    started_at = datetime.now(timezone.utc)
+    user_msg_id = str(uuid.uuid4())
+    user_msg = {
+        "id": user_msg_id,
+        "role": "user",
+        "content": req.query,
+        "file_id": effective_file_ids[0] if effective_file_ids else None,
+        "file_ids": effective_file_ids,
+        "mode": MODE_COMPARE,
+        "chat_provider_id": None,
+        "timestamp": started_at.isoformat(),
+    }
+    session.messages.append(user_msg)
+    for cp_id in dict.fromkeys(cp_ids):
+        if cp_id not in session.conversations:
+            session.conversations[cp_id] = []
+        session.conversations[cp_id].append(user_msg)
+    session.updated_at = started_at
+
+    # --- Build slots (one per ephemeral CP; each CP already encodes one mode) ---
+    total_slots = len(cp_ids)
+    if total_slots > RunMatrixComparisonUseCase.MAX_SLOTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many slots: {total_slots} exceeds max of "
+                f"{RunMatrixComparisonUseCase.MAX_SLOTS}"
+            ),
+        )
+
+    slots: list[MatrixSlotDTO] = []
+    slot_meta: dict[str, _SlotMeta] = {}
+
+    # Iterate lp × mode in the same order as cp_ids above
+    idx = 0
+    for lp in lp_list:
+        for mode in req.modes:
+            cp_id = cp_ids[idx]
+            idx += 1
+            cp = state.get_chat_provider(cp_id)
+            if cp is None:
+                raise HTTPException(status_code=500, detail="Ephemeral CP disappeared")
+            cp = state.resolve_chat_provider(cp)
+
+            backend = lp.backend
+            model_name = lp.model
+
+            llm = state.create_llm_adapter_for_chat_provider(cp_id)
+            sandbox = state.create_sandbox() if mode == MODE_RLM else None
+
+            embedder = None
+            storage = None
+            slot_extra: dict[str, object] = {}
+            if mode == MODE_RAG:
+                embedding_api_key = _resolve_embedding_api_key(state, cp)
+                rag_cfg_resolved = req.rag_config or state.config.mode_config.rag_config
+                embedder = LiteLLMEmbeddingAdapter(
+                    model=rag_cfg_resolved.embedding_model,
+                    api_key=embedding_api_key,
+                )
+                storage = SQLiteStorageAdapter(":memory:")
+                slot_extra = {
+                    "collection": f"rag_{uuid.uuid4().hex}",
+                    "chunk_size": rag_cfg_resolved.chunk_size,
+                    "top_k": rag_cfg_resolved.top_k,
+                }
+
+            slot_config = _build_slot_run_config(state, cp, mode, slot_extra)
+
+            slot_id = uuid.uuid4().hex[:12]
+            execution_id = uuid.uuid4().hex
+            slots.append(
+                MatrixSlotDTO(
+                    slot_id=slot_id,
+                    mode=mode,
+                    llm=llm,
+                    sandbox=sandbox,
+                    embedder=embedder,
+                    storage=storage,
+                    label=f"{lp.name} \u00b7 {mode}",
+                    provider=backend,
+                    model=model_name,
+                    config=slot_config,
+                )
+            )
+            execution = ExecutionRecord(
+                execution_id=execution_id,
+                session_id=session.id,
+                query=req.query,
+                mode=mode,
+                status="running",
+                started_at=started_at,
+                chat_provider_id=cp_id,
+                chat_provider_name=cp.name,
+            )
+            state.executions[execution_id] = execution
+            slot_meta[slot_id] = _SlotMeta(
+                chat_provider_id=cp_id,
+                chat_provider_name=cp.name,
+                execution_id=execution_id,
+            )
+
+    # --- Fan out -------------------------------------------------------
+    uc = RunMatrixComparisonUseCase()
+    result: MatrixComparisonResultDTO = await asyncio.to_thread(
+        uc.execute,
+        content,
+        req.query,
+        slots,
+        None,
+        req.ranking_metric,
+    )
+
+    # --- Finalize records and messages --------------------------------
+    finish = datetime.now(timezone.utc)
+    for slot_result in result.slots:
+        meta = slot_meta[slot_result.slot_id]
+        execution = state.executions[meta.execution_id]
+        _update_execution_record(execution, slot_result, finish)
+        _record_slot_telemetry(
+            state=state,
+            slot_result=slot_result,
+            meta=meta,
+            session_id=session.id,
+            comparison_group_id=result.comparison_group_id,
+            query=req.query,
+            created_at=started_at,
+        )
+        answer_content = slot_result.result.answer
+        if not slot_result.result.success and not answer_content:
+            answer_content = f"Error: {slot_result.result.error or 'Execution failed'}"
+        assistant_msg = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": answer_content,
+            "mode_used": slot_result.mode,
+            "provider": slot_result.provider,
+            "execution_id": meta.execution_id,
+            "chat_provider_id": meta.chat_provider_id,
+            "chat_provider_name": meta.chat_provider_name,
+            "metrics": {
+                "input_tokens": slot_result.result.input_tokens,
+                "output_tokens": slot_result.result.output_tokens,
+                "total_tokens": slot_result.result.total_tokens,
+                "cost_usd": slot_result.result.total_cost,
+                "elapsed_seconds": slot_result.result.elapsed_time,
+                "steps": slot_result.result.steps,
+            },
+            "timestamp": finish.isoformat(),
+            "comparison_group_id": result.comparison_group_id,
+        }
+        state.add_message(session.id, assistant_msg, meta.chat_provider_id)
+
+    session.updated_at = finish
+    state.save_sessions()
+
+    response_slots = [
+        CompareMatrixSlotResponse(
+            slot_id=s.slot_id,
+            label=s.label,
+            mode=s.mode,
+            provider=s.provider,
+            model=s.model,
+            chat_provider_id=slot_meta[s.slot_id].chat_provider_id,
+            chat_provider_name=slot_meta[s.slot_id].chat_provider_name,
+            execution_id=slot_meta[s.slot_id].execution_id,
+            success=s.result.success,
+            answer=s.result.answer,
+            error=s.result.error,
+            input_tokens=s.result.input_tokens,
+            output_tokens=s.result.output_tokens,
+            total_tokens=s.result.total_tokens,
+            total_cost=s.result.total_cost,
+            elapsed_seconds=s.result.elapsed_time,
+            steps=s.result.steps,
+        )
+        for s in result.slots
+    ]
+
+    return CompareMatrixResponse(
+        comparison_group_id=result.comparison_group_id,
+        session_id=session.id,
+        slots=response_slots,
+        ranking=result.ranking,
+        ranking_metric=result.ranking_metric,
+        total_elapsed=result.total_elapsed,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
 
 
 @router.post("/api/chat/compare-matrix")
 async def compare_matrix(
-    req: CompareMatrixRequest,
+    req: CompareMatrixUnifiedRequest,
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> CompareMatrixResponse:
     """Run the same (content, query) across ``chat_provider_ids × modes``."""
+    # --- Route to V2 or V1 based on which IDs are provided ------------
+    if req.llm_provider_ids is not None:
+        return await _compare_matrix_v2(req, state)
+    if req.chat_provider_ids is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Either chat_provider_ids (V1) or llm_provider_ids (V2) must be provided",
+        )
+
+    # --- V1 path (unchanged) ------------------------------------------
     # --- Validate input content ---------------------------------------
     effective_file_ids: list[str] = req.file_ids or []
     if req.content is None and not effective_file_ids:
@@ -336,14 +701,6 @@ async def compare_matrix(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-class _SlotMeta(BaseModel):
-    """Per-slot metadata that is not part of the use-case layer."""
-
-    chat_provider_id: str
-    chat_provider_name: str | None = None
-    execution_id: str
 
 
 def _record_slot_telemetry(

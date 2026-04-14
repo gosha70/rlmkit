@@ -123,6 +123,7 @@ class LiteLLMAdapter:
         api_key: str | None = None,
         api_base: str | None = None,
         temperature: float = 0.7,
+        top_p: float = 1.0,
         max_tokens: int | None = None,
         timeout: float = 120.0,
         num_retries: int = 2,
@@ -135,6 +136,7 @@ class LiteLLMAdapter:
         self._api_key = api_key
         self._api_base = api_base
         self._temperature = temperature
+        self._top_p = top_p
         self._max_tokens = max_tokens
         self._timeout = timeout
         self._num_retries = num_retries
@@ -555,6 +557,7 @@ class LiteLLMAdapter:
             "model": self._active_model,
             "messages": messages,
             "temperature": self._temperature,
+            "top_p": self._top_p,
             "timeout": self._timeout,
             "num_retries": self._num_retries,
         }

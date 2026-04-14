@@ -629,6 +629,7 @@ class AppState:
             api_base=api_base,
             api_key=api_key,
             temperature=runtime.temperature,
+            top_p=runtime.top_p,
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),
             num_retries=effective_retries,
@@ -636,11 +637,21 @@ class AppState:
         )
 
     def save_config(self) -> None:
-        """Persist current config, profiles, and prompts to disk."""
+        """Persist current config, profiles, and prompts to disk.
+
+        Ephemeral Chat Providers (created by compare-matrix) are excluded
+        from the persisted data — they are session-local and should not
+        survive a server restart.
+        """
         try:
             _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+            config_dump = self.config.model_dump()
+            # Filter out ephemeral CPs from the persisted chat_providers list.
+            config_dump["chat_providers"] = [
+                cp for cp in config_dump.get("chat_providers", []) if not cp.get("ephemeral", False)
+            ]
             data = {
-                "config": self.config.model_dump(),
+                "config": config_dump,
                 "system_prompts": self.system_prompts.model_dump(),
                 "user_profiles": [p.model_dump() for p in self.user_profiles],
             }
@@ -868,6 +879,7 @@ class AppState:
             model=prefixed_model,
             api_base=api_base,
             temperature=runtime.temperature,
+            top_p=runtime.top_p,
             max_tokens=runtime.max_output_tokens,
             timeout=float(runtime.timeout_seconds),
             num_retries=effective_retries,

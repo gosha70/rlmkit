@@ -472,6 +472,7 @@ class ChatProviderConfig(BaseModel):
     conversation_memory_fraction: float = 0.30
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    ephemeral: bool = False  # True for temporary CPs created by compare-matrix
 
     @field_validator("conversation_memory_fraction", mode="before")
     @classmethod
