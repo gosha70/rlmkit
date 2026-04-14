@@ -136,6 +136,8 @@ def render_summary_cards() -> None:
     recommendation = comparison.recommendation if comparison else "No recommendation"
 
     with col4:
+        # These search the recommendation text which contains MODE_DIRECT/MODE_RLM
+        # values from comparison.py. Coupled to the constant values ("direct", "rlm").
         if "faster" in recommendation.lower() or "direct" in recommendation.lower():
             st.metric("Recommendation", "✅ Direct", "More efficient")
         elif "rlm" in recommendation.lower():
@@ -394,7 +396,8 @@ def render_quality_metrics() -> None:
             else "Based on trade-off analysis"
         )
 
-        # Style recommendation
+        # Style recommendation — searches text containing MODE_DIRECT/MODE_RLM
+        # values from comparison.py. Coupled to the constant values ("direct", "rlm").
         if "faster" in recommendation.lower() or "direct" in recommendation.lower():
             st.success(f"✅ {recommendation}")
         elif "rlm" in recommendation.lower():
