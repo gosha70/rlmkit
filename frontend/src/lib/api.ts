@@ -56,6 +56,19 @@ export interface CompareMatrixRequest {
   ranking_metric?: MatrixRankingMetric;
 }
 
+export interface CompareMatrixRequestV2 {
+  content?: string | null;
+  file_ids?: string[] | null;
+  query: string;
+  llm_provider_ids: string[];
+  modes: MatrixSlotMode[];
+  session_id?: string | null;
+  ranking_metric?: MatrixRankingMetric;
+  runtime_settings?: RuntimeSettings;
+  budget?: BudgetConfig;
+  rag_config?: RAGConfig | null;
+}
+
 export interface CompareMatrixSlotResponse {
   slot_id: string;
   label: string;
@@ -506,7 +519,7 @@ export const submitChat = (req: ChatRequest) =>
 // has either completed or failed.  Unlike submitChat (which is 202-accepted
 // and reports back through polling), this endpoint waits for the thread
 // pool to join.  Expect latency proportional to the slowest slot.
-export const submitCompareMatrix = (req: CompareMatrixRequest) =>
+export const submitCompareMatrix = (req: CompareMatrixRequest | CompareMatrixRequestV2) =>
   fetchJSON<CompareMatrixResponse>("/api/chat/compare-matrix", {
     method: "POST",
     body: JSON.stringify(req),

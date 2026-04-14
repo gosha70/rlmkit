@@ -7,8 +7,10 @@
  * self-contained single-purpose view:
  *
  *   - Query input + content/file input
- *   - Chat Provider multi-select (reuses the existing selector)
+ *   - LLM Provider chip multi-select (filtered to connected/configured)
  *   - Mode multi-select (direct / rlm / rag)
+ *   - Profile dropdown (pre-fills runtime_settings + budget)
+ *   - Advanced settings (collapsible): runtime, budget, rag config
  *   - Ranking metric dropdown
  *   - "Run Compare" button
  *   - Result grid: one card per (provider × mode) slot with answer
@@ -23,11 +25,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X } from "lucide-react";
+import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X, ChevronDown, ChevronUp } from "lucide-react";
 
 import { AppShell } from "@/components/shared/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -37,19 +40,23 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { ChatProviderSelector } from "@/components/chat/chat-provider-selector";
+import { Slider } from "@/components/ui/slider";
 import {
-  getChatProviders,
   getLLMProviders,
+  getProfiles,
   submitCompareMatrix,
   uploadFile,
-  type ChatProviderConfig,
   type LLMProviderConfig,
+  type RunProfile,
   type CompareMatrixResponse,
   type CompareMatrixSlotResponse,
   type FileUploadResponse,
   type MatrixRankingMetric,
   type MatrixSlotMode,
+  type RuntimeSettings,
+  type BudgetConfig,
+  type RAGConfig,
+  type CompareMatrixRequestV2,
 } from "@/lib/api";
 import { ALL_EXECUTION_MODES, MODE_DIRECT } from "@/lib/constants";
 
@@ -82,19 +89,50 @@ const RANKING_METRICS: {
 // Matches the backend MAX_SLOTS constant in RunMatrixComparisonUseCase.
 const MAX_SLOTS = 10;
 
+interface InlineConfig {
+  // Runtime
+  temperature: number;
+  top_p: number;
+  max_output_tokens: number;
+  timeout_seconds: number;
+  // Budget
+  max_steps: number;
+  max_time_seconds: number;
+  repeat_limit: number;
+  nudge_at_fraction: number;
+  // RAG
+  chunk_size: number;
+  top_k: number;
+  embedding_model: string;
+}
+
+const DEFAULT_CONFIG: InlineConfig = {
+  temperature: 0.7,
+  top_p: 1.0,
+  max_output_tokens: 4096,
+  timeout_seconds: 120,
+  max_steps: 16,
+  max_time_seconds: 600,
+  repeat_limit: 2,
+  nudge_at_fraction: 0.4,
+  chunk_size: 1000,
+  top_k: 5,
+  embedding_model: "text-embedding-3-small",
+};
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function ComparePage() {
   // --- Data ----------------------------------------------------------------
-  const { data: chatProviders = [] } = useSWR<ChatProviderConfig[]>(
-    "chat-providers",
-    () => getChatProviders(),
-  );
   const { data: llmProviders = [] } = useSWR<LLMProviderConfig[]>(
     "llm-providers",
     () => getLLMProviders(),
+  );
+  const { data: profiles = [] } = useSWR<RunProfile[]>(
+    "profiles",
+    () => getProfiles(),
   );
 
   // --- Inputs --------------------------------------------------------------
@@ -103,11 +141,14 @@ export default function ComparePage() {
   const [uploadedFile, setUploadedFile] = useState<FileUploadResponse | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [selectedChatProviderIds, setSelectedChatProviderIds] = useState<string[]>([]);
+  const [selectedLLMProviderIds, setSelectedLLMProviderIds] = useState<string[]>([]);
   const [selectedModes, setSelectedModes] = useState<Set<MatrixSlotMode>>(
     new Set([MODE_DIRECT]),
   );
   const [rankingMetric, setRankingMetric] = useState<MatrixRankingMetric>("cost");
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const [config, setConfig] = useState<InlineConfig>({ ...DEFAULT_CONFIG });
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // --- Execution state -----------------------------------------------------
   const [result, setResult] = useState<CompareMatrixResponse | null>(null);
@@ -115,23 +156,48 @@ export default function ComparePage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
 
-  // --- Auto-select first available chat provider once data loads ----------
+  // --- Auto-select first available LLM provider once data loads -----------
   useEffect(() => {
-    if (selectedChatProviderIds.length === 0 && chatProviders.length > 0) {
-      // Prefer the first provider whose underlying LLM is connected/configured.
-      const lpMap = new Map(llmProviders.map((p) => [p.id, p]));
-      const firstUsable = chatProviders.find((cp) => {
-        const lp = lpMap.get(cp.llm_provider_id);
-        return lp && (lp.status === "connected" || lp.status === "configured");
-      });
-      if (firstUsable) {
-        setSelectedChatProviderIds([firstUsable.id]);
-      }
+    if (selectedLLMProviderIds.length === 0 && llmProviders.length > 0) {
+      const firstUsable = llmProviders.find(
+        (lp) => lp.status === "connected" || lp.status === "configured",
+      );
+      if (firstUsable) setSelectedLLMProviderIds([firstUsable.id]);
     }
-  }, [chatProviders, llmProviders, selectedChatProviderIds.length]);
+  }, [llmProviders, selectedLLMProviderIds.length]);
+
+  // --- Profile pre-fill ----------------------------------------------------
+  const handleProfileChange = useCallback(
+    (profileId: string) => {
+      setSelectedProfileId(profileId);
+      if (!profileId) {
+        setConfig({ ...DEFAULT_CONFIG });
+        return;
+      }
+      const profile = profiles.find((p) => p.id === profileId);
+      if (!profile) return;
+      setConfig((prev) => ({
+        ...prev,
+        temperature: profile.runtime_settings?.temperature ?? prev.temperature,
+        top_p: profile.runtime_settings?.top_p ?? prev.top_p,
+        max_output_tokens: profile.runtime_settings?.max_output_tokens ?? prev.max_output_tokens,
+        timeout_seconds: profile.runtime_settings?.timeout_seconds ?? prev.timeout_seconds,
+        max_steps: profile.budget?.max_steps ?? prev.max_steps,
+        max_time_seconds: profile.budget?.max_time_seconds ?? prev.max_time_seconds,
+        repeat_limit: profile.budget?.repeat_limit ?? prev.repeat_limit,
+        nudge_at_fraction: profile.budget?.nudge_at_fraction ?? prev.nudge_at_fraction,
+      }));
+    },
+    [profiles],
+  );
 
   // --- Derived -------------------------------------------------------------
-  const totalSlots = selectedChatProviderIds.length * selectedModes.size;
+  const usableProviders = useMemo(
+    () => llmProviders.filter((lp) => lp.status === "connected" || lp.status === "configured"),
+    [llmProviders],
+  );
+
+  const totalSlots = selectedLLMProviderIds.length * selectedModes.size;
   const tooManySlots = totalSlots > MAX_SLOTS;
   const modesSorted = useMemo(
     () => ALL_MODES.filter((m) => selectedModes.has(m)),
@@ -140,7 +206,7 @@ export default function ComparePage() {
 
   const canRun =
     query.trim().length > 0 &&
-    selectedChatProviderIds.length > 0 &&
+    selectedLLMProviderIds.length > 0 &&
     selectedModes.size > 0 &&
     !tooManySlots &&
     !isRunning &&
@@ -151,7 +217,7 @@ export default function ComparePage() {
     setSelectedModes((prev) => {
       const next = new Set(prev);
       if (next.has(mode)) {
-        if (next.size > 1) next.delete(mode); // keep at least one
+        if (next.size > 1) next.delete(mode);
       } else {
         next.add(mode);
       }
@@ -159,20 +225,29 @@ export default function ComparePage() {
     });
   }, []);
 
-  const handleFileUpload = useCallback(
-    async (file: File) => {
-      setUploadingFile(true);
-      setUploadError(null);
-      try {
-        const rec = await uploadFile(file);
-        setUploadedFile(rec);
-        // Clear the text content field — file takes precedence.
-        setContent("");
-      } catch (err) {
-        setUploadError(err instanceof Error ? err.message : "Upload failed");
-      } finally {
-        setUploadingFile(false);
-      }
+  const toggleLLMProvider = useCallback((id: string) => {
+    setSelectedLLMProviderIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    setUploadingFile(true);
+    setUploadError(null);
+    try {
+      const rec = await uploadFile(file);
+      setUploadedFile(rec);
+      setContent("");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingFile(false);
+    }
+  }, []);
+
+  const patchConfig = useCallback(
+    <K extends keyof InlineConfig>(key: K, value: InlineConfig[K]) => {
+      setConfig((prev) => ({ ...prev, [key]: value }));
     },
     [],
   );
@@ -184,14 +259,38 @@ export default function ComparePage() {
     setResult(null);
     setExpandedSlotId(null);
     try {
-      const resp = await submitCompareMatrix({
+      const req: CompareMatrixRequestV2 = {
         query: query.trim(),
         content: uploadedFile ? null : content.trim() || null,
         file_ids: uploadedFile ? [uploadedFile.id] : null,
-        chat_provider_ids: selectedChatProviderIds,
+        llm_provider_ids: selectedLLMProviderIds,
         modes: modesSorted,
         ranking_metric: rankingMetric,
-      });
+        runtime_settings: {
+          temperature: config.temperature,
+          top_p: config.top_p,
+          max_output_tokens: config.max_output_tokens,
+          timeout_seconds: config.timeout_seconds,
+        } satisfies RuntimeSettings,
+        budget: {
+          max_steps: config.max_steps,
+          max_tokens: 50000,
+          max_cost_usd: 5.0,
+          max_time_seconds: config.max_time_seconds,
+          max_recursion_depth: 5,
+          repeat_limit: config.repeat_limit,
+          nudge_at_fraction: config.nudge_at_fraction,
+        } satisfies BudgetConfig,
+        rag_config: selectedModes.has("rag")
+          ? ({
+              chunk_size: config.chunk_size,
+              chunk_overlap: 200,
+              top_k: config.top_k,
+              embedding_model: config.embedding_model,
+            } satisfies RAGConfig)
+          : null,
+      };
+      const resp = await submitCompareMatrix(req);
       setResult(resp);
     } catch (err) {
       setRunError(err instanceof Error ? err.message : "Matrix run failed");
@@ -203,9 +302,11 @@ export default function ComparePage() {
     query,
     content,
     uploadedFile,
-    selectedChatProviderIds,
+    selectedLLMProviderIds,
     modesSorted,
     rankingMetric,
+    selectedModes,
+    config,
   ]);
 
   // --- Render --------------------------------------------------------------
@@ -289,7 +390,7 @@ export default function ComparePage() {
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) handleFileUpload(file);
-                        e.target.value = ""; // allow re-upload of the same name
+                        e.target.value = "";
                       }}
                     />
                   </label>
@@ -300,18 +401,45 @@ export default function ComparePage() {
               )}
             </div>
 
-            {/* Chat provider selector */}
+            {/* LLM Provider chip selector */}
             <div>
               <label className="mb-2 block text-sm font-medium">
-                Chat providers ({selectedChatProviderIds.length} selected)
+                LLM providers ({selectedLLMProviderIds.length} selected)
               </label>
-              <ChatProviderSelector
-                chatProviders={chatProviders}
-                llmProviders={llmProviders}
-                selectedIds={selectedChatProviderIds}
-                onSelectionChange={setSelectedChatProviderIds}
-                disabled={isRunning}
-              />
+              {usableProviders.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No connected or configured LLM providers. Add one in Settings.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {usableProviders.map((lp) => {
+                    const active = selectedLLMProviderIds.includes(lp.id);
+                    return (
+                      <button
+                        key={lp.id}
+                        type="button"
+                        onClick={() => toggleLLMProvider(lp.id)}
+                        disabled={isRunning}
+                        className={`flex flex-col items-start rounded-md border px-3 py-1.5 text-left transition-colors ${
+                          active
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input bg-background hover:bg-accent"
+                        } ${isRunning ? "cursor-not-allowed opacity-50" : ""}`}
+                        aria-pressed={active}
+                      >
+                        <span className="text-sm font-medium">{lp.name}</span>
+                        <span
+                          className={`text-xs ${
+                            active ? "text-primary-foreground/70" : "text-muted-foreground"
+                          }`}
+                        >
+                          {lp.model}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Mode selector */}
@@ -371,13 +499,283 @@ export default function ComparePage() {
               </Select>
             </div>
 
+            {/* Profile dropdown */}
+            <div>
+              <label className="mb-1 block text-sm font-medium">Profile</label>
+              <Select
+                value={selectedProfileId}
+                onValueChange={handleProfileChange}
+                disabled={isRunning}
+              >
+                <SelectTrigger className="w-80">
+                  <SelectValue placeholder="No profile (use defaults)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No profile (use defaults)</SelectItem>
+                  {profiles.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      <div className="flex flex-col">
+                        <span>{p.name}</span>
+                        {p.description && (
+                          <span className="text-xs text-muted-foreground">
+                            {p.description}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Advanced settings (collapsible) */}
+            <div className="rounded-md border">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-4 py-2 text-sm font-medium hover:bg-accent"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                disabled={isRunning}
+              >
+                <span>Advanced settings</span>
+                {advancedOpen ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </button>
+              {advancedOpen && (
+                <div className="space-y-5 border-t px-4 py-4">
+                  {/* Runtime settings */}
+                  <div>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Runtime
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Temperature (0–2)
+                        </label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={2}
+                          step={0.1}
+                          value={config.temperature}
+                          onChange={(e) =>
+                            patchConfig("temperature", parseFloat(e.target.value) || 0)
+                          }
+                          disabled={isRunning}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Top-p (0–1)
+                        </label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={config.top_p}
+                          onChange={(e) =>
+                            patchConfig("top_p", parseFloat(e.target.value) || 0)
+                          }
+                          disabled={isRunning}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Max output tokens
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={config.max_output_tokens}
+                          onChange={(e) =>
+                            patchConfig(
+                              "max_output_tokens",
+                              parseInt(e.target.value, 10) || 1,
+                            )
+                          }
+                          disabled={isRunning}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Timeout (s)
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={config.timeout_seconds}
+                          onChange={(e) =>
+                            patchConfig(
+                              "timeout_seconds",
+                              parseInt(e.target.value, 10) || 1,
+                            )
+                          }
+                          disabled={isRunning}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Budget settings */}
+                  <div>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Budget
+                    </p>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="mb-1 flex items-center justify-between">
+                          <label className="text-xs text-muted-foreground">
+                            Max steps (1–50)
+                          </label>
+                          <span className="text-xs font-mono">{config.max_steps}</span>
+                        </div>
+                        <Slider
+                          min={1}
+                          max={50}
+                          step={1}
+                          value={[config.max_steps]}
+                          onValueChange={([v]) => patchConfig("max_steps", v)}
+                          disabled={isRunning}
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-1 flex items-center justify-between">
+                          <label className="text-xs text-muted-foreground">
+                            Max time (5–600 s)
+                          </label>
+                          <span className="text-xs font-mono">
+                            {config.max_time_seconds}s
+                          </span>
+                        </div>
+                        <Slider
+                          min={5}
+                          max={600}
+                          step={5}
+                          value={[config.max_time_seconds]}
+                          onValueChange={([v]) => patchConfig("max_time_seconds", v)}
+                          disabled={isRunning}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Repeat limit (1–10)
+                          </label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={config.repeat_limit}
+                            onChange={(e) =>
+                              patchConfig(
+                                "repeat_limit",
+                                parseInt(e.target.value, 10) || 1,
+                              )
+                            }
+                            disabled={isRunning}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Nudge at fraction (0.1–1.0)
+                          </label>
+                          <Input
+                            type="number"
+                            min={0.1}
+                            max={1.0}
+                            step={0.1}
+                            value={config.nudge_at_fraction}
+                            onChange={(e) =>
+                              patchConfig(
+                                "nudge_at_fraction",
+                                parseFloat(e.target.value) || 0.1,
+                              )
+                            }
+                            disabled={isRunning}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* RAG config — only visible when rag mode is selected */}
+                  {selectedModes.has("rag") && (
+                    <div>
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        RAG
+                      </p>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Chunk size
+                          </label>
+                          <Input
+                            type="number"
+                            min={100}
+                            value={config.chunk_size}
+                            onChange={(e) =>
+                              patchConfig(
+                                "chunk_size",
+                                parseInt(e.target.value, 10) || 100,
+                              )
+                            }
+                            disabled={isRunning}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Top-k
+                          </label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={config.top_k}
+                            onChange={(e) =>
+                              patchConfig("top_k", parseInt(e.target.value, 10) || 1)
+                            }
+                            disabled={isRunning}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Embedding model
+                          </label>
+                          <Input
+                            type="text"
+                            value={config.embedding_model}
+                            onChange={(e) =>
+                              patchConfig("embedding_model", e.target.value)
+                            }
+                            disabled={isRunning}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Slot count + validation */}
             <div className="flex items-center gap-3 text-sm">
               <Badge
                 variant={tooManySlots ? "destructive" : "secondary"}
                 className="font-mono"
               >
-                {totalSlots} slot{totalSlots === 1 ? "" : "s"} ({selectedChatProviderIds.length} × {selectedModes.size})
+                {totalSlots} slot{totalSlots === 1 ? "" : "s"} ({selectedLLMProviderIds.length} × {selectedModes.size})
               </Badge>
               {tooManySlots && (
                 <span className="text-destructive">
@@ -406,11 +804,13 @@ export default function ComparePage() {
         </Card>
 
         {/* ---------- Results panel ---------- */}
-        {result && <ResultsPanel
-          result={result}
-          expandedSlotId={expandedSlotId}
-          setExpandedSlotId={setExpandedSlotId}
-        />}
+        {result && (
+          <ResultsPanel
+            result={result}
+            expandedSlotId={expandedSlotId}
+            setExpandedSlotId={setExpandedSlotId}
+          />
+        )}
       </div>
     </AppShell>
   );
@@ -427,7 +827,6 @@ interface ResultsPanelProps {
 }
 
 function ResultsPanel({ result, expandedSlotId, setExpandedSlotId }: ResultsPanelProps) {
-  // Map ranking position to slot index for crown rendering.
   const rankByIndex = useMemo(() => {
     const map = new Map<number, number>();
     result.ranking.forEach((slotIdx, rankPos) => {
@@ -487,9 +886,7 @@ function ResultsPanel({ result, expandedSlotId, setExpandedSlotId }: ResultsPane
                 slot={slot}
                 rank={rank}
                 expanded={isExpanded}
-                onToggle={() =>
-                  setExpandedSlotId(isExpanded ? null : slot.slot_id)
-                }
+                onToggle={() => setExpandedSlotId(isExpanded ? null : slot.slot_id)}
               />
             );
           })}
@@ -555,9 +952,7 @@ function SlotCard({ slot, rank, expanded, onToggle }: SlotCardProps) {
             {expanded ? (
               <div className="whitespace-pre-wrap">{slot.answer}</div>
             ) : (
-              <div className="line-clamp-3 whitespace-pre-wrap">
-                {slot.answer}
-              </div>
+              <div className="line-clamp-3 whitespace-pre-wrap">{slot.answer}</div>
             )}
           </div>
           <Button
