@@ -23,7 +23,7 @@
  * and renders results all at once.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -58,7 +58,7 @@ import {
   type RAGConfig,
   type CompareMatrixRequestV2,
 } from "@/lib/api";
-import { ALL_EXECUTION_MODES, MODE_DIRECT } from "@/lib/constants";
+import { ALL_EXECUTION_MODES, MODE_DIRECT, MODE_RAG } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -98,14 +98,18 @@ interface InlineConfig {
   // Budget
   max_steps: number;
   max_time_seconds: number;
+  max_cost_usd: number;
   repeat_limit: number;
   nudge_at_fraction: number;
   // RAG
   chunk_size: number;
+  chunk_overlap: number;
   top_k: number;
   embedding_model: string;
 }
 
+// NOTE: These defaults mirror the backend's sandbox_vars.py / models.py
+// defaults.  If the backend changes, these must be updated to match.
 const DEFAULT_CONFIG: InlineConfig = {
   temperature: 0.7,
   top_p: 1.0,
@@ -113,9 +117,11 @@ const DEFAULT_CONFIG: InlineConfig = {
   timeout_seconds: 120,
   max_steps: 16,
   max_time_seconds: 600,
+  max_cost_usd: 5.0,
   repeat_limit: 2,
   nudge_at_fraction: 0.4,
   chunk_size: 1000,
+  chunk_overlap: 150,
   top_k: 5,
   embedding_model: "text-embedding-3-small",
 };
@@ -156,13 +162,18 @@ export default function ComparePage() {
   const [runError, setRunError] = useState<string | null>(null);
   const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
 
-  // --- Auto-select first available LLM provider once data loads -----------
+  // --- Auto-select first available LLM provider once (not on every SWR revalidation) ---
+  const hasAutoSelected = useRef(false);
   useEffect(() => {
+    if (hasAutoSelected.current) return;
     if (selectedLLMProviderIds.length === 0 && llmProviders.length > 0) {
       const firstUsable = llmProviders.find(
         (lp) => lp.status === "connected" || lp.status === "configured",
       );
-      if (firstUsable) setSelectedLLMProviderIds([firstUsable.id]);
+      if (firstUsable) {
+        setSelectedLLMProviderIds([firstUsable.id]);
+        hasAutoSelected.current = true;
+      }
     }
   }, [llmProviders, selectedLLMProviderIds.length]);
 
@@ -275,16 +286,16 @@ export default function ComparePage() {
         budget: {
           max_steps: config.max_steps,
           max_tokens: 50000,
-          max_cost_usd: 5.0,
+          max_cost_usd: config.max_cost_usd,
           max_time_seconds: config.max_time_seconds,
           max_recursion_depth: 5,
           repeat_limit: config.repeat_limit,
           nudge_at_fraction: config.nudge_at_fraction,
         } satisfies BudgetConfig,
-        rag_config: selectedModes.has("rag")
+        rag_config: selectedModes.has(MODE_RAG)
           ? ({
               chunk_size: config.chunk_size,
-              chunk_overlap: 200,
+              chunk_overlap: config.chunk_overlap,
               top_k: config.top_k,
               embedding_model: config.embedding_model,
             } satisfies RAGConfig)
@@ -664,6 +675,26 @@ export default function ComparePage() {
                           disabled={isRunning}
                         />
                       </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Max cost per slot (USD)
+                        </label>
+                        <Input
+                          type="number"
+                          min={0.01}
+                          max={100}
+                          step={0.5}
+                          value={config.max_cost_usd}
+                          onChange={(e) =>
+                            patchConfig(
+                              "max_cost_usd",
+                              parseFloat(e.target.value) || 0.01,
+                            )
+                          }
+                          disabled={isRunning}
+                          className="h-8 text-sm"
+                        />
+                      </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">
@@ -709,12 +740,12 @@ export default function ComparePage() {
                   </div>
 
                   {/* RAG config — only visible when rag mode is selected */}
-                  {selectedModes.has("rag") && (
+                  {selectedModes.has(MODE_RAG) && (
                     <div>
                       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         RAG
                       </p>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                         <div>
                           <label className="mb-1 block text-xs text-muted-foreground">
                             Chunk size
@@ -727,6 +758,24 @@ export default function ComparePage() {
                               patchConfig(
                                 "chunk_size",
                                 parseInt(e.target.value, 10) || 100,
+                              )
+                            }
+                            disabled={isRunning}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-muted-foreground">
+                            Chunk overlap
+                          </label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={config.chunk_overlap}
+                            onChange={(e) =>
+                              patchConfig(
+                                "chunk_overlap",
+                                parseInt(e.target.value, 10) || 0,
                               )
                             }
                             disabled={isRunning}
