@@ -44,7 +44,8 @@ export type MatrixRankingMetric =
   | "cost"
   | "tokens"
   | "latency"
-  | "answer_per_cost";
+  | "answer_per_cost"
+  | "judge_score";
 
 export interface CompareMatrixRequest {
   content?: string | null;
