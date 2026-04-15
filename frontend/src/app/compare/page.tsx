@@ -25,12 +25,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X, ChevronDown, ChevronUp, Ban } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 import { AppShell } from "@/components/shared/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { FieldLabel } from "@/components/settings/field-label";
 import {
   Select,
   SelectContent,
@@ -88,6 +100,60 @@ const RANKING_METRICS: {
 
 // Matches the backend MAX_SLOTS constant in RunMatrixComparisonUseCase.
 const MAX_SLOTS = 10;
+
+/** Detect slots that failed or produced only a warning (not a real answer). */
+function _isSlotFailed(slot: CompareMatrixSlotResponse): boolean {
+  if (!slot.success) return true;
+  // Backend wraps errors/warnings with these prefixes
+  const a = slot.answer;
+  return a.startsWith("\u26a0\ufe0f") || a.startsWith("Error:");
+}
+
+/** Human-friendly error message — strip raw JSON/stack traces. */
+function _friendlyError(slot: CompareMatrixSlotResponse): string {
+  const raw = slot.error || slot.answer || "Execution failed";
+  // Extract just the user-facing message from litellm errors
+  const match = raw.match(/Cannot connect to the LLM server[^.]*\./);
+  if (match) return match[0];
+  const timeoutMatch = raw.match(/RAG timed out[^.]*\./);
+  if (timeoutMatch) return timeoutMatch[0];
+  const budgetMatch = raw.match(/Step budget exhausted[^.]*\./);
+  if (budgetMatch) return budgetMatch[0];
+  // Generic: truncate at a reasonable length
+  if (raw.length > 200) return raw.slice(0, 200) + "\u2026";
+  return raw;
+}
+
+// Tooltip help text for configuration fields.  Defined as constants to
+// avoid magic strings and keep them in sync with budget-config.tsx.
+const FIELD_TOOLTIPS = {
+  temperature:
+    "Controls randomness. Lower values (0.1–0.3) produce focused, deterministic answers. Higher values (0.7–1.5) increase creativity and variety.",
+  top_p:
+    "Nucleus sampling: only tokens within the top-p cumulative probability are considered. Lower values narrow the vocabulary. Note: Anthropic Claude does not support temperature + top_p together — when top_p is non-default, temperature is omitted for Claude models.",
+  max_output_tokens:
+    "Maximum tokens the model can generate per call. Longer answers need higher values. Does not affect input size.",
+  timeout:
+    "Wall-clock timeout per LLM call in seconds. Increase for slow models or large documents.",
+  max_steps:
+    "Maximum number of LLM reasoning steps per query. Higher values allow deeper exploration in RLM mode but increase cost and latency.",
+  max_time:
+    "Total wall-clock budget for the entire execution (all steps combined). The run is terminated if this limit is exceeded.",
+  max_cost:
+    "Dollar limit per slot. The execution is terminated if this cost is exceeded. Applies per slot, not total — a 6-slot matrix with $5/slot allows up to $30 total.",
+  repeat_limit:
+    "How many duplicate inspect results before the RLM loop forces finalization. Lower values converge faster but may miss content.",
+  nudge_at_fraction:
+    "Fraction of max_steps at which a soft convergence nudge is sent (e.g., 0.4 = at 40% of budget). Encourages the model to start synthesizing.",
+  chunk_size:
+    "Number of characters per RAG chunk. Smaller chunks improve precision but increase the number of embeddings.",
+  chunk_overlap:
+    "Characters of overlap between adjacent chunks. Prevents information loss at chunk boundaries. Typically 10–15% of chunk size.",
+  top_k:
+    "Number of most-similar chunks retrieved for context. Higher values provide more context but increase token usage.",
+  embedding_model:
+    "Model used to generate vector embeddings for RAG retrieval. Must match the model used during indexing.",
+} as const;
 
 interface InlineConfig {
   // Runtime
@@ -152,7 +218,7 @@ export default function ComparePage() {
     new Set([MODE_DIRECT]),
   );
   const [rankingMetric, setRankingMetric] = useState<MatrixRankingMetric>("cost");
-  const [selectedProfileId, setSelectedProfileId] = useState<string>("");
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("none");
   const [config, setConfig] = useState<InlineConfig>({ ...DEFAULT_CONFIG });
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
@@ -181,7 +247,7 @@ export default function ComparePage() {
   const handleProfileChange = useCallback(
     (profileId: string) => {
       setSelectedProfileId(profileId);
-      if (!profileId) {
+      if (profileId === "none") {
         setConfig({ ...DEFAULT_CONFIG });
         return;
       }
@@ -325,7 +391,7 @@ export default function ComparePage() {
     <AppShell>
       <div className="mx-auto max-w-6xl space-y-6 p-6">
         <header>
-          <h1 className="text-2xl font-bold">Matrix Compare</h1>
+          <h1 className="text-2xl font-bold">LLM Tuner</h1>
           <p className="text-sm text-muted-foreground">
             Run the same query across{" "}
             <span className="font-mono">N providers × M modes</span> in
@@ -482,34 +548,6 @@ export default function ComparePage() {
               </div>
             </div>
 
-            {/* Ranking metric */}
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Ranking metric
-              </label>
-              <Select
-                value={rankingMetric}
-                onValueChange={(v) => setRankingMetric(v as MatrixRankingMetric)}
-                disabled={isRunning}
-              >
-                <SelectTrigger className="w-80">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RANKING_METRICS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      <div className="flex flex-col">
-                        <span>{opt.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {opt.help}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Profile dropdown */}
             <div>
               <label className="mb-1 block text-sm font-medium">Profile</label>
@@ -518,13 +556,13 @@ export default function ComparePage() {
                 onValueChange={handleProfileChange}
                 disabled={isRunning}
               >
-                <SelectTrigger className="w-80">
+                <SelectTrigger className="w-80 truncate">
                   <SelectValue placeholder="No profile (use defaults)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No profile (use defaults)</SelectItem>
+                  <SelectItem value="none">No profile (use defaults)</SelectItem>
                   {profiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
+                    <SelectItem key={p.id} value={p.id} textValue={p.name}>
                       <div className="flex flex-col">
                         <span>{p.name}</span>
                         {p.description && (
@@ -563,9 +601,9 @@ export default function ComparePage() {
                     </p>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
+                        <FieldLabel tooltip={FIELD_TOOLTIPS.temperature} className="mb-1 text-xs text-muted-foreground">
                           Temperature (0–2)
-                        </label>
+                        </FieldLabel>
                         <Input
                           type="number"
                           min={0}
@@ -580,9 +618,9 @@ export default function ComparePage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
+                        <FieldLabel tooltip={FIELD_TOOLTIPS.top_p} className="mb-1 text-xs text-muted-foreground">
                           Top-p (0–1)
-                        </label>
+                        </FieldLabel>
                         <Input
                           type="number"
                           min={0}
@@ -597,9 +635,9 @@ export default function ComparePage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
+                        <FieldLabel tooltip={FIELD_TOOLTIPS.max_output_tokens} className="mb-1 text-xs text-muted-foreground">
                           Max output tokens
-                        </label>
+                        </FieldLabel>
                         <Input
                           type="number"
                           min={1}
@@ -615,9 +653,9 @@ export default function ComparePage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
+                        <FieldLabel tooltip={FIELD_TOOLTIPS.timeout} className="mb-1 text-xs text-muted-foreground">
                           Timeout (s)
-                        </label>
+                        </FieldLabel>
                         <Input
                           type="number"
                           min={1}
@@ -643,9 +681,9 @@ export default function ComparePage() {
                     <div className="space-y-3">
                       <div>
                         <div className="mb-1 flex items-center justify-between">
-                          <label className="text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.max_steps} className="text-xs text-muted-foreground">
                             Max steps (1–50)
-                          </label>
+                          </FieldLabel>
                           <span className="text-xs font-mono">{config.max_steps}</span>
                         </div>
                         <Slider
@@ -659,9 +697,9 @@ export default function ComparePage() {
                       </div>
                       <div>
                         <div className="mb-1 flex items-center justify-between">
-                          <label className="text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.max_time} className="text-xs text-muted-foreground">
                             Max time (5–600 s)
-                          </label>
+                          </FieldLabel>
                           <span className="text-xs font-mono">
                             {config.max_time_seconds}s
                           </span>
@@ -676,9 +714,9 @@ export default function ComparePage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
+                        <FieldLabel tooltip={FIELD_TOOLTIPS.max_cost} className="mb-1 text-xs text-muted-foreground">
                           Max cost per slot (USD)
-                        </label>
+                        </FieldLabel>
                         <Input
                           type="number"
                           min={0.01}
@@ -697,9 +735,9 @@ export default function ComparePage() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.repeat_limit} className="mb-1 text-xs text-muted-foreground">
                             Repeat limit (1–10)
-                          </label>
+                          </FieldLabel>
                           <Input
                             type="number"
                             min={1}
@@ -716,9 +754,9 @@ export default function ComparePage() {
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.nudge_at_fraction} className="mb-1 text-xs text-muted-foreground">
                             Nudge at fraction (0.1–1.0)
-                          </label>
+                          </FieldLabel>
                           <Input
                             type="number"
                             min={0.1}
@@ -747,9 +785,9 @@ export default function ComparePage() {
                       </p>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.chunk_size} className="mb-1 text-xs text-muted-foreground">
                             Chunk size
-                          </label>
+                          </FieldLabel>
                           <Input
                             type="number"
                             min={100}
@@ -765,9 +803,9 @@ export default function ComparePage() {
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.chunk_overlap} className="mb-1 text-xs text-muted-foreground">
                             Chunk overlap
-                          </label>
+                          </FieldLabel>
                           <Input
                             type="number"
                             min={0}
@@ -783,9 +821,9 @@ export default function ComparePage() {
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.top_k} className="mb-1 text-xs text-muted-foreground">
                             Top-k
-                          </label>
+                          </FieldLabel>
                           <Input
                             type="number"
                             min={1}
@@ -798,9 +836,9 @@ export default function ComparePage() {
                           />
                         </div>
                         <div>
-                          <label className="mb-1 block text-xs text-muted-foreground">
+                          <FieldLabel tooltip={FIELD_TOOLTIPS.embedding_model} className="mb-1 text-xs text-muted-foreground">
                             Embedding model
-                          </label>
+                          </FieldLabel>
                           <Input
                             type="text"
                             value={config.embedding_model}
@@ -856,6 +894,8 @@ export default function ComparePage() {
         {result && (
           <ResultsPanel
             result={result}
+            rankingMetric={rankingMetric}
+            onRankingMetricChange={setRankingMetric}
             expandedSlotId={expandedSlotId}
             setExpandedSlotId={setExpandedSlotId}
           />
@@ -871,22 +911,67 @@ export default function ComparePage() {
 
 interface ResultsPanelProps {
   result: CompareMatrixResponse;
+  rankingMetric: MatrixRankingMetric;
+  onRankingMetricChange: (metric: MatrixRankingMetric) => void;
   expandedSlotId: string | null;
   setExpandedSlotId: (id: string | null) => void;
 }
 
-function ResultsPanel({ result, expandedSlotId, setExpandedSlotId }: ResultsPanelProps) {
+/** Client-side ranking so re-sorting doesn't require a re-run. */
+function _rankSlots(
+  slots: CompareMatrixSlotResponse[],
+  metric: MatrixRankingMetric,
+): number[] {
+  const scored = slots.map((s, idx) => {
+    if (_isSlotFailed(s)) return { idx, score: Infinity };
+    let score: number;
+    switch (metric) {
+      case "cost":
+        score = s.total_cost;
+        break;
+      case "tokens":
+        score = s.total_tokens;
+        break;
+      case "latency":
+        score = s.elapsed_seconds;
+        break;
+      case "answer_per_cost":
+        // Higher is better → negate so ascending sort still works
+        score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -s.answer.length;
+        break;
+      default:
+        score = s.total_cost;
+    }
+    return { idx, score };
+  });
+  scored.sort((a, b) => a.score - b.score);
+  return scored.map((s) => s.idx);
+}
+
+function ResultsPanel({
+  result,
+  rankingMetric,
+  onRankingMetricChange,
+  expandedSlotId,
+  setExpandedSlotId,
+}: ResultsPanelProps) {
+  // Re-rank client-side whenever the metric changes
+  const ranking = useMemo(
+    () => _rankSlots(result.slots, rankingMetric),
+    [result.slots, rankingMetric],
+  );
+
   const rankByIndex = useMemo(() => {
     const map = new Map<number, number>();
-    result.ranking.forEach((slotIdx, rankPos) => {
+    ranking.forEach((slotIdx, rankPos) => {
       map.set(slotIdx, rankPos + 1);
     });
     return map;
-  }, [result.ranking]);
+  }, [ranking]);
 
   const bestSlot: CompareMatrixSlotResponse | null =
-    result.ranking.length > 0 && result.slots[result.ranking[0]]?.success
-      ? result.slots[result.ranking[0]]
+    ranking.length > 0 && result.slots[ranking[0]]?.success
+      ? result.slots[ranking[0]]
       : null;
 
   return (
@@ -913,7 +998,21 @@ function ResultsPanel({ result, expandedSlotId, setExpandedSlotId }: ResultsPane
           )}
           <div className="flex items-center gap-2 text-muted-foreground">
             <span className="font-medium">Ranked by:</span>
-            <span>{result.ranking_metric}</span>
+            <Select
+              value={rankingMetric}
+              onValueChange={(v) => onRankingMetricChange(v as MatrixRankingMetric)}
+            >
+              <SelectTrigger className="h-7 w-48 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RANKING_METRICS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div
             className="flex items-center gap-2 font-mono text-xs text-muted-foreground"
@@ -923,6 +1022,9 @@ function ResultsPanel({ result, expandedSlotId, setExpandedSlotId }: ResultsPane
             <span>{result.comparison_group_id.slice(0, 12)}…</span>
           </div>
         </div>
+
+        {/* Comparison chart */}
+        <ComparisonChart slots={result.slots} metric={rankingMetric} ranking={ranking} />
 
         {/* Slot grid */}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -946,6 +1048,126 @@ function ResultsPanel({ result, expandedSlotId, setExpandedSlotId }: ResultsPane
 }
 
 // ---------------------------------------------------------------------------
+// Comparison chart
+// ---------------------------------------------------------------------------
+
+const BAR_COLORS = [
+  "hsl(45, 93%, 47%)",   // gold (#1)
+  "hsl(160, 60%, 45%)",  // emerald (#2)
+  "hsl(210, 60%, 55%)",  // blue
+  "hsl(280, 50%, 55%)",  // purple
+  "hsl(30, 70%, 50%)",   // orange
+  "hsl(340, 60%, 50%)",  // rose
+  "hsl(180, 50%, 45%)",  // teal
+  "hsl(0, 0%, 55%)",     // gray (failed)
+];
+
+interface ComparisonChartProps {
+  slots: CompareMatrixSlotResponse[];
+  metric: MatrixRankingMetric;
+  ranking: number[];
+}
+
+function ComparisonChart({ slots, metric, ranking }: ComparisonChartProps) {
+  const chartData = useMemo(() => {
+    return ranking.map((slotIdx) => {
+      const s = slots[slotIdx];
+      let value: number;
+      switch (metric) {
+        case "cost":
+          value = s.total_cost;
+          break;
+        case "tokens":
+          value = s.total_tokens;
+          break;
+        case "latency":
+          value = s.elapsed_seconds;
+          break;
+        case "answer_per_cost":
+          value = s.total_cost > 0 ? s.answer.length / s.total_cost : s.answer.length;
+          break;
+        default:
+          value = s.total_cost;
+      }
+      const failed = _isSlotFailed(s);
+      return {
+        name: s.label,
+        failed,
+        value: failed ? 0 : value,
+        success: !failed,
+        slotIdx,
+      };
+    });
+  }, [slots, metric, ranking]);
+
+  const metricLabel = RANKING_METRICS.find((m) => m.value === metric)?.label ?? metric;
+  const isHigherBetter = metric === "answer_per_cost";
+
+  if (chartData.length === 0) return null;
+
+  // Dynamic YAxis width based on longest label (~6.5px per char at font-size 11)
+  const maxLabelLen = Math.max(...chartData.map((d) => d.name.length));
+  const yAxisWidth = Math.max(150, Math.min(maxLabelLen * 6.5 + 30, 350));
+
+  return (
+    <div className="rounded-md border bg-card p-4">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">
+        {metricLabel} {isHigherBetter ? "(higher is better)" : "(lower is better)"}
+      </p>
+      <ResponsiveContainer width="100%" height={Math.max(120, chartData.length * 40)}>
+        <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 20, top: 0, bottom: 0 }}>
+          <XAxis type="number" tick={{ fontSize: 11 }} />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={yAxisWidth}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            tick={(props: any) => {
+              const entry = chartData[props.payload.index];
+              const isFailed = entry?.failed;
+              return (
+                <text
+                  x={props.x - 8}
+                  y={props.y}
+                  dy={4}
+                  textAnchor="end"
+                  fontSize={11}
+                  fill={isFailed ? "hsl(0, 60%, 60%)" : "currentColor"}
+                >
+                  {isFailed ? `\u{1F6AB} ${props.payload.value}` : props.payload.value}
+                </text>
+              );
+            }}
+          />
+          <RechartsTooltip
+            formatter={(value) => {
+              const v = Number(value ?? 0);
+              return [
+                metric === "cost"
+                  ? `$${v.toFixed(4)}`
+                  : metric === "latency"
+                    ? `${v.toFixed(1)}s`
+                    : v.toLocaleString(),
+                metricLabel,
+              ];
+            }}
+          />
+          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+            {chartData.map((entry, idx) => (
+              <Cell
+                key={entry.name}
+                // -1 reserves the last color (gray) for failed slots
+                fill={entry.success ? BAR_COLORS[idx % (BAR_COLORS.length - 1)] : BAR_COLORS[BAR_COLORS.length - 1]}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Slot card
 // ---------------------------------------------------------------------------
 
@@ -957,11 +1179,12 @@ interface SlotCardProps {
 }
 
 function SlotCard({ slot, rank, expanded, onToggle }: SlotCardProps) {
-  const statusColor = slot.success
-    ? rank === 1
+  const failed = _isSlotFailed(slot);
+  const statusColor = failed
+    ? "border-destructive"
+    : rank === 1
       ? "border-amber-500"
-      : "border-emerald-500"
-    : "border-destructive";
+      : "border-emerald-500";
 
   return (
     <div
@@ -970,38 +1193,54 @@ function SlotCard({ slot, rank, expanded, onToggle }: SlotCardProps) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {rank === 1 && <Trophy className="h-4 w-4 text-amber-500" />}
+          {failed ? (
+            <Ban className="h-4 w-4 text-destructive" />
+          ) : rank === 1 ? (
+            <Trophy className="h-4 w-4 text-amber-500" />
+          ) : null}
           <span className="text-sm font-semibold">{slot.label}</span>
         </div>
         {rank !== null && (
-          <Badge variant="outline" className="text-xs">
-            #{rank}
+          <Badge variant={failed ? "destructive" : "outline"} className="text-xs">
+            {failed ? "Failed" : `#${rank}`}
           </Badge>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1" title="Total tokens">
-          <Hash className="h-3 w-3" />
-          {slot.total_tokens.toLocaleString()}
-        </span>
-        <span className="flex items-center gap-1" title="Cost (USD)">
-          <DollarSign className="h-3 w-3" />
-          {slot.total_cost.toFixed(4)}
-        </span>
-        <span className="flex items-center gap-1" title="Elapsed seconds">
-          <Clock className="h-3 w-3" />
-          {slot.elapsed_seconds.toFixed(1)}s
-        </span>
-      </div>
+      {!failed && (
+        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1" title="Total tokens">
+            <Hash className="h-3 w-3" />
+            {slot.total_tokens.toLocaleString()}
+          </span>
+          <span className="flex items-center gap-1" title="Cost (USD)">
+            <DollarSign className="h-3 w-3" />
+            {slot.total_cost.toFixed(4)}
+          </span>
+          <span className="flex items-center gap-1" title="Elapsed seconds">
+            <Clock className="h-3 w-3" />
+            {slot.elapsed_seconds.toFixed(1)}s
+          </span>
+        </div>
+      )}
 
-      {slot.success ? (
+      {failed ? (
+        <div className="max-h-32 overflow-auto break-words rounded bg-destructive/10 p-2 text-sm text-destructive">
+          {_friendlyError(slot)}
+        </div>
+      ) : (
         <>
-          <div className="rounded bg-muted/40 p-2 text-sm">
+          <div className="prose prose-sm dark:prose-invert max-w-none overflow-x-auto rounded bg-muted/40 p-2">
             {expanded ? (
-              <div className="whitespace-pre-wrap">{slot.answer}</div>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {slot.answer}
+              </ReactMarkdown>
             ) : (
-              <div className="line-clamp-3 whitespace-pre-wrap">{slot.answer}</div>
+              <div className="line-clamp-3">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {slot.answer}
+                </ReactMarkdown>
+              </div>
             )}
           </div>
           <Button
@@ -1013,10 +1252,6 @@ function SlotCard({ slot, rank, expanded, onToggle }: SlotCardProps) {
             {expanded ? "Collapse" : "Expand full answer"}
           </Button>
         </>
-      ) : (
-        <div className="rounded bg-destructive/10 p-2 text-sm text-destructive">
-          {slot.error || "Slot failed"}
-        </div>
       )}
     </div>
   );

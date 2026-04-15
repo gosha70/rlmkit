@@ -35,7 +35,7 @@ interface SidebarProps {
 
 const NAV_ITEMS = [
   { href: "/", label: "Chat", icon: MessageSquare },
-  { href: "/compare", label: "Compare", icon: Columns3 },
+  { href: "/compare", label: "LLM Tuner", icon: Columns3 },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/traces", label: "Traces", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },

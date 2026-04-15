@@ -217,6 +217,12 @@ async def _compare_matrix_v2(
 ) -> CompareMatrixResponse:
     """V2 execution path: LLM Providers × modes via auto-created ephemeral CPs."""
     assert req.llm_provider_ids is not None  # caller guarantees this
+    logger.info(
+        "compare-matrix V2: %d providers × %d modes, query=%r",
+        len(req.llm_provider_ids),
+        len(req.modes),
+        req.query[:80],
+    )
 
     # --- Validate all LLM providers are connected ---------------------
     lp_list: list[LLMProviderConfig] = []
@@ -459,7 +465,13 @@ async def compare_matrix(
     """Run the same (content, query) across ``chat_provider_ids × modes``."""
     # --- Route to V2 or V1 based on which IDs are provided ------------
     if req.llm_provider_ids is not None:
-        return await _compare_matrix_v2(req, state)
+        try:
+            return await _compare_matrix_v2(req, state)
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("compare-matrix V2 failed")
+            raise
     if req.chat_provider_ids is None:
         raise HTTPException(
             status_code=400,

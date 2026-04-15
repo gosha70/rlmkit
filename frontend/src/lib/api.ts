@@ -4,10 +4,10 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-// File uploads bypass the Next.js dev-server proxy (large multipart bodies
-// don't pass through cleanly). Go directly to the backend instead.
+// Direct backend URL — bypasses the Next.js dev-server proxy for
+// long-running or large-body requests (file uploads, compare matrix).
 // CORS on the backend already allows http://localhost:3000.
-const UPLOAD_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BACKEND_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend Pydantic models
@@ -519,11 +519,22 @@ export const submitChat = (req: ChatRequest) =>
 // has either completed or failed.  Unlike submitChat (which is 202-accepted
 // and reports back through polling), this endpoint waits for the thread
 // pool to join.  Expect latency proportional to the slowest slot.
-export const submitCompareMatrix = (req: CompareMatrixRequest | CompareMatrixRequestV2) =>
-  fetchJSON<CompareMatrixResponse>("/api/chat/compare-matrix", {
+// Bypass Next.js proxy (same as file uploads) to avoid socket timeout
+// on long-running matrix runs (6+ RLM slots can take several minutes).
+export async function submitCompareMatrix(
+  req: CompareMatrixRequest | CompareMatrixRequestV2,
+): Promise<CompareMatrixResponse> {
+  const resp = await fetch(`${BACKEND_BASE}/api/chat/compare-matrix`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`API error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
 
 // Files
 export function uploadFile(
@@ -534,7 +545,7 @@ export function uploadFile(
     const form = new FormData();
     form.append("file", file);
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${UPLOAD_BASE}/api/files/upload`);
+    xhr.open("POST", `${BACKEND_BASE}/api/files/upload`);
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));

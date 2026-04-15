@@ -345,6 +345,7 @@ async def test_llm_provider(
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 5,
         "timeout": 15,
+        "drop_params": True,
     }
 
     # API key for cloud providers

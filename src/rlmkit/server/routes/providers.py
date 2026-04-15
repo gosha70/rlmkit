@@ -186,6 +186,7 @@ async def test_provider(
         "messages": [{"role": "user", "content": "ping"}],
         "max_tokens": 5,
         "timeout": 30,
+        "drop_params": True,
     }
     if req.api_key:
         params["api_key"] = req.api_key
