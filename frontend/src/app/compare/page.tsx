@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X, ChevronDown, ChevronUp, Ban } from "lucide-react";
+import { Loader2, Trophy, Hash, DollarSign, Clock, Upload, X, ChevronDown, ChevronUp, Ban, Sparkles } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -43,6 +43,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FieldLabel } from "@/components/settings/field-label";
+import { JudgeScores } from "@/components/chat/judge-scores";
+import { JudgeDimensionsChart } from "@/components/metrics/judge-dimensions-chart";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -54,15 +57,19 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
 import {
+  getConfig,
   getLLMProviders,
   getProfiles,
   submitCompareMatrix,
+  triggerJudge,
   uploadFile,
+  type AppConfig,
   type LLMProviderConfig,
   type RunProfile,
   type CompareMatrixResponse,
   type CompareMatrixSlotResponse,
   type FileUploadResponse,
+  type JudgeScoreData,
   type MatrixRankingMetric,
   type MatrixSlotMode,
   type RuntimeSettings,
@@ -95,6 +102,11 @@ const RANKING_METRICS: {
     value: "answer_per_cost",
     label: "Answer/Cost (most wins)",
     help: "Answer length divided by cost",
+  },
+  {
+    value: "judge_score",
+    label: "Judge Score (highest wins)",
+    help: "LLM-as-judge overall quality score (1-5). Run Auto-Judge first.",
   },
 ];
 
@@ -227,6 +239,12 @@ export default function ComparePage() {
   const [isRunning, setIsRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
+
+  // --- Judge state ----------------------------------------------------------
+  const { data: appConfig } = useSWR<AppConfig>("config", () => getConfig());
+  const [judgeScores, setJudgeScores] = useState<Record<string, JudgeScoreData>>({});
+  const [isJudging, setIsJudging] = useState(false);
+  const judgeConfigured = !!appConfig?.judge_chat_provider_id;
 
   // --- Auto-select first available LLM provider once (not on every SWR revalidation) ---
   const hasAutoSelected = useRef(false);
@@ -385,6 +403,34 @@ export default function ComparePage() {
     selectedModes,
     config,
   ]);
+
+  // --- Judge handler --------------------------------------------------------
+  const handleJudge = useCallback(async () => {
+    if (!result || isJudging) return;
+    const usableSlots = result.slots.filter((s) => !_isSlotFailed(s));
+    if (usableSlots.length === 0) {
+      toast.error("No successful slots to judge");
+      return;
+    }
+    setIsJudging(true);
+    try {
+      const judgeResult = await triggerJudge({
+        session_id: result.session_id,
+        execution_ids: usableSlots.map((s) => s.execution_id),
+        mode: "pointwise",
+      });
+      const newScores: Record<string, JudgeScoreData> = { ...judgeScores };
+      for (const s of judgeResult.pointwise) {
+        newScores[s.execution_id] = s;
+      }
+      setJudgeScores(newScores);
+      toast.success(`Judged ${judgeResult.pointwise.length} slots`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Judge evaluation failed");
+    } finally {
+      setIsJudging(false);
+    }
+  }, [result, isJudging, judgeScores]);
 
   // --- Render --------------------------------------------------------------
   return (
@@ -898,6 +944,10 @@ export default function ComparePage() {
             onRankingMetricChange={setRankingMetric}
             expandedSlotId={expandedSlotId}
             setExpandedSlotId={setExpandedSlotId}
+            judgeScores={judgeScores}
+            judgeConfigured={judgeConfigured}
+            isJudging={isJudging}
+            onJudge={handleJudge}
           />
         )}
       </div>
@@ -915,12 +965,17 @@ interface ResultsPanelProps {
   onRankingMetricChange: (metric: MatrixRankingMetric) => void;
   expandedSlotId: string | null;
   setExpandedSlotId: (id: string | null) => void;
+  judgeScores: Record<string, JudgeScoreData>;
+  judgeConfigured: boolean;
+  isJudging: boolean;
+  onJudge: () => void;
 }
 
 /** Client-side ranking so re-sorting doesn't require a re-run. */
 function _rankSlots(
   slots: CompareMatrixSlotResponse[],
   metric: MatrixRankingMetric,
+  judgeScores: Record<string, JudgeScoreData>,
 ): number[] {
   const scored = slots.map((s, idx) => {
     if (_isSlotFailed(s)) return { idx, score: Infinity };
@@ -935,10 +990,13 @@ function _rankSlots(
       case "latency":
         score = s.elapsed_seconds;
         break;
+      case "judge_score": {
+        // Higher is better → negate. Slots without judge scores sort to bottom.
+        const js = judgeScores[s.execution_id];
+        score = js ? -js.overall_score : 0;
+        break;
+      }
       case "answer_per_cost":
-        // Higher is better → negate so ascending sort still works.
-        // Zero-cost providers (local models) get the best score: -Infinity
-        // means they always rank first when they have a real answer.
         score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -Infinity;
         break;
       default:
@@ -956,11 +1014,15 @@ function ResultsPanel({
   onRankingMetricChange,
   expandedSlotId,
   setExpandedSlotId,
+  judgeScores,
+  judgeConfigured,
+  isJudging,
+  onJudge,
 }: ResultsPanelProps) {
   // Re-rank client-side whenever the metric changes
   const ranking = useMemo(
-    () => _rankSlots(result.slots, rankingMetric),
-    [result.slots, rankingMetric],
+    () => _rankSlots(result.slots, rankingMetric, judgeScores),
+    [result.slots, rankingMetric, judgeScores],
   );
 
   const rankByIndex = useMemo(() => {
@@ -1023,10 +1085,47 @@ function ResultsPanel({
             <span>group:</span>
             <span>{result.comparison_group_id.slice(0, 12)}…</span>
           </div>
+          {/* Auto-Judge button */}
+          {judgeConfigured && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onJudge}
+              disabled={isJudging}
+              className="ml-auto h-7 text-xs"
+            >
+              {isJudging ? (
+                <>
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  Judging…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-1 h-3 w-3" />
+                  Auto-Judge
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {/* Comparison chart */}
-        <ComparisonChart slots={result.slots} metric={rankingMetric} ranking={ranking} />
+        <ComparisonChart
+          slots={result.slots}
+          metric={rankingMetric}
+          ranking={ranking}
+          judgeScores={judgeScores}
+        />
+
+        {/* Judge dimensions chart — shows after judging */}
+        {Object.keys(judgeScores).length > 0 && (
+          <JudgeDimensionsChart
+            judgeScores={Object.values(judgeScores)}
+            providerNames={Object.fromEntries(
+              result.slots.map((s) => [s.chat_provider_id, s.label])
+            )}
+          />
+        )}
 
         {/* Slot grid */}
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -1040,6 +1139,7 @@ function ResultsPanel({
                 rank={rank}
                 expanded={isExpanded}
                 onToggle={() => setExpandedSlotId(isExpanded ? null : slot.slot_id)}
+                judgeScore={judgeScores[slot.execution_id]}
               />
             );
           })}
@@ -1068,9 +1168,10 @@ interface ComparisonChartProps {
   slots: CompareMatrixSlotResponse[];
   metric: MatrixRankingMetric;
   ranking: number[];
+  judgeScores: Record<string, JudgeScoreData>;
 }
 
-function ComparisonChart({ slots, metric, ranking }: ComparisonChartProps) {
+function ComparisonChart({ slots, metric, ranking, judgeScores }: ComparisonChartProps) {
   const chartData = useMemo(() => {
     return ranking.map((slotIdx) => {
       const s = slots[slotIdx];
@@ -1090,6 +1191,11 @@ function ComparisonChart({ slots, metric, ranking }: ComparisonChartProps) {
           // so they show as the tallest bar. Use 10M as a visual cap.
           value = s.total_cost > 0 ? s.answer.length / s.total_cost : 10_000_000;
           break;
+        case "judge_score": {
+          const js = judgeScores[s.execution_id];
+          value = js ? js.overall_score : 0;
+          break;
+        }
         default:
           value = s.total_cost;
       }
@@ -1102,10 +1208,10 @@ function ComparisonChart({ slots, metric, ranking }: ComparisonChartProps) {
         slotIdx,
       };
     });
-  }, [slots, metric, ranking]);
+  }, [slots, metric, ranking, judgeScores]);
 
   const metricLabel = RANKING_METRICS.find((m) => m.value === metric)?.label ?? metric;
-  const isHigherBetter = metric === "answer_per_cost";
+  const isHigherBetter = metric === "answer_per_cost" || metric === "judge_score";
 
   if (chartData.length === 0) return null;
 
@@ -1151,7 +1257,9 @@ function ComparisonChart({ slots, metric, ranking }: ComparisonChartProps) {
                   ? `$${v.toFixed(4)}`
                   : metric === "latency"
                     ? `${v.toFixed(1)}s`
-                    : v.toLocaleString(),
+                    : metric === "judge_score"
+                      ? `${v.toFixed(1)}/5`
+                      : v.toLocaleString(),
                 metricLabel,
               ];
             }}
@@ -1180,9 +1288,10 @@ interface SlotCardProps {
   rank: number | null;
   expanded: boolean;
   onToggle: () => void;
+  judgeScore?: JudgeScoreData;
 }
 
-function SlotCard({ slot, rank, expanded, onToggle }: SlotCardProps) {
+function SlotCard({ slot, rank, expanded, onToggle, judgeScore }: SlotCardProps) {
   const failed = _isSlotFailed(slot);
   const statusColor = failed
     ? "border-destructive"
@@ -1226,6 +1335,14 @@ function SlotCard({ slot, rank, expanded, onToggle }: SlotCardProps) {
             {slot.elapsed_seconds.toFixed(1)}s
           </span>
         </div>
+      )}
+
+      {/* Judge score inline display */}
+      {!failed && judgeScore && judgeScore.overall_score > 0 && (
+        <JudgeScores
+          dimensions={judgeScore.dimensions}
+          overallScore={judgeScore.overall_score}
+        />
       )}
 
       {failed ? (
