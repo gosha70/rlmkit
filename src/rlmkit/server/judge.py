@@ -208,13 +208,20 @@ class JudgeService:
             )
 
         # Resolve source document for source-aware evaluation
+        source_cap = 8000
         if source_content is None:
             source_content = self._resolve_source_content(execution_id)
-        source_block = (
-            source_content[:8000]
-            if source_content
-            else "Not provided — evaluate based on the response alone."
-        )
+        if source_content:
+            if len(source_content) > source_cap:
+                source_block = (
+                    source_content[:source_cap]
+                    + f"\n\n[Source truncated at {source_cap:,} characters"
+                    f" — full document is {len(source_content):,} characters]"
+                )
+            else:
+                source_block = source_content
+        else:
+            source_block = "Not provided — evaluate based on the response alone."
 
         template = load_prompt_from_file(_PROMPTS_DIR / "judge_pointwise.yaml")
         prompt = template.format(

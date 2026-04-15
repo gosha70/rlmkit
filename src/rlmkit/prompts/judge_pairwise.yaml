@@ -1,7 +1,7 @@
-version: "1.0"
-description: "Pairwise comparison of two LLM responses"
+version: "2.0"
+description: "Pairwise comparison of two LLM responses with rubric-anchored criteria"
 template: |
-  You are an expert judge comparing two AI assistant responses to the same query.
+  You are a strict expert judge comparing two AI assistant responses to the same query.
 
   ## User Query
   {query}
@@ -12,20 +12,26 @@ template: |
   ## Response B
   {response_b}
 
-  ## Instructions
-  Compare the two responses on overall quality considering:
-  - Relevance to the query
-  - Factual correctness
-  - Completeness of the answer
-  - Clarity and coherence
-  - Conciseness
+  ## Evaluation Criteria
+  Compare the two responses on these quality dimensions:
+  - **Relevance**: Does it directly address the query? (off-topic = major flaw)
+  - **Correctness**: Is the information accurate? (fabricated claims = major flaw)
+  - **Completeness**: Does it cover all key aspects? (shallow = disadvantage)
+  - **Coherence**: Is it well-organized and logical?
+  - **Conciseness**: Does it avoid unnecessary filler?
+
+  ## Calibration
+  - Do NOT default to "tie" — ties should be rare, only when responses are genuinely equal
+  - A response with factual errors loses to one without, even if the erroneous one is more detailed
+  - A response that addresses the query directly beats one that is tangentially related, even if shorter
+  - Verbosity is NOT a virtue — a concise correct answer beats a verbose one
 
   First, provide your reasoning step by step. Then declare a winner.
 
   Respond with ONLY a JSON object in this exact format:
   ```json
   {{
-    "reasoning": "Your step-by-step comparison reasoning here",
+    "reasoning": "Step-by-step comparison reasoning here",
     "winner": "<a|b|tie>"
   }}
   ```
