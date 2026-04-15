@@ -115,3 +115,16 @@ MODES_INPROMPT = frozenset({MODE_DIRECT, MODE_COMPARE, MODE_RAG})
 
 MODES_REPL_VARIABLE = frozenset({MODE_RLM, MODE_AUTO})
 """Modes that carry history as a sandbox ``history`` Python variable."""
+
+# ---------------------------------------------------------------------------
+# Ephemeral Chat Provider naming
+# ---------------------------------------------------------------------------
+
+EPHEMERAL_CP_PREFIX = "[compare] "
+"""Name prefix for temporary CPs created by the compare-matrix endpoint.
+
+Used to:
+- Identify ephemeral CPs for dedup and cleanup
+- Filter them from dashboard metrics and CP listings
+- Strip the prefix when displaying names
+"""

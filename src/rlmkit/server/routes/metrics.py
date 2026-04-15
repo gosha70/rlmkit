@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from rlmkit.application.sandbox_vars import EPHEMERAL_CP_PREFIX
 from rlmkit.application.services.outcome_classifier import (
     OutcomeCategory,
     classify_execution_outcome,
@@ -82,7 +83,11 @@ async def get_failure_metrics(
     telemetry_runs = state.telemetry.list_runs(session_id=session_id, limit=10_000)
     telemetry_exec_ids: set[str] = {r.id for r in telemetry_runs}
 
-    points: list[_RunPoint] = [_point_from_telemetry(r) for r in telemetry_runs]
+    points: list[_RunPoint] = [
+        _point_from_telemetry(r)
+        for r in telemetry_runs
+        if not (r.chat_provider_name or "").startswith(EPHEMERAL_CP_PREFIX)
+    ]
 
     for msg in session.messages:
         if msg.get("role") != "assistant":
@@ -95,6 +100,8 @@ async def get_failure_metrics(
             continue
         point = _point_from_message(msg, msg_metrics)
         if point is not None:
+            if (point.chat_provider_name or "").startswith(EPHEMERAL_CP_PREFIX):
+                continue
             points.append(point)
 
     return _build_failure_response(session_id, points)
@@ -118,6 +125,11 @@ async def get_metrics(
 
     points: list[_RunPoint] = [_point_from_telemetry(r) for r in telemetry_runs]
 
+    # Filter out ephemeral compare-matrix CPs — they skew dashboard
+    # metrics (e.g., RLM token savings becomes -1600% when a 6-slot
+    # matrix dumps 100K+ RLM tokens into the session).
+    points = [p for p in points if not (p.chat_provider_name or "").startswith(EPHEMERAL_CP_PREFIX)]
+
     # Source 2: legacy assistant messages not already represented in telemetry.
     # This preserves metrics visibility for sessions persisted before Bet 2.
     for msg in session.messages:
@@ -132,6 +144,9 @@ async def get_metrics(
             continue
         point = _point_from_message(msg, msg_metrics)
         if point is not None:
+            # Skip ephemeral compare-matrix entries from legacy path too.
+            if (point.chat_provider_name or "").startswith(EPHEMERAL_CP_PREFIX):
+                continue
             points.append(point)
 
     return _build_metrics_response(session_id, points)

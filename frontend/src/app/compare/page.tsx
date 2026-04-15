@@ -936,8 +936,10 @@ function _rankSlots(
         score = s.elapsed_seconds;
         break;
       case "answer_per_cost":
-        // Higher is better → negate so ascending sort still works
-        score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -s.answer.length;
+        // Higher is better → negate so ascending sort still works.
+        // Zero-cost providers (local models) get the best score: -Infinity
+        // means they always rank first when they have a real answer.
+        score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -Infinity;
         break;
       default:
         score = s.total_cost;
@@ -1084,7 +1086,9 @@ function ComparisonChart({ slots, metric, ranking }: ComparisonChartProps) {
           value = s.elapsed_seconds;
           break;
         case "answer_per_cost":
-          value = s.total_cost > 0 ? s.answer.length / s.total_cost : s.answer.length;
+          // Zero-cost providers (local models) get a very high ratio
+          // so they show as the tallest bar. Use 10M as a visual cap.
+          value = s.total_cost > 0 ? s.answer.length / s.total_cost : 10_000_000;
           break;
         default:
           value = s.total_cost;

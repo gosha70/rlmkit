@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from rlmkit.application.dto import RunConfigDTO
 from rlmkit.application.sandbox_vars import (
+    EPHEMERAL_CP_PREFIX,
     MODE_COMPARE,
     MODE_RAG,
     MODE_RLM,
@@ -162,9 +163,6 @@ class _SlotMeta(BaseModel):
     execution_id: str
 
 
-_EPHEMERAL_PREFIX = "[compare] "
-
-
 def _get_or_create_ephemeral_cp(
     state: AppState,
     lp: LLMProviderConfig,
@@ -181,7 +179,7 @@ def _get_or_create_ephemeral_cp(
     name is removed from the provider list first.
     """
     now = datetime.now(timezone.utc)
-    name = f"{_EPHEMERAL_PREFIX}{lp.name} \u00b7 {mode}"
+    name = f"{EPHEMERAL_CP_PREFIX}{lp.name} \u00b7 {mode}"
 
     # Remove stale ephemeral with the same name (dedup / garbage-collect).
     state.config.chat_providers = [
