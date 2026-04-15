@@ -353,6 +353,7 @@ export default function ComparePage() {
     setRunError(null);
     setResult(null);
     setExpandedSlotId(null);
+    setJudgeScores({});
     try {
       const req: CompareMatrixRequestV2 = {
         query: query.trim(),
@@ -991,12 +992,14 @@ function _rankSlots(
         score = s.elapsed_seconds;
         break;
       case "judge_score": {
-        // Higher is better → negate. Slots without judge scores sort to bottom.
+        // Higher is better → negate. Unjudged slots sort just above failed
+        // (Infinity) but below any real score (negative values).
         const js = judgeScores[s.execution_id];
-        score = js ? -js.overall_score : 0;
+        score = js ? -js.overall_score : Infinity - 1;
         break;
       }
       case "answer_per_cost":
+        // Zero-cost providers (local models) get -Infinity → always rank first
         score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -Infinity;
         break;
       default:
