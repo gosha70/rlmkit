@@ -129,11 +129,67 @@ class JudgeService:
         self.state.save_evaluations()
         return score
 
-    async def score_pointwise(self, execution_id: str) -> JudgeScore:
+    def _resolve_source_content(self, execution_id: str) -> str | None:
+        """Resolve the source document content for an execution.
+
+        Walks the session messages to find the user message (with file_ids)
+        that preceded this execution's assistant response, then reads the
+        file content from state.files.
+        """
+        rec = self.state.executions.get(execution_id)
+        if not rec:
+            return None
+        session = self.state.sessions.get(rec.session_id)
+        if not session:
+            return None
+
+        # Find the user message that preceded this execution's response.
+        # Walk messages in order; the last user message before our execution's
+        # assistant message is the one that triggered it.
+        last_user_msg: dict[str, Any] | None = None
+        for msg in session.messages:
+            if msg.get("role") == "user":
+                last_user_msg = msg
+            elif msg.get("execution_id") == execution_id and msg.get("role") == "assistant":
+                break
+
+        if not last_user_msg:
+            return None
+
+        # Try file_ids first (multi-file), then file_id (legacy single-file)
+        file_ids: list[str] = last_user_msg.get("file_ids") or []
+        if not file_ids:
+            fid = last_user_msg.get("file_id")
+            if fid:
+                file_ids = [fid]
+
+        if not file_ids:
+            return None
+
+        # Concatenate text content from all referenced files
+        parts: list[str] = []
+        for fid in file_ids:
+            frec = self.state.files.get(fid)
+            if frec and frec.text_content:
+                parts.append(frec.text_content)
+        return "\n\n".join(parts) if parts else None
+
+    async def score_pointwise(
+        self,
+        execution_id: str,
+        source_content: str | None = None,
+    ) -> JudgeScore:
         """Score a single response on 5 dimensions using the judge LLM.
 
         Non-usable outcomes (failures, degraded warnings) are auto-scored
         without calling the judge LLM.
+
+        Args:
+            execution_id: The execution to score.
+            source_content: Optional source document text. If not provided,
+                the method attempts to resolve it from the session's file
+                uploads. The judge prompt evaluates Correctness and
+                Completeness against this when available.
         """
         judge_cp_id = self._get_judge_provider_id()
         session_id, query, response, cp_id = self._get_execution_context(execution_id)
@@ -151,8 +207,21 @@ class JudgeService:
                 execution_id, session_id, cp_id, outcome.category, response
             )
 
+        # Resolve source document for source-aware evaluation
+        if source_content is None:
+            source_content = self._resolve_source_content(execution_id)
+        source_block = (
+            source_content[:8000]
+            if source_content
+            else "Not provided — evaluate based on the response alone."
+        )
+
         template = load_prompt_from_file(_PROMPTS_DIR / "judge_pointwise.yaml")
-        prompt = template.format(query=query, response=response)
+        prompt = template.format(
+            query=query,
+            response=response,
+            source_document=source_block,
+        )
 
         adapter = self.state.create_llm_adapter_for_chat_provider(judge_cp_id)
         llm_result = await adapter.complete_async([{"role": "user", "content": prompt}])
@@ -170,12 +239,18 @@ class JudgeService:
                     "coherence": 3.0,
                     "conciseness": 3.0,
                 },
-                "overall_score": 3.0,
                 "reasoning": f"Failed to parse judge response: {response_text[:200]}",
             }
 
-        dimensions = parsed.get("dimensions", {})
-        overall = parsed.get("overall_score", 0.0)
+        # Clamp dimensions to [1.0, 5.0] and compute overall as mean
+        raw_dims = parsed.get("dimensions", {})
+        dimensions = {
+            k: max(1.0, min(5.0, float(v)))
+            for k, v in raw_dims.items()
+            if isinstance(v, (int, float))
+        }
+        dim_values = list(dimensions.values())
+        overall = round(sum(dim_values) / len(dim_values), 2) if dim_values else 0.0
         reasoning = parsed.get("reasoning", "")
 
         score = JudgeScore(
@@ -185,7 +260,7 @@ class JudgeService:
             chat_provider_id=cp_id,
             judge_provider_id=judge_cp_id,
             dimensions=dimensions,
-            overall_score=float(overall),
+            overall_score=overall,
             reasoning=reasoning,
             created_at=datetime.now(timezone.utc),
         )
