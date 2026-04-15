@@ -479,6 +479,7 @@ class LiteLLMAdapter:
                 timeout=10,
                 api_key=self._api_key,
                 api_base=self._api_base,
+                drop_params=True,
             )
             return bool(response.choices)
         except Exception as exc:
@@ -553,14 +554,30 @@ class LiteLLMAdapter:
         Returns:
             Keyword arguments for litellm.completion().
         """
+        # Anthropic Claude rejects requests with both temperature AND top_p.
+        # When both are set, prefer top_p (the user's explicit sampling choice)
+        # and drop temperature.  Detect Anthropic by model prefix — litellm
+        # routes "anthropic/..." and bare "claude-..." to the Anthropic API.
+        _is_anthropic = self._active_model.startswith(("anthropic/", "claude-"))
+        _send_top_p = self._top_p != 1.0
+
         params: dict[str, Any] = {
             "model": self._active_model,
             "messages": messages,
-            "temperature": self._temperature,
-            "top_p": self._top_p,
             "timeout": self._timeout,
             "num_retries": self._num_retries,
+            "drop_params": True,
         }
+        if _send_top_p and _is_anthropic:
+            # Anthropic: send only top_p, omit temperature
+            params["top_p"] = self._top_p
+        elif _send_top_p:
+            # Other providers: send both
+            params["temperature"] = self._temperature
+            params["top_p"] = self._top_p
+        else:
+            # Default: just temperature
+            params["temperature"] = self._temperature
 
         effective_max_tokens = self._max_tokens
         if effective_max_tokens is not None and self._context_window:
