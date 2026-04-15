@@ -1,7 +1,10 @@
-version: "1.0"
-description: "Pointwise scoring of a single LLM response on 5 quality dimensions"
+version: "2.0"
+description: "Rubric-anchored pointwise scoring with source-aware evaluation"
 template: |
-  You are an expert judge evaluating the quality of an AI assistant's response.
+  You are a strict expert judge evaluating the quality of an AI assistant's response.
+
+  ## Source Document (reference material)
+  {source_document}
 
   ## User Query
   {query}
@@ -9,28 +12,65 @@ template: |
   ## Assistant Response
   {response}
 
-  ## Instructions
-  Evaluate the response on these 5 dimensions, scoring each from 1 (worst) to 5 (best):
+  ## Scoring Rubric
+  Score each dimension from 1 to 5 using these definitions exactly:
 
-  1. **Relevance**: Does the response address the user's query directly?
-  2. **Correctness**: Is the information factually accurate?
-  3. **Completeness**: Does the response cover all aspects of the query?
-  4. **Coherence**: Is the response well-structured and logically organized?
-  5. **Conciseness**: Is the response appropriately concise without unnecessary filler?
+  ### Relevance
+  - 5: Directly and fully addresses every aspect of the query
+  - 4: Addresses the query well with only minor tangential content
+  - 3: Partially addresses the query but misses key aspects
+  - 2: Loosely related but fails to answer the core question
+  - 1: Off-topic or irrelevant
 
-  First, provide your reasoning step by step. Then output your scores.
+  ### Correctness
+  - 5: All claims are accurate and verifiable against the source
+  - 4: Accurate with 1-2 minor imprecisions that don't mislead
+  - 3: Mostly accurate but contains a notable error or unsupported claim
+  - 2: Multiple factual errors or significant misrepresentation
+  - 1: Predominantly inaccurate or fabricated
 
-  Respond with ONLY a JSON object in this exact format:
+  ### Completeness
+  - 5: Covers all major points and key supporting details from the source
+  - 4: Covers most major points, misses 1-2 minor aspects
+  - 3: Covers the main idea but omits several important details
+  - 2: Superficial — misses major sections or themes
+  - 1: Barely touches the topic
+
+  ### Coherence
+  - 5: Exceptionally well-organized with clear logical flow
+  - 4: Well-structured with minor organizational issues
+  - 3: Understandable but structure could be improved
+  - 2: Disorganized or hard to follow in places
+  - 1: Incoherent or contradictory
+
+  ### Conciseness
+  - 5: Every sentence adds value, no filler or redundancy
+  - 4: Mostly concise with minor redundancy
+  - 3: Some unnecessary repetition or verbose passages
+  - 2: Significantly padded or repetitive
+  - 1: Extremely verbose, buries key information
+
+  ## Calibration
+  - A score of 5 means EXCEPTIONAL — reserve it for responses that truly excel
+  - Most competent responses should land at 3-4
+  - Use the full 1-5 range
+  - If source document is provided, evaluate Correctness and Completeness against it
+  - If no source document is provided, evaluate based on internal consistency and apparent accuracy
+
+  Provide step-by-step reasoning, then output scores.
+
+  Respond with ONLY a JSON object:
   ```json
   {{
-    "reasoning": "Your step-by-step evaluation reasoning here",
+    "reasoning": "Step-by-step evaluation against each rubric level",
     "dimensions": {{
       "relevance": <1-5>,
       "correctness": <1-5>,
       "completeness": <1-5>,
       "coherence": <1-5>,
       "conciseness": <1-5>
-    }},
-    "overall_score": <1-5>
+    }}
   }}
   ```
+
+  Do NOT include an overall_score field — it will be computed automatically.
