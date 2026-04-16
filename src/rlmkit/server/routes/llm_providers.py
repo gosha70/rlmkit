@@ -352,7 +352,10 @@ async def test_llm_provider(
     if not lp:
         raise HTTPException(status_code=404, detail="LLM Provider not found")
 
-    result = test_provider(lp)
+    # Manual route uses a longer timeout (15s) than the background default
+    # (10s) because a user clicking "Test" will wait a bit longer for a
+    # definitive answer.  Matches pre-refactor behavior.
+    result = test_provider(lp, timeout_s=15.0)
 
     # Manual path is a distinct code path from the background threshold
     # logic (see spec §Failure Semantics).  On failure, flip immediately

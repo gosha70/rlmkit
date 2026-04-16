@@ -12,19 +12,35 @@ outside, so callers rely on this guarantee: if the function ever hangs,
 worker threads in the caller's pool leak forever.  Enforcement inside this
 function:
 
-* ``litellm.completion(timeout=timeout_s, ...)`` — bounds the HTTP call.
-* Explicit socket timeout on the global default socket — bounds the TCP
-  connect/read so an accepts-but-never-responds server does not stall.
-* No retries.
+* ``litellm.completion(timeout=timeout_s, ...)`` — the authoritative bound.
+  litellm forwards this to httpx which enforces per-request connect/read
+  timeouts, so an accepts-but-never-responds server still times out.
+* No retries (``num_retries=0``).
 
-Any violation of this contract is a bug in this module, not in the caller.
+We intentionally do NOT use ``socket.setdefaulttimeout``: it mutates
+process-wide state, races under concurrent callers (the background thread
+pool has max_workers=5), and also affects unrelated sockets in the process
+(metrics, other HTTP clients) for the duration of the probe.
+
+Any violation of the timeout contract is a bug in this module, not in the
+caller.  The test ``test_test_provider_returns_within_timeout_even_when_
+server_hangs`` pins the contract with an accepts-but-hangs TCP listener.
+
+Layer note
+----------
+This module lives in ``application/`` but currently imports from
+``server/`` (for ``LLMProviderConfig`` and ``_litellm_model_name``) and
+``ui/`` (for the provider catalog and secret stores).  Those imports are
+transitional; see review of commit 5791483 for the layer-cleanup
+follow-up.  Until that cleanup lands, do not take the imports as a
+pattern for new application-layer code.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import socket
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -40,13 +56,31 @@ logger = logging.getLogger("rlmkit.application.provider_tester")
 ProviderStatus = Literal["connected", "offline", "error"]
 
 # Max characters of upstream error text we copy into `error_message`.
-# Shorter than before (300 → 200) — frontend tooltip only needs the gist.
-_ERROR_MESSAGE_MAX_LEN = 200
+# Matches pre-refactor behavior.  The frontend tooltip truncates further
+# visually, but the full 300 chars is useful in logs and API responses.
+_ERROR_MESSAGE_MAX_LEN = 300
 
 # Hard cap on test duration: timeout_s + this small overhead.  Used only as a
 # diagnostic log threshold; the real bound is enforced by litellm's timeout
-# kwarg plus the socket-level timeout set below.
+# kwarg.
 _TIMEOUT_OVERHEAD_S = 2.0
+
+# Patterns matching common API-key shapes.  Anything matching gets replaced
+# with ``<redacted>`` in error messages before the cap is applied.  Not a
+# complete list — defense-in-depth on top of "callers log error_message,
+# not the raw exception."  See test_error_message_does_not_contain_api_key.
+_API_KEY_PATTERNS = (
+    # OpenAI-style sk-..., sk-proj-..., etc.
+    re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+    # Anthropic-style
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+    # Generic Bearer token in an HTTP header echoed back
+    re.compile(r"[Bb]earer\s+[A-Za-z0-9_.~+/=-]{20,}"),
+    # Hugging Face tokens
+    re.compile(r"hf_[A-Za-z0-9]{20,}"),
+    # Google-style
+    re.compile(r"AIza[A-Za-z0-9_-]{20,}"),
+)
 
 
 @dataclass(frozen=True)
@@ -96,13 +130,22 @@ def _get_api_key(llm_provider_id: str, backend: str) -> str | None:
 def _sanitize_error_message(exc: BaseException) -> str:
     """Extract a short, safe description of an upstream failure.
 
-    Strips the litellm "ExceptionName - " prefix (noise for the UI) and
-    truncates to ``_ERROR_MESSAGE_MAX_LEN``.  Callers are responsible for
-    never logging the raw exception object; use this helper instead.
+    Sanitization steps (in order):
+
+    1. Strip the litellm "ExceptionName - " prefix (noise for the UI).
+    2. Redact anything matching the API-key patterns in
+       ``_API_KEY_PATTERNS``.  litellm's auth errors sometimes echo the
+       key that was rejected; httpx-layer errors can echo request
+       headers including ``Authorization: Bearer ...``.
+    3. Truncate to ``_ERROR_MESSAGE_MAX_LEN``.
+
+    Callers must never log the raw exception object; use this helper.
     """
     msg = str(exc)
     if " - " in msg:
         msg = msg.split(" - ", 1)[1]
+    for pat in _API_KEY_PATTERNS:
+        msg = pat.sub("<redacted>", msg)
     # Hard cap — upstream may echo request bodies into error strings.
     return msg[:_ERROR_MESSAGE_MAX_LEN]
 
@@ -175,10 +218,6 @@ def test_provider(
     logger.debug("probe attempt provider_id=%s timeout_s=%s", provider.id, timeout_s)
     start = time.monotonic()
 
-    # Socket-level timeout — belt-and-braces with litellm's own timeout.
-    # Set locally so we do not disturb unrelated code paths, then restore.
-    prior_socket_timeout = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(timeout_s)
     try:
         try:
             import litellm
@@ -259,8 +298,6 @@ def test_provider(
             latency_ms=None,
             error_message=_sanitize_error_message(exc),
         )
-    finally:
-        socket.setdefaulttimeout(prior_socket_timeout)
 
 
 # Pytest auto-collects any callable whose name matches ``python_functions``

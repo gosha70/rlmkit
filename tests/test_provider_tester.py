@@ -114,28 +114,55 @@ def test_test_provider_never_raises_even_on_network_error() -> None:
     assert result.error_message is not None
 
 
-def test_error_message_does_not_contain_api_key() -> None:
-    """Sanitized error messages never leak API keys.
+@pytest.mark.parametrize(
+    ("fake_key", "pattern_label"),
+    [
+        ("sk-THISISSECRETTOKENABCDEF1234567890", "openai-style"),
+        ("sk-ant-THISISSECRETTOKENABCDEF1234567890", "anthropic-style"),
+        ("hf_THISISSECRETTOKENABCDEF1234567890", "hugging-face"),
+        ("AIzaTHISISSECRETTOKENABCDEF1234567890", "google"),
+    ],
+)
+def test_error_message_does_not_contain_api_key(
+    fake_key: str,
+    pattern_label: str,
+) -> None:
+    """Sanitized error messages must not leak API keys.
 
-    The upstream exception string deliberately contains a fake key; the
-    sanitizer must produce output where any plausible secret-looking token
-    is either absent or truncated past our 200-char cap.
+    The upstream exception string deliberately contains a fake key in a
+    plausible echo pattern ("Invalid API key provided: sk-...").  The
+    sanitizer must redact it.  Cap length alone is not sufficient — a
+    short upstream error would otherwise leak the key unmodified.
     """
     provider = _make_provider()
-    fake_key = "sk-test-THISISSECRETTOKENABCDEF1234567890"
-    # Litellm error strings often echo request context.  We simulate one.
     msg = f"AuthError - Invalid API key provided: {fake_key}"
 
     with patch("litellm.completion", side_effect=RuntimeError(msg)):
         result = test_provider(provider, timeout_s=5.0)
 
     assert result.error_message is not None
-    # Our sanitizer caps at 200 chars, but we also want to defensively
-    # assert that full raw keys are not echoed if the original message is
-    # shorter than the cap.  Here the message is short so the key WOULD be
-    # included — the real guard is that callers log `error_message` not the
-    # raw exception.  We pin the cap length invariant.
-    assert len(result.error_message) <= 200
+    # Strong assertion: the raw key MUST be absent.
+    assert fake_key not in result.error_message, (
+        f"sanitizer leaked a {pattern_label} API key into error_message"
+    )
+    # And the redaction marker should be present.
+    assert "<redacted>" in result.error_message
+    # Length cap still holds.
+    assert len(result.error_message) <= 300
+
+
+def test_error_message_redacts_bearer_token() -> None:
+    """HTTP-layer errors sometimes echo the Authorization header verbatim."""
+    provider = _make_provider()
+    fake_token = "SECRETBEARER1234567890ABCDEFGHIJ"
+    msg = f"httpx.ConnectError - Authorization: Bearer {fake_token}"
+
+    with patch("litellm.completion", side_effect=RuntimeError(msg)):
+        result = test_provider(provider, timeout_s=5.0)
+
+    assert result.error_message is not None
+    assert fake_token not in result.error_message
+    assert "<redacted>" in result.error_message
 
 
 def test_timeout_returns_offline_with_latency_none() -> None:
@@ -159,6 +186,12 @@ def test_test_provider_returns_within_timeout_even_when_server_hangs() -> None:
     Call test_provider with timeout_s=2.0.  The function MUST return within
     4 seconds (timeout_s + overhead) regardless of server behavior.  If it
     hangs, worker threads in the caller's thread pool would leak forever.
+
+    NOTE: this test is single-threaded by design.  Enforcement relies on
+    litellm.completion(timeout=...) which is per-request and thread-safe.
+    The commit 3.5 fix removed the previous process-global
+    socket.setdefaulttimeout belt-and-braces because it races under
+    ThreadPoolExecutor.
     """
     # Bind to an ephemeral port.  accept() runs in a daemon thread that
     # simply holds the socket open without writing any bytes.
@@ -233,15 +266,20 @@ def test_test_provider_classifies_litellm_exceptions_as_offline(
     assert result.status == "offline"
 
 
-def test_test_provider_restores_socket_timeout() -> None:
-    """Sanity: the function does not permanently alter the global socket timeout."""
+def test_test_provider_does_not_mutate_process_global_socket_timeout() -> None:
+    """Commit 3.5 removed the socket.setdefaulttimeout belt-and-braces
+    (it races under ThreadPoolExecutor).  Pin the regression: probe calls
+    must not touch the global socket timeout at all, so unrelated HTTP
+    clients in the same process are unaffected."""
     original = socket.getdefaulttimeout()
     try:
         socket.setdefaulttimeout(None)
         provider = _make_provider()
         with patch("litellm.completion", return_value=_FakeResponse(choices=[object()])):
             test_provider(provider, timeout_s=2.0)
-        # Must be restored after the call.
-        assert socket.getdefaulttimeout() is None
+        assert socket.getdefaulttimeout() is None, (
+            "test_provider is mutating the process-global socket timeout; "
+            "this races under concurrent callers (ThreadPoolExecutor)"
+        )
     finally:
         socket.setdefaulttimeout(original)
