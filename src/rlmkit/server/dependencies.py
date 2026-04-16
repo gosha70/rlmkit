@@ -605,6 +605,18 @@ class AppState:
                 except Exception:  # noqa: BLE001
                     log.exception("future.result() failed for provider_id=%s", pid)
 
+        # Before applying, check if stop was signaled during the probe.
+        # The spec requires that in-flight cycle results be discarded on
+        # stop — persisting them would vouch for connectivity based on a
+        # cycle the operator explicitly abandoned (interval change or
+        # shutdown).
+        if self._connection_test_stop.is_set():
+            log.info(
+                "stop requested during cycle; discarding %d probe result(s) without persisting",
+                len(results),
+            )
+            return
+
         # Step 3: apply results under lock
         with self._config_lock:
             transitions, discarded = self._apply_test_results(

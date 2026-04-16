@@ -342,14 +342,43 @@ assigned a priority level:
 
 ---
 
+### TC-021: Scheduled Connection Testing (UI + Backend)
+**Priority:** P1
+**Preconditions:** At least one LLM Provider configured. Server running. Fake-server binary available (or willingness to stop a live provider).
+**Spec:** `doc_internal/specs/scheduled-connection-testing.md`
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Settings → General → set "Interval (minutes)" = 1, blur the input | PUT /api/config returns 200; the value "1" round-trips |
+| 2 | Navigate to Settings → LLM Providers | Banner at top reads "Auto-testing every 1m — change on the General tab" |
+| 3 | Configure a provider whose `endpoint` points at `http://127.0.0.1:9999` (nothing listening) | Provider saved |
+| 4 | Wait 3 minutes | After ~2 cycles (debounce threshold N=2), provider status flips to `offline`. Card shows `last_tested_by = auto` and recent `last_tested_at`. |
+| 5 | Start a server on port 9999 that returns a valid completion | - |
+| 6 | Wait 1 minute | Next cycle flips provider back to `connected`; counter resets to 0. |
+| 7 | Settings → General → set interval back to 0 | No further `last_tested_at` updates; background thread stops within ~2s |
+| 8 | Click "Test" on any provider | Manual test still works (returns latency or error); sets `last_tested_by = manual` |
+
+**Pass Criteria:**
+- Auto-flip to `offline` never happens on a single transient failure (threshold N=2).
+- `offline → connected` happens on a single success.
+- Setting interval=0 halts auto-testing; manual test still functions.
+- No `.config.*.tmp` files accumulate in `~/.rlmkit/` after many cycles.
+
+**Notes:**
+- Tail the server log to verify INFO lines: `connection test thread started`,
+  `cycle started`, `cycle complete`, `transitioned ...`.
+- No API keys or bearer tokens should appear in any log line.
+
+---
+
 ## Summary
 
 | Priority | Count | Test Case IDs |
 |----------|-------|---------------|
 | P0 | 7 | TC-001, TC-002, TC-003, TC-005, TC-008, TC-010, TC-013 |
-| P1 | 11 | TC-004, TC-006, TC-007, TC-009, TC-011, TC-012, TC-014, TC-015, TC-016, TC-017, TC-018 |
+| P1 | 12 | TC-004, TC-006, TC-007, TC-009, TC-011, TC-012, TC-014, TC-015, TC-016, TC-017, TC-018, TC-021 |
 | P2 | 2 | TC-019, TC-020 |
-| **Total** | **20** | |
+| **Total** | **21** | |
 
 ## Execution Notes
 
