@@ -126,6 +126,28 @@ async def get_trace(
     raise HTTPException(status_code=404, detail="Execution not found")
 
 
+@router.delete("/api/executions/{execution_id}", status_code=204)
+async def delete_execution(
+    execution_id: str,
+    state: AppState = Depends(get_state),
+) -> None:
+    """Delete a single execution from telemetry and in-memory state."""
+    state.executions.pop(execution_id, None)
+    state.telemetry.delete_run(execution_id)
+
+
+@router.delete("/api/executions", status_code=204)
+async def delete_all_executions(
+    state: AppState = Depends(get_state),
+) -> None:
+    """Delete all executions from telemetry and in-memory state."""
+    # Clear in-memory
+    state.executions.clear()
+    # Clear telemetry store — delete all runs (cascades to steps/calls/ratings)
+    for run in state.telemetry.list_runs(limit=100_000):
+        state.telemetry.delete_run(run.id)
+
+
 def _trace_from_execution_record(execution: ExecutionRecord, state: AppState) -> TraceResponse:
     """Build TraceResponse from an in-memory ExecutionRecord."""
     steps = []

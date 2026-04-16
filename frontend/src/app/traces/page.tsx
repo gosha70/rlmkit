@@ -15,7 +15,11 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
+  deleteExecution,
+  deleteAllExecutions,
   getExecutions,
   getSessions,
   getTrace,
@@ -34,6 +38,8 @@ function TracesPageInner() {
   const [filterProviderId, setFilterProviderId] = useState<string>("");
   const [filterSessionId, setFilterSessionId] = useState<string>("");
   const [limit, setLimit] = useState(20);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const { data: sessions = [] } = useSWR<SessionSummary[]>("sessions", getSessions);
 
@@ -45,7 +51,7 @@ function TracesPageInner() {
   );
 
   // Filtered fetch — drives the table
-  const { data: executions = [] } = useSWR<ExecutionSummary[]>(
+  const { data: executions = [], mutate: mutateExecutions } = useSWR<ExecutionSummary[]>(
     ["executions", filterProviderId, filterSessionId, limit],
     () => getExecutions(limit, filterProviderId || undefined, filterSessionId || undefined),
     { refreshInterval: 5000 },
@@ -72,6 +78,54 @@ function TracesPageInner() {
       setTrace(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setDeleting(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => deleteExecution(id)));
+      toast.success(`Deleted ${selectedIds.size} trace(s)`);
+      setSelectedIds(new Set());
+      setTrace(null);
+      mutateExecutions();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setDeleting(true);
+    try {
+      await deleteAllExecutions();
+      toast.success("All traces deleted");
+      setSelectedIds(new Set());
+      setTrace(null);
+      mutateExecutions();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === executions.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(executions.map((e) => e.execution_id)));
     }
   };
 
@@ -127,8 +181,31 @@ function TracesPageInner() {
 
         {/* Execution list */}
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base">Recent Executions</CardTitle>
+            <div className="flex items-center gap-2">
+              {selectedIds.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                >
+                  <Trash2 className="mr-1 h-3 w-3" />
+                  Delete {selectedIds.size}
+                </Button>
+              )}
+              {executions.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeleteAll}
+                  disabled={deleting}
+                >
+                  Clear all
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {executions.length === 0 ? (
@@ -139,6 +216,15 @@ function TracesPageInner() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={executions.length > 0 && selectedIds.size === executions.length}
+                        onChange={toggleSelectAll}
+                        aria-label="Select all"
+                        className="h-4 w-4 rounded border-input accent-primary"
+                      />
+                    </TableHead>
                     <TableHead>Query</TableHead>
                     <TableHead>Chat Provider</TableHead>
                     <TableHead>Mode</TableHead>
@@ -163,6 +249,15 @@ function TracesPageInner() {
                       }}
                       aria-label={`View trace for: ${exec.query}`}
                     >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(exec.execution_id)}
+                          onChange={() => toggleSelect(exec.execution_id)}
+                          aria-label={`Select trace: ${exec.query}`}
+                          className="h-4 w-4 rounded border-input accent-primary"
+                        />
+                      </TableCell>
                       <TableCell className="max-w-[300px] truncate font-medium">
                         {exec.query}
                       </TableCell>

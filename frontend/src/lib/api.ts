@@ -615,6 +615,12 @@ export const getExecutions = (limit = 20, chatProviderId?: string, sessionId?: s
 export const getTrace = (executionId: string) =>
   fetchJSON<TraceResponse>(`/api/traces/${executionId}`);
 
+export const deleteExecution = (executionId: string) =>
+  fetchJSON<void>(`/api/executions/${executionId}`, { method: "DELETE" });
+
+export const deleteAllExecutions = () =>
+  fetchJSON<void>("/api/executions", { method: "DELETE" });
+
 // Providers
 export const getProviders = () => fetchJSON<ProviderInfo[]>("/api/providers");
 
