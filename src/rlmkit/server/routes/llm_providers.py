@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 import uuid
 from datetime import datetime, timezone
 
@@ -330,59 +329,50 @@ async def test_llm_provider(
     llm_provider_id: str,
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> ProviderTestResponse:
-    """Test connection to a named LLM Provider."""
+    """Test connection to a named LLM Provider (manual / user-initiated).
+
+    Thin wrapper over :func:`test_provider`.  Persists the result back to the
+    provider (status, last_tested_at, last_tested_by, consecutive_failures)
+    under the manual-path semantics defined in the spec:
+
+    * success → ``status=connected``, ``consecutive_failures=0``.
+    * failure → ``status=offline`` (immediate flip, no threshold wait),
+      ``consecutive_failures=1``.  The user is actively looking at the
+      result and should see the flip immediately.
+    """
+    from rlmkit.application.services.provider_tester import test_provider
+
     lp = state.get_llm_provider(llm_provider_id)
     if not lp:
         raise HTTPException(status_code=404, detail="LLM Provider not found")
 
-    import litellm
+    result = test_provider(lp)
 
-    from rlmkit.server.routes.providers import _litellm_model_name
-
-    model = _litellm_model_name(lp.backend, lp.model)
-    params: dict = {
-        "model": model,
-        "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 5,
-        "timeout": 15,
-        "drop_params": True,
-    }
-
-    # API key for cloud providers
-    entry = PROVIDERS_BY_KEY.get(lp.backend)
-    if entry and entry.requires_api_key:
-        api_key = _get_api_key(lp.id, lp.backend)
-        if api_key:
-            params["api_key"] = api_key
-
-    # Endpoint for local providers
-    endpoint = lp.endpoint
-    if not endpoint and entry and entry.default_endpoint:
-        endpoint = entry.default_endpoint
-    if endpoint:
-        params["api_base"] = endpoint
-
-    start = time.time()
-    try:
-        response = litellm.completion(**params)
-        latency_ms = int((time.time() - start) * 1000)
-        if response.choices:
-            lp.status = "connected"
-            _status_cache[lp.id] = "connected"
-            state.save_config()
-            return ProviderTestResponse(connected=True, latency_ms=latency_ms, model=lp.model)
+    # NOTE: failure-counter / last_tested_at / last_tested_by fields are
+    # introduced in Commit 3 (Config model changes).  For now, preserve the
+    # pre-refactor behavior: flip status on either outcome, update the
+    # in-memory status cache, and persist.
+    if result.status == "connected":
+        lp.status = "connected"
+    else:
+        # Manual failure currently collapses "offline" and "error" into
+        # "offline" to match pre-refactor behavior.  Commit 3 splits them
+        # once the UI can render the distinct affordance.
         lp.status = "offline"
-        _status_cache[lp.id] = "offline"
-        state.save_config()
-        return ProviderTestResponse(connected=False, error="No response from model")
-    except Exception as exc:
-        msg = str(exc)
-        if " - " in msg:
-            msg = msg.split(" - ", 1)[1]
-        lp.status = "offline"
-        _status_cache[lp.id] = "offline"
-        state.save_config()
-        return ProviderTestResponse(connected=False, error=msg[:300])
+
+    _status_cache[lp.id] = lp.status
+    state.save_config()
+
+    if result.status == "connected":
+        return ProviderTestResponse(
+            connected=True,
+            latency_ms=result.latency_ms,
+            model=lp.model,
+        )
+    return ProviderTestResponse(
+        connected=False,
+        error=result.error_message,
+    )
 
 
 @router.get("/api/llm-providers/{llm_provider_id}/models")
