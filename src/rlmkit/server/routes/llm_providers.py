@@ -183,45 +183,47 @@ async def create_llm_provider(
             status_code=400,
             detail=f"Unknown backend: {req.backend}. Available: {list(PROVIDERS_BY_KEY.keys())}",
         )
-    # Name must be unique
-    for lp in state.config.llm_providers:
-        if lp.name.lower() == req.name.lower():
-            raise HTTPException(
-                status_code=409,
-                detail=f"LLM Provider with name '{req.name}' already exists",
-            )
 
-    now = datetime.now(timezone.utc)
-    lp = LLMProviderConfig(
-        id=str(uuid.uuid4()),
-        name=req.name,
-        backend=req.backend,
-        model=req.model,
-        endpoint=req.endpoint,
-        runtime_settings=req.runtime_settings or RuntimeSettings(),
-        context_window=req.context_window,
-        status="not_configured",
-        created_at=now,
-        updated_at=now,
-    )
+    with state._config_lock:
+        # Name must be unique
+        for existing_lp in state.config.llm_providers:
+            if existing_lp.name.lower() == req.name.lower():
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"LLM Provider with name '{req.name}' already exists",
+                )
 
-    if req.api_key:
-        _persist_api_key(lp.id, req.backend, req.api_key)
-        lp.status = "configured"
+        now = datetime.now(timezone.utc)
+        lp = LLMProviderConfig(
+            id=str(uuid.uuid4()),
+            name=req.name,
+            backend=req.backend,
+            model=req.model,
+            endpoint=req.endpoint,
+            runtime_settings=req.runtime_settings or RuntimeSettings(),
+            context_window=req.context_window,
+            status="not_configured",
+            created_at=now,
+            updated_at=now,
+        )
 
-    # Auto-discover context window if not explicitly provided
-    if lp.context_window is None:
-        entry = PROVIDERS_BY_KEY.get(req.backend)
-        endpoint = req.endpoint or (entry.default_endpoint if entry else None)
-        discovered = _discover_context_window(req.backend, req.model, endpoint)
-        if discovered:
-            lp.context_window = discovered
+        if req.api_key:
+            _persist_api_key(lp.id, req.backend, req.api_key)
+            lp.status = "configured"
 
-    state.config.llm_providers.append(lp)
-    state.save_config()
+        # Auto-discover context window if not explicitly provided
+        if lp.context_window is None:
+            entry = PROVIDERS_BY_KEY.get(req.backend)
+            endpoint = req.endpoint or (entry.default_endpoint if entry else None)
+            discovered = _discover_context_window(req.backend, req.model, endpoint)
+            if discovered:
+                lp.context_window = discovered
 
-    result = lp.model_copy()
-    result.status = _compute_status(lp)
+        state.config.llm_providers.append(lp)
+        state.save_config()
+
+        result = lp.model_copy()
+        result.status = _compute_status(lp)
     return result
 
 
@@ -246,56 +248,57 @@ async def update_llm_provider(
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> LLMProviderConfig:
     """Update an existing named LLM Provider."""
-    lp = state.get_llm_provider(llm_provider_id)
-    if not lp:
-        raise HTTPException(status_code=404, detail="LLM Provider not found")
+    with state._config_lock:
+        lp = state.get_llm_provider(llm_provider_id)
+        if not lp:
+            raise HTTPException(status_code=404, detail="LLM Provider not found")
 
-    if req.name is not None and req.name.lower() != lp.name.lower():
-        for existing in state.config.llm_providers:
-            if existing.id != llm_provider_id and existing.name.lower() == req.name.lower():
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"LLM Provider with name '{req.name}' already exists",
+        if req.name is not None and req.name.lower() != lp.name.lower():
+            for existing in state.config.llm_providers:
+                if existing.id != llm_provider_id and existing.name.lower() == req.name.lower():
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"LLM Provider with name '{req.name}' already exists",
+                    )
+            lp.name = req.name
+
+        # Track whether model or endpoint changed — triggers context_window re-discovery
+        model_or_endpoint_changed = (req.model is not None and req.model != lp.model) or (
+            req.endpoint is not None and (req.endpoint or None) != lp.endpoint
+        )
+
+        if req.model is not None:
+            lp.model = req.model
+        if req.endpoint is not None:
+            lp.endpoint = req.endpoint or None
+        if req.runtime_settings is not None:
+            lp.runtime_settings = req.runtime_settings
+        if req.context_window is not None:
+            lp.context_window = req.context_window if req.context_window > 0 else None
+        elif model_or_endpoint_changed:
+            # Model or endpoint changed but no explicit context_window override —
+            # re-discover so the provider doesn't keep a stale limit.
+            entry = PROVIDERS_BY_KEY.get(lp.backend)
+            endpoint = lp.endpoint or (entry.default_endpoint if entry else None)
+            discovered = _discover_context_window(lp.backend, lp.model, endpoint)
+            lp.context_window = discovered  # None if discovery fails — safe default
+            if discovered:
+                logger.info(
+                    "Re-discovered context_window=%d for updated provider %s (%s)",
+                    discovered,
+                    lp.name,
+                    lp.model,
                 )
-        lp.name = req.name
+        if req.api_key:
+            _persist_api_key(lp.id, lp.backend, req.api_key)
+            lp.status = "configured"
+            _status_cache.pop(lp.id, None)
 
-    # Track whether model or endpoint changed — triggers context_window re-discovery
-    model_or_endpoint_changed = (req.model is not None and req.model != lp.model) or (
-        req.endpoint is not None and (req.endpoint or None) != lp.endpoint
-    )
+        lp.updated_at = datetime.now(timezone.utc)
+        state.save_config()
 
-    if req.model is not None:
-        lp.model = req.model
-    if req.endpoint is not None:
-        lp.endpoint = req.endpoint or None
-    if req.runtime_settings is not None:
-        lp.runtime_settings = req.runtime_settings
-    if req.context_window is not None:
-        lp.context_window = req.context_window if req.context_window > 0 else None
-    elif model_or_endpoint_changed:
-        # Model or endpoint changed but no explicit context_window override —
-        # re-discover so the provider doesn't keep a stale limit.
-        entry = PROVIDERS_BY_KEY.get(lp.backend)
-        endpoint = lp.endpoint or (entry.default_endpoint if entry else None)
-        discovered = _discover_context_window(lp.backend, lp.model, endpoint)
-        lp.context_window = discovered  # None if discovery fails — safe default
-        if discovered:
-            logger.info(
-                "Re-discovered context_window=%d for updated provider %s (%s)",
-                discovered,
-                lp.name,
-                lp.model,
-            )
-    if req.api_key:
-        _persist_api_key(lp.id, lp.backend, req.api_key)
-        lp.status = "configured"
-        _status_cache.pop(lp.id, None)
-
-    lp.updated_at = datetime.now(timezone.utc)
-    state.save_config()
-
-    result = lp.model_copy()
-    result.status = _compute_status(lp)
+        result = lp.model_copy()
+        result.status = _compute_status(lp)
     return result
 
 
@@ -305,23 +308,26 @@ async def delete_llm_provider(
     state: AppState = Depends(get_state),  # noqa: B008
 ) -> None:
     """Delete a named LLM Provider. Fails if any Chat Provider references it."""
-    lp = state.get_llm_provider(llm_provider_id)
-    if not lp:
-        raise HTTPException(status_code=404, detail="LLM Provider not found")
+    with state._config_lock:
+        lp = state.get_llm_provider(llm_provider_id)
+        if not lp:
+            raise HTTPException(status_code=404, detail="LLM Provider not found")
 
-    # Check referential integrity
-    refs = [cp.name for cp in state.config.chat_providers if cp.llm_provider_id == llm_provider_id]
-    if refs:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cannot delete: referenced by Chat Provider(s): {', '.join(refs)}",
-        )
+        # Check referential integrity
+        refs = [
+            cp.name for cp in state.config.chat_providers if cp.llm_provider_id == llm_provider_id
+        ]
+        if refs:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot delete: referenced by Chat Provider(s): {', '.join(refs)}",
+            )
 
-    state.config.llm_providers = [
-        lp for lp in state.config.llm_providers if lp.id != llm_provider_id
-    ]
-    _status_cache.pop(llm_provider_id, None)
-    state.save_config()
+        state.config.llm_providers = [
+            lp for lp in state.config.llm_providers if lp.id != llm_provider_id
+        ]
+        _status_cache.pop(llm_provider_id, None)
+        state.save_config()
 
 
 @router.post("/api/llm-providers/{llm_provider_id}/test")
@@ -348,20 +354,24 @@ async def test_llm_provider(
 
     result = test_provider(lp)
 
-    # NOTE: failure-counter / last_tested_at / last_tested_by fields are
-    # introduced in Commit 3 (Config model changes).  For now, preserve the
-    # pre-refactor behavior: flip status on either outcome, update the
-    # in-memory status cache, and persist.
-    if result.status == "connected":
-        lp.status = "connected"
-    else:
-        # Manual failure currently collapses "offline" and "error" into
-        # "offline" to match pre-refactor behavior.  Commit 3 splits them
-        # once the UI can render the distinct affordance.
-        lp.status = "offline"
-
-    _status_cache[lp.id] = lp.status
-    state.save_config()
+    # Manual path is a distinct code path from the background threshold
+    # logic (see spec §Failure Semantics).  On failure, flip immediately
+    # without waiting for N consecutive failures — the user is actively
+    # looking at the result and expects it to reflect the observation now.
+    with state._config_lock:
+        if result.status == "connected":
+            lp.status = "connected"
+            lp.consecutive_failures = 0
+        elif result.status == "error":
+            lp.status = "error"
+            lp.consecutive_failures = 1
+        else:
+            lp.status = "offline"
+            lp.consecutive_failures = 1
+        lp.last_tested_at = result.tested_at
+        lp.last_tested_by = "manual"
+        _status_cache[lp.id] = lp.status
+        state.save_config()
 
     if result.status == "connected":
         return ProviderTestResponse(

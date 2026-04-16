@@ -33,28 +33,34 @@ async def update_config(
     PUT /api/providers/{name} to prevent two disconnected save paths
     from corrupting each other.
     """
-    if req.budget is not None:
-        for key, value in req.budget.model_dump(exclude_unset=True).items():
-            setattr(state.config.budget, key, value)
-    if req.sandbox is not None:
-        for key, value in req.sandbox.model_dump(exclude_unset=True).items():
-            setattr(state.config.sandbox, key, value)
-    if req.appearance is not None:
-        for key, value in req.appearance.model_dump(exclude_unset=True).items():
-            setattr(state.config.appearance, key, value)
-    if req.provider_configs is not None:
-        state.config.provider_configs = req.provider_configs
-        # Reconcile active_provider/active_model so they stay consistent
-        # with whatever the caller just wrote into provider_configs.
-        state._reconcile_active_provider()
-    if req.default_runtime_settings is not None:
-        state.config.default_runtime_settings = req.default_runtime_settings
-    if req.mode_config is not None:
-        for key, value in req.mode_config.model_dump(exclude_unset=True).items():
-            setattr(state.config.mode_config, key, value)
-    if "judge_chat_provider_id" in req.model_fields_set:
-        # Allow clearing by sending null/"" — normalize to None
-        val = req.judge_chat_provider_id
-        state.config.judge_chat_provider_id = val if val else None
-    state.save_config()
+    with state._config_lock:
+        if req.budget is not None:
+            for key, value in req.budget.model_dump(exclude_unset=True).items():
+                setattr(state.config.budget, key, value)
+        if req.sandbox is not None:
+            for key, value in req.sandbox.model_dump(exclude_unset=True).items():
+                setattr(state.config.sandbox, key, value)
+        if req.appearance is not None:
+            for key, value in req.appearance.model_dump(exclude_unset=True).items():
+                setattr(state.config.appearance, key, value)
+        if req.provider_configs is not None:
+            state.config.provider_configs = req.provider_configs
+            # Reconcile active_provider/active_model so they stay consistent
+            # with whatever the caller just wrote into provider_configs.
+            state._reconcile_active_provider()
+        if req.default_runtime_settings is not None:
+            state.config.default_runtime_settings = req.default_runtime_settings
+        if req.mode_config is not None:
+            for key, value in req.mode_config.model_dump(exclude_unset=True).items():
+                setattr(state.config.mode_config, key, value)
+        if "judge_chat_provider_id" in req.model_fields_set:
+            # Allow clearing by sending null/"" — normalize to None
+            val = req.judge_chat_provider_id
+            state.config.judge_chat_provider_id = val if val else None
+        # connection_test_interval_minutes — Commit 4 (the background thread)
+        # will restart the thread when this field changes.  For now, we just
+        # persist the setting so the UI round-trip works.
+        if req.connection_test_interval_minutes is not None:
+            state.config.connection_test_interval_minutes = req.connection_test_interval_minutes
+        state.save_config()
     return state.config

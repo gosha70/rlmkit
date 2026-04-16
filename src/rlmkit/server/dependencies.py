@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -124,6 +125,16 @@ class AppState:
             "judge_scores": [],
             "judge_pairwise": [],
         }
+        # Reentrant lock protecting config.llm_providers reads/writes and all
+        # save_config() calls.  Acquired by CRUD route handlers, the manual
+        # test route, the PUT /api/config handler, and (in a later commit)
+        # the background connection-test thread.  See doc_internal/specs/
+        # scheduled-connection-testing.md §Concurrency model.  Reentrant
+        # because some paths acquire it and then call helpers that also
+        # acquire it.  Lock-ordering discipline: this is the only
+        # application-level lock; never hold it while trying to acquire
+        # another application-level lock.
+        self._config_lock: threading.RLock = threading.RLock()
         # Persistent telemetry store (SQLite-backed).
         # In-memory ":memory:" for tests, on-disk for production.
         self.telemetry: TelemetryStore = TelemetryStore(":memory:" if not load_from_disk else None)
@@ -654,7 +665,20 @@ class AppState:
         that motivates this change (scheduled connection testing) increases
         save frequency ~1500×/day with 10 providers at 1-min cycles, which
         makes even low-probability non-atomic writes a reliability risk.
+
+        Thread safety
+        -------------
+        Acquires ``_config_lock`` around the snapshot + write so concurrent
+        CRUD mutations and background-cycle applies cannot interleave into
+        a corrupted serialization.  The lock is reentrant, so route
+        handlers that already hold it (e.g. after a CRUD mutation) can
+        still call save_config() without deadlocking.
         """
+        with self._config_lock:
+            self._save_config_locked()
+
+    def _save_config_locked(self) -> None:
+        """Do the actual write. MUST be called with ``_config_lock`` held."""
         try:
             _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
             config_dump = self.config.model_dump()

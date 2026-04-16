@@ -366,9 +366,22 @@ class LLMProviderConfig(BaseModel):
     # set manually.  When present, Profile max_output_tokens will be clamped to
     # (context_window - prompt_tokens) at runtime so vLLM/Ollama never rejects.
     context_window: int | None = None  # total tokens (input + output), e.g. 8192
-    status: str = "not_configured"  # "connected" | "configured" | "offline" | "not_configured"
+    # "connected" | "configured" | "offline" | "error" | "not_configured"
+    # "error" is distinct from "offline": error = unhandled exception, offline =
+    # graceful failure (timeout, 4xx/5xx, auth).  Same "not usable" UX semantics.
+    status: str = "not_configured"
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Scheduled-connection-testing fields (spec: doc_internal/specs/
+    # scheduled-connection-testing.md).  Updated by both the manual test route
+    # and the background connection-test thread.
+    last_tested_at: datetime | None = None  # ISO-8601 UTC
+    last_tested_by: Literal["manual", "background"] | None = None
+    # Consecutive failure counter (connected → offline requires N≥2 to debounce
+    # transient blips).  Persisted across restarts so a blip just before
+    # restart does not get erased.  See §Failure Semantics and Open Q #7 of
+    # the spec for the full rationale.
+    consecutive_failures: int = 0
 
 
 class LLMProviderCreateRequest(BaseModel):
@@ -563,6 +576,10 @@ class ConfigResponse(BaseModel):
     active_profile_id: str | None = None
     trajectory_dir: str | None = None
     judge_chat_provider_id: str | None = None
+    # How often the background thread should auto-test LLM Provider connections.
+    # 0 = disabled (default, no thread runs).  1-1440 = interval in minutes.
+    # See doc_internal/specs/scheduled-connection-testing.md.
+    connection_test_interval_minutes: int = Field(default=0, ge=0, le=1440)
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -577,6 +594,9 @@ class ConfigUpdateRequest(BaseModel):
     mode_config: ModeConfig | None = None
     chat_providers: list[ChatProviderConfig] | None = None
     judge_chat_provider_id: str | None = None
+    # Only this field triggers a background-thread restart in the config
+    # PUT handler; other config changes do not churn the thread.
+    connection_test_interval_minutes: int | None = Field(default=None, ge=0, le=1440)
 
 
 # ---------------------------------------------------------------------------
