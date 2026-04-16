@@ -40,6 +40,7 @@ RLMKit solves a specific class of problem. Knowing when it helps (and when it do
 **Tasks where targeted exploration beats brute-force context.** Compliance reviews, contract analysis, multi-section report synthesis, and codebase Q&A all benefit from an LLM that can navigate to relevant sections instead of processing everything at once. RLM's `peek()`, `grep()`, and `chunk()` sandbox gives the model surgical access.
 
 **Provider and mode benchmarking.** The **LLM Tuner** panel runs the same query across N providers × M modes in parallel, ranking results by cost, speed, or token efficiency. Ideal for choosing between providers or tuning RLM vs Direct tradeoffs.
+
 <img height="500" alt="image" src="https://github.com/user-attachments/assets/4adebfaf-0380-4566-894b-a5292bfb674e" />
 
 
