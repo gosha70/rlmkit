@@ -287,9 +287,9 @@ export default function ComparePage() {
   );
 
   // --- Derived -------------------------------------------------------------
-  const usableProviders = useMemo(
-    () => llmProviders.filter((lp) => lp.status === "connected" || lp.status === "configured"),
-    [llmProviders],
+  const isProviderUsable = useCallback(
+    (lp: LLMProviderConfig) => lp.status === "connected" || lp.status === "configured",
+    [],
   );
 
   const totalSlots = selectedLLMProviderIds.length * selectedModes.size;
@@ -530,34 +530,42 @@ export default function ComparePage() {
               <label className="mb-2 block text-sm font-medium">
                 LLM providers ({selectedLLMProviderIds.length} selected)
               </label>
-              {usableProviders.length === 0 ? (
+              {llmProviders.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No connected or configured LLM providers. Add one in Settings.
+                  No LLM providers configured. Add one in Settings.
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {usableProviders.map((lp) => {
+                  {llmProviders.map((lp) => {
+                    const usable = isProviderUsable(lp);
                     const active = selectedLLMProviderIds.includes(lp.id);
                     return (
                       <button
                         key={lp.id}
                         type="button"
-                        onClick={() => toggleLLMProvider(lp.id)}
-                        disabled={isRunning}
+                        onClick={() => usable && toggleLLMProvider(lp.id)}
+                        disabled={isRunning || !usable}
                         className={`flex flex-col items-start rounded-md border px-3 py-1.5 text-left transition-colors ${
-                          active
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-input bg-background hover:bg-accent"
+                          !usable
+                            ? "cursor-not-allowed border-input bg-muted/30 opacity-50"
+                            : active
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-input bg-background hover:bg-accent"
                         } ${isRunning ? "cursor-not-allowed opacity-50" : ""}`}
-                        aria-pressed={active}
+                        aria-pressed={usable ? active : undefined}
+                        title={usable ? undefined : `${lp.name} is ${lp.status} — test connection in Settings`}
                       >
                         <span className="text-sm font-medium">{lp.name}</span>
                         <span
                           className={`text-xs ${
-                            active ? "text-primary-foreground/70" : "text-muted-foreground"
+                            !usable
+                              ? "text-muted-foreground/50"
+                              : active
+                                ? "text-primary-foreground/70"
+                                : "text-muted-foreground"
                           }`}
                         >
-                          {lp.model}
+                          {lp.model}{!usable ? ` (${lp.status})` : ""}
                         </span>
                       </button>
                     );
