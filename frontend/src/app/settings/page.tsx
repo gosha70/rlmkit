@@ -582,6 +582,15 @@ export default function SettingsPage() {
                     >
                       {editingLLMProviderId ? "Save" : "Create"}
                     </Button>
+                    {editingLLMProviderId && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleTestLLMProvider(editingLLMProviderId)}
+                        disabled={testingLLMProviderId === editingLLMProviderId || savingLLMProvider}
+                      >
+                        {testingLLMProviderId === editingLLMProviderId ? "Testing…" : "Test Connection"}
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       onClick={() => { setShowLLMProviderForm(false); resetLLMProviderForm(); }}
@@ -590,6 +599,13 @@ export default function SettingsPage() {
                       Cancel
                     </Button>
                   </div>
+                  {editingLLMProviderId && testResults[editingLLMProviderId] && (
+                    <div className={`mt-2 rounded-md p-2 text-sm ${testResults[editingLLMProviderId].connected ? "bg-emerald-500/10 text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
+                      {testResults[editingLLMProviderId].connected
+                        ? `Connected (${testResults[editingLLMProviderId].latency_ms ?? 0}ms)`
+                        : `Failed: ${testResults[editingLLMProviderId].error || "Connection failed"}`}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
