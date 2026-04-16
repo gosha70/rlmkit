@@ -98,6 +98,7 @@ function TracesPageInner() {
   };
 
   const handleDeleteAll = async () => {
+    if (!window.confirm("Delete all traces? This cannot be undone.")) return;
     setDeleting(true);
     try {
       await deleteAllExecutions();

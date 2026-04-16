@@ -141,11 +141,8 @@ async def delete_all_executions(
     state: AppState = Depends(get_state),
 ) -> None:
     """Delete all executions from telemetry and in-memory state."""
-    # Clear in-memory
     state.executions.clear()
-    # Clear telemetry store — delete all runs (cascades to steps/calls/ratings)
-    for run in state.telemetry.list_runs(limit=100_000):
-        state.telemetry.delete_run(run.id)
+    state.telemetry.delete_all_runs()
 
 
 def _trace_from_execution_record(execution: ExecutionRecord, state: AppState) -> TraceResponse:

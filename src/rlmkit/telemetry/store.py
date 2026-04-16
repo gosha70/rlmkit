@@ -619,6 +619,21 @@ class TelemetryStore:
             except Exception:
                 logger.exception("Failed to delete run %s", run_id)
 
+    def delete_all_runs(self) -> int:
+        """Delete all runs (and cascaded children) in a single statement.
+
+        Returns the number of rows deleted.
+        """
+        with self._lock:
+            try:
+                conn = self._connect()
+                cursor = conn.execute("DELETE FROM runs")
+                conn.commit()
+                return cursor.rowcount
+            except Exception:
+                logger.exception("Failed to delete all runs")
+                return 0
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
