@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -82,7 +83,16 @@ export function Sidebar({
       )}
     >
       <div className="flex h-14 items-center justify-between border-b px-3">
-        {!collapsed && <span className="text-sm font-semibold">Navigation</span>}
+        <div className="flex items-center gap-2">
+          <Image
+            src="/logo.png"
+            alt="RLMKit"
+            width={28}
+            height={28}
+            className="shrink-0 rounded-full"
+          />
+          {!collapsed && <span className="text-sm font-semibold">RLMKit</span>}
+        </div>
         <Button
           variant="ghost"
           size="icon"
