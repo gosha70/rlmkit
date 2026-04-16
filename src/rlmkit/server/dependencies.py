@@ -12,7 +12,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from rlmkit.application.services.provider_tester import ProviderTestResult
 
 from rlmkit.application.dto import RunConfigDTO
 from rlmkit.application.sandbox_vars import MODE_AUTO, MODE_DIRECT, MODE_RAG, MODE_RLM
@@ -135,6 +138,11 @@ class AppState:
         # application-level lock; never hold it while trying to acquire
         # another application-level lock.
         self._config_lock: threading.RLock = threading.RLock()
+        # Scheduled-connection-testing thread state.  Always initialized to
+        # None/unset — _start_connection_testing() spawns the thread lazily
+        # based on config.connection_test_interval_minutes.
+        self._connection_test_thread: threading.Thread | None = None
+        self._connection_test_stop: threading.Event = threading.Event()
         # Persistent telemetry store (SQLite-backed).
         # In-memory ":memory:" for tests, on-disk for production.
         self.telemetry: TelemetryStore = TelemetryStore(":memory:" if not load_from_disk else None)
@@ -145,6 +153,11 @@ class AppState:
             self._load_evaluations()
             self._migrate_chat_providers()
             self._assign_default_profiles()
+        # MUST be the last line of __init__ (see spec §Background thread).
+        # Any later initialization would race with the first cycle's reads
+        # of self.config.  If a future refactor needs post-startup work,
+        # factor it into _post_init_warmup() and call that BEFORE this.
+        self._start_connection_testing()
 
     # ------------------------------------------------------------------
     # Config persistence
@@ -377,6 +390,338 @@ class AppState:
             )
         if changed:
             self.save_config()
+
+    # ------------------------------------------------------------------
+    # Scheduled connection testing
+    # See doc_internal/specs/scheduled-connection-testing.md for design.
+    # ------------------------------------------------------------------
+
+    # Per-provider test timeout used by the background cycle.  Manual route
+    # uses 15s; background uses 10s because the cycle budget must bound
+    # cleanly.  10 providers × 10s / 5 workers = ~20s worst-case cycle.
+    _PROVIDER_TEST_TIMEOUT_S: float = 10.0
+    # Connected → offline requires this many consecutive failures.
+    _OFFLINE_FAILURE_THRESHOLD: int = 2
+    # Parallelism inside a single cycle.
+    _CYCLE_MAX_WORKERS: int = 5
+    # Test-only override for the interval, in seconds (never documented to
+    # users).  Set via monkeypatch.setenv in tests — see spec Open Q #3.
+    _INTERVAL_OVERRIDE_ENV: str = "RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE"
+
+    _connection_test_logger = logging.getLogger("rlmkit.server.connection_test_thread")
+
+    def _resolve_interval_seconds(self) -> float | None:
+        """Return the interval-to-sleep, or None if testing is disabled.
+
+        Respects the test-only env var override (in seconds) so integration
+        tests can run cycles at sub-minute frequency without changing the
+        user-facing minutes-based knob.
+        """
+        override = os.environ.get(self._INTERVAL_OVERRIDE_ENV)
+        if override:
+            try:
+                val = float(override)
+                if val > 0:
+                    return val
+            except ValueError:
+                self._connection_test_logger.warning(
+                    "invalid %s=%r — ignoring override", self._INTERVAL_OVERRIDE_ENV, override
+                )
+        minutes = self.config.connection_test_interval_minutes
+        if minutes <= 0:
+            return None
+        return float(minutes * 60)
+
+    def _start_connection_testing(self) -> None:
+        """Spawn the background cycle thread if configured.
+
+        Idempotent: if a thread is already running, this is a no-op.
+        If connection_test_interval_minutes == 0 (and no override), no
+        thread is spawned.
+        """
+        if self._connection_test_thread is not None and self._connection_test_thread.is_alive():
+            return
+        interval_s = self._resolve_interval_seconds()
+        if interval_s is None:
+            return
+        # Fresh stop event per thread lifecycle.
+        self._connection_test_stop = threading.Event()
+        self._connection_test_thread = threading.Thread(
+            target=self._connection_test_loop,
+            name="rlmkit-connection-test",
+            daemon=True,
+        )
+        self._connection_test_thread.start()
+        self._connection_test_logger.info(
+            "connection test thread started, interval_s=%.1f", interval_s
+        )
+
+    def _stop_connection_testing(self) -> None:
+        """Signal the thread to stop and join with a bounded timeout.
+
+        In-flight cycle results are discarded (the loop exits before the
+        "apply results" step).  This is intentional: stopping means the
+        user changed the interval or is shutting down, so this cycle's
+        observations are no longer authoritative.
+        """
+        thread = self._connection_test_thread
+        if thread is None:
+            return
+        self._connection_test_stop.set()
+        thread.join(timeout=2.0)
+        if thread.is_alive():
+            self._connection_test_logger.warning(
+                "connection test thread did not exit within 2s; leaving it daemon"
+            )
+        self._connection_test_thread = None
+
+    def restart_connection_testing(self) -> None:
+        """Stop any running thread and start one with the current config.
+
+        Called by the PUT /api/config handler when
+        connection_test_interval_minutes changes.  Only that specific field
+        triggers a restart — other config changes do not churn the thread.
+        """
+        self._stop_connection_testing()
+        self._start_connection_testing()
+
+    def _connection_test_loop(self) -> None:
+        """Background cycle loop.  Sleeps first, then tests.
+
+        Sleeps before the first cycle so a --reload restart in dev does not
+        hammer every provider on every code edit.  Uses the stop event's
+        wait() as the sleep primitive so interval changes take effect
+        immediately instead of waiting for the current sleep.
+        """
+        log = self._connection_test_logger
+        while not self._connection_test_stop.is_set():
+            interval_s = self._resolve_interval_seconds()
+            if interval_s is None:
+                log.info("interval resolved to None mid-loop; exiting")
+                return
+            if self._connection_test_stop.wait(timeout=interval_s):
+                break  # stop requested during sleep
+            cycle_started = time.monotonic()
+            try:
+                self._run_test_cycle()
+            except Exception:  # noqa: BLE001 — cycle must not kill the thread
+                log.exception("unhandled exception in connection test cycle")
+            cycle_duration = time.monotonic() - cycle_started
+            if cycle_duration > interval_s:
+                log.warning(
+                    "connection test cycle took %.1fs > interval %.1fs; "
+                    "skipping next cycle to catch up",
+                    cycle_duration,
+                    interval_s,
+                )
+        log.info("connection test thread exiting")
+
+    def _provider_fingerprint(self, lp: LLMProviderConfig) -> str:
+        """Fingerprint of the test-relevant fields of a provider.
+
+        Used by the stale-result guard: if a provider's fingerprint at
+        snapshot time does not match the fingerprint at apply time, the
+        user edited the provider mid-cycle and our test result no longer
+        reflects what they configured.  We discard it rather than vouch
+        for an endpoint we never probed.
+
+        Fields included MUST match every field that test_provider reads.
+        The api_key is identified by reference (id), not value — rotating
+        the key is indistinguishable from setting one for the first time
+        via the usual (SecretStore) path, so fingerprinting includes the
+        provider id (which is already present as the map key) and the
+        backend/model/endpoint tuple.
+        """
+        import hashlib
+
+        fields = (lp.id, lp.backend, lp.model, lp.endpoint or "")
+        tuple_repr = repr(fields)
+        return hashlib.sha1(tuple_repr.encode("utf-8"), usedforsecurity=False).hexdigest()
+
+    def _safe_test(self, lp: LLMProviderConfig) -> ProviderTestResult:
+        """Call test_provider and catch any unhandled exception.
+
+        A single provider raising inside test_provider must not kill the
+        cycle for the other providers.  test_provider itself promises not
+        to raise, but we add this belt-and-braces so a future bug in the
+        probe does not take down the thread.
+        """
+        from rlmkit.application.services.provider_tester import (
+            ProviderTestResult,
+            test_provider,
+        )
+
+        try:
+            return test_provider(lp, timeout_s=self._PROVIDER_TEST_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001
+            self._connection_test_logger.exception(
+                "test_provider raised unexpectedly for provider_id=%s", lp.id
+            )
+            return ProviderTestResult(
+                status="error",
+                tested_at=datetime.now(timezone.utc),
+                latency_ms=None,
+                error_message=f"internal error: {exc!s}"[:200],
+            )
+
+    def _run_test_cycle(self) -> None:
+        """One cycle: snapshot → probe in parallel → apply under lock.
+
+        Lock discipline: held only during the snapshot and the batch-apply.
+        The actual network probes run in the thread pool OUTSIDE the lock
+        so CRUD handlers can still mutate providers while a cycle is in
+        flight.  Typical critical-section duration: milliseconds, vs
+        cycle duration of ~20s with 10 providers.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        log = self._connection_test_logger
+
+        # Step 1: snapshot under lock
+        with self._config_lock:
+            provider_snapshot: dict[str, LLMProviderConfig] = {
+                lp.id: lp.model_copy(deep=True) for lp in self.config.llm_providers
+            }
+            provider_count = len(provider_snapshot)
+
+        log.info("cycle started, provider_count=%d", provider_count)
+        if not provider_snapshot:
+            log.info("cycle complete, nothing to test")
+            return
+
+        # Step 2: probe in parallel OUTSIDE the lock
+        results: dict[str, ProviderTestResult] = {}
+        with ThreadPoolExecutor(
+            max_workers=self._CYCLE_MAX_WORKERS, thread_name_prefix="rlmkit-probe"
+        ) as pool:
+            futures = {
+                pool.submit(self._safe_test, provider_snapshot[pid]): pid
+                for pid in provider_snapshot
+            }
+            for future in as_completed(futures, timeout=None):
+                pid = futures[future]
+                try:
+                    results[pid] = future.result()
+                except Exception:  # noqa: BLE001
+                    log.exception("future.result() failed for provider_id=%s", pid)
+
+        # Step 3: apply results under lock
+        with self._config_lock:
+            transitions, discarded = self._apply_test_results(
+                results, snapshot=provider_snapshot, source="background"
+            )
+            self.save_config()
+
+        # Log transitions AFTER releasing the lock
+        tested = len(results)
+        failed = sum(1 for r in results.values() if r.status == "offline")
+        errored = sum(1 for r in results.values() if r.status == "error")
+        log.info(
+            "cycle complete, tested=%d failed=%d errored=%d transitions=%d discarded_stale=%d",
+            tested,
+            failed,
+            errored,
+            len(transitions),
+            len(discarded),
+        )
+        for t in transitions:
+            log.info(
+                "provider %s transitioned %s → %s after %d consecutive failures (tested_by=%s)",
+                t["provider_id"],
+                t["old_status"],
+                t["new_status"],
+                t["consecutive_failures"],
+                t["tested_by"],
+            )
+        for d in discarded:
+            log.info(
+                "discarded stale test result for %s: config changed during cycle "
+                "(fingerprint %s → %s)",
+                d["provider_id"],
+                d["snapshot_fp"],
+                d["current_fp"],
+            )
+
+    def _apply_test_results(
+        self,
+        results: dict[str, ProviderTestResult],
+        *,
+        snapshot: dict[str, LLMProviderConfig],
+        source: Literal["background", "manual"],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Merge cycle results back into self.config.llm_providers.
+
+        Returns (transitions, discarded) for logging AFTER the lock is
+        released.  MUST be called with ``_config_lock`` held.
+
+        Stale-result guard: if a provider's fingerprint changed between
+        snapshot and apply (user edited base_url / api_key / model), the
+        result is discarded without mutating consecutive_failures or any
+        other field.  The next cycle will probe the new config.
+        """
+        transitions: list[dict[str, Any]] = []
+        discarded: list[dict[str, Any]] = []
+        current_by_id = {lp.id: lp for lp in self.config.llm_providers}
+
+        for pid, result in results.items():
+            current = current_by_id.get(pid)
+            if current is None:
+                # Deleted mid-cycle.  Treat as a discard with no log noise
+                # beyond the summary counter (logs are per-provider noisy).
+                discarded.append(
+                    {
+                        "provider_id": pid,
+                        "snapshot_fp": "deleted",
+                        "current_fp": "deleted",
+                    }
+                )
+                continue
+            snap = snapshot.get(pid)
+            if snap is None:
+                # Added mid-cycle but somehow showed up in results?  Skip.
+                continue
+            snap_fp = self._provider_fingerprint(snap)
+            curr_fp = self._provider_fingerprint(current)
+            if snap_fp != curr_fp:
+                discarded.append(
+                    {
+                        "provider_id": pid,
+                        "snapshot_fp": snap_fp[:8],
+                        "current_fp": curr_fp[:8],
+                    }
+                )
+                continue
+
+            old_status = current.status
+            current.last_tested_at = result.tested_at
+            current.last_tested_by = source
+
+            if result.status == "connected":
+                current.status = "connected"
+                current.consecutive_failures = 0
+            elif result.status == "error":
+                # Error is treated as a failure for the counter, but the
+                # status flips immediately to make the UI actionable.
+                current.consecutive_failures += 1
+                current.status = "error"
+            else:  # offline (graceful failure)
+                current.consecutive_failures += 1
+                if current.consecutive_failures >= self._OFFLINE_FAILURE_THRESHOLD:
+                    current.status = "offline"
+                # else: stay at old status (likely "connected"); surface
+                # the brewing failure via consecutive_failures counter in UI.
+
+            if current.status != old_status:
+                transitions.append(
+                    {
+                        "provider_id": pid,
+                        "old_status": old_status,
+                        "new_status": current.status,
+                        "consecutive_failures": current.consecutive_failures,
+                        "tested_by": source,
+                    }
+                )
+        return transitions, discarded
 
     # ------------------------------------------------------------------
     # Chat Provider helpers
@@ -1006,9 +1351,13 @@ def get_state() -> AppState:
 def reset_state() -> None:
     """Reset state (used in tests). Creates a fresh AppState without loading from disk.
 
-    Also disables disk persistence so tests never overwrite the user's config.
+    Also disables disk persistence so tests never overwrite the user's config
+    and stops any background connection-test thread left over from a
+    previous test (the env-var override can keep one running).
     """
     global _state
+    if _state is not None:
+        _state._stop_connection_testing()
     _state = AppState(load_from_disk=False)
     _state.save_config = lambda: None  # type: ignore[assignment]
     _state.save_sessions = lambda: None  # type: ignore[assignment]

@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import os as _os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -80,10 +82,25 @@ def create_app() -> FastAPI:
 
     from rlmkit import __version__
 
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Startup: nothing to do here — AppState constructs lazily via
+        # get_state().  The background connection-test thread starts
+        # automatically in AppState.__init__ if configured.
+        yield
+        # Shutdown: stop the scheduled-connection-testing thread before
+        # process teardown.  Daemon threads die with the process
+        # regardless, but the 2-second join runs BEFORE the logger shuts
+        # down, so in-flight probes do not emit log lines into a
+        # mid-shutdown logger.  See spec §Thread lifecycle.
+        state = get_state()
+        state._stop_connection_testing()
+
     app = FastAPI(
         title="RLMKit API",
         version=__version__,
         description="Recursive Language Model toolkit API server",
+        lifespan=_lifespan,
     )
 
     # CORS middleware for frontend dev server

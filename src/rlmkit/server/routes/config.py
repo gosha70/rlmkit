@@ -57,10 +57,18 @@ async def update_config(
             # Allow clearing by sending null/"" — normalize to None
             val = req.judge_chat_provider_id
             state.config.judge_chat_provider_id = val if val else None
-        # connection_test_interval_minutes — Commit 4 (the background thread)
-        # will restart the thread when this field changes.  For now, we just
-        # persist the setting so the UI round-trip works.
+        # connection_test_interval_minutes triggers a thread restart ONLY
+        # when it actually changes.  Other config fields don't churn the
+        # thread.  See spec §API changes.
+        interval_changed = False
         if req.connection_test_interval_minutes is not None:
-            state.config.connection_test_interval_minutes = req.connection_test_interval_minutes
+            old_interval = state.config.connection_test_interval_minutes
+            if req.connection_test_interval_minutes != old_interval:
+                state.config.connection_test_interval_minutes = req.connection_test_interval_minutes
+                interval_changed = True
         state.save_config()
+    # Restart thread AFTER releasing the lock — restart itself acquires
+    # the lock inside start/stop helpers (via save_config etc).
+    if interval_changed:
+        state.restart_connection_testing()
     return state.config
