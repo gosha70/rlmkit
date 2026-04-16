@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -637,11 +638,22 @@ class AppState:
         )
 
     def save_config(self) -> None:
-        """Persist current config, profiles, and prompts to disk.
+        """Persist current config, profiles, and prompts to disk atomically.
 
         Ephemeral Chat Providers (created by compare-matrix) are excluded
         from the persisted data — they are session-local and should not
         survive a server restart.
+
+        Atomicity
+        ---------
+        Writes go to a temp file in the same directory as ``_CONFIG_FILE``,
+        then ``os.replace`` promotes it to the target path.  ``os.replace``
+        is atomic on POSIX and on Windows (Python 3.3+).  If the process
+        dies between the temp-file write and the rename, the previous valid
+        config stays on disk; there is no partial-file window.  The feature
+        that motivates this change (scheduled connection testing) increases
+        save frequency ~1500×/day with 10 providers at 1-min cycles, which
+        makes even low-probability non-atomic writes a reliability risk.
         """
         try:
             _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -655,7 +667,36 @@ class AppState:
                 "system_prompts": self.system_prompts.model_dump(),
                 "user_profiles": [p.model_dump() for p in self.user_profiles],
             }
-            _CONFIG_FILE.write_text(json.dumps(data, indent=2, default=str))
+            serialized = json.dumps(data, indent=2, default=str)
+
+            # Write to temp file in the SAME directory as the target.  Cross-
+            # filesystem os.replace is not atomic; same-dir is.  delete=False
+            # because we want to keep the temp file alive for the rename.
+            target_dir = _CONFIG_FILE.parent
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=str(target_dir),
+                prefix=".config.",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp:
+                tmp.write(serialized)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+                tmp_path = tmp.name
+
+            try:
+                os.replace(tmp_path, _CONFIG_FILE)
+            except OSError:
+                # Rename failed — clean up the dangling temp file so we do
+                # not leak one per failed save.
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+
             logger.info(
                 "Saved config: provider=%s model=%s (%d provider configs)",
                 self.config.active_provider,
