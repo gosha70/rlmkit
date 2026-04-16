@@ -27,6 +27,30 @@ RLMKit provides:
 - **Sandboxed execution** — RestrictedPython prevents file/network/system access
 - **[RLM Studio](#rlm-studio)** — a web app for experimenting, tuning, and comparing execution modes
 
+## Where RLMKit Shines
+
+RLMKit solves a specific class of problem. Knowing when it helps (and when it doesn't) saves you from over-engineering.
+
+### Good fit
+
+**Large documents that blow past context windows.** When inputs regularly exceed `50K`–`100K` tokens, full-context prompting gets expensive and answer quality degrades. RLM mode lets the model explore selectively, - reading only the sections it needs at a fraction of the token cost.
+
+**Production workloads that need cost and time guardrails.** RLMKit caps tokens, cost, steps, and wall-clock time per execution. The outcome classifier flags failures and degraded results automatically. If you're running LLM workloads in production, budget enforcement is built in.
+
+**Tasks where targeted exploration beats brute-force context.** Compliance reviews, contract analysis, multi-section report synthesis, and codebase Q&A all benefit from an LLM that can navigate to relevant sections instead of processing everything at once. RLM's `peek()`, `grep()`, and `chunk()` sandbox gives the model surgical access.
+
+**Provider and mode benchmarking.** The **LLM Tuner** panel runs the same query across N providers × M modes in parallel, ranking results by cost, speed, or token efficiency. Ideal for choosing between providers or tuning RLM vs Direct tradeoffs.
+<img height="500" alt="image" src="https://github.com/user-attachments/assets/4adebfaf-0380-4566-894b-a5292bfb674e" />
+
+
+### Not a fit
+
+**Documents that fit comfortably in context.** If your inputs stay under `8K` tokens, Direct mode works, but a standard LLM client is likely sufficient for your needs.
+
+**Workloads that don't benefit from code generation in the loop.** RLM's core mechanism is an LLM writing `Python` to explore content. For straightforward Q&A, short-text summarization, or classification, the recursive loop adds latency without adding value.
+
+**Pure retrieval over a static corpus.** If your primary need is _"search N documents, return relevant chunks"_,  a dedicated RAG pipeline (vector store + reranker) is simpler and faster. RLMKit includes a RAG mode, but it's not a replacement for purpose-built retrieval infrastructure at scale.
+
 ## Quick Start
 
 ### Installation
