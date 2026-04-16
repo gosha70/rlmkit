@@ -1040,20 +1040,38 @@ class AppState:
 
             # Write to temp file in the SAME directory as the target.  Cross-
             # filesystem os.replace is not atomic; same-dir is.  delete=False
-            # because we want to keep the temp file alive for the rename.
+            # because the "with" block's __exit__ would unlink the file
+            # before os.replace could see it — we need it alive for the
+            # rename, and on Windows it must be closed before the rename.
             target_dir = _CONFIG_FILE.parent
-            with tempfile.NamedTemporaryFile(
+            tmp = tempfile.NamedTemporaryFile(
                 mode="w",
                 encoding="utf-8",
                 dir=str(target_dir),
                 prefix=".config.",
                 suffix=".tmp",
                 delete=False,
-            ) as tmp:
-                tmp.write(serialized)
-                tmp.flush()
-                os.fsync(tmp.fileno())
-                tmp_path = tmp.name
+            )
+            tmp_path = tmp.name
+            try:
+                try:
+                    tmp.write(serialized)
+                    tmp.flush()
+                    os.fsync(tmp.fileno())
+                finally:
+                    tmp.close()
+            except BaseException:
+                # Write-path failure (ENOSPC, EIO, quota exceeded, read-only
+                # remount, SIGTERM between flush and fsync, ...).  The temp
+                # file already exists on disk; unlink it before re-raising
+                # so the outer except doesn't leave a .config.*.tmp behind.
+                # BaseException on purpose: SystemExit / KeyboardInterrupt
+                # can also interrupt the write path.
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
             try:
                 os.replace(tmp_path, _CONFIG_FILE)

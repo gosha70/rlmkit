@@ -83,6 +83,40 @@ def test_save_config_is_atomic_under_simulated_crash(isolated_config: Path) -> N
     assert post_data["config"]["active_provider"] == "openai"
 
 
+def test_save_config_cleans_up_temp_file_on_write_failure(
+    isolated_config: Path,
+) -> None:
+    """Write-path failure (ENOSPC, EIO, quota exceeded) must not leak
+    temp files.  Regression test for commit ddf5339's predecessor which
+    only cleaned up on rename failure, not write failure.
+
+    Simulated via patching ``os.fsync`` — it runs after the temp file
+    exists on disk and after the write, so a failure here leaves a
+    written-but-unsynced temp on disk.  On a real filesystem this is
+    exactly what ENOSPC looks like when the write buffered but the
+    kernel couldn't flush it.
+    """
+    state = AppState(load_from_disk=False)
+    state.save_config()  # create initial good config
+
+    target_dir = isolated_config.parent
+    before = {p.name for p in target_dir.iterdir()}
+
+    with patch(
+        "rlmkit.server.dependencies.os.fsync",
+        side_effect=OSError("ENOSPC: simulated disk full"),
+    ):
+        state.save_config()  # swallows the OSError
+
+    after = {p.name for p in target_dir.iterdir()}
+    leaked = after - before
+    leaked_temps = [n for n in leaked if n.startswith(".config.") and n.endswith(".tmp")]
+    assert leaked_temps == [], (
+        f"save_config leaked {len(leaked_temps)} temp file(s) after a "
+        f"write failure (ENOSPC simulation): {leaked_temps}"
+    )
+
+
 def test_save_config_cleans_up_temp_file_on_rename_failure(
     isolated_config: Path,
 ) -> None:
