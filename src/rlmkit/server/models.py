@@ -50,6 +50,32 @@ class HealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics — Learn tab persistent strip
+# ---------------------------------------------------------------------------
+
+
+class DiagnosticCheck(BaseModel):
+    """Single diagnostic result.
+
+    status semantics follow the Learn pitch (§Diagnostics red-dot badge):
+    ``error`` = hard blocker (backend unreachable, no enabled provider,
+    storage unwritable); ``warn`` = soft issue (judge missing); ``ok``
+    = check passed. Only ``error`` states should drive the sidebar badge.
+    """
+
+    status: Literal["ok", "warn", "error"]
+    message: str
+    fixUrl: str | None = None  # deep link into Settings or a Troubleshoot entry
+
+
+class DiagnosticsResponse(BaseModel):
+    backend: DiagnosticCheck
+    provider: DiagnosticCheck
+    judge: DiagnosticCheck
+    storage: DiagnosticCheck
+
+
+# ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
 

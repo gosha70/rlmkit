@@ -520,6 +520,28 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
 // Health
 export const getHealth = () => fetchJSON<HealthResponse>("/health");
 
+// ---------------------------------------------------------------------------
+// Diagnostics — Learn tab persistent strip
+// ---------------------------------------------------------------------------
+
+export type DiagnosticStatus = "ok" | "warn" | "error";
+
+export interface DiagnosticCheck {
+  status: DiagnosticStatus;
+  message: string;
+  fixUrl?: string | null;
+}
+
+export interface DiagnosticsResponse {
+  backend: DiagnosticCheck;
+  provider: DiagnosticCheck;
+  judge: DiagnosticCheck;
+  storage: DiagnosticCheck;
+}
+
+export const getDiagnostics = () =>
+  fetchJSON<DiagnosticsResponse>("/api/diagnostics");
+
 // Chat
 export const submitChat = (req: ChatRequest) =>
   fetchJSON<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(req) });
