@@ -265,9 +265,14 @@ export interface LLMProviderConfig {
   endpoint?: string | null;
   runtime_settings: RuntimeSettings;
   context_window?: number | null;  // total tokens (input + output), e.g. 8192
-  status: string;  // "connected" | "configured" | "offline" | "not_configured"
+  status: string;  // "connected" | "configured" | "offline" | "error" | "not_configured"
   created_at?: string | null;
   updated_at?: string | null;
+  // Scheduled-connection-testing fields.  Updated by both the manual
+  // test route and the background connection-test thread.
+  last_tested_at?: string | null;  // ISO-8601 UTC
+  last_tested_by?: "manual" | "background" | null;
+  consecutive_failures?: number;
 }
 
 export interface LLMProviderCreateRequest {
@@ -388,6 +393,9 @@ export interface AppConfig {
   chat_providers: ChatProviderConfig[];
   active_profile_id?: string | null;
   judge_chat_provider_id?: string | null;
+  // How often the background thread auto-tests LLM Provider connections.
+  // 0 = disabled (default).  1-1440 = interval in minutes.
+  connection_test_interval_minutes?: number;
 }
 
 // Evaluations
@@ -693,6 +701,9 @@ export interface ConfigUpdateRequest {
   mode_config?: Partial<ModeConfig>;
   chat_providers?: ChatProviderConfig[];
   judge_chat_provider_id?: string | null;
+  // Only this specific field triggers a thread restart on the backend.
+  // 0 = disable scheduled testing.  1-1440 = interval in minutes.
+  connection_test_interval_minutes?: number;
 }
 
 export const getConfig = () => fetchJSON<AppConfig>("/api/config");

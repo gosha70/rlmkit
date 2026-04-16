@@ -179,6 +179,20 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSaveConnectionTestInterval = async (minutes: number) => {
+    setSaving(true);
+    try {
+      const updated = await updateConfig({
+        connection_test_interval_minutes: minutes,
+      });
+      mutateConfig(updated, false);
+    } catch (err) {
+      console.error("Failed to save connection-test interval:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleCreateProfile = async () => {
     if (!newProfileName.trim()) return;
     const duplicate = profiles.some(
@@ -422,7 +436,19 @@ export default function SettingsPage() {
     connected: "bg-emerald-500",
     configured: "bg-amber-500",
     offline: "bg-gray-400",
+    error: "bg-red-500",
     not_configured: "bg-gray-400",
+  };
+
+  const formatRelativeTime = (iso: string | null | undefined): string => {
+    if (!iso) return "never";
+    const then = new Date(iso).getTime();
+    if (!Number.isFinite(then)) return "never";
+    const delta = Math.max(0, Date.now() - then) / 1000;
+    if (delta < 60) return `${Math.floor(delta)}s ago`;
+    if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+    if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+    return `${Math.floor(delta / 86400)}d ago`;
   };
 
   return (
@@ -437,6 +463,7 @@ export default function SettingsPage() {
             <TabsTrigger value="budget">Budget</TabsTrigger>
             <TabsTrigger value="profiles">Profiles</TabsTrigger>
             <TabsTrigger value="prompts">Prompts</TabsTrigger>
+            <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
           </TabsList>
 
@@ -451,6 +478,20 @@ export default function SettingsPage() {
                   <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
                   Add LLM Provider
                 </Button>
+              )}
+            </div>
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {(config?.connection_test_interval_minutes ?? 0) > 0 ? (
+                <>
+                  Auto-testing every {config?.connection_test_interval_minutes}m — change
+                  the interval on the <strong>General</strong> tab.
+                </>
+              ) : (
+                <>
+                  Auto-testing of connections is disabled. Enable it on the{" "}
+                  <strong>General</strong> tab to catch provider outages without a manual
+                  click.
+                </>
               )}
             </div>
 
@@ -633,6 +674,25 @@ export default function SettingsPage() {
                           {lp.endpoint && <> &middot; {lp.endpoint}</>}
                           {lp.context_window && <> &middot; {lp.context_window.toLocaleString()} tokens</>}
                         </p>
+                        {(lp.last_tested_at || (lp.consecutive_failures ?? 0) > 0) && (
+                          <p className="text-xs text-muted-foreground">
+                            {lp.last_tested_at && (
+                              <>
+                                Last tested {formatRelativeTime(lp.last_tested_at)}
+                                {lp.last_tested_by && (
+                                  <> ({lp.last_tested_by === "background" ? "auto" : "you"})</>
+                                )}
+                              </>
+                            )}
+                            {(lp.consecutive_failures ?? 0) > 0 &&
+                              lp.status === "connected" && (
+                                <span className="ml-2 text-amber-500">
+                                  &middot; {lp.consecutive_failures} recent failure
+                                  {lp.consecutive_failures === 1 ? "" : "s"} — monitoring
+                                </span>
+                              )}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -1202,6 +1262,55 @@ export default function SettingsPage() {
 
           <TabsContent value="prompts">
             <SystemPromptEditor />
+          </TabsContent>
+
+          <TabsContent value="general" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Scheduled Connection Testing</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  How often RLMKit should auto-test LLM Provider connections. When enabled,
+                  a background task probes each provider at this interval and updates its
+                  status. Set to <strong>0</strong> to disable auto-testing (manual testing
+                  via the Test button still works).
+                </p>
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="connection-test-interval" className="w-48">
+                    Interval (minutes)
+                  </Label>
+                  <Input
+                    id="connection-test-interval"
+                    type="number"
+                    min={0}
+                    max={1440}
+                    step={1}
+                    className="w-32"
+                    defaultValue={config?.connection_test_interval_minutes ?? 0}
+                    onBlur={(e) => {
+                      const raw = Number(e.target.value);
+                      const clamped = Number.isFinite(raw)
+                        ? Math.max(0, Math.min(1440, Math.floor(raw)))
+                        : 0;
+                      if (clamped !== (config?.connection_test_interval_minutes ?? 0)) {
+                        handleSaveConnectionTestInterval(clamped);
+                      }
+                    }}
+                    disabled={saving}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {(config?.connection_test_interval_minutes ?? 0) === 0
+                      ? "disabled"
+                      : `every ${config?.connection_test_interval_minutes}m`}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Range: 0-1440 minutes (24 hours). The first cycle runs after the full
+                  interval elapses, not at server startup.
+                </p>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="appearance">

@@ -443,4 +443,31 @@ describe("SettingsPage", () => {
     // state update path requires act() wrapping that is fragile in this setup.
     // Covered by e2e tests instead.
   });
+
+  test("renders General tab trigger", () => {
+    render(<SettingsPage />);
+    const generalTab = screen.getByRole("tab", { name: "General" });
+    expect(generalTab).toBeInTheDocument();
+    const panel = document.getElementById(generalTab.getAttribute("aria-controls")!);
+    expect(panel).toBeInTheDocument();
+  });
+
+  test("General tab shows connection-test-interval input", async () => {
+    render(<SettingsPage />);
+    const user = (await import("@testing-library/user-event")).default.setup();
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    // Input is rendered with id 'connection-test-interval'.
+    const input = await screen.findByLabelText(/Interval/i);
+    expect(input).toBeInTheDocument();
+    expect((input as HTMLInputElement).type).toBe("number");
+  });
+
+  test("LLM Providers tab shows scheduled-testing cross-link notice", () => {
+    render(<SettingsPage />);
+    // The notice text depends on the current config.connection_test_interval_minutes.
+    // Mock's default is 0, so the "disabled — enable on General" message should be visible.
+    expect(
+      screen.getByText(/Auto-testing of connections is disabled/i),
+    ).toBeInTheDocument();
+  });
 });
