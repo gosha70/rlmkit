@@ -58,7 +58,7 @@ server = [
     "fastapi>=0.110.0",
     "uvicorn>=0.27.0",
     "python-multipart>=0.0.26",  # CVE-2026-40347 fix
-    "pypdf>=6.10.1",  # PDF text extraction in /api/files/upload
+    "pypdf>=6.10.2",  # PDF text extraction in /api/files/upload
     "python-docx>=1.1.0",  # DOCX text extraction in /api/files/upload
 ]
 
