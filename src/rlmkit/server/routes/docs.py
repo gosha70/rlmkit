@@ -40,6 +40,16 @@ _DOCS_ALLOWLIST: dict[str, str] = {
     "rlm-studio-guide": "rlm-studio-guide.md",
     "rlmkit-design-document": "RLMKit_Design_Document.md",
     "lessons-from-ai-copilots": "lessons-from-ai-copilots.md",
+    # Cookbook provider guides. Slug uses flat "hosts-<name>" form so
+    # the slug regex ^[a-z0-9-]+$ stays simple; the filename resolves
+    # into the nested docs/hosts/ directory.
+    "hosts-ollama": "hosts/ollama.md",
+    "hosts-lmstudio": "hosts/lmstudio.md",
+    "hosts-vllm": "hosts/vllm.md",
+    "hosts-dgx-spark": "hosts/dgx-spark.md",
+    "hosts-openai": "hosts/openai.md",
+    "hosts-anthropic": "hosts/anthropic.md",
+    "hosts-groq": "hosts/groq.md",
 }
 
 
