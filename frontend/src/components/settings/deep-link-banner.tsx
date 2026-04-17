@@ -22,6 +22,36 @@ export interface DeepLinkValues {
   model?: string;
 }
 
+/**
+ * Parse Cookbook → Settings deep-link query params into a vetted
+ * DeepLinkValues, or null when the link is not one we should honor.
+ *
+ * Security properties enforced here:
+ * - `provider` must be in `allowedProviders` (no banner for garbage).
+ * - `baseUrl` is dropped unless `provider` is in `baseUrlAllowedProviders`.
+ *   Cloud backends hide their endpoint field in the form, so an
+ *   attacker-supplied baseUrl would stash an override in invisible
+ *   state — this guard blocks that before the banner ever renders.
+ * - `api_key` / `apiKey` are NEVER read, even if present in the URL.
+ *   The banner must never pre-fill secrets (pitch §Deep-link security).
+ */
+export function parseDeepLinkFromParams(
+  params: URLSearchParams,
+  allowedProviders: ReadonlySet<string>,
+  baseUrlAllowedProviders: ReadonlySet<string>,
+): DeepLinkValues | null {
+  const provider = params.get("provider");
+  if (!provider || !allowedProviders.has(provider)) return null;
+  const rawBaseUrl = params.get("baseUrl");
+  const baseUrl =
+    rawBaseUrl && baseUrlAllowedProviders.has(provider) ? rawBaseUrl : undefined;
+  return {
+    provider,
+    baseUrl,
+    model: params.get("model") ?? undefined,
+  };
+}
+
 interface DeepLinkBannerProps {
   values: DeepLinkValues;
   providerDisplayName?: string;

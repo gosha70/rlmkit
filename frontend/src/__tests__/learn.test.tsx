@@ -54,7 +54,10 @@ import {
   getProviderById,
   settingsDeepLinkFor,
 } from "@/components/learn/provider-catalog";
-import { DeepLinkBanner } from "@/components/settings/deep-link-banner";
+import {
+  DeepLinkBanner,
+  parseDeepLinkFromParams,
+} from "@/components/settings/deep-link-banner";
 import {
   extractHeadings,
   slugifyHeading,
@@ -631,5 +634,77 @@ describe("DeepLinkBanner", () => {
       />,
     );
     expect(screen.getByText("vllm")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseDeepLinkFromParams — security-critical parsing
+// ---------------------------------------------------------------------------
+
+describe("parseDeepLinkFromParams", () => {
+  const ALLOWED = new Set(["openai", "anthropic", "ollama", "lmstudio", "vllm"]);
+  const BASE_URL_ALLOWED = new Set(["ollama", "lmstudio", "vllm"]);
+
+  test("returns null when provider is missing", () => {
+    const params = new URLSearchParams();
+    expect(parseDeepLinkFromParams(params, ALLOWED, BASE_URL_ALLOWED)).toBeNull();
+  });
+
+  test("returns null when provider is not allowlisted", () => {
+    const params = new URLSearchParams("provider=evil");
+    expect(parseDeepLinkFromParams(params, ALLOWED, BASE_URL_ALLOWED)).toBeNull();
+  });
+
+  test("accepts baseUrl for local backends", () => {
+    const params = new URLSearchParams(
+      "provider=ollama&baseUrl=http%3A%2F%2Flocalhost%3A11434&model=llama3.1:8b",
+    );
+    const values = parseDeepLinkFromParams(params, ALLOWED, BASE_URL_ALLOWED);
+    expect(values).toEqual({
+      provider: "ollama",
+      baseUrl: "http://localhost:11434",
+      model: "llama3.1:8b",
+    });
+  });
+
+  test("strips baseUrl for cloud backends (P1 phishing defense)", () => {
+    // Core attack scenario: attacker crafts a link that points
+    // provider=openai at their host. If baseUrl were honored here it
+    // would end up in hidden form state and the user's API key would
+    // be routed to the attacker on save.
+    const params = new URLSearchParams(
+      "provider=openai&baseUrl=https%3A%2F%2Fevil.example.com&model=gpt-4o",
+    );
+    const values = parseDeepLinkFromParams(params, ALLOWED, BASE_URL_ALLOWED);
+    expect(values).toEqual({
+      provider: "openai",
+      baseUrl: undefined,
+      model: "gpt-4o",
+    });
+  });
+
+  test("strips baseUrl for Anthropic too", () => {
+    const params = new URLSearchParams(
+      "provider=anthropic&baseUrl=https%3A%2F%2Fevil.example.com",
+    );
+    const values = parseDeepLinkFromParams(params, ALLOWED, BASE_URL_ALLOWED);
+    expect(values?.baseUrl).toBeUndefined();
+  });
+
+  test("never reads api_key or apiKey params", () => {
+    // The pitch's security boundary: secrets must never ride in the
+    // URL. The parser must not even surface them into the DeepLinkValues
+    // shape, even if a pathological caller adds them to the shape later.
+    const params = new URLSearchParams(
+      "provider=openai&api_key=sk-leak&apiKey=sk-leak2",
+    );
+    const values = parseDeepLinkFromParams(params, ALLOWED, BASE_URL_ALLOWED);
+    expect(values).toEqual({
+      provider: "openai",
+      baseUrl: undefined,
+      model: undefined,
+    });
+    const serialized = JSON.stringify(values);
+    expect(serialized).not.toMatch(/sk-leak/);
   });
 });
