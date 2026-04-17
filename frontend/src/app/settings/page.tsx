@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useTheme } from "next-themes";
@@ -94,7 +94,23 @@ const DEEP_LINK_BASE_URL_ALLOWED_BACKENDS: ReadonlySet<string> = new Set([
   BACKEND_VLLM,
 ]);
 
+/**
+ * Default export wraps the real page in a Suspense boundary because
+ * the inner component calls ``useSearchParams()`` for the Cookbook
+ * deep-link banner. Next's static generation would otherwise fail
+ * the CSR-bailout check during ``next build``. The fallback is
+ * minimal — the Suspense window is only open until router params
+ * are available, which is a single tick on the client.
+ */
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const searchParams = useSearchParams();
