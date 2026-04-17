@@ -583,6 +583,69 @@ export interface TroubleshootResponse {
 export const getTroubleshoot = () =>
   fetchJSON<TroubleshootResponse>("/api/docs/troubleshoot");
 
+// ---------------------------------------------------------------------------
+// Replay — Learn tab Concepts §C (V2)
+// ---------------------------------------------------------------------------
+
+export type LearnReplayStepKind =
+  | "question"
+  | "plan"
+  | "code"
+  | "result"
+  | "decision"
+  | "answer";
+
+export interface LearnReplayStepDetails {
+  prompt?: string;
+  code?: string;
+  output?: string;
+}
+
+export interface LearnReplayStepMetrics {
+  tokensIn?: number;
+  tokensOut?: number;
+  latencyMs?: number;
+  costUsd?: number;
+}
+
+export interface LearnReplayStep {
+  id: string;
+  kind: LearnReplayStepKind;
+  title: string;
+  summary: string;
+  details?: LearnReplayStepDetails;
+  metrics?: LearnReplayStepMetrics;
+}
+
+export interface LearnReplayMetadata {
+  source: "bundled" | "trace";
+  executionId?: string;
+  originalStepCount?: number;
+  truncated?: boolean;
+  convertorVersion: number;
+}
+
+export interface LearnReplay {
+  id: string;
+  title: string;
+  description: string;
+  steps: LearnReplayStep[];
+  metadata: LearnReplayMetadata;
+}
+
+// Bundled replays live under frontend/public/learn/replays/<id>.json so
+// they ship with the static asset pipeline. The backend trace-backed
+// replay endpoint (NEXT.md item 3) lands separately when V2b is shaped.
+const BUNDLED_REPLAY_PATH = "/learn/replays/bundled-rlm-demo.json";
+
+export async function getBundledReplay(): Promise<LearnReplay> {
+  const resp = await fetch(BUNDLED_REPLAY_PATH);
+  if (!resp.ok) {
+    throw new Error(`Bundled replay fetch failed: ${resp.status}`);
+  }
+  return (await resp.json()) as LearnReplay;
+}
+
 // Chat
 export const submitChat = (req: ChatRequest) =>
   fetchJSON<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(req) });

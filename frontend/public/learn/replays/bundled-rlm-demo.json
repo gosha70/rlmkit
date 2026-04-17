@@ -1,0 +1,89 @@
+{
+  "id": "bundled-rlm-demo",
+  "title": "Finding revenue figures in a quarterly report",
+  "description": "A user asks for Q3 revenue from a 60-page PDF. RLM inspects the document programmatically instead of trying to fit it into one prompt.",
+  "metadata": {
+    "source": "bundled",
+    "convertorVersion": 1
+  },
+  "steps": [
+    {
+      "id": "q",
+      "kind": "question",
+      "title": "Question received",
+      "summary": "The user asks about a document that is too large or complex for a simple one-pass answer.",
+      "details": {
+        "prompt": "What was Q3 revenue, and how did it compare to Q2?"
+      }
+    },
+    {
+      "id": "p",
+      "kind": "plan",
+      "title": "Plan formed",
+      "summary": "The model decides to inspect the document iteratively rather than load it into the prompt. It plans to chunk the PDF text and search for revenue mentions.",
+      "details": {
+        "prompt": "Document is 60 pages (\u2248 38000 tokens). Approach: load into REPL as `prompt`, search for 'revenue' across all chunks, then read 200-token windows around the strongest hits."
+      },
+      "metrics": {
+        "tokensIn": 220,
+        "tokensOut": 95,
+        "latencyMs": 1340
+      }
+    },
+    {
+      "id": "c1",
+      "kind": "code",
+      "title": "Code generated",
+      "summary": "The model writes a small Python action that searches the document for revenue mentions and returns the surrounding context.",
+      "details": {
+        "code": "hits = grep(prompt, pattern=\"revenue\")\nwindows = [peek(prompt, start=h - 200, length=400) for h in hits[:6]]\nprint(len(hits), \"matches\")\nprint(windows)"
+      },
+      "metrics": {
+        "tokensIn": 380,
+        "tokensOut": 140,
+        "latencyMs": 1820
+      }
+    },
+    {
+      "id": "r1",
+      "kind": "result",
+      "title": "Sandbox executed",
+      "summary": "The REPL runs the code and returns an observation. Twelve revenue mentions, six high-signal windows surfaced.",
+      "details": {
+        "output": "12 matches\n[\"... Q3 revenue of $4.2B, up from $3.8B in Q2 ...\", \"... revenue growth driven by ...\", \"... segment revenue mix ...\", \"... revenue guidance for Q4 ...\", \"... deferred revenue rose to ...\", \"... revenue per user climbed to ...\"]"
+      },
+      "metrics": {
+        "latencyMs": 110
+      }
+    },
+    {
+      "id": "d",
+      "kind": "decision",
+      "title": "Decision point",
+      "summary": "The first window already contains both Q3 and Q2 revenue figures. The model decides it has enough information and stops recursing.",
+      "details": {
+        "prompt": "Window 1 contains the answer (Q3 $4.2B, Q2 $3.8B). No need to chunk further or call sub_RLM."
+      },
+      "metrics": {
+        "tokensIn": 290,
+        "tokensOut": 60,
+        "latencyMs": 980
+      }
+    },
+    {
+      "id": "a",
+      "kind": "answer",
+      "title": "Final answer",
+      "summary": "The system returns the answer along with the cost and latency totals for the run.",
+      "details": {
+        "output": "Q3 revenue was $4.2B, up from $3.8B in Q2 \u2014 a sequential increase of about 10.5%."
+      },
+      "metrics": {
+        "tokensIn": 890,
+        "tokensOut": 295,
+        "latencyMs": 4250,
+        "costUsd": 0.0094
+      }
+    }
+  ]
+}
