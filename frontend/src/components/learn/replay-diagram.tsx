@@ -39,13 +39,14 @@ const NODES: ReadonlyArray<DiagramNode> = [
   { kind: "answer", label: "Answer" },
 ];
 
-const NODE_WIDTH = 96;
-const NODE_HEIGHT = 56;
-const NODE_GAP = 24;
-const PADDING_X = 12;
+const NODE_WIDTH = 120;
+const NODE_HEIGHT = 72;
+const NODE_GAP = 28;
+const NODE_LABEL_FONT_SIZE = 15;
+const PADDING_X = 16;
 const SVG_WIDTH =
   PADDING_X * 2 + NODES.length * NODE_WIDTH + (NODES.length - 1) * NODE_GAP;
-const SVG_HEIGHT = NODE_HEIGHT + 32;
+const SVG_HEIGHT = NODE_HEIGHT + 40;
 
 function nodeX(index: number): number {
   return PADDING_X + index * (NODE_WIDTH + NODE_GAP);
@@ -127,8 +128,9 @@ export function ReplayDiagram({ activeKind, className }: ReplayDiagramProps) {
                 y={y + NODE_HEIGHT / 2 + 1}
                 textAnchor="middle"
                 dominantBaseline="middle"
+                fontSize={NODE_LABEL_FONT_SIZE}
                 className={cn(
-                  "text-xs font-medium",
+                  "font-semibold",
                   isActive ? "fill-foreground" : "fill-muted-foreground",
                 )}
               >
