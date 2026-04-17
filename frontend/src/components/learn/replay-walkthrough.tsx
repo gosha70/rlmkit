@@ -3,24 +3,23 @@
 /**
  * Concepts §C — replay walkthrough composite.
  *
- * Layout matches the shaped three-pane + bottom-tray spec:
+ * Layout:
  *
  *   header   : title + description + optional truncation note
  *   controls : Play / Pause / Step / Reset / Speed strip
- *   grid     : left rail (step list)
- *              │ center (SVG diagram)
- *              │ right pane (title + summary)
+ *   diagram  : 6-node SVG (full width of the walkthrough)
+ *   grid     : left rail (step list) │ right pane (title + summary)
  *   tray     : bottom Advanced details (expandable)
  *
- * On narrow screens the three panes stack vertically (list → diagram
- * → explanation). At md+ they form a 3-column grid: 12rem rail /
- * flexible diagram center / 20rem right pane. The diagram's internal
- * SVG is already overflow-x-auto so shrinking the center cell is safe.
- *
- * The Advanced tray carries `key={step.id}` so React remounts it on
- * every step change — that resets the tray to collapsed per the
- * spec's "default view is educational" contract (if a user opens the
- * tray on step 1, navigating to step 3 starts collapsed, not open).
+ * Deliberate trade-off against a strict 3-column "three-pane" grid.
+ * At typical desktop widths the Learn surface's middle column
+ * compresses a 6-node horizontal diagram to ~480px — far too narrow
+ * for readable labels. Giving the diagram its own full-width row
+ * keeps it legible without losing the three distinct panes (rail,
+ * diagram, explanation) the spec calls for — they're stacked, not
+ * columns. The bottom Advanced tray addressed in the V2 P2 review
+ * is unchanged: separate region, keyed by step id so it resets on
+ * step change per the "default view is educational" contract.
  */
 
 import { useReplayControls } from "./use-replay-controls";
@@ -66,15 +65,14 @@ export function ReplayWalkthrough({
 
       <ReplayControls controls={controls} />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[12rem_minmax(0,1fr)_20rem]">
+      <ReplayDiagram activeKind={currentStep.kind} />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[14rem_minmax(0,1fr)]">
         <ReplayStepList
           steps={replay.steps}
           currentStep={controls.currentStep}
           onSelect={controls.goTo}
         />
-        <div className="flex min-w-0 items-center">
-          <ReplayDiagram activeKind={currentStep.kind} />
-        </div>
         <ReplayStepDetail step={currentStep} />
       </div>
 

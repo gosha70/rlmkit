@@ -39,17 +39,17 @@ const NODES: ReadonlyArray<DiagramNode> = [
   { kind: "answer", label: "Answer" },
 ];
 
-// Viewbox units == target pixel size when rendered at the SVG's
-// intrinsic width (see SVG attrs below). The earlier attempt just
-// scaled the viewBox, which preserved aspect ratio — so the SVG
-// shrank proportionally and rendered nodes at the same visual size
-// as before. Setting explicit width/height on the <svg> plus a
-// max-w-full clamp on narrow screens means nodes render close to
-// these pixel dimensions on a typical desktop.
-const NODE_WIDTH = 112;
-const NODE_HEIGHT = 72;
-const NODE_GAP = 28;
-const NODE_LABEL_FONT_SIZE = 15;
+// The SVG stretches to fill its container width via w-full; the
+// viewBox defines aspect ratio. Label rendered pixel size = viewBox
+// units × (container_width / SVG_WIDTH). At typical Learn-page
+// widths with the diagram on its own full-width row (~900–1000px),
+// this configuration renders nodes at roughly their viewBox
+// dimensions with ~16px labels — matching the surrounding step-list
+// text size.
+const NODE_WIDTH = 136;
+const NODE_HEIGHT = 80;
+const NODE_GAP = 32;
+const NODE_LABEL_FONT_SIZE = 18;
 const PADDING_X = 16;
 const SVG_WIDTH =
   PADDING_X * 2 + NODES.length * NODE_WIDTH + (NODES.length - 1) * NODE_GAP;
@@ -70,9 +70,7 @@ export function ReplayDiagram({ activeKind, className }: ReplayDiagramProps) {
           NODES[activeIndex]?.label ?? "unknown"
         }`}
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-        width={SVG_WIDTH}
-        height={SVG_HEIGHT}
-        className="block h-auto max-w-full"
+        className="block h-auto w-full"
       >
         <defs>
           <marker
