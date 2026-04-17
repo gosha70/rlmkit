@@ -45,6 +45,8 @@ import LearnPage from "@/app/learn/page";
 import CookbookPage from "@/app/learn/cookbook/page";
 import ProviderGuidePage from "@/app/learn/cookbook/[provider]/page";
 import TroubleshootPage from "@/app/learn/troubleshoot/page";
+import ConceptsPage from "@/app/learn/concepts/page";
+import { hasLearnErrorBadge } from "@/components/shared/sidebar";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { DiagnosticsPanel } from "@/components/learn/diagnostics-panel";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
@@ -132,6 +134,43 @@ describe("LearnPage", () => {
     render(<LearnPage />);
     expect(
       screen.getByRole("status", { name: "System diagnostics" }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders four landing cards pointing at the intended routes", () => {
+    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    render(<LearnPage />);
+    const region = screen.getByRole("region", { name: "Learn landing cards" });
+    const links = region.querySelectorAll("a");
+    expect(links).toHaveLength(4);
+    // Spec §2 Landing Page: four intent-driven cards, in order.
+    const hrefs = Array.from(links).map((l) => l.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "/learn/concepts",
+      "/learn/concepts#mode-guide",
+      "/learn/cookbook",
+      "/learn/troubleshoot",
+    ]);
+  });
+
+  test("landing card CTAs match the spec copy", () => {
+    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    render(<LearnPage />);
+    expect(
+      screen.getByRole("link", { name: /What is RLM\?: Open Concepts/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: /Which mode should I use\?: Choose a mode/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Set up a model host: Open Cookbook/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: /Something not working\?: Open Troubleshoot/,
+      }),
     ).toBeInTheDocument();
   });
 });
@@ -1141,5 +1180,89 @@ describe("TroubleshootPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       /Couldn’t load troubleshoot entries/,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ConceptsPage
+// ---------------------------------------------------------------------------
+
+describe("ConceptsPage", () => {
+  test("renders heading, diagnostics strip, and two sections", () => {
+    mockUseSWR.mockImplementation(((key: unknown) => {
+      if (Array.isArray(key) && key[0] === "learn-doc") {
+        return {
+          data: {
+            slug: "rlm-concepts",
+            content: "## What is RLM?\n\nbody",
+          },
+        } as ReturnType<typeof useSWR>;
+      }
+      if (key === "learn-diagnostics") return { data: allOk } as ReturnType<typeof useSWR>;
+      return { data: undefined } as ReturnType<typeof useSWR>;
+    }) as unknown as typeof useSWR);
+
+    render(<ConceptsPage />);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Concepts" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "System diagnostics" }),
+    ).toBeInTheDocument();
+    // Two aria-labelled sections exist (aside for the mode-guide callout
+    // intentionally excluded — not a region).
+    expect(
+      document.querySelector("#what-is-rlm"),
+    ).not.toBeNull();
+    expect(
+      document.querySelector("#mode-guide"),
+    ).not.toBeNull();
+  });
+
+  test("mode guide section renders Direct / RLM / Compare rows", () => {
+    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    render(<ConceptsPage />);
+    expect(screen.getByText("Direct")).toBeInTheDocument();
+    expect(screen.getByText("RLM")).toBeInTheDocument();
+    expect(screen.getByText("Compare")).toBeInTheDocument();
+  });
+
+  test("includes the 'When not to use RLM' callout", () => {
+    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    render(<ConceptsPage />);
+    expect(screen.getByText(/When not to use RLM/)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sidebar red-dot badge (hasLearnErrorBadge)
+// ---------------------------------------------------------------------------
+
+describe("hasLearnErrorBadge", () => {
+  test("returns false when data is null or undefined", () => {
+    expect(hasLearnErrorBadge(null)).toBe(false);
+    expect(hasLearnErrorBadge(undefined)).toBe(false);
+  });
+
+  test("returns false when every check is ok", () => {
+    expect(hasLearnErrorBadge(allOk)).toBe(false);
+  });
+
+  test("returns false when only warn states are present", () => {
+    // Pitch §Diagnostics red-dot badge decision #6: warn does NOT
+    // drive the badge. Only hard blockers (error) do.
+    expect(
+      hasLearnErrorBadge({
+        ...allOk,
+        judge: warn("Judge not configured", "/settings"),
+      }),
+    ).toBe(false);
+  });
+
+  test("returns true when any check is error", () => {
+    for (const key of ["backend", "provider", "judge", "storage"] as const) {
+      const data = { ...allOk, [key]: err("down", "/settings") };
+      expect(hasLearnErrorBadge(data)).toBe(true);
+    }
   });
 });

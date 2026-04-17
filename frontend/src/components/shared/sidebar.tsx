@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import useSWR from "swr";
 import {
   MessageSquare,
   LayoutDashboard,
@@ -22,7 +23,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import type { SessionSummary } from "@/lib/api";
+import {
+  getDiagnostics,
+  type DiagnosticsResponse,
+  type SessionSummary,
+} from "@/lib/api";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -44,6 +49,23 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+/**
+ * Red-dot badge policy for the Learn nav item: fires only when at
+ * least one diagnostic check is in `error` state. `warn` does NOT
+ * badge — see pitch §Diagnostics red-dot badge (decision #6).
+ */
+export function hasLearnErrorBadge(
+  diagnostics: DiagnosticsResponse | null | undefined,
+): boolean {
+  if (!diagnostics) return false;
+  return (
+    diagnostics.backend.status === "error" ||
+    diagnostics.provider.status === "error" ||
+    diagnostics.judge.status === "error" ||
+    diagnostics.storage.status === "error"
+  );
+}
+
 export function Sidebar({
   collapsed,
   onToggle,
@@ -59,6 +81,19 @@ export function Sidebar({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+  // Diagnostics fetch uses the same SWR key as the Learn pages, so
+  // this is a shared, deduped read — one poll per 30s regardless of
+  // which page is mounted.
+  const { data: diagnostics } = useSWR<DiagnosticsResponse>(
+    "learn-diagnostics",
+    getDiagnostics,
+    {
+      refreshInterval: 30_000,
+      dedupingInterval: 30_000,
+      errorRetryCount: 2,
+    },
+  );
+  const learnBadge = hasLearnErrorBadge(diagnostics);
 
   const filteredSessions = searchQuery
     ? sessions.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -109,12 +144,13 @@ export function Sidebar({
       <nav aria-label="Main navigation" className="flex flex-col gap-1 px-2 pt-2">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const showBadge = href === "/learn" && learnBadge;
           return (
             <Link
               key={href}
               href={href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                 isActive
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground",
@@ -122,8 +158,26 @@ export function Sidebar({
               )}
               aria-current={isActive ? "page" : undefined}
             >
-              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-              {!collapsed && <span>{label}</span>}
+              <span className="relative inline-flex shrink-0">
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {showBadge && collapsed && (
+                  <span
+                    aria-label="Learn has unresolved errors"
+                    className="absolute -right-1 -top-1 inline-block h-2 w-2 rounded-full bg-red-500 ring-2 ring-card"
+                  />
+                )}
+              </span>
+              {!collapsed && (
+                <span className="flex items-center gap-2">
+                  {label}
+                  {showBadge && (
+                    <span
+                      aria-label="Learn has unresolved errors"
+                      className="inline-block h-2 w-2 rounded-full bg-red-500"
+                    />
+                  )}
+                </span>
+              )}
             </Link>
           );
         })}
