@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends
 
 from rlmkit.server.dependencies import AppState, get_state
 from rlmkit.server.models import DiagnosticCheck, DiagnosticsResponse
+from rlmkit.server.routes.llm_providers import _compute_status
 
 router = APIRouter()
 
@@ -43,12 +44,19 @@ def _check_backend() -> DiagnosticCheck:
 
 
 def _check_provider(state: AppState) -> DiagnosticCheck:
-    # Current source of truth: named LLM Providers persisted via
-    # /api/llm-providers. A provider is "usable" once it has connection
-    # config (status transitions out of "not_configured"). Legacy
-    # provider_configs are checked as a backward-compat fallback for
-    # installs that predate the named-provider flow.
-    llm_configured = [lp for lp in state.config.llm_providers if lp.status != "not_configured"]
+    # Source of truth: the same _compute_status() the LLM-provider
+    # listing and chat UI use — not the raw persisted status field.
+    # That distinction matters: local backends (Ollama, LM Studio) and
+    # API-key backends whose key is in an env var (or SecretStore) are
+    # effectively "configured" even though the persisted record still
+    # says "not_configured". Diagnostics must not false-negative on
+    # setups that Settings already accepts as usable.
+    #
+    # Legacy provider_configs are checked as a backward-compat fallback
+    # for installs that predate named LLM Providers.
+    llm_configured = [
+        lp for lp in state.config.llm_providers if _compute_status(lp) != "not_configured"
+    ]
     legacy_enabled = [pc for pc in state.config.provider_configs if pc.enabled]
 
     if llm_configured or legacy_enabled:

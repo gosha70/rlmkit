@@ -3,6 +3,11 @@
 Covers the four checks (backend, provider, judge, storage) against the
 real FastAPI app via TestClient. State is reset between tests via the
 autouse ``_clean_state`` fixture in ``conftest.py``.
+
+Provider-check tests isolate themselves from the ambient environment
+(real API keys in env vars, real SecretStore contents, stale entries
+in the module-level ``_status_cache``) via the ``_isolate_provider_env``
+fixture. That lets each test declare exactly one signal at a time.
 """
 
 from __future__ import annotations
@@ -12,8 +17,33 @@ from fastapi.testclient import TestClient
 
 from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import LLMProviderConfig, ProviderConfig
+from rlmkit.server.routes import llm_providers as llm_providers_mod
 
 pytestmark = [pytest.mark.e2e]
+
+
+@pytest.fixture
+def _isolate_provider_env(monkeypatch: pytest.MonkeyPatch):
+    """Pin provider-status inputs so tests are deterministic.
+
+    - ``_status_cache`` is reset so prior tests cannot leak a cached
+      status into the provider under test.
+    - ``_get_api_key`` defaults to returning ``None``; individual
+      tests can override via the returned ``set_api_key`` callable.
+    """
+    monkeypatch.setattr(llm_providers_mod, "_status_cache", {})
+
+    current_key: dict[str, str | None] = {"value": None}
+
+    def _fake_get_api_key(_llm_provider_id: str, _backend: str) -> str | None:
+        return current_key["value"]
+
+    monkeypatch.setattr(llm_providers_mod, "_get_api_key", _fake_get_api_key)
+
+    def set_api_key(value: str | None) -> None:
+        current_key["value"] = value
+
+    return set_api_key
 
 
 class TestDiagnosticsEndpoint:
@@ -32,8 +62,9 @@ class TestDiagnosticsEndpoint:
         data = client.get("/api/diagnostics").json()
         assert data["backend"]["status"] == "ok"
 
-    def test_provider_error_when_no_configured_provider(self, client: TestClient) -> None:
-        # Empty both the current source (llm_providers) and the legacy fallback.
+    def test_provider_error_when_no_configured_provider(
+        self, client: TestClient, _isolate_provider_env
+    ) -> None:
         state = get_state()
         state.config.llm_providers = []
         state.config.provider_configs = []
@@ -41,14 +72,16 @@ class TestDiagnosticsEndpoint:
         assert data["provider"]["status"] == "error"
         assert data["provider"]["fixUrl"] == "/settings"
 
-    def test_provider_error_when_only_not_configured_llm_provider(self, client: TestClient) -> None:
-        # A freshly-created LLM Provider that has never received credentials
-        # stays status="not_configured" — that must not pass the check.
+    def test_provider_error_when_api_key_backend_has_no_key(
+        self, client: TestClient, _isolate_provider_env
+    ) -> None:
+        # API-key backend with no key anywhere (SecretStore, env):
+        # _compute_status returns "not_configured", which must NOT pass.
         state = get_state()
         state.config.llm_providers = [
             LLMProviderConfig(
-                id="lp-1",
-                name="Unconfigured",
+                id="lp-openai-nokey",
+                name="OpenAI (no key)",
                 backend="openai",
                 model="gpt-4o",
                 status="not_configured",
@@ -58,13 +91,62 @@ class TestDiagnosticsEndpoint:
         data = client.get("/api/diagnostics").json()
         assert data["provider"]["status"] == "error"
 
-    def test_provider_ok_when_configured_llm_provider_exists(self, client: TestClient) -> None:
-        # Current UI flow: user creates an LLM Provider + API key, status
-        # transitions to "configured" (or "connected" after a successful test).
+    def test_provider_ok_when_api_key_backend_has_env_key(
+        self,
+        client: TestClient,
+        _isolate_provider_env,
+    ) -> None:
+        # The reviewer's P1 case: persisted status="not_configured",
+        # but the effective key is available via env var / SecretStore.
+        # _compute_status must lift this to "configured", and the
+        # diagnostics endpoint must count it as usable.
+        _isolate_provider_env("sk-test-abc123")
         state = get_state()
         state.config.llm_providers = [
             LLMProviderConfig(
-                id="lp-1",
+                id="lp-openai-env",
+                name="OpenAI (env)",
+                backend="openai",
+                model="gpt-4o",
+                status="not_configured",
+            ),
+        ]
+        state.config.provider_configs = []
+        data = client.get("/api/diagnostics").json()
+        assert data["provider"]["status"] == "ok", data["provider"]
+        assert "1" in data["provider"]["message"]
+
+    def test_provider_ok_for_local_backend_with_not_configured_status(
+        self, client: TestClient, _isolate_provider_env
+    ) -> None:
+        # The reviewer's other P1 case: a local backend (Ollama) never
+        # needs an API key, so _compute_status returns "configured"
+        # even when the persisted record still says "not_configured".
+        state = get_state()
+        state.config.llm_providers = [
+            LLMProviderConfig(
+                id="lp-ollama",
+                name="Ollama local",
+                backend="ollama",
+                model="llama3.1:8b",
+                status="not_configured",
+            ),
+        ]
+        state.config.provider_configs = []
+        data = client.get("/api/diagnostics").json()
+        assert data["provider"]["status"] == "ok", data["provider"]
+
+    def test_provider_ok_when_configured_llm_provider_exists(
+        self, client: TestClient, _isolate_provider_env
+    ) -> None:
+        # Persisted status="configured" is preserved by _compute_status
+        # for API-key backends only if a key is present. Provide one via
+        # the fixture to keep this test independent of the real env.
+        _isolate_provider_env("sk-test-xyz")
+        state = get_state()
+        state.config.llm_providers = [
+            LLMProviderConfig(
+                id="lp-openai-cfg",
                 name="My OpenAI",
                 backend="openai",
                 model="gpt-4o",
@@ -77,7 +159,9 @@ class TestDiagnosticsEndpoint:
         assert "1" in data["provider"]["message"]
         assert data["provider"]["fixUrl"] is None
 
-    def test_provider_ok_via_legacy_provider_configs_fallback(self, client: TestClient) -> None:
+    def test_provider_ok_via_legacy_provider_configs_fallback(
+        self, client: TestClient, _isolate_provider_env
+    ) -> None:
         # Backward compat: installs that predate named LLM Providers still
         # carry an enabled entry in the legacy provider_configs list.
         state = get_state()
