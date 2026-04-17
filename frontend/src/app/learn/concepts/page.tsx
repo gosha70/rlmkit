@@ -6,7 +6,9 @@ import { AppShell } from "@/components/shared/app-shell";
 import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
-import { getDiagnostics } from "@/lib/api";
+import { ModeChooser } from "@/components/learn/mode-chooser";
+import { ReplayWalkthrough } from "@/components/learn/replay-walkthrough";
+import { getBundledReplay, getDiagnostics, type LearnReplay } from "@/lib/api";
 
 /**
  * Concepts page — V1 scope.
@@ -22,6 +24,11 @@ export default function ConceptsPage() {
     dedupingInterval: 30_000,
     errorRetryCount: 2,
   });
+  const { data: replay, error: replayError } = useSWR<LearnReplay>(
+    "learn-bundled-replay",
+    getBundledReplay,
+    { revalidateOnFocus: false },
+  );
 
   return (
     <AppShell>
@@ -84,42 +91,13 @@ export default function ConceptsPage() {
           >
             Which mode should I use?
           </h3>
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <p className="text-sm font-medium">Pick by the shape of your task:</p>
-            <ul className="mt-3 flex flex-col gap-2 text-sm">
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                <span>
-                  <span className="font-semibold">Direct</span> — small,
-                  self-contained input that fits in one prompt.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-                <span>
-                  <span className="font-semibold">RLM</span> — large or
-                  complex content; the model inspects and reasons
-                  step-by-step through a sandboxed Python REPL.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-purple-500" />
-                <span>
-                  <span className="font-semibold">Compare</span> — run
-                  strategies, providers, or profiles side-by-side for a
-                  benchmark.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-slate-500" />
-                <span>
-                  <span className="font-semibold">Auto</span> — Studio
-                  picks Direct or RLM for you based on input size. Good
-                  default when you&apos;re not sure.
-                </span>
-              </li>
-            </ul>
-          </div>
+          <ModeChooser />
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            The four modes above are also wired into Settings &rarr; Chat
+            Providers; this is just a guided way to pick the right one
+            for the task you&apos;re about to run.
+          </p>
 
           <aside className="mt-4 rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
             <p className="font-semibold">When not to use RLM</p>
@@ -205,7 +183,35 @@ export default function ConceptsPage() {
           </p>
         </section>
 
-        {/* 4 — Deep dive for readers who want the research-level
+        {/* 4 — Replay walkthrough (V2). Sits between sandbox and the
+            research deep dive: decision context first, trust boundary
+            second, then mechanics through a real example. */}
+        <section
+          id="replay"
+          aria-labelledby="concepts-replay"
+          className="mb-10"
+        >
+          <h3
+            id="concepts-replay"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            See it in action
+          </h3>
+          {replayError ? (
+            <div
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              Couldn’t load the bundled replay.
+            </div>
+          ) : !replay ? (
+            <p className="text-sm text-muted-foreground">Loading replay…</p>
+          ) : (
+            <ReplayWalkthrough replay={replay} />
+          )}
+        </section>
+
+        {/* 5 — Deep dive for readers who want the research-level
             explanation (kept, but last — not the landing content). */}
         <section
           id="deep-dive"

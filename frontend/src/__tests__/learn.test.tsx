@@ -612,7 +612,27 @@ describe("ProviderGuidePage", () => {
 
 describe("BackToLearn on sub-pages", () => {
   test("ConceptsPage renders a Back to Learn link", () => {
-    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    // ConceptsPage now consumes two SWR keys (diagnostics + bundled
+    // replay); a blanket return would dispatch the diagnostics shape
+    // to the replay slot and crash inside ReplayWalkthrough. Stub
+    // by key.
+    mockUseSWR.mockImplementation(((key: unknown) => {
+      if (key === "learn-bundled-replay") {
+        return {
+          data: {
+            id: "test",
+            title: "Test",
+            description: "Test",
+            metadata: { source: "bundled", convertorVersion: 1 },
+            steps: [
+              { id: "q", kind: "question", title: "Q", summary: "..." },
+              { id: "a", kind: "answer", title: "A", summary: "..." },
+            ],
+          },
+        } as ReturnType<typeof useSWR>;
+      }
+      return { data: allOk } as ReturnType<typeof useSWR>;
+    }) as unknown as typeof useSWR);
     render(<ConceptsPage />);
     expect(
       screen.getByRole("link", { name: "Back to Learn" }),
@@ -1252,10 +1272,26 @@ describe("ConceptsPage", () => {
     if (key === "learn-diagnostics") {
       return { data: allOk } as ReturnType<typeof useSWR>;
     }
+    if (key === "learn-bundled-replay") {
+      // Minimal LearnReplay so the section mounts without erroring;
+      // exercising the full walkthrough is the replay test file's job.
+      return {
+        data: {
+          id: "test",
+          title: "Test bundled replay",
+          description: "Test description",
+          metadata: { source: "bundled", convertorVersion: 1 },
+          steps: [
+            { id: "q", kind: "question", title: "Q", summary: "..." },
+            { id: "a", kind: "answer", title: "A", summary: "..." },
+          ],
+        },
+      } as ReturnType<typeof useSWR>;
+    }
     return { data: undefined } as ReturnType<typeof useSWR>;
   }) as unknown as typeof useSWR;
 
-  test("renders heading, diagnostics strip, and all four sections in order", () => {
+  test("renders heading, diagnostics strip, and all five sections in order", () => {
     mockUseSWR.mockImplementation(conceptsSwr);
     render(<ConceptsPage />);
     expect(
@@ -1264,11 +1300,47 @@ describe("ConceptsPage", () => {
     expect(
       screen.getByRole("status", { name: "System diagnostics" }),
     ).toBeInTheDocument();
-    // Task-first order: problem → mode guide → sandbox → deep dive.
-    const ids = ["#problem", "#mode-guide", "#sandbox", "#deep-dive"];
+    // Task-first order: problem → mode guide → sandbox → replay (V2)
+    // → deep dive. Replay sits between sandbox (trust boundary) and
+    // the research deep-dive (mechanics).
+    const ids = ["#problem", "#mode-guide", "#sandbox", "#replay", "#deep-dive"];
     for (const id of ids) {
       expect(document.querySelector(id)).not.toBeNull();
     }
+  });
+
+  test("replay section mounts the walkthrough when the bundled JSON resolves", () => {
+    mockUseSWR.mockImplementation(conceptsSwr);
+    render(<ConceptsPage />);
+    expect(
+      screen.getByRole("region", { name: /Replay walkthrough: Test bundled replay/ }),
+    ).toBeInTheDocument();
+  });
+
+  test("replay section shows a loading state while bundled JSON is pending", () => {
+    const swr = ((key: unknown) => {
+      if (key === "learn-diagnostics") return { data: allOk } as ReturnType<typeof useSWR>;
+      if (key === "learn-bundled-replay") return { data: undefined } as ReturnType<typeof useSWR>;
+      return { data: undefined } as ReturnType<typeof useSWR>;
+    }) as unknown as typeof useSWR;
+    mockUseSWR.mockImplementation(swr);
+    render(<ConceptsPage />);
+    expect(screen.getByText(/Loading replay/)).toBeInTheDocument();
+  });
+
+  test("replay section renders an alert when bundled JSON fails", () => {
+    const swr = ((key: unknown) => {
+      if (key === "learn-diagnostics") return { data: allOk } as ReturnType<typeof useSWR>;
+      if (key === "learn-bundled-replay") {
+        return { data: undefined, error: new Error("boom") } as ReturnType<typeof useSWR>;
+      }
+      return { data: undefined } as ReturnType<typeof useSWR>;
+    }) as unknown as typeof useSWR;
+    mockUseSWR.mockImplementation(swr);
+    render(<ConceptsPage />);
+    expect(
+      screen.getByRole("alert"),
+    ).toHaveTextContent(/Couldn’t load the bundled replay/);
   });
 
   test("opens with the user-problem framing, not architecture", () => {
