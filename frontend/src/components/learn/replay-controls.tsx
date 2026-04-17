@@ -8,6 +8,10 @@
  * Speed cycles through REPLAY_SPEEDS (1× → 1.5× → 2× → 1×). One
  * button rather than three keeps the strip compact and avoids
  * duplicate aria-pressed bookkeeping.
+ *
+ * Buttons use the default size (h-10) rather than `sm` so they're
+ * comfortable primary actions on the Concepts page, not compact
+ * toolbar buttons.
  */
 
 import { Pause, Play, RotateCcw, SkipForward } from "lucide-react";
@@ -46,22 +50,20 @@ export function ReplayControls({
         <Button
           type="button"
           variant="default"
-          size="sm"
           onClick={pause}
           aria-label="Pause replay"
         >
-          <Pause className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+          <Pause className="mr-1.5 h-4 w-4" aria-hidden="true" />
           Pause
         </Button>
       ) : (
         <Button
           type="button"
           variant="default"
-          size="sm"
           onClick={play}
           aria-label={isAtEnd ? "Replay from start" : "Play replay"}
         >
-          <Play className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+          <Play className="mr-1.5 h-4 w-4" aria-hidden="true" />
           {isAtEnd ? "Replay" : "Play"}
         </Button>
       )}
@@ -69,30 +71,27 @@ export function ReplayControls({
       <Button
         type="button"
         variant="outline"
-        size="sm"
         onClick={step}
         disabled={isAtEnd}
         aria-label="Step forward"
       >
-        <SkipForward className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+        <SkipForward className="mr-1.5 h-4 w-4" aria-hidden="true" />
         Step
       </Button>
 
       <Button
         type="button"
         variant="outline"
-        size="sm"
         onClick={reset}
         aria-label="Reset replay"
       >
-        <RotateCcw className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+        <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
         Reset
       </Button>
 
       <Button
         type="button"
         variant="outline"
-        size="sm"
         onClick={() => setSpeed(nextSpeed(speed))}
         aria-label={`Speed: ${speed}x (click to change)`}
       >
