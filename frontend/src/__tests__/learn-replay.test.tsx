@@ -380,3 +380,192 @@ describe("ReplayStepDetail", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ReplayControls — Play / Pause / Step / Reset / Speed strip
+// ---------------------------------------------------------------------------
+
+import { ReplayControls } from "@/components/learn/replay-controls";
+import type { ReplayControls as ReplayControlsHandle } from "@/components/learn/use-replay-controls";
+
+function makeStubControls(
+  overrides: Partial<ReplayControlsHandle> = {},
+): ReplayControlsHandle {
+  return {
+    currentStep: 0,
+    totalSteps: 6,
+    isPlaying: false,
+    speed: 1,
+    isAtStart: true,
+    isAtEnd: false,
+    play: vi.fn(),
+    pause: vi.fn(),
+    step: vi.fn(),
+    stepBack: vi.fn(),
+    reset: vi.fn(),
+    goTo: vi.fn(),
+    setSpeed: vi.fn(),
+    ...overrides,
+  };
+}
+
+describe("ReplayControls", () => {
+  test("shows Play when paused; Pause when playing", () => {
+    const { rerender } = render(
+      <ReplayControls controls={makeStubControls({ isPlaying: false })} />,
+    );
+    expect(screen.getByRole("button", { name: "Play replay" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Pause replay" }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <ReplayControls controls={makeStubControls({ isPlaying: true })} />,
+    );
+    expect(screen.getByRole("button", { name: "Pause replay" })).toBeInTheDocument();
+  });
+
+  test("Play at end becomes 'Replay from start'", () => {
+    render(
+      <ReplayControls
+        controls={makeStubControls({ isPlaying: false, isAtEnd: true })}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Replay from start" }),
+    ).toBeInTheDocument();
+  });
+
+  test("Step is disabled at end", () => {
+    render(
+      <ReplayControls
+        controls={makeStubControls({ isPlaying: false, isAtEnd: true })}
+      />,
+    );
+    const stepBtn = screen.getByRole("button", { name: "Step forward" });
+    expect(stepBtn).toBeDisabled();
+  });
+
+  test("Speed button advertises current speed and dispatches the next on click", async () => {
+    const setSpeed = vi.fn();
+    render(
+      <ReplayControls
+        controls={makeStubControls({ speed: 1, setSpeed })}
+      />,
+    );
+    const speedBtn = screen.getByRole("button", { name: /Speed: 1x/ });
+    expect(speedBtn).toHaveTextContent("Speed: 1×");
+    await userEvent.setup().click(speedBtn);
+    expect(setSpeed).toHaveBeenCalledWith(1.5);
+  });
+
+  test("Speed cycles 2× → 1× (wraps around)", async () => {
+    const setSpeed = vi.fn();
+    render(
+      <ReplayControls
+        controls={makeStubControls({ speed: 2, setSpeed })}
+      />,
+    );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /Speed: 2x/ }));
+    expect(setSpeed).toHaveBeenCalledWith(1);
+  });
+
+  test("clicking Play / Pause / Step / Reset dispatches the right actions", async () => {
+    const stub = makeStubControls();
+    render(<ReplayControls controls={stub} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Play replay" }));
+    expect(stub.play).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Step forward" }));
+    expect(stub.step).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Reset replay" }));
+    expect(stub.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReplayWalkthrough — three-pane composite
+// ---------------------------------------------------------------------------
+
+import { ReplayWalkthrough } from "@/components/learn/replay-walkthrough";
+
+const SAMPLE_REPLAY: LearnReplay = {
+  id: "test",
+  title: "Test replay title",
+  description: "A short replay used by the walkthrough composite tests.",
+  metadata: { source: "bundled", convertorVersion: 1 },
+  steps: [
+    { id: "q", kind: "question", title: "Question received", summary: "Q." },
+    { id: "p", kind: "plan", title: "Plan formed", summary: "P." },
+    { id: "c", kind: "code", title: "Code generated", summary: "C." },
+    { id: "r", kind: "result", title: "Sandbox executed", summary: "R." },
+  ],
+};
+
+describe("ReplayWalkthrough", () => {
+  test("renders title, description, and the three child surfaces", () => {
+    render(<ReplayWalkthrough replay={SAMPLE_REPLAY} />);
+    expect(
+      screen.getByRole("heading", { level: 4, name: "Test replay title" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/walkthrough composite tests/),
+    ).toBeInTheDocument();
+    // Controls strip
+    expect(
+      screen.getByRole("group", { name: "Replay controls" }),
+    ).toBeInTheDocument();
+    // Diagram
+    expect(
+      screen.getByRole("img", { name: /Replay diagram/ }),
+    ).toBeInTheDocument();
+    // Step list
+    expect(
+      screen.getByRole("navigation", { name: "Replay steps" }),
+    ).toBeInTheDocument();
+    // Detail card (h4 inside the article — distinct from the title h4)
+    expect(screen.getAllByRole("heading", { level: 4 }).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("clicking a step in the list updates the detail pane and the diagram", async () => {
+    render(<ReplayWalkthrough replay={SAMPLE_REPLAY} />);
+    // Initial state: step 1 active in list, "question" node active in diagram.
+    expect(
+      screen.getByRole("img", { name: /active node: Query/ }),
+    ).toBeInTheDocument();
+
+    // Jump to step 3 ("Code generated") via the list. The step number
+    // is aria-hidden, so the accessible name is "Code generatedcode"
+    // (title + kind label rendered as adjacent spans).
+    const codeBtn = screen.getByRole("button", { name: /Code generated/ });
+    await userEvent.setup().click(codeBtn);
+
+    expect(
+      screen.getByRole("img", { name: /active node: Code/ }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders a truncation note when metadata.truncated is true", () => {
+    const truncated: LearnReplay = {
+      ...SAMPLE_REPLAY,
+      metadata: {
+        source: "trace",
+        executionId: "e-1",
+        truncated: true,
+        originalStepCount: 187,
+        convertorVersion: 1,
+      },
+    };
+    render(<ReplayWalkthrough replay={truncated} />);
+    expect(
+      screen.getByRole("note"),
+    ).toHaveTextContent(/Showing 4 of 187 steps/);
+  });
+
+  test("no truncation note for bundled replays", () => {
+    render(<ReplayWalkthrough replay={SAMPLE_REPLAY} />);
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+});
