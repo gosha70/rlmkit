@@ -217,3 +217,166 @@ describe("useReplayControls", () => {
     expect(REPLAY_BASE_INTERVAL_MS).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ReplayDiagram — 6-node SVG (V2 §C diagram)
+// ---------------------------------------------------------------------------
+
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ReplayDiagram } from "@/components/learn/replay-diagram";
+
+describe("ReplayDiagram", () => {
+  test("renders all six nodes in spec order", () => {
+    const { container } = render(<ReplayDiagram activeKind="question" />);
+    const groups = container.querySelectorAll("g[data-kind]");
+    const kinds = Array.from(groups).map((g) => g.getAttribute("data-kind"));
+    expect(kinds).toEqual([
+      "question",
+      "plan",
+      "code",
+      "result",
+      "decision",
+      "answer",
+    ]);
+  });
+
+  test("highlights the active node and only the active node", () => {
+    const { container } = render(<ReplayDiagram activeKind="code" />);
+    const active = container.querySelectorAll('g[data-active="true"]');
+    expect(active.length).toBe(1);
+    expect(active[0].getAttribute("data-kind")).toBe("code");
+  });
+
+  test("aria-label names the active node label, not the kind", () => {
+    render(<ReplayDiagram activeKind="result" />);
+    expect(
+      screen.getByRole("img", { name: /active node: Sandbox/ }),
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReplayStepList — left rail
+// ---------------------------------------------------------------------------
+
+import { ReplayStepList } from "@/components/learn/replay-step-list";
+import type { LearnReplayStep } from "@/lib/api";
+
+const SAMPLE_STEPS: LearnReplayStep[] = [
+  { id: "q", kind: "question", title: "Question received", summary: "..." },
+  { id: "p", kind: "plan", title: "Plan formed", summary: "..." },
+  { id: "c", kind: "code", title: "Code generated", summary: "..." },
+];
+
+describe("ReplayStepList", () => {
+  test("renders one button per step with 1-indexed numbering", () => {
+    render(
+      <ReplayStepList
+        steps={SAMPLE_STEPS}
+        currentStep={0}
+        onSelect={() => {}}
+      />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(SAMPLE_STEPS.length);
+    expect(buttons[0]).toHaveTextContent("Question received");
+    expect(buttons[2]).toHaveTextContent("Code generated");
+  });
+
+  test("active item carries aria-current=step", () => {
+    render(
+      <ReplayStepList
+        steps={SAMPLE_STEPS}
+        currentStep={1}
+        onSelect={() => {}}
+      />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[1]).toHaveAttribute("aria-current", "step");
+    expect(buttons[0]).not.toHaveAttribute("aria-current");
+    expect(buttons[2]).not.toHaveAttribute("aria-current");
+  });
+
+  test("clicking a step fires onSelect with its index", async () => {
+    const onSelect = vi.fn();
+    render(
+      <ReplayStepList
+        steps={SAMPLE_STEPS}
+        currentStep={0}
+        onSelect={onSelect}
+      />,
+    );
+    await userEvent.setup().click(screen.getAllByRole("button")[2]);
+    expect(onSelect).toHaveBeenCalledWith(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReplayStepDetail — right pane + Advanced details tray
+// ---------------------------------------------------------------------------
+
+import { ReplayStepDetail } from "@/components/learn/replay-step-detail";
+
+describe("ReplayStepDetail", () => {
+  const richStep: LearnReplayStep = {
+    id: "c1",
+    kind: "code",
+    title: "Code generated",
+    summary: "The model writes a small Python action.",
+    details: {
+      prompt: "PROMPT_EXCERPT_HERE",
+      code: "hits = grep(prompt, pattern=\"x\")",
+      output: "OUTPUT_HERE",
+    },
+    metrics: {
+      tokensIn: 380,
+      tokensOut: 140,
+      latencyMs: 1820,
+      costUsd: 0.0021,
+    },
+  };
+
+  test("shows title and summary by default; advanced details hidden", () => {
+    render(<ReplayStepDetail step={richStep} />);
+    expect(
+      screen.getByRole("heading", { level: 4, name: "Code generated" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/The model writes a small Python action/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/PROMPT_EXCERPT_HERE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/OUTPUT_HERE/)).not.toBeInTheDocument();
+  });
+
+  test("toggle reveals prompt, code, output, and metrics", async () => {
+    render(<ReplayStepDetail step={richStep} />);
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /Show advanced details/ }));
+    expect(screen.getByText("PROMPT_EXCERPT_HERE")).toBeInTheDocument();
+    expect(screen.getByText(/grep\(prompt, pattern=/)).toBeInTheDocument();
+    expect(screen.getByText("OUTPUT_HERE")).toBeInTheDocument();
+    expect(screen.getByText("Tokens in:")).toBeInTheDocument();
+    expect(screen.getByText("380")).toBeInTheDocument();
+    expect(screen.getByText("Tokens out:")).toBeInTheDocument();
+    expect(screen.getByText("140")).toBeInTheDocument();
+    expect(screen.getByText("Latency:")).toBeInTheDocument();
+    expect(screen.getByText("1820 ms")).toBeInTheDocument();
+    expect(screen.getByText("Cost:")).toBeInTheDocument();
+    expect(screen.getByText("$0.0021")).toBeInTheDocument();
+  });
+
+  test("step without details/metrics omits the tray entirely", () => {
+    const bareStep: LearnReplayStep = {
+      id: "q",
+      kind: "question",
+      title: "Question received",
+      summary: "...",
+    };
+    render(<ReplayStepDetail step={bareStep} />);
+    expect(
+      screen.queryByRole("button", { name: /advanced details/i }),
+    ).not.toBeInTheDocument();
+  });
+});
