@@ -142,6 +142,7 @@ body {
 
 .prose :where(pre):not(:where([class~="not-prose"] *)) {
   background: var(--muted);
+  color: var(--foreground);
   border-radius: 0.5rem;
   padding: 1rem;
   overflow-x: auto;
@@ -151,7 +152,10 @@ body {
 
 .prose :where(pre code):not(:where([class~="not-prose"] *)) {
   background: transparent;
+  color: inherit;
   padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
 }
 
 .prose :where(blockquote):not(:where([class~="not-prose"] *)) {

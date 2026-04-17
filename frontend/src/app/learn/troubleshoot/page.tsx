@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
+import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { DiagnosticsPanel } from "@/components/learn/diagnostics-panel";
 import { TroubleshootEntry } from "@/components/learn/troubleshoot-entry";
@@ -51,6 +52,7 @@ export default function TroubleshootPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl px-6 py-8">
+        <BackToLearn className="mb-4" />
         <header className="mb-4">
           <h2 className="text-2xl font-semibold tracking-tight">
             Troubleshoot

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
+import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { ProviderGuide } from "@/components/learn/provider-guide";
 import { getProviderById } from "@/components/learn/provider-catalog";
@@ -25,12 +26,20 @@ export default function ProviderGuidePage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl px-6 py-8">
-        <Link
-          href="/learn/cookbook"
-          className="mb-4 inline-block text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to Cookbook
-        </Link>
+        {/* Mini breadcrumb: Learn / Cookbook. "Back to Learn" is the
+            primary nav (consistent with other Learn sub-pages); the
+            Cookbook step sits next to it for one-click return to the
+            provider list. */}
+        <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <BackToLearn />
+          <span aria-hidden="true">/</span>
+          <Link
+            href="/learn/cookbook"
+            className="hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+          >
+            Cookbook
+          </Link>
+        </div>
 
         <DiagnosticsStrip data={diagnostics ?? null} className="mb-6" />
 

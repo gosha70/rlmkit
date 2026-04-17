@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
+import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { ProviderCard } from "@/components/learn/provider-card";
 import {
@@ -24,6 +25,7 @@ export default function CookbookPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl px-6 py-8">
+        <BackToLearn className="mb-4" />
         <header className="mb-4">
           <h2 className="text-2xl font-semibold tracking-tight">Cookbook</h2>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -581,12 +581,64 @@ describe("ProviderGuidePage", () => {
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent(/Provider not found/);
     expect(alert).toHaveTextContent(/definitely-not-real/);
-    // Back link inside the alert goes home.
-    const backLinks = screen.getAllByRole("link", { name: /Back to Cookbook/ });
-    expect(backLinks.length).toBeGreaterThan(0);
-    for (const l of backLinks) {
-      expect(l).toHaveAttribute("href", "/learn/cookbook");
-    }
+    // Back link inside the alert falls back to the Cookbook list.
+    const alertBackLink = screen.getByRole("link", {
+      name: "Back to Cookbook",
+    });
+    expect(alertBackLink).toHaveAttribute("href", "/learn/cookbook");
+  });
+
+  test("breadcrumb includes Back to Learn and Cookbook links", () => {
+    mockUseParams.mockReturnValue({ provider: "ollama" });
+    mockUseSWR.mockReturnValue({
+      data: { slug: "hosts-ollama", content: "## Install\n" },
+    } as ReturnType<typeof useSWR>);
+    render(<ProviderGuidePage />);
+    expect(
+      screen.getByRole("link", { name: "Back to Learn" }),
+    ).toHaveAttribute("href", "/learn");
+    // The breadcrumb "Cookbook" link — disambiguated from the alert-
+    // only "Back to Cookbook" link which is absent on the happy path.
+    const cookbookLinks = screen
+      .getAllByRole("link")
+      .filter((l) => l.getAttribute("href") === "/learn/cookbook");
+    expect(cookbookLinks.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Back-to-Learn link on Learn sub-pages
+// ---------------------------------------------------------------------------
+
+describe("BackToLearn on sub-pages", () => {
+  test("ConceptsPage renders a Back to Learn link", () => {
+    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    render(<ConceptsPage />);
+    expect(
+      screen.getByRole("link", { name: "Back to Learn" }),
+    ).toHaveAttribute("href", "/learn");
+  });
+
+  test("CookbookPage renders a Back to Learn link", () => {
+    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+    render(<CookbookPage />);
+    expect(
+      screen.getByRole("link", { name: "Back to Learn" }),
+    ).toHaveAttribute("href", "/learn");
+  });
+
+  test("TroubleshootPage renders a Back to Learn link", () => {
+    mockUseSWR.mockImplementation(((key: unknown) => {
+      if (key === "learn-troubleshoot") {
+        return { data: { entries: [] } } as ReturnType<typeof useSWR>;
+      }
+      if (key === "learn-diagnostics") return { data: allOk } as ReturnType<typeof useSWR>;
+      return { data: undefined } as ReturnType<typeof useSWR>;
+    }) as unknown as typeof useSWR);
+    render(<TroubleshootPage />);
+    expect(
+      screen.getByRole("link", { name: "Back to Learn" }),
+    ).toHaveAttribute("href", "/learn");
   });
 });
 
