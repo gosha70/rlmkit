@@ -1,0 +1,106 @@
+# Troubleshoot entries rendered by the Learn tab.
+#
+# Served as JSON at GET /api/docs/troubleshoot (see
+# src/rlmkit/server/routes/docs.py). The frontend filters across
+# title, symptom, and cause client-side — no server-side search.
+#
+# Entry shape (matches the spec §5 Troubleshoot Entry Shape):
+#   id:        stable kebab-case identifier; used in URL anchors
+#   title:     short user-facing headline
+#   symptom:   what the user sees
+#   cause:     one-line root cause
+#   category:  Setup | Provider | Compare | Judge | Budget | Runtime
+#   fix:       list of imperative steps
+#   seealso:   optional list of Cookbook deep-link paths (cookbook/<id>)
+
+- id: anthropic-empty-response
+  title: Empty Anthropic response
+  symptom: Request succeeds but returns no useful output from a Claude model
+  cause: Unsupported parameter combination such as temperature + top_p
+  category: Provider
+  fix:
+    - Remove one of temperature or top_p from the profile's runtime settings
+    - Retry with default provider parameters
+  seealso:
+    - cookbook/anthropic
+
+- id: judge-flat-at-5
+  title: Judge scores flat at 5.0
+  symptom: Every judged run returns a score of exactly 5.0 on every dimension
+  cause: Judge rubric v2.0 is missing or the configured judge provider returns unparseable output
+  category: Judge
+  fix:
+    - Confirm a Chat Provider is selected as the judge in Settings
+    - Verify the judge prompt matches the rubric v2.0 format
+    - Test the judge provider independently to rule out auth or rate-limit errors
+
+- id: compare-stuck-at-zero
+  title: Compare matrix stuck at 0 percent
+  symptom: Launch the Compare matrix, slots stay at 0 percent indefinitely
+  cause: Backend logs show a worker hang, a per-execution budget set too low, or a provider that is unreachable
+  category: Compare
+  fix:
+    - Open Traces and check the per-slot execution for an explicit error
+    - Increase the per-execution token or time budget in Settings
+    - Test each Chat Provider individually to confirm they can complete a single run
+
+- id: ollama-model-not-found
+  title: Ollama model not found
+  symptom: Ollama rejects the request with "model not found"
+  cause: The requested model has not been pulled to the local Ollama cache
+  category: Setup
+  fix:
+    - Run `ollama pull <model-name>` on the host running Ollama
+    - Confirm with `ollama list`
+    - Verify the model name in RLM Studio Settings matches the pulled model exactly
+  seealso:
+    - cookbook/ollama
+
+- id: token-budget-exhausted
+  title: Token budget exhausted mid-run
+  symptom: RLM run halts before producing an answer, Traces shows "budget exceeded"
+  cause: Either the profile's max_tokens is too low for the task, or the task is actually better served by RLM than Direct
+  category: Budget
+  fix:
+    - Raise the profile's max_tokens (Settings, Profiles)
+    - For large inputs, switch the Chat Provider's execution mode from Direct to RLM
+    - Consider lowering request max_tokens per call and letting RLM iterate
+
+- id: vllm-startup-reservation
+  title: vLLM refuses to start — memory reservation fails
+  symptom: vLLM exits during startup saying free memory is below the GPU memory utilization target
+  cause: Default --gpu-memory-utilization=0.9 is too aggressive, or unified-memory accounting shifts during startup profiling (common on DGX Spark)
+  category: Setup
+  fix:
+    - Lower --gpu-memory-utilization to 0.4 for 7B-class models, 0.7 for 32B-class
+    - If auto-profiling is unstable, pin the KV cache with --kv-cache-memory-bytes 4G
+    - Kill stale servers between attempts with `pkill -f vllm.entrypoints.openai.api_server`
+  seealso:
+    - cookbook/dgx-spark
+    - cookbook/vllm
+
+- id: vllm-no-kv-cache-room
+  title: vLLM loads the model then refuses requests
+  symptom: Weights load successfully, but the first request errors out about no cache blocks available
+  cause: --gpu-memory-utilization is set low enough that the model fits but leaves no room for the KV cache
+  category: Setup
+  fix:
+    - Raise --gpu-memory-utilization (try 0.7 for 32B-class models)
+    - Reduce --max-model-len to free memory for cache (e.g. 4096 instead of 8192)
+    - Remember input_tokens + output_tokens must stay under max_model_len
+  seealso:
+    - cookbook/dgx-spark
+    - cookbook/vllm
+
+- id: vllm-base-model-chat-endpoint
+  title: vLLM returns garbage for chat requests
+  symptom: Chat requests come back empty or nonsensical; completions against the same model work
+  cause: A base model was served but requests go to /v1/chat/completions (which expects an instruct/chat model)
+  category: Runtime
+  fix:
+    - Use /v1/completions for base models like facebook/opt-125m
+    - Use /v1/chat/completions for instruct models like Qwen/Qwen2.5-7B-Instruct
+    - Confirm the model id in Settings matches an instruct variant if you need chat mode
+  seealso:
+    - cookbook/dgx-spark
+    - cookbook/vllm

@@ -87,6 +87,31 @@ class DocResponse(BaseModel):
     content: str
 
 
+class TroubleshootEntry(BaseModel):
+    """Single troubleshoot entry, shape matches docs/troubleshoot.yaml.
+
+    See spec-learn-tab-ux.md §5 Troubleshoot Entry Shape.
+    """
+
+    id: str
+    title: str
+    symptom: str
+    cause: str
+    category: Literal["Setup", "Provider", "Compare", "Judge", "Budget", "Runtime"]
+    fix: list[str] = Field(default_factory=list)
+    seealso: list[str] = Field(default_factory=list)
+
+
+class TroubleshootResponse(BaseModel):
+    """Wrapper around the YAML-sourced Troubleshoot entries list.
+
+    Returned as JSON so the Learn client can filter/render without
+    parsing YAML on the browser side.
+    """
+
+    entries: list[TroubleshootEntry]
+
+
 # ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------

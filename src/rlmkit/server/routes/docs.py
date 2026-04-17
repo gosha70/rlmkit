@@ -13,10 +13,17 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
+import yaml
 from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
 
-from rlmkit.server.models import DocResponse
+from rlmkit.server.models import (
+    DocResponse,
+    TroubleshootEntry,
+    TroubleshootResponse,
+)
 
 router = APIRouter()
 
@@ -53,6 +60,52 @@ _DOCS_ALLOWLIST: dict[str, str] = {
     # not currently support a `groq` backend. When Groq support lands,
     # re-add this entry and the matching frontend catalog entry.
 }
+
+
+_TROUBLESHOOT_FILE: Path = _DOCS_DIR / "troubleshoot.yaml"
+
+
+@router.get("/api/docs/troubleshoot")
+async def get_troubleshoot() -> TroubleshootResponse:
+    """Return parsed Troubleshoot entries as JSON.
+
+    Registered BEFORE the ``/api/docs/{slug}`` catch-all so FastAPI's
+    top-down route matcher lands here for the literal "troubleshoot"
+    path instead of falling through to the slug handler.
+
+    Pydantic validation on :class:`TroubleshootEntry` rejects any
+    entry missing a required field or using an unsupported category
+    — a stray edit in docs/troubleshoot.yaml will surface as a 500
+    here rather than shipping broken rows to the client.
+    """
+    if not _TROUBLESHOOT_FILE.is_file():
+        raise HTTPException(status_code=500, detail="Troubleshoot source missing")
+
+    try:
+        raw = _TROUBLESHOOT_FILE.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Failed to read troubleshoot") from exc
+
+    try:
+        parsed: Any = yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=500, detail="Troubleshoot YAML parse error") from exc
+
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=500, detail="Troubleshoot YAML must be a list")
+
+    entries: list[TroubleshootEntry] = []
+    for row in parsed:
+        if not isinstance(row, dict):
+            raise HTTPException(status_code=500, detail="Troubleshoot entry must be a mapping")
+        try:
+            entries.append(TroubleshootEntry.model_validate(row))
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=500, detail="Troubleshoot entry failed validation"
+            ) from exc
+
+    return TroubleshootResponse(entries=entries)
 
 
 @router.get("/api/docs/{slug}")

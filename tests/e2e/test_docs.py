@@ -1,4 +1,4 @@
-"""E2E tests for GET /api/docs/{slug}.
+"""E2E tests for GET /api/docs/{slug} and /api/docs/troubleshoot.
 
 Verifies the allowlist enforcement, path-traversal / separator
 rejection, and the success path for a known doc. Reads the real
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.routes.docs import _DOCS_ALLOWLIST, _DOCS_DIR
+from rlmkit.server.routes.docs import _DOCS_ALLOWLIST, _DOCS_DIR, _TROUBLESHOOT_FILE
 
 pytestmark = [pytest.mark.e2e]
 
@@ -110,3 +110,113 @@ class TestDocsPathTraversalDefense:
             assert resp.status_code == 404
         finally:
             link.unlink(missing_ok=True)
+
+
+class TestTroubleshootEndpoint:
+    """GET /api/docs/troubleshoot — parsed YAML as JSON."""
+
+    def test_returns_200_with_entries_list(self, client: TestClient) -> None:
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "entries" in data
+        assert isinstance(data["entries"], list)
+        assert len(data["entries"]) > 0
+
+    def test_every_entry_has_the_expected_shape(self, client: TestClient) -> None:
+        data = client.get("/api/docs/troubleshoot").json()
+        for entry in data["entries"]:
+            assert isinstance(entry["id"], str) and entry["id"]
+            assert isinstance(entry["title"], str) and entry["title"]
+            assert isinstance(entry["symptom"], str)
+            assert isinstance(entry["cause"], str)
+            assert entry["category"] in {
+                "Setup",
+                "Provider",
+                "Compare",
+                "Judge",
+                "Budget",
+                "Runtime",
+            }
+            assert isinstance(entry["fix"], list)
+            assert isinstance(entry["seealso"], list)
+
+    def test_ids_are_unique(self, client: TestClient) -> None:
+        ids = [e["id"] for e in client.get("/api/docs/troubleshoot").json()["entries"]]
+        assert len(ids) == len(set(ids))
+
+    def test_seed_entries_cover_the_pitch_list(self, client: TestClient) -> None:
+        # The pitch §Seed Entries enumerates five required rows; verify
+        # they ship so the V1 acceptance criteria on Troubleshoot hold.
+        ids = {e["id"] for e in client.get("/api/docs/troubleshoot").json()["entries"]}
+        required = {
+            "anthropic-empty-response",
+            "judge-flat-at-5",
+            "compare-stuck-at-zero",
+            "ollama-model-not-found",
+            "token-budget-exhausted",
+        }
+        assert required.issubset(ids), f"missing seed entries: {required - ids}"
+
+    def test_troubleshoot_route_takes_precedence_over_slug_route(self, client: TestClient) -> None:
+        # Regression guard: if the /{slug} route were registered first,
+        # GET /api/docs/troubleshoot would 404 because "troubleshoot"
+        # is not in _DOCS_ALLOWLIST. The 200 here proves the specific
+        # route beats the catch-all in FastAPI's match order.
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 200
+
+    def test_rejects_invalid_yaml_with_500(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        bad = tmp_path / "troubleshoot.yaml"
+        bad.write_text("this: is: not: valid: yaml: [\n", encoding="utf-8")
+        from rlmkit.server.routes import docs as docs_mod
+
+        monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 500
+
+    def test_rejects_non_list_yaml_with_500(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        bad = tmp_path / "troubleshoot.yaml"
+        bad.write_text("top-level: not a list\n", encoding="utf-8")
+        from rlmkit.server.routes import docs as docs_mod
+
+        monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 500
+
+    def test_rejects_entry_with_unknown_category_via_pydantic(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        bad = tmp_path / "troubleshoot.yaml"
+        bad.write_text(
+            "- id: bad\n"
+            "  title: Bad entry\n"
+            "  symptom: x\n"
+            "  cause: y\n"
+            "  category: NotARealCategory\n"
+            "  fix: []\n",
+            encoding="utf-8",
+        )
+        from rlmkit.server.routes import docs as docs_mod
+
+        monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 500
+
+    def test_missing_source_file_returns_500(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        nowhere = tmp_path / "does-not-exist.yaml"
+        from rlmkit.server.routes import docs as docs_mod
+
+        monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", nowhere)
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 500
+
+    def test_source_file_exists_on_disk(self) -> None:
+        # Structural invariant: repo ships the file the endpoint points at.
+        assert _TROUBLESHOOT_FILE.is_file()
