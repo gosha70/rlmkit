@@ -6,7 +6,8 @@ import { AppShell } from "@/components/shared/app-shell";
 import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
-import { getDiagnostics } from "@/lib/api";
+import { ReplayWalkthrough } from "@/components/learn/replay-walkthrough";
+import { getBundledReplay, getDiagnostics, type LearnReplay } from "@/lib/api";
 
 /**
  * Concepts page — V1 scope.
@@ -22,6 +23,11 @@ export default function ConceptsPage() {
     dedupingInterval: 30_000,
     errorRetryCount: 2,
   });
+  const { data: replay, error: replayError } = useSWR<LearnReplay>(
+    "learn-bundled-replay",
+    getBundledReplay,
+    { revalidateOnFocus: false },
+  );
 
   return (
     <AppShell>
@@ -205,7 +211,35 @@ export default function ConceptsPage() {
           </p>
         </section>
 
-        {/* 4 — Deep dive for readers who want the research-level
+        {/* 4 — Replay walkthrough (V2). Sits between sandbox and the
+            research deep dive: decision context first, trust boundary
+            second, then mechanics through a real example. */}
+        <section
+          id="replay"
+          aria-labelledby="concepts-replay"
+          className="mb-10"
+        >
+          <h3
+            id="concepts-replay"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            See it in action
+          </h3>
+          {replayError ? (
+            <div
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              Couldn’t load the bundled replay.
+            </div>
+          ) : !replay ? (
+            <p className="text-sm text-muted-foreground">Loading replay…</p>
+          ) : (
+            <ReplayWalkthrough replay={replay} />
+          )}
+        </section>
+
+        {/* 5 — Deep dive for readers who want the research-level
             explanation (kept, but last — not the landing content). */}
         <section
           id="deep-dive"
