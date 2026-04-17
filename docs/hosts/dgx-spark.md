@@ -154,8 +154,11 @@ See §7 for why these flags matter on Spark's unified memory.
 | Base URL | `http://<dgx-spark-ip>:8000/v1`  |
 | Model    | Same id you passed to `--model`  |
 
-No API key is required by default. Only set one in RLM Studio if you
-started vLLM with `--api-key <value>`.
+No API key is required by default. RLM Studio's Settings does not
+currently expose an API-key field for local backends (vLLM counts as
+local), so if you need to secure your Spark server, run it behind a
+trusted network boundary — VPN, SSH tunnel, or listen only on
+`127.0.0.1` — rather than via vLLM's own `--api-key`.
 
 ## 6. Test connection
 

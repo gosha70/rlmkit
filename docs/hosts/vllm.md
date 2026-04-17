@@ -38,8 +38,11 @@ In **Settings → LLM Providers → New**:
 | Model    | Same id passed to `--model`           |
 | Base URL | `http://localhost:8000/v1`            |
 
-vLLM does not require an API key by default. If you started the server
-with `--api-key <value>`, provide that key in Settings.
+vLLM does not require an API key by default. RLM Studio's Settings
+does not currently expose an API-key field for local backends
+(`vllm` counts as local), so if you need to secure your server,
+prefer a trusted network boundary — VPN, SSH tunnel, or binding only
+to `127.0.0.1` — over vLLM's own `--api-key`.
 
 ## 5. Test connection
 
