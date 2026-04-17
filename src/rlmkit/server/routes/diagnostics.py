@@ -27,8 +27,19 @@ async def get_diagnostics(
 ) -> DiagnosticsResponse:
     """Run the four Learn-tab diagnostic checks and return their status.
 
-    Target: sub-500 ms. All checks read in-memory config or issue a
-    single lightweight SQLite query; no network calls or LLM pings.
+    Budget: sub-500 ms. Per-check costs:
+
+    * ``backend``: no I/O; the endpoint itself is the probe.
+    * ``provider``: iterates in-memory ``llm_providers``. Calls
+      :func:`_compute_status` per entry. That helper's first step is an
+      in-memory ``_status_cache`` lookup. On a cache miss it reads the
+      SecretStore (file or keyring) once per API-key provider —
+      typically <1 ms for the file store and well under 100 ms for the
+      macOS keyring on already-authenticated processes. Local backends
+      (Ollama, LM Studio) short-circuit without any I/O. No network
+      calls or LLM pings.
+    * ``judge``: in-memory config only.
+    * ``storage``: one ``SELECT COUNT(*)`` against SQLite.
     """
     return DiagnosticsResponse(
         backend=_check_backend(),
