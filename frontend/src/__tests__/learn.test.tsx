@@ -5,6 +5,7 @@
  *   - LearnPage landing shell (heading, diagnostics strip mount, cards region)
  *   - DiagnosticsStrip renderer (ok / warn / error states, fixUrl linking,
  *     loading state, accessibility labels)
+ *   - MarkdownDoc loader (loading / error / rendered markdown)
  *
  * Sub-routes and cards populate later steps and get their own tests then.
  */
@@ -27,6 +28,7 @@ const mockUseSWR = vi.mocked(useSWR);
 
 import LearnPage from "@/app/learn/page";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
+import { MarkdownDoc } from "@/components/learn/markdown-doc";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -154,5 +156,55 @@ describe("DiagnosticsStrip", () => {
     render(<DiagnosticsStrip data={allOk} />);
     const backend = screen.getByLabelText(/Backend: OK — Backend reachable/);
     expect(backend.tagName.toLowerCase()).not.toBe("a");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MarkdownDoc
+// ---------------------------------------------------------------------------
+
+describe("MarkdownDoc", () => {
+  test("shows a loading state while data is pending", () => {
+    mockUseSWR.mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: true,
+    } as ReturnType<typeof useSWR>);
+
+    render(<MarkdownDoc slug="rlm-concepts" />);
+    expect(
+      screen.getByRole("status", { name: "Loading document" }),
+    ).toBeInTheDocument();
+  });
+
+  test("shows an error alert when fetch fails", () => {
+    mockUseSWR.mockReturnValue({
+      data: undefined,
+      error: new Error("API error 404: not found"),
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    render(<MarkdownDoc slug="rlm-concepts" />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /Couldn’t load this guide/,
+    );
+  });
+
+  test("renders markdown content when data resolves", () => {
+    mockUseSWR.mockReturnValue({
+      data: {
+        slug: "rlm-concepts",
+        content: "# RLM Concepts\n\nHello **world**.",
+      },
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    const { container } = render(<MarkdownDoc slug="rlm-concepts" />);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "RLM Concepts" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("world")).toBeInTheDocument();
+    expect(container.querySelector("[data-slug='rlm-concepts']")).not.toBeNull();
   });
 });

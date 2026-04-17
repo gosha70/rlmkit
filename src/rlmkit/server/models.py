@@ -76,6 +76,18 @@ class DiagnosticsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Docs — Learn tab allowlisted markdown loader
+# ---------------------------------------------------------------------------
+
+
+class DocResponse(BaseModel):
+    """Allowlisted markdown document served to the Learn client."""
+
+    slug: str
+    content: str
+
+
+# ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
 

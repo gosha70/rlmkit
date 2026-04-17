@@ -542,6 +542,18 @@ export interface DiagnosticsResponse {
 export const getDiagnostics = () =>
   fetchJSON<DiagnosticsResponse>("/api/diagnostics");
 
+// ---------------------------------------------------------------------------
+// Docs — Learn tab allowlisted markdown loader
+// ---------------------------------------------------------------------------
+
+export interface DocResponse {
+  slug: string;
+  content: string;
+}
+
+export const getDoc = (slug: string) =>
+  fetchJSON<DocResponse>(`/api/docs/${encodeURIComponent(slug)}`);
+
 // Chat
 export const submitChat = (req: ChatRequest) =>
   fetchJSON<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(req) });
