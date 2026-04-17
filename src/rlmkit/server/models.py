@@ -91,6 +91,10 @@ class TroubleshootEntry(BaseModel):
     """Single troubleshoot entry, shape matches docs/troubleshoot.yaml.
 
     See spec-learn-tab-ux.md §5 Troubleshoot Entry Shape.
+
+    ``fix`` is required — the documented schema treats it as the
+    actionable remediation list, so an entry without one is not a
+    valid row. ``seealso`` is genuinely optional.
     """
 
     id: str
@@ -98,7 +102,7 @@ class TroubleshootEntry(BaseModel):
     symptom: str
     cause: str
     category: Literal["Setup", "Provider", "Compare", "Judge", "Budget", "Runtime"]
-    fix: list[str] = Field(default_factory=list)
+    fix: list[str]
     seealso: list[str] = Field(default_factory=list)
 
 

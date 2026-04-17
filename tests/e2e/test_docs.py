@@ -207,6 +207,22 @@ class TestTroubleshootEndpoint:
         resp = client.get("/api/docs/troubleshoot")
         assert resp.status_code == 500
 
+    def test_rejects_entry_without_fix_field_via_pydantic(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # `fix` is load-bearing — without remediation steps the card
+        # ships nothing actionable. The schema must treat it as required.
+        bad = tmp_path / "troubleshoot.yaml"
+        bad.write_text(
+            "- id: no-fix\n  title: Missing fix\n  symptom: x\n  cause: y\n  category: Runtime\n",
+            encoding="utf-8",
+        )
+        from rlmkit.server.routes import docs as docs_mod
+
+        monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
+        resp = client.get("/api/docs/troubleshoot")
+        assert resp.status_code == 500
+
     def test_missing_source_file_returns_500(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

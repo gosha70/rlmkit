@@ -928,6 +928,28 @@ describe("TroubleshootEntry card", () => {
     expect(cookbookLink).toHaveAttribute("href", "/learn/cookbook/anthropic");
     expect(screen.getByText("unknown/shape")).toBeInTheDocument();
   });
+
+  test("cookbook seealso for a provider NOT in the catalog stays as text", () => {
+    // Regression guard for the Groq removal (commit 5d1c29c): a YAML
+    // entry that references cookbook/groq must not render a live link
+    // because the /learn/cookbook/groq route now lands on the
+    // "Provider not found" alert. The card renders the raw ref as
+    // plain text instead.
+    const stale: TroubleshootEntryData = {
+      ...entry,
+      id: "stale-ref",
+      seealso: ["cookbook/groq", "cookbook/anthorpic"],
+    };
+    render(<TroubleshootEntry entry={stale} />);
+    expect(
+      screen.queryByRole("link", { name: /Cookbook: groq/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /Cookbook: anthorpic/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("cookbook/groq")).toBeInTheDocument();
+    expect(screen.getByText("cookbook/anthorpic")).toBeInTheDocument();
+  });
 });
 
 // ---------------------------------------------------------------------------

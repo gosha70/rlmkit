@@ -18,6 +18,7 @@ import type {
   TroubleshootCategory,
   TroubleshootEntry as TroubleshootEntryData,
 } from "@/lib/api";
+import { getProviderById } from "./provider-catalog";
 
 const CATEGORY_VARIANT: Record<
   TroubleshootCategory,
@@ -97,7 +98,13 @@ const COOKBOOK_REF = /^cookbook\/([a-z0-9-]+)$/;
 
 function SeeAlsoLink({ target }: { target: string }) {
   const cookbookMatch = COOKBOOK_REF.exec(target);
-  if (cookbookMatch) {
+  // Syntax match is necessary but not sufficient: the provider id must
+  // also be in the current Cookbook catalog. Otherwise a stale YAML
+  // entry (e.g. "cookbook/groq" after the Groq removal in 5d1c29c) or
+  // a typo would become a live link that lands on the "Provider not
+  // found" alert at /learn/cookbook/[id]. Fall through to plain text
+  // for any unknown id.
+  if (cookbookMatch && getProviderById(cookbookMatch[1]) !== undefined) {
     const providerId = cookbookMatch[1];
     return (
       <Link
@@ -108,6 +115,6 @@ function SeeAlsoLink({ target }: { target: string }) {
       </Link>
     );
   }
-  // Unknown shape — render as plain text rather than a dead link.
+  // Unknown shape or unknown id — render as plain text, not a dead link.
   return <span className="text-muted-foreground">{target}</span>;
 }
