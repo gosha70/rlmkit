@@ -126,8 +126,10 @@ class TestTroubleshootEndpoint:
     def test_every_entry_has_the_expected_shape(self, client: TestClient) -> None:
         data = client.get("/api/docs/troubleshoot").json()
         for entry in data["entries"]:
-            assert isinstance(entry["id"], str) and entry["id"]
-            assert isinstance(entry["title"], str) and entry["title"]
+            assert isinstance(entry["id"], str)
+            assert entry["id"]
+            assert isinstance(entry["title"], str)
+            assert entry["title"]
             assert isinstance(entry["symptom"], str)
             assert isinstance(entry["cause"], str)
             assert entry["category"] in {

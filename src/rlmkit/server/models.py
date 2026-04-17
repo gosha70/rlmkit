@@ -65,7 +65,12 @@ class DiagnosticCheck(BaseModel):
 
     status: Literal["ok", "warn", "error"]
     message: str
-    fixUrl: str | None = None  # deep link into Settings or a Troubleshoot entry
+    # The JSON surface is camelCase ``fixUrl`` because the TypeScript
+    # ``DiagnosticCheck`` type on the frontend expects that key. Ruff
+    # N815 flags the Python-side mixedCase; suppressed here because the
+    # alternative — Pydantic alias + FastAPI `by_alias=True` — would
+    # ripple through every response_model and is heavier than the win.
+    fixUrl: str | None = None  # noqa: N815
 
 
 class DiagnosticsResponse(BaseModel):
