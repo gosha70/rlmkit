@@ -520,6 +520,69 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
 // Health
 export const getHealth = () => fetchJSON<HealthResponse>("/health");
 
+// ---------------------------------------------------------------------------
+// Diagnostics — Learn tab persistent strip
+// ---------------------------------------------------------------------------
+
+export type DiagnosticStatus = "ok" | "warn" | "error";
+
+export interface DiagnosticCheck {
+  status: DiagnosticStatus;
+  message: string;
+  fixUrl?: string | null;
+}
+
+export interface DiagnosticsResponse {
+  backend: DiagnosticCheck;
+  provider: DiagnosticCheck;
+  judge: DiagnosticCheck;
+  storage: DiagnosticCheck;
+}
+
+export const getDiagnostics = () =>
+  fetchJSON<DiagnosticsResponse>("/api/diagnostics");
+
+// ---------------------------------------------------------------------------
+// Docs — Learn tab allowlisted markdown loader
+// ---------------------------------------------------------------------------
+
+export interface DocResponse {
+  slug: string;
+  content: string;
+}
+
+export const getDoc = (slug: string) =>
+  fetchJSON<DocResponse>(`/api/docs/${encodeURIComponent(slug)}`);
+
+// ---------------------------------------------------------------------------
+// Troubleshoot — Learn tab searchable FAQ
+// ---------------------------------------------------------------------------
+
+export type TroubleshootCategory =
+  | "Setup"
+  | "Provider"
+  | "Compare"
+  | "Judge"
+  | "Budget"
+  | "Runtime";
+
+export interface TroubleshootEntry {
+  id: string;
+  title: string;
+  symptom: string;
+  cause: string;
+  category: TroubleshootCategory;
+  fix: string[];
+  seealso: string[];
+}
+
+export interface TroubleshootResponse {
+  entries: TroubleshootEntry[];
+}
+
+export const getTroubleshoot = () =>
+  fetchJSON<TroubleshootResponse>("/api/docs/troubleshoot");
+
 // Chat
 export const submitChat = (req: ChatRequest) =>
   fetchJSON<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(req) });

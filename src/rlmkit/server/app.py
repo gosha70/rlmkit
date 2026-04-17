@@ -22,6 +22,8 @@ from rlmkit.server.routes import (
     chat_providers,
     compare_matrix,
     config,
+    diagnostics,
+    docs,
     evaluations,
     files,
     llm_providers,
@@ -155,6 +157,8 @@ def create_app() -> FastAPI:
     app.include_router(llm_providers.router)
     app.include_router(chat_providers.router)
     app.include_router(evaluations.router)
+    app.include_router(diagnostics.router)
+    app.include_router(docs.router)
 
     @app.get("/health")
     async def health_check() -> HealthResponse:

@@ -50,6 +50,73 @@ class HealthResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics — Learn tab persistent strip
+# ---------------------------------------------------------------------------
+
+
+class DiagnosticCheck(BaseModel):
+    """Single diagnostic result.
+
+    status semantics follow the Learn pitch (§Diagnostics red-dot badge):
+    ``error`` = hard blocker (backend unreachable, no enabled provider,
+    storage unwritable); ``warn`` = soft issue (judge missing); ``ok``
+    = check passed. Only ``error`` states should drive the sidebar badge.
+    """
+
+    status: Literal["ok", "warn", "error"]
+    message: str
+    fixUrl: str | None = None  # deep link into Settings or a Troubleshoot entry
+
+
+class DiagnosticsResponse(BaseModel):
+    backend: DiagnosticCheck
+    provider: DiagnosticCheck
+    judge: DiagnosticCheck
+    storage: DiagnosticCheck
+
+
+# ---------------------------------------------------------------------------
+# Docs — Learn tab allowlisted markdown loader
+# ---------------------------------------------------------------------------
+
+
+class DocResponse(BaseModel):
+    """Allowlisted markdown document served to the Learn client."""
+
+    slug: str
+    content: str
+
+
+class TroubleshootEntry(BaseModel):
+    """Single troubleshoot entry, shape matches docs/troubleshoot.yaml.
+
+    See spec-learn-tab-ux.md §5 Troubleshoot Entry Shape.
+
+    ``fix`` is required — the documented schema treats it as the
+    actionable remediation list, so an entry without one is not a
+    valid row. ``seealso`` is genuinely optional.
+    """
+
+    id: str
+    title: str
+    symptom: str
+    cause: str
+    category: Literal["Setup", "Provider", "Compare", "Judge", "Budget", "Runtime"]
+    fix: list[str]
+    seealso: list[str] = Field(default_factory=list)
+
+
+class TroubleshootResponse(BaseModel):
+    """Wrapper around the YAML-sourced Troubleshoot entries list.
+
+    Returned as JSON so the Learn client can filter/render without
+    parsing YAML on the browser side.
+    """
+
+    entries: list[TroubleshootEntry]
+
+
+# ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
 

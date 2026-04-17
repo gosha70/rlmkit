@@ -49,6 +49,21 @@ vi.mock("@/components/settings/profile-card", () => ({
   ProfileCard: () => <div>ProfileCard</div>,
 }));
 
+// SettingsPage now reads the Cookbook → Settings deep-link query
+// params via next/navigation. The existing tests do not mount a
+// real router, so stub both hooks with deterministic no-op values.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    replace: vi.fn(),
+    push: vi.fn(),
+    prefetch: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 // ---------------------------------------------------------------------------
 // BudgetConfig
 // ---------------------------------------------------------------------------

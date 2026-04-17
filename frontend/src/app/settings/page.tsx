@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { useTheme } from "next-themes";
 import { AppShell } from "@/components/shared/app-shell";
@@ -50,6 +51,11 @@ import { Plus, Edit2, Trash2, Upload, Check, X, Wifi, RefreshCw } from "lucide-r
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
+  DeepLinkBanner,
+  parseDeepLinkFromParams,
+  type DeepLinkValues,
+} from "@/components/settings/deep-link-banner";
+import {
   BACKEND_OPENAI,
   BACKEND_ANTHROPIC,
   BACKEND_OLLAMA,
@@ -65,8 +71,33 @@ import {
   MODE_RAG,
 } from "@/lib/constants";
 
+// Backend keys the Settings form accepts. The deep-link banner only
+// renders when `?provider=` matches one of these, so a random or
+// malicious query param cannot trigger the banner UI.
+const DEEP_LINK_ALLOWED_BACKENDS: ReadonlySet<string> = new Set([
+  BACKEND_OPENAI,
+  BACKEND_ANTHROPIC,
+  BACKEND_OLLAMA,
+  BACKEND_LMSTUDIO,
+  BACKEND_VLLM,
+]);
+
+// Backends for which a deep-link may carry a baseUrl. Cloud backends
+// are excluded because the Settings form does not expose an endpoint
+// field for them — a crafted ?provider=openai&baseUrl=… would
+// otherwise stash the override in hidden form state and route the
+// user's API key to the attacker's host when they save. See the
+// pitch's Deep-link security rabbit hole.
+const DEEP_LINK_BASE_URL_ALLOWED_BACKENDS: ReadonlySet<string> = new Set([
+  BACKEND_OLLAMA,
+  BACKEND_LMSTUDIO,
+  BACKEND_VLLM,
+]);
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [saving, setSaving] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileStrategy, setNewProfileStrategy] = useState<string>(MODE_DIRECT);
@@ -122,6 +153,40 @@ export default function SettingsPage() {
   const [deletingLLMProviderId, setDeletingLLMProviderId] = useState<string | null>(null);
   const [testingLLMProviderId, setTestingLLMProviderId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { connected: boolean; error?: string | null; latency_ms?: number | null }>>({});
+
+  // Cookbook → Settings deep-link state. Parsing lives in a pure
+  // helper so the security-critical validation (allowed providers,
+  // cloud-baseUrl rejection, api_key never read) is unit-testable
+  // without mounting the whole Settings page.
+  const deepLinkValues: DeepLinkValues | null = useMemo(
+    () =>
+      parseDeepLinkFromParams(
+        searchParams,
+        DEEP_LINK_ALLOWED_BACKENDS,
+        DEEP_LINK_BASE_URL_ALLOWED_BACKENDS,
+      ),
+    [searchParams],
+  );
+
+  const clearDeepLink = () => router.replace("/settings");
+
+  const applyDeepLink = () => {
+    if (!deepLinkValues) return;
+    // Populate the LLM Provider creation form. API key stays blank —
+    // the deep link never carries secrets, and the confirmation
+    // banner's reassurance line codifies that contract.
+    setLLMProviderForm({
+      name: "",
+      backend: deepLinkValues.provider,
+      model: deepLinkValues.model ?? "",
+      api_key: "",
+      endpoint: deepLinkValues.baseUrl ?? "",
+      context_window: "",
+    });
+    setEditingLLMProviderId(null);
+    setShowLLMProviderForm(true);
+    clearDeepLink();
+  };
 
   // Fetch available models when backend or endpoint changes in the LLM Provider form.
   // Uses a sequence counter to discard stale responses from concurrent fetches.
@@ -456,6 +521,15 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-[1200px] space-y-6 p-6">
         <h2 className="text-2xl font-semibold">Settings</h2>
 
+        {deepLinkValues && (
+          <DeepLinkBanner
+            values={deepLinkValues}
+            providerDisplayName={BACKEND_DISPLAY_NAMES[deepLinkValues.provider]}
+            onCancel={clearDeepLink}
+            onUseValues={applyDeepLink}
+          />
+        )}
+
         <Tabs defaultValue="llm-providers">
           <TabsList>
             <TabsTrigger value="llm-providers">LLM Providers</TabsTrigger>
@@ -583,7 +657,16 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </div>
-                  {(LOCAL_BACKENDS as readonly string[]).includes(llmProviderForm.backend) && (
+                  {/*
+                    Endpoint field renders for local backends by default, but
+                    also whenever form.endpoint already holds a value — even
+                    for cloud backends. That way any endpoint override (from
+                    legacy data, an external config import, or a would-be
+                    deep-link attacker) is always visible to the user before
+                    they save, never hidden in form state.
+                  */}
+                  {((LOCAL_BACKENDS as readonly string[]).includes(llmProviderForm.backend) ||
+                    llmProviderForm.endpoint !== "") && (
                     <div className="space-y-2">
                       <FieldLabel htmlFor="llmp-endpoint" tooltip="The HTTP endpoint of your local inference server. Default ports: Ollama 11434, LM Studio 1234, vLLM 8000.">Endpoint</FieldLabel>
                       <Input
