@@ -39,7 +39,14 @@ const NODES: ReadonlyArray<DiagramNode> = [
   { kind: "answer", label: "Answer" },
 ];
 
-const NODE_WIDTH = 120;
+// Viewbox units == target pixel size when rendered at the SVG's
+// intrinsic width (see SVG attrs below). The earlier attempt just
+// scaled the viewBox, which preserved aspect ratio — so the SVG
+// shrank proportionally and rendered nodes at the same visual size
+// as before. Setting explicit width/height on the <svg> plus a
+// max-w-full clamp on narrow screens means nodes render close to
+// these pixel dimensions on a typical desktop.
+const NODE_WIDTH = 112;
 const NODE_HEIGHT = 72;
 const NODE_GAP = 28;
 const NODE_LABEL_FONT_SIZE = 15;
@@ -63,7 +70,9 @@ export function ReplayDiagram({ activeKind, className }: ReplayDiagramProps) {
           NODES[activeIndex]?.label ?? "unknown"
         }`}
         viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-        className="block w-full max-w-full"
+        width={SVG_WIDTH}
+        height={SVG_HEIGHT}
+        className="block h-auto max-w-full"
       >
         <defs>
           <marker
