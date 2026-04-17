@@ -8,22 +8,23 @@
  *   header   : title + description + optional truncation note
  *   controls : Play / Pause / Step / Reset / Speed strip
  *   diagram  : 6-node SVG (full width of the walkthrough)
- *   grid     : left rail (step list) │ right pane (title + summary)
- *   tray     : bottom Advanced details (expandable)
+ *   grid     : left rail (step list) │ right pane (title + summary
+ *              + in-pane Advanced details)
  *
- * Deliberate trade-off against a strict 3-column "three-pane" grid.
- * At typical desktop widths the Learn surface's middle column
- * compresses a 6-node horizontal diagram to ~480px — far too narrow
- * for readable labels. Giving the diagram its own full-width row
- * keeps it legible without losing the three distinct panes (rail,
- * diagram, explanation) the spec calls for — they're stacked, not
- * columns. The bottom Advanced tray addressed in the V2 P2 review
- * is unchanged: separate region, keyed by step id so it resets on
- * step change per the "default view is educational" contract.
+ * Advanced details live INSIDE the right pane rather than in a
+ * separate bottom tray. The pane had plenty of vertical room on the
+ * default step (no details = empty space); folding Advanced back
+ * into the same card keeps the reader's focus in one place and
+ * removes the redundant second region below the grid.
+ *
+ * The right pane carries `key={currentStep.id}` which forces React
+ * to remount it on step change. That resets its local `showAdvanced`
+ * state to collapsed per the spec §3 "default view is educational"
+ * contract — switching steps always lands on a clean collapsed
+ * default, so the V2 P2 review invariant is preserved.
  */
 
 import { useReplayControls } from "./use-replay-controls";
-import { ReplayAdvancedTray } from "./replay-advanced-tray";
 import { ReplayControls } from "./replay-controls";
 import { ReplayDiagram } from "./replay-diagram";
 import { ReplayStepList } from "./replay-step-list";
@@ -73,12 +74,11 @@ export function ReplayWalkthrough({
           currentStep={controls.currentStep}
           onSelect={controls.goTo}
         />
-        <ReplayStepDetail step={currentStep} />
+        {/* key={step.id} remounts the detail pane on step change so
+            its in-pane Advanced section collapses back to the
+            educational default (V2 P2 review invariant). */}
+        <ReplayStepDetail key={currentStep.id} step={currentStep} />
       </div>
-
-      {/* key={step.id} remounts the tray on step change so it
-          collapses back to the educational default, per spec §3. */}
-      <ReplayAdvancedTray key={currentStep.id} step={currentStep} />
     </section>
   );
 }

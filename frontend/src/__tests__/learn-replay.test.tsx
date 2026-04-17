@@ -348,46 +348,8 @@ describe("ReplayStepDetail", () => {
     expect(screen.getByText("code")).toBeInTheDocument();
   });
 
-  test("is purely presentational — never renders prompt / code / output", () => {
-    // The right pane is the user-facing explanation only; advanced
-    // payload moved into ReplayAdvancedTray at the bottom of the
-    // walkthrough per spec §3.
+  test("starts with Advanced details collapsed — default view is educational", () => {
     render(<ReplayStepDetail step={codeStep} />);
-    expect(screen.queryByText(/PROMPT_EXCERPT_HERE/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/OUTPUT_HERE/)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /advanced details/i }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// ReplayAdvancedTray — bottom tray (V2 §3)
-// ---------------------------------------------------------------------------
-
-import { ReplayAdvancedTray } from "@/components/learn/replay-advanced-tray";
-
-describe("ReplayAdvancedTray", () => {
-  const richStep: LearnReplayStep = {
-    id: "c1",
-    kind: "code",
-    title: "Code generated",
-    summary: "...",
-    details: {
-      prompt: "PROMPT_EXCERPT_HERE",
-      code: 'hits = grep(prompt, pattern="x")',
-      output: "OUTPUT_HERE",
-    },
-    metrics: {
-      tokensIn: 380,
-      tokensOut: 140,
-      latencyMs: 1820,
-      costUsd: 0.0021,
-    },
-  };
-
-  test("starts collapsed — default view is educational", () => {
-    render(<ReplayAdvancedTray step={richStep} />);
     expect(
       screen.getByRole("button", { name: /Show advanced details/ }),
     ).toHaveAttribute("aria-expanded", "false");
@@ -396,7 +358,7 @@ describe("ReplayAdvancedTray", () => {
   });
 
   test("toggle reveals prompt, code, output, and metrics", async () => {
-    render(<ReplayAdvancedTray step={richStep} />);
+    render(<ReplayStepDetail step={codeStep} />);
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: /Show advanced details/ }));
@@ -410,15 +372,17 @@ describe("ReplayAdvancedTray", () => {
     expect(screen.getByText("$0.0021")).toBeInTheDocument();
   });
 
-  test("step without details or metrics renders nothing at all", () => {
+  test("step without details/metrics omits the Advanced section entirely", () => {
     const bareStep: LearnReplayStep = {
       id: "q",
       kind: "question",
       title: "Question received",
       summary: "...",
     };
-    const { container } = render(<ReplayAdvancedTray step={bareStep} />);
-    expect(container.firstChild).toBeNull();
+    render(<ReplayStepDetail step={bareStep} />);
+    expect(
+      screen.queryByRole("button", { name: /advanced details/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -610,38 +574,39 @@ describe("ReplayWalkthrough", () => {
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
-  test("mounts a bottom Advanced details tray below the three panes", async () => {
-    // Spec §3 calls for a bottom tray spanning the full width below
-    // the three panes — not nested inside the right pane. The tray
-    // only renders when the current step has details/metrics; step 1
-    // of this fixture is a bare "question", so navigate to the code
-    // step first, then assert the tray region exists.
+  test("in-pane Advanced section only renders when the step has details", async () => {
+    // The Advanced block is now nested in the right pane. Only appears
+    // when the step actually has prompt/code/output or metrics — step
+    // 1 of this fixture is a bare "question", so no toggle yet; jump
+    // to the code step and the toggle becomes visible.
     render(<ReplayWalkthrough replay={SAMPLE_REPLAY_WITH_DETAILS} />);
     expect(
-      screen.queryByRole("region", { name: "Advanced details" }),
+      screen.queryByRole("button", { name: /Show advanced details/ }),
     ).not.toBeInTheDocument();
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: /Code with details/ }));
     expect(
-      screen.getByRole("region", { name: "Advanced details" }),
+      screen.getByRole("button", { name: /Show advanced details/ }),
     ).toBeInTheDocument();
   });
 
-  test("Advanced tray resets to collapsed on step change", async () => {
+  test("Advanced section resets to collapsed on step change", async () => {
     // Regression guard for the "default view is educational" contract:
-    // opening the tray on one step must not leak into the next step.
+    // opening the in-pane Advanced section on one step must not leak
+    // into the next step. ReplayWalkthrough passes key={step.id} on
+    // the detail pane so React remounts it on step change.
     render(<ReplayWalkthrough replay={SAMPLE_REPLAY_WITH_DETAILS} />);
     const user = userEvent.setup();
 
     // Step 1 ("question") has no details, so first jump to step 2
     // ("code") which does.
     await user.click(screen.getByRole("button", { name: /Code with details/ }));
-    // Open the tray on the code step.
+    // Open Advanced on the code step.
     await user.click(screen.getByRole("button", { name: /Show advanced details/ }));
     expect(screen.getByText("CODE_STEP_PROMPT")).toBeInTheDocument();
-    // Jump to step 3 ("result"). Its tray must start collapsed, not
-    // show the previous step's prompt.
+    // Jump to step 3 ("result"). Its Advanced must start collapsed,
+    // not show the previous step's prompt.
     await user.click(
       screen.getByRole("button", { name: /Result with details/ }),
     );
