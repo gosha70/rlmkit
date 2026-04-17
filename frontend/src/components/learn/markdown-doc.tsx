@@ -7,18 +7,55 @@
  * through the existing ReactMarkdown + remarkGfm pipeline. The render
  * wrapper matches the chat/compare prose styling so long-form content
  * reads the same everywhere.
+ *
+ * Heading IDs: H2 and H3 elements get deterministic slug IDs via the
+ * shared slugifyHeading helper. That keeps anchor targets in sync
+ * with any table of contents (e.g. the Cookbook provider guide rail)
+ * without introducing a rehype-slug dependency.
  */
 
+import type { ReactNode } from "react";
 import useSWR from "swr";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { getDoc, type DocResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { slugifyHeading } from "./markdown-toc";
 
 interface MarkdownDocProps {
   slug: string;
   className?: string;
 }
+
+function headingTextOf(children: ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(headingTextOf).join("");
+  if (
+    children !== null &&
+    typeof children === "object" &&
+    "props" in children &&
+    // @ts-expect-error — React element typing surfaces `props` at runtime
+    children.props?.children !== undefined
+  ) {
+    // @ts-expect-error — same as above
+    return headingTextOf(children.props.children);
+  }
+  return "";
+}
+
+const markdownComponents = {
+  h2: ({ children, ...rest }: { children?: ReactNode }) => (
+    <h2 id={slugifyHeading(headingTextOf(children))} {...rest}>
+      {children}
+    </h2>
+  ),
+  h3: ({ children, ...rest }: { children?: ReactNode }) => (
+    <h3 id={slugifyHeading(headingTextOf(children))} {...rest}>
+      {children}
+    </h3>
+  ),
+};
 
 export function MarkdownDoc({ slug, className }: MarkdownDocProps) {
   const { data, error, isLoading } = useSWR<DocResponse>(
@@ -61,7 +98,12 @@ export function MarkdownDoc({ slug, className }: MarkdownDocProps) {
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.content}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
+      >
+        {data.content}
+      </ReactMarkdown>
     </div>
   );
 }

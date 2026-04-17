@@ -5,12 +5,12 @@
  *   - LearnPage landing shell (heading, diagnostics strip mount, cards region)
  *   - DiagnosticsStrip renderer (ok / warn / error states, fixUrl linking,
  *     loading state, accessibility labels)
- *   - MarkdownDoc loader (loading / error / rendered markdown)
+ *   - MarkdownDoc loader (loading / error / rendered markdown, heading ids)
+ *   - markdown-toc helpers (slugify, TOC extraction)
  *   - ProviderCard and CookbookPage (grouping, card rendering, link targets,
  *     diagnostics strip mount on cookbook)
- *
- * Sub-routes for per-provider guides populate the next step and get
- * their own tests then.
+ *   - ProviderGuidePage (known provider renders guide, unknown provider
+ *     shows an alert, back link, Open in Settings deep link target)
  */
 
 import { render, screen } from "@testing-library/react";
@@ -29,8 +29,21 @@ vi.mock("swr", () => ({
 
 const mockUseSWR = vi.mocked(useSWR);
 
+vi.mock("next/navigation", async () => {
+  const actual = await vi.importActual<typeof import("next/navigation")>(
+    "next/navigation",
+  );
+  return {
+    ...actual,
+    useParams: vi.fn(),
+  };
+});
+
+import { useParams } from "next/navigation";
+
 import LearnPage from "@/app/learn/page";
 import CookbookPage from "@/app/learn/cookbook/page";
+import ProviderGuidePage from "@/app/learn/cookbook/[provider]/page";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
 import { ProviderCard } from "@/components/learn/provider-card";
@@ -40,6 +53,13 @@ import {
   docSlugForProvider,
   getProviderById,
 } from "@/components/learn/provider-catalog";
+import {
+  extractHeadings,
+  slugifyHeading,
+  topLevelHeadings,
+} from "@/components/learn/markdown-toc";
+
+const mockUseParams = vi.mocked(useParams);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -337,5 +357,126 @@ describe("CookbookPage", () => {
       "cookbook-group-advanced-local-self-hosted",
       "cookbook-group-cloud",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// markdown-toc helpers
+// ---------------------------------------------------------------------------
+
+describe("markdown-toc", () => {
+  test("slugifyHeading lowercases and hyphenates non-word characters", () => {
+    expect(slugifyHeading("1. Install")).toBe("1-install");
+    expect(slugifyHeading("Add to RLM Studio")).toBe("add-to-rlm-studio");
+    expect(slugifyHeading("  5. Test connection  ")).toBe("5-test-connection");
+  });
+
+  test("extractHeadings picks up H2 and H3, skipping fenced code", () => {
+    const source = `# Top\n\n## Install\n\n\`\`\`\n## fake-heading-in-code\n\`\`\`\n\n### Detail\n\n## Start\n`;
+    const headings = extractHeadings(source);
+    expect(headings.map((h) => [h.level, h.text])).toEqual([
+      [2, "Install"],
+      [3, "Detail"],
+      [2, "Start"],
+    ]);
+  });
+
+  test("topLevelHeadings returns only H2s", () => {
+    const source = "## Install\n### Detail\n## Test\n";
+    const tops = topLevelHeadings(source);
+    expect(tops.map((h) => h.text)).toEqual(["Install", "Test"]);
+    expect(tops.map((h) => h.id)).toEqual(["install", "test"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MarkdownDoc heading ids
+// ---------------------------------------------------------------------------
+
+describe("MarkdownDoc heading ids", () => {
+  test("H2 and H3 elements receive slugified ids", () => {
+    mockUseSWR.mockReturnValue({
+      data: {
+        slug: "rlm-concepts",
+        content:
+          "## Install\n\nbody\n\n### Detailed notes\n\nmore body\n",
+      },
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    render(<MarkdownDoc slug="rlm-concepts" />);
+    const h2 = screen.getByRole("heading", { level: 2, name: "Install" });
+    const h3 = screen.getByRole("heading", { level: 3, name: "Detailed notes" });
+    expect(h2).toHaveAttribute("id", "install");
+    expect(h3).toHaveAttribute("id", "detailed-notes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ProviderGuidePage
+// ---------------------------------------------------------------------------
+
+describe("ProviderGuidePage", () => {
+  const sampleDoc = {
+    slug: "hosts-ollama",
+    content: "## Install\n\nbody\n\n## Start the server\n\nmore body\n",
+  };
+
+  test("renders the guide for a known provider with TOC and markdown", () => {
+    mockUseParams.mockReturnValue({ provider: "ollama" });
+    // LearnPage/Guide both call SWR — data will flow to both calls
+    // because they share the same cache key via the mock's single
+    // return value. Use a flexible default.
+    mockUseSWR.mockImplementation(
+      (key: unknown) => {
+        if (Array.isArray(key) && key[0] === "learn-doc") {
+          return { data: sampleDoc } as ReturnType<typeof useSWR>;
+        }
+        return { data: undefined } as ReturnType<typeof useSWR>;
+      },
+    );
+
+    render(<ProviderGuidePage />);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Ollama" }),
+    ).toBeInTheDocument();
+    // Left-rail anchors use the topLevelHeadings output.
+    expect(screen.getByRole("link", { name: "Install" })).toHaveAttribute(
+      "href",
+      "#install",
+    );
+    expect(
+      screen.getByRole("link", { name: "Start the server" }),
+    ).toHaveAttribute("href", "#start-the-server");
+    // Markdown body rendered (H2 from content, with id set by MarkdownDoc).
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Install" }),
+    ).toBeInTheDocument();
+  });
+
+  test("Open in Settings link preserves the provider id", () => {
+    mockUseParams.mockReturnValue({ provider: "dgx-spark" });
+    mockUseSWR.mockReturnValue({ data: sampleDoc } as ReturnType<typeof useSWR>);
+    render(<ProviderGuidePage />);
+    const link = screen.getByRole("link", {
+      name: "Open DGX Spark in Settings",
+    });
+    expect(link).toHaveAttribute("href", "/settings?provider=dgx-spark");
+  });
+
+  test("unknown provider id shows an alert, not a crash", () => {
+    mockUseParams.mockReturnValue({ provider: "definitely-not-real" });
+    mockUseSWR.mockReturnValue({ data: undefined } as ReturnType<typeof useSWR>);
+    render(<ProviderGuidePage />);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/Provider not found/);
+    expect(alert).toHaveTextContent(/definitely-not-real/);
+    // Back link inside the alert goes home.
+    const backLinks = screen.getAllByRole("link", { name: /Back to Cookbook/ });
+    expect(backLinks.length).toBeGreaterThan(0);
+    for (const l of backLinks) {
+      expect(l).toHaveAttribute("href", "/learn/cookbook");
+    }
   });
 });
