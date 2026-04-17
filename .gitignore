@@ -13,6 +13,12 @@ htmlcov/
 .pytest_cache/
 coverage.xml
 
+# Node artifacts that can land at the repo root if a dev accidentally
+# runs `npm` / `npx` here instead of inside frontend/. The real
+# frontend deps live in frontend/node_modules (separately ignored).
+/node_modules/
+/.vite/
+
 # Playwright CLI artifacts
 .playwright-cli/
 
