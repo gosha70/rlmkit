@@ -319,14 +319,14 @@ describe("ReplayStepList", () => {
 import { ReplayStepDetail } from "@/components/learn/replay-step-detail";
 
 describe("ReplayStepDetail", () => {
-  const richStep: LearnReplayStep = {
+  const codeStep: LearnReplayStep = {
     id: "c1",
     kind: "code",
     title: "Code generated",
     summary: "The model writes a small Python action.",
     details: {
       prompt: "PROMPT_EXCERPT_HERE",
-      code: "hits = grep(prompt, pattern=\"x\")",
+      code: 'hits = grep(prompt, pattern="x")',
       output: "OUTPUT_HERE",
     },
     metrics: {
@@ -337,20 +337,66 @@ describe("ReplayStepDetail", () => {
     },
   };
 
-  test("shows title and summary by default; advanced details hidden", () => {
-    render(<ReplayStepDetail step={richStep} />);
+  test("renders kind, title, and summary", () => {
+    render(<ReplayStepDetail step={codeStep} />);
     expect(
       screen.getByRole("heading", { level: 4, name: "Code generated" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/The model writes a small Python action/),
     ).toBeInTheDocument();
+    expect(screen.getByText("code")).toBeInTheDocument();
+  });
+
+  test("is purely presentational — never renders prompt / code / output", () => {
+    // The right pane is the user-facing explanation only; advanced
+    // payload moved into ReplayAdvancedTray at the bottom of the
+    // walkthrough per spec §3.
+    render(<ReplayStepDetail step={codeStep} />);
+    expect(screen.queryByText(/PROMPT_EXCERPT_HERE/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/OUTPUT_HERE/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /advanced details/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReplayAdvancedTray — bottom tray (V2 §3)
+// ---------------------------------------------------------------------------
+
+import { ReplayAdvancedTray } from "@/components/learn/replay-advanced-tray";
+
+describe("ReplayAdvancedTray", () => {
+  const richStep: LearnReplayStep = {
+    id: "c1",
+    kind: "code",
+    title: "Code generated",
+    summary: "...",
+    details: {
+      prompt: "PROMPT_EXCERPT_HERE",
+      code: 'hits = grep(prompt, pattern="x")',
+      output: "OUTPUT_HERE",
+    },
+    metrics: {
+      tokensIn: 380,
+      tokensOut: 140,
+      latencyMs: 1820,
+      costUsd: 0.0021,
+    },
+  };
+
+  test("starts collapsed — default view is educational", () => {
+    render(<ReplayAdvancedTray step={richStep} />);
+    expect(
+      screen.getByRole("button", { name: /Show advanced details/ }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText(/PROMPT_EXCERPT_HERE/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OUTPUT_HERE/)).not.toBeInTheDocument();
   });
 
   test("toggle reveals prompt, code, output, and metrics", async () => {
-    render(<ReplayStepDetail step={richStep} />);
+    render(<ReplayAdvancedTray step={richStep} />);
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: /Show advanced details/ }));
@@ -359,25 +405,20 @@ describe("ReplayStepDetail", () => {
     expect(screen.getByText("OUTPUT_HERE")).toBeInTheDocument();
     expect(screen.getByText("Tokens in:")).toBeInTheDocument();
     expect(screen.getByText("380")).toBeInTheDocument();
-    expect(screen.getByText("Tokens out:")).toBeInTheDocument();
-    expect(screen.getByText("140")).toBeInTheDocument();
     expect(screen.getByText("Latency:")).toBeInTheDocument();
     expect(screen.getByText("1820 ms")).toBeInTheDocument();
-    expect(screen.getByText("Cost:")).toBeInTheDocument();
     expect(screen.getByText("$0.0021")).toBeInTheDocument();
   });
 
-  test("step without details/metrics omits the tray entirely", () => {
+  test("step without details or metrics renders nothing at all", () => {
     const bareStep: LearnReplayStep = {
       id: "q",
       kind: "question",
       title: "Question received",
       summary: "...",
     };
-    render(<ReplayStepDetail step={bareStep} />);
-    expect(
-      screen.queryByRole("button", { name: /advanced details/i }),
-    ).not.toBeInTheDocument();
+    const { container } = render(<ReplayAdvancedTray step={bareStep} />);
+    expect(container.firstChild).toBeNull();
   });
 });
 
@@ -568,7 +609,73 @@ describe("ReplayWalkthrough", () => {
     render(<ReplayWalkthrough replay={SAMPLE_REPLAY} />);
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
+
+  test("mounts a bottom Advanced details tray below the three panes", async () => {
+    // Spec §3 calls for a bottom tray spanning the full width below
+    // the three panes — not nested inside the right pane. The tray
+    // only renders when the current step has details/metrics; step 1
+    // of this fixture is a bare "question", so navigate to the code
+    // step first, then assert the tray region exists.
+    render(<ReplayWalkthrough replay={SAMPLE_REPLAY_WITH_DETAILS} />);
+    expect(
+      screen.queryByRole("region", { name: "Advanced details" }),
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /Code with details/ }));
+    expect(
+      screen.getByRole("region", { name: "Advanced details" }),
+    ).toBeInTheDocument();
+  });
+
+  test("Advanced tray resets to collapsed on step change", async () => {
+    // Regression guard for the "default view is educational" contract:
+    // opening the tray on one step must not leak into the next step.
+    render(<ReplayWalkthrough replay={SAMPLE_REPLAY_WITH_DETAILS} />);
+    const user = userEvent.setup();
+
+    // Step 1 ("question") has no details, so first jump to step 2
+    // ("code") which does.
+    await user.click(screen.getByRole("button", { name: /Code with details/ }));
+    // Open the tray on the code step.
+    await user.click(screen.getByRole("button", { name: /Show advanced details/ }));
+    expect(screen.getByText("CODE_STEP_PROMPT")).toBeInTheDocument();
+    // Jump to step 3 ("result"). Its tray must start collapsed, not
+    // show the previous step's prompt.
+    await user.click(
+      screen.getByRole("button", { name: /Result with details/ }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Show advanced details/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("CODE_STEP_PROMPT")).not.toBeInTheDocument();
+    expect(screen.queryByText("RESULT_STEP_OUTPUT")).not.toBeInTheDocument();
+  });
 });
+
+const SAMPLE_REPLAY_WITH_DETAILS: LearnReplay = {
+  id: "test-details",
+  title: "Test replay with details",
+  description: "Replay used by the tray-reset regression test.",
+  metadata: { source: "bundled", convertorVersion: 1 },
+  steps: [
+    { id: "q", kind: "question", title: "Question received", summary: "Q." },
+    {
+      id: "c",
+      kind: "code",
+      title: "Code with details",
+      summary: "C.",
+      details: { prompt: "CODE_STEP_PROMPT", code: "x = 1" },
+    },
+    {
+      id: "r",
+      kind: "result",
+      title: "Result with details",
+      summary: "R.",
+      details: { output: "RESULT_STEP_OUTPUT" },
+    },
+  ],
+};
 
 // ---------------------------------------------------------------------------
 // ModeChooser — Concepts §B interactive (V2 step 6)
