@@ -2,6 +2,14 @@
 
 Local LLM runtime with a simple CLI. Runs on Linux and macOS.
 
+- **Best for:** quick local start, quantized models, no API key.
+- **You'll need:** Homebrew (macOS) or `curl` (Linux); ~5 GB disk
+  for a starter model like `llama3.1:8b`; 16 GB RAM is comfortable.
+- **Known-good config:** base URL `http://localhost:11434`, model
+  `llama3.1:8b`.
+- **Most common failure:** "connection refused" — `ollama serve`
+  isn't running. See §6.
+
 > **Windows:** Windows users can usually follow the WSL path below.
 > Full Windows-native guidance is out of scope for V1.
 

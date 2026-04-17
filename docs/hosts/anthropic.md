@@ -2,6 +2,16 @@
 
 Cloud-hosted Claude family models via the Anthropic API.
 
+- **Best for:** strong reasoning and long-context tasks; the
+  Claude Sonnet and Opus families.
+- **You'll need:** an Anthropic account with an API key and
+  prepaid credits.
+- **Known-good config:** leave base URL blank; model
+  `claude-sonnet-4-6` as a sensible default.
+- **Most common failure:** empty response — the request set both
+  `temperature` and `top_p`. Use one or the other, never both.
+  See §5 and §6.
+
 ## 1. Get an API key
 
 1. Sign in at <https://console.anthropic.com>.

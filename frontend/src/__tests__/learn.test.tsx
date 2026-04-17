@@ -1240,20 +1240,23 @@ describe("TroubleshootPage", () => {
 // ---------------------------------------------------------------------------
 
 describe("ConceptsPage", () => {
-  test("renders heading, diagnostics strip, and two sections", () => {
-    mockUseSWR.mockImplementation(((key: unknown) => {
-      if (Array.isArray(key) && key[0] === "learn-doc") {
-        return {
-          data: {
-            slug: "rlm-concepts",
-            content: "## What is RLM?\n\nbody",
-          },
-        } as ReturnType<typeof useSWR>;
-      }
-      if (key === "learn-diagnostics") return { data: allOk } as ReturnType<typeof useSWR>;
-      return { data: undefined } as ReturnType<typeof useSWR>;
-    }) as unknown as typeof useSWR);
+  const conceptsSwr = ((key: unknown) => {
+    if (Array.isArray(key) && key[0] === "learn-doc") {
+      return {
+        data: {
+          slug: "rlm-concepts",
+          content: "## Deep dive heading\n\nresearch body",
+        },
+      } as ReturnType<typeof useSWR>;
+    }
+    if (key === "learn-diagnostics") {
+      return { data: allOk } as ReturnType<typeof useSWR>;
+    }
+    return { data: undefined } as ReturnType<typeof useSWR>;
+  }) as unknown as typeof useSWR;
 
+  test("renders heading, diagnostics strip, and all four sections in order", () => {
+    mockUseSWR.mockImplementation(conceptsSwr);
     render(<ConceptsPage />);
     expect(
       screen.getByRole("heading", { level: 2, name: "Concepts" }),
@@ -1261,28 +1264,58 @@ describe("ConceptsPage", () => {
     expect(
       screen.getByRole("status", { name: "System diagnostics" }),
     ).toBeInTheDocument();
-    // Two aria-labelled sections exist (aside for the mode-guide callout
-    // intentionally excluded — not a region).
-    expect(
-      document.querySelector("#what-is-rlm"),
-    ).not.toBeNull();
-    expect(
-      document.querySelector("#mode-guide"),
-    ).not.toBeNull();
+    // Task-first order: problem → mode guide → sandbox → deep dive.
+    const ids = ["#problem", "#mode-guide", "#sandbox", "#deep-dive"];
+    for (const id of ids) {
+      expect(document.querySelector(id)).not.toBeNull();
+    }
   });
 
-  test("mode guide section renders Direct / RLM / Compare rows", () => {
-    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+  test("opens with the user-problem framing, not architecture", () => {
+    mockUseSWR.mockImplementation(conceptsSwr);
     render(<ConceptsPage />);
-    expect(screen.getByText("Direct")).toBeInTheDocument();
-    expect(screen.getByText("RLM")).toBeInTheDocument();
-    expect(screen.getByText("Compare")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Some tasks are too large or too messy for one prompt/),
+    ).toBeInTheDocument();
   });
 
-  test("includes the 'When not to use RLM' callout", () => {
-    mockUseSWR.mockReturnValue({ data: allOk } as ReturnType<typeof useSWR>);
+  test("mode guide covers all four modes including Auto", () => {
+    mockUseSWR.mockImplementation(conceptsSwr);
     render(<ConceptsPage />);
-    expect(screen.getByText(/When not to use RLM/)).toBeInTheDocument();
+    // Strong-text labels inside the mode list are unique; matching with
+    // exact text avoids colliding with the body paragraphs.
+    for (const mode of ["Direct", "RLM", "Compare", "Auto"]) {
+      expect(screen.getByText(mode, { selector: "span.font-semibold" }))
+        .toBeInTheDocument();
+    }
+  });
+
+  test("includes the 'When not to use RLM' callout near the mode guide", () => {
+    mockUseSWR.mockImplementation(conceptsSwr);
+    render(<ConceptsPage />);
+    expect(screen.getByText("When not to use RLM")).toBeInTheDocument();
+    // Callout must carry the concrete guidance, not just the header.
+    expect(
+      screen.getByText(/single-turn chat — use Direct/),
+    ).toBeInTheDocument();
+  });
+
+  test("sandbox section spells out the trust boundary", () => {
+    mockUseSWR.mockImplementation(conceptsSwr);
+    render(<ConceptsPage />);
+    expect(
+      screen.getByText(/What the sandbox can and can't do/),
+    ).toBeInTheDocument();
+    // The sandbox explanation must name file / network / subprocess
+    // limits in plain English — the security reassurance the pitch
+    // and the public README both expect.
+    expect(
+      screen.getByText(/Read, write, or delete files on your machine/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Open network connections or call external services/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/RestrictedPython/)).toBeInTheDocument();
   });
 });
 

@@ -3,6 +3,15 @@
 High-throughput inference server. Linux only — upstream does not
 support Windows or macOS for production deployments.
 
+- **Best for:** high-throughput GPU serving with an
+  OpenAI-compatible API; larger unquantized models.
+- **You'll need:** Linux, Python 3.9+, a CUDA-capable GPU, and
+  enough VRAM for your chosen model (Spark tuning details below).
+- **Known-good config:** base URL `http://localhost:8000/v1`;
+  model id matches whatever you pass to `--model`.
+- **Most common failure:** `--gpu-memory-utilization` default is
+  too aggressive and startup aborts. See §6.
+
 ## 1. Install
 
 Requires Python 3.9+ and a CUDA-capable GPU.

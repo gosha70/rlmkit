@@ -2,6 +2,16 @@
 
 Cloud-hosted inference via the OpenAI API.
 
+- **Best for:** broad model selection (GPT-4o family), pay-per-use
+  cloud; the fastest path when you don't want to run a server.
+- **You'll need:** an OpenAI account with an API key and a
+  billing method on file.
+- **Known-good config:** leave base URL blank (the OpenAI default
+  is used); model `gpt-4o-mini` for cheap experimentation,
+  `gpt-4o` for stronger results.
+- **Most common failure:** 401 Unauthorized — key is wrong,
+  revoked, or the account has no billing. See §5.
+
 ## 1. Get an API key
 
 1. Sign in at <https://platform.openai.com>.

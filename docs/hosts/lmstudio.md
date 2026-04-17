@@ -3,6 +3,14 @@
 Cross-platform desktop app with a built-in local inference server.
 Works on Windows, macOS, and Linux.
 
+- **Best for:** GUI-driven local inference; no terminal required.
+- **You'll need:** LM Studio installed; a downloaded model loaded
+  in the Chat tab before the server can serve it.
+- **Known-good config:** base URL `http://localhost:1234/v1`, model
+  id from the Local Server tab.
+- **Most common failure:** "Model not loaded" — you started the
+  server without loading a model first. See §6.
+
 ## 1. Install
 
 Download the installer for your platform from
