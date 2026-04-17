@@ -6,8 +6,11 @@
  *   - DiagnosticsStrip renderer (ok / warn / error states, fixUrl linking,
  *     loading state, accessibility labels)
  *   - MarkdownDoc loader (loading / error / rendered markdown)
+ *   - ProviderCard and CookbookPage (grouping, card rendering, link targets,
+ *     diagnostics strip mount on cookbook)
  *
- * Sub-routes and cards populate later steps and get their own tests then.
+ * Sub-routes for per-provider guides populate the next step and get
+ * their own tests then.
  */
 
 import { render, screen } from "@testing-library/react";
@@ -27,8 +30,16 @@ vi.mock("swr", () => ({
 const mockUseSWR = vi.mocked(useSWR);
 
 import LearnPage from "@/app/learn/page";
+import CookbookPage from "@/app/learn/cookbook/page";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
+import { ProviderCard } from "@/components/learn/provider-card";
+import {
+  COOKBOOK_PROVIDERS,
+  PROVIDER_GROUPS_IN_ORDER,
+  docSlugForProvider,
+  getProviderById,
+} from "@/components/learn/provider-catalog";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -206,5 +217,125 @@ describe("MarkdownDoc", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("world")).toBeInTheDocument();
     expect(container.querySelector("[data-slug='rlm-concepts']")).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider catalog (data)
+// ---------------------------------------------------------------------------
+
+describe("provider catalog", () => {
+  test("every provider has a unique id", () => {
+    const ids = COOKBOOK_PROVIDERS.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("every group in PROVIDER_GROUPS_IN_ORDER has at least one provider", () => {
+    for (const group of PROVIDER_GROUPS_IN_ORDER) {
+      const inGroup = COOKBOOK_PROVIDERS.filter((p) => p.group === group);
+      expect(inGroup.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("docSlugForProvider matches the backend allowlist format", () => {
+    expect(docSlugForProvider("ollama")).toBe("hosts-ollama");
+    expect(docSlugForProvider("dgx-spark")).toBe("hosts-dgx-spark");
+  });
+
+  test("getProviderById returns known providers and undefined for unknown", () => {
+    expect(getProviderById("ollama")?.name).toBe("Ollama");
+    expect(getProviderById("does-not-exist")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ProviderCard
+// ---------------------------------------------------------------------------
+
+describe("ProviderCard", () => {
+  test("renders provider name, difficulty, and best-for copy", () => {
+    const ollama = getProviderById("ollama")!;
+    render(<ProviderCard provider={ollama} />);
+    expect(screen.getByText("Ollama")).toBeInTheDocument();
+    expect(screen.getByText("Easy")).toBeInTheDocument();
+    expect(screen.getByText(/Quick local start/)).toBeInTheDocument();
+  });
+
+  test("renders a link that points at the provider guide route", () => {
+    const openai = getProviderById("openai")!;
+    render(<ProviderCard provider={openai} />);
+    const link = screen.getByRole("link", {
+      name: /Open OpenAI guide \(Moderate\)/,
+    });
+    expect(link).toHaveAttribute("href", "/learn/cookbook/openai");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CookbookPage
+// ---------------------------------------------------------------------------
+
+describe("CookbookPage", () => {
+  const allOkDiagnostics: DiagnosticsResponse = {
+    backend: ok("Backend reachable"),
+    provider: ok("1 LLM provider(s) configured"),
+    judge: ok("Judge configured"),
+    storage: ok("Storage reachable"),
+  };
+
+  test("renders heading and subtitle", () => {
+    mockUseSWR.mockReturnValue({
+      data: allOkDiagnostics,
+    } as ReturnType<typeof useSWR>);
+    render(<CookbookPage />);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Cookbook" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Connect a local or cloud model provider."),
+    ).toBeInTheDocument();
+  });
+
+  test("mounts the diagnostics strip", () => {
+    mockUseSWR.mockReturnValue({
+      data: allOkDiagnostics,
+    } as ReturnType<typeof useSWR>);
+    render(<CookbookPage />);
+    expect(
+      screen.getByRole("status", { name: "System diagnostics" }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders every provider in COOKBOOK_PROVIDERS exactly once", () => {
+    mockUseSWR.mockReturnValue({
+      data: allOkDiagnostics,
+    } as ReturnType<typeof useSWR>);
+    render(<CookbookPage />);
+    for (const p of COOKBOOK_PROVIDERS) {
+      const matches = screen.getAllByRole("link", {
+        name: new RegExp(`Open ${p.name} guide`),
+      });
+      expect(matches).toHaveLength(1);
+      expect(matches[0]).toHaveAttribute(
+        "href",
+        `/learn/cookbook/${p.id}`,
+      );
+    }
+  });
+
+  test("renders grouped regions in the spec order", () => {
+    mockUseSWR.mockReturnValue({
+      data: allOkDiagnostics,
+    } as ReturnType<typeof useSWR>);
+    render(<CookbookPage />);
+    const regions = screen.getAllByRole("region");
+    const names = regions.map((r) => r.getAttribute("aria-labelledby"));
+    // First region is the diagnostics strip is role=status (not region),
+    // so we only see the grouped sections here.
+    expect(names).toEqual([
+      "cookbook-group-easy-local",
+      "cookbook-group-advanced-local-self-hosted",
+      "cookbook-group-cloud",
+    ]);
   });
 });
