@@ -44,9 +44,21 @@ import { useParams } from "next/navigation";
 import LearnPage from "@/app/learn/page";
 import CookbookPage from "@/app/learn/cookbook/page";
 import ProviderGuidePage from "@/app/learn/cookbook/[provider]/page";
+import TroubleshootPage from "@/app/learn/troubleshoot/page";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
+import { DiagnosticsPanel } from "@/components/learn/diagnostics-panel";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
 import { ProviderCard } from "@/components/learn/provider-card";
+import { TroubleshootEntry } from "@/components/learn/troubleshoot-entry";
+import { TroubleshootSearch } from "@/components/learn/troubleshoot-search";
+import {
+  filterTroubleshootEntries,
+  TROUBLESHOOT_CATEGORIES,
+} from "@/components/learn/troubleshoot-filter";
+import type {
+  TroubleshootEntry as TroubleshootEntryData,
+  TroubleshootResponse,
+} from "@/lib/api";
 import {
   COOKBOOK_PROVIDERS,
   PROVIDER_GROUPS_IN_ORDER,
@@ -706,5 +718,406 @@ describe("parseDeepLinkFromParams", () => {
     });
     const serialized = JSON.stringify(values);
     expect(serialized).not.toMatch(/sk-leak/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterTroubleshootEntries
+// ---------------------------------------------------------------------------
+
+describe("filterTroubleshootEntries", () => {
+  const entries: TroubleshootEntryData[] = [
+    {
+      id: "a",
+      title: "Empty Anthropic response",
+      symptom: "Request succeeds but empty",
+      cause: "temperature + top_p",
+      category: "Provider",
+      fix: ["Remove one"],
+      seealso: ["cookbook/anthropic"],
+    },
+    {
+      id: "b",
+      title: "Judge flat at 5.0",
+      symptom: "Every run scores 5",
+      cause: "rubric v2 missing",
+      category: "Judge",
+      fix: [],
+      seealso: [],
+    },
+    {
+      id: "c",
+      title: "Ollama model not found",
+      symptom: "Ollama rejects",
+      cause: "pull missing",
+      category: "Setup",
+      fix: [],
+      seealso: ["cookbook/ollama"],
+    },
+  ];
+
+  test("empty options returns every entry", () => {
+    expect(filterTroubleshootEntries(entries)).toHaveLength(entries.length);
+    expect(filterTroubleshootEntries(entries, {})).toHaveLength(entries.length);
+    expect(
+      filterTroubleshootEntries(entries, { query: "   " }),
+    ).toHaveLength(entries.length);
+  });
+
+  test("query matches title, symptom, and cause", () => {
+    expect(
+      filterTroubleshootEntries(entries, { query: "anthropic" }).map((e) => e.id),
+    ).toEqual(["a"]);
+    expect(
+      filterTroubleshootEntries(entries, { query: "EVERY RUN" }).map((e) => e.id),
+    ).toEqual(["b"]);
+    expect(
+      filterTroubleshootEntries(entries, { query: "pull" }).map((e) => e.id),
+    ).toEqual(["c"]);
+  });
+
+  test("category filter narrows regardless of query", () => {
+    const setupOnly = new Set<typeof entries[number]["category"]>(["Setup"]);
+    expect(
+      filterTroubleshootEntries(entries, { categories: setupOnly }).map(
+        (e) => e.id,
+      ),
+    ).toEqual(["c"]);
+  });
+
+  test("query and categories compose with AND semantics", () => {
+    const providerOnly = new Set<typeof entries[number]["category"]>([
+      "Provider",
+    ]);
+    expect(
+      filterTroubleshootEntries(entries, {
+        query: "anthropic",
+        categories: providerOnly,
+      }).map((e) => e.id),
+    ).toEqual(["a"]);
+    // Same query, wrong category = empty.
+    expect(
+      filterTroubleshootEntries(entries, {
+        query: "anthropic",
+        categories: new Set(["Judge"]),
+      }),
+    ).toEqual([]);
+  });
+
+  test("TROUBLESHOOT_CATEGORIES enumerates six spec values", () => {
+    expect(TROUBLESHOOT_CATEGORIES).toEqual([
+      "Setup",
+      "Provider",
+      "Compare",
+      "Judge",
+      "Budget",
+      "Runtime",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TroubleshootSearch
+// ---------------------------------------------------------------------------
+
+describe("TroubleshootSearch", () => {
+  test("renders search input and one chip per category", () => {
+    render(
+      <TroubleshootSearch
+        query=""
+        onQueryChange={() => {}}
+        categories={new Set()}
+        onToggleCategory={() => {}}
+      />,
+    );
+    expect(screen.getByRole("searchbox")).toBeInTheDocument();
+    for (const cat of TROUBLESHOOT_CATEGORIES) {
+      expect(screen.getByRole("button", { name: cat })).toBeInTheDocument();
+    }
+  });
+
+  test("typing in the input fires onQueryChange", async () => {
+    const onQueryChange = vi.fn();
+    render(
+      <TroubleshootSearch
+        query=""
+        onQueryChange={onQueryChange}
+        categories={new Set()}
+        onToggleCategory={() => {}}
+      />,
+    );
+    const { default: userEvent } = await import("@testing-library/user-event");
+    // Controlled component with query="" never accumulates — each keystroke
+    // fires a change event with the single typed character since the parent
+    // state never updates in the test.
+    await userEvent.setup().type(screen.getByRole("searchbox"), "ab");
+    expect(onQueryChange).toHaveBeenCalledTimes(2);
+    expect(onQueryChange).toHaveBeenNthCalledWith(1, "a");
+    expect(onQueryChange).toHaveBeenNthCalledWith(2, "b");
+  });
+
+  test("chip click fires onToggleCategory", async () => {
+    const onToggle = vi.fn();
+    render(
+      <TroubleshootSearch
+        query=""
+        onQueryChange={() => {}}
+        categories={new Set()}
+        onToggleCategory={onToggle}
+      />,
+    );
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Provider" }));
+    expect(onToggle).toHaveBeenCalledWith("Provider");
+  });
+
+  test("active chip carries aria-pressed=true", () => {
+    render(
+      <TroubleshootSearch
+        query=""
+        onQueryChange={() => {}}
+        categories={new Set(["Judge"])}
+        onToggleCategory={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Judge" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Setup" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TroubleshootEntry (card)
+// ---------------------------------------------------------------------------
+
+describe("TroubleshootEntry card", () => {
+  const entry: TroubleshootEntryData = {
+    id: "anthropic-empty-response",
+    title: "Empty Anthropic response",
+    symptom: "Request succeeds but returns no useful output",
+    cause: "Unsupported parameter combination",
+    category: "Provider",
+    fix: ["Remove one of temperature or top_p", "Retry"],
+    seealso: ["cookbook/anthropic", "unknown/shape"],
+  };
+
+  test("renders title, category, symptom, cause, fix list", () => {
+    render(<TroubleshootEntry entry={entry} />);
+    expect(
+      screen.getByRole("heading", { level: 3, name: entry.title }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Provider")).toBeInTheDocument();
+    expect(screen.getByText(/Request succeeds but returns no useful output/))
+      .toBeInTheDocument();
+    expect(
+      screen.getByText(/Unsupported parameter combination/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Retry")).toBeInTheDocument();
+  });
+
+  test("cookbook seealso links resolve, unknown shapes stay as text", () => {
+    render(<TroubleshootEntry entry={entry} />);
+    const cookbookLink = screen.getByRole("link", {
+      name: /Cookbook: anthropic/,
+    });
+    expect(cookbookLink).toHaveAttribute("href", "/learn/cookbook/anthropic");
+    expect(screen.getByText("unknown/shape")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DiagnosticsPanel
+// ---------------------------------------------------------------------------
+
+describe("DiagnosticsPanel", () => {
+  const sample: DiagnosticsResponse = {
+    backend: ok("Backend reachable"),
+    provider: err("No LLM provider configured", "/settings"),
+    judge: warn("Judge not configured", "/settings"),
+    storage: ok("Storage reachable"),
+  };
+
+  test("renders one row per check with a named region", () => {
+    render(<DiagnosticsPanel data={sample} />);
+    expect(
+      screen.getByRole("region", { name: "Diagnostics" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Backend: OK — Backend reachable/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Provider: Error — No LLM provider configured/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Judge: Warning — Judge not configured/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Storage: OK — Storage reachable/),
+    ).toBeInTheDocument();
+  });
+
+  test("fixUrl rows render a Go-to CTA link", () => {
+    render(<DiagnosticsPanel data={sample} />);
+    expect(
+      screen.getByRole("link", { name: /Go to Settings/ }),
+    ).toHaveAttribute("href", "/settings");
+  });
+
+  test("rows without fixUrl do not render a CTA link", () => {
+    render(<DiagnosticsPanel data={sample} />);
+    const links = screen.getAllByRole("link");
+    // Provider (error → /settings) + Judge (warn → /settings) only.
+    expect(links).toHaveLength(2);
+  });
+
+  test("null data renders four loading rows", () => {
+    render(<DiagnosticsPanel data={null} />);
+    expect(screen.getByLabelText("Backend: loading")).toBeInTheDocument();
+    expect(screen.getByLabelText("Provider: loading")).toBeInTheDocument();
+    expect(screen.getByLabelText("Judge: loading")).toBeInTheDocument();
+    expect(screen.getByLabelText("Storage: loading")).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TroubleshootPage
+// ---------------------------------------------------------------------------
+
+describe("TroubleshootPage", () => {
+  const allOkDiagnostics: DiagnosticsResponse = {
+    backend: ok("Backend reachable"),
+    provider: ok("1 LLM provider(s) configured"),
+    judge: ok("Judge configured"),
+    storage: ok("Storage reachable"),
+  };
+  const troubleshootData: TroubleshootResponse = {
+    entries: [
+      {
+        id: "a",
+        title: "Empty Anthropic response",
+        symptom: "Empty output",
+        cause: "temperature + top_p",
+        category: "Provider",
+        fix: ["Remove one"],
+        seealso: ["cookbook/anthropic"],
+      },
+      {
+        id: "b",
+        title: "Judge flat at 5.0",
+        symptom: "Scores all 5",
+        cause: "rubric v2",
+        category: "Judge",
+        fix: ["Update prompt"],
+        seealso: [],
+      },
+    ],
+  };
+
+  const swrByKey = (
+    troubleshoot: TroubleshootResponse | undefined,
+    diagnostics: DiagnosticsResponse | undefined,
+    troubleshootError?: Error,
+  ) =>
+    ((key: unknown) => {
+      if (key === "learn-troubleshoot") {
+        return {
+          data: troubleshoot,
+          error: troubleshootError,
+        } as ReturnType<typeof useSWR>;
+      }
+      if (key === "learn-diagnostics") {
+        return { data: diagnostics } as ReturnType<typeof useSWR>;
+      }
+      return { data: undefined } as ReturnType<typeof useSWR>;
+    }) as unknown as typeof useSWR;
+
+  test("renders heading, search, diagnostics strip, diagnostics panel", () => {
+    mockUseSWR.mockImplementation(
+      swrByKey(troubleshootData, allOkDiagnostics),
+    );
+    render(<TroubleshootPage />);
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Troubleshoot" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("searchbox")).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "System diagnostics" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Diagnostics" }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders every entry by default", () => {
+    mockUseSWR.mockImplementation(
+      swrByKey(troubleshootData, allOkDiagnostics),
+    );
+    render(<TroubleshootPage />);
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Empty Anthropic response" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Judge flat at 5.0" }),
+    ).toBeInTheDocument();
+  });
+
+  test("typing narrows results", async () => {
+    mockUseSWR.mockImplementation(
+      swrByKey(troubleshootData, allOkDiagnostics),
+    );
+    render(<TroubleshootPage />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().type(screen.getByRole("searchbox"), "anthropic");
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Empty Anthropic response" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { level: 3, name: "Judge flat at 5.0" }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("quick-filter chip narrows results by category", async () => {
+    mockUseSWR.mockImplementation(
+      swrByKey(troubleshootData, allOkDiagnostics),
+    );
+    render(<TroubleshootPage />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Judge" }));
+    expect(
+      screen.getByRole("heading", { level: 3, name: "Judge flat at 5.0" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        level: 3,
+        name: "Empty Anthropic response",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  test("no-match state renders an empty-state message", async () => {
+    mockUseSWR.mockImplementation(
+      swrByKey(troubleshootData, allOkDiagnostics),
+    );
+    render(<TroubleshootPage />);
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent
+      .setup()
+      .type(screen.getByRole("searchbox"), "definitely-not-a-match-zzz");
+    expect(screen.getByText(/No entries match this filter/)).toBeInTheDocument();
+  });
+
+  test("error state renders an alert", () => {
+    mockUseSWR.mockImplementation(
+      swrByKey(undefined, allOkDiagnostics, new Error("500")),
+    );
+    render(<TroubleshootPage />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /Couldn’t load troubleshoot entries/,
+    );
   });
 });
