@@ -52,7 +52,9 @@ import {
   PROVIDER_GROUPS_IN_ORDER,
   docSlugForProvider,
   getProviderById,
+  settingsDeepLinkFor,
 } from "@/components/learn/provider-catalog";
+import { DeepLinkBanner } from "@/components/settings/deep-link-banner";
 import {
   extractHeadings,
   slugifyHeading,
@@ -266,6 +268,41 @@ describe("provider catalog", () => {
     expect(getProviderById("ollama")?.name).toBe("Ollama");
     expect(getProviderById("does-not-exist")).toBeUndefined();
   });
+
+  test("DGX Spark uses the vllm backend key", () => {
+    // DGX Spark is configured as a vLLM endpoint in Settings — the
+    // cookbook id and the backend key intentionally diverge.
+    expect(getProviderById("dgx-spark")?.backendKey).toBe("vllm");
+  });
+
+  test("settingsDeepLinkFor builds a /settings URL with catalog defaults", () => {
+    const ollama = getProviderById("ollama")!;
+    const url = new URL(settingsDeepLinkFor(ollama), "http://localhost");
+    expect(url.pathname).toBe("/settings");
+    expect(url.searchParams.get("provider")).toBe("ollama");
+    expect(url.searchParams.get("baseUrl")).toBe("http://localhost:11434");
+    expect(url.searchParams.get("model")).toBe("llama3.1:8b");
+  });
+
+  test("settingsDeepLinkFor omits baseUrl/model when catalog has no default", () => {
+    // DGX Spark leaves baseUrl and model unset in the catalog because
+    // the known-good values depend on the operator's hardware.
+    const dgx = getProviderById("dgx-spark")!;
+    const url = new URL(settingsDeepLinkFor(dgx), "http://localhost");
+    expect(url.searchParams.get("provider")).toBe("vllm");
+    expect(url.searchParams.get("baseUrl")).toBeNull();
+    expect(url.searchParams.get("model")).toBeNull();
+  });
+
+  test("settingsDeepLinkFor never emits an api_key param", () => {
+    // The pitch's deep-link security boundary: secrets must never
+    // travel in the URL. Verify the builder doesn't sneak one in.
+    for (const provider of COOKBOOK_PROVIDERS) {
+      const url = new URL(settingsDeepLinkFor(provider), "http://localhost");
+      expect(url.searchParams.get("api_key")).toBeNull();
+      expect(url.searchParams.get("apiKey")).toBeNull();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -455,14 +492,32 @@ describe("ProviderGuidePage", () => {
     ).toBeInTheDocument();
   });
 
-  test("Open in Settings link preserves the provider id", () => {
+  test("Open in Settings link carries backend key + catalog defaults", () => {
+    mockUseParams.mockReturnValue({ provider: "ollama" });
+    mockUseSWR.mockReturnValue({ data: sampleDoc } as ReturnType<typeof useSWR>);
+    render(<ProviderGuidePage />);
+    const link = screen.getByRole("link", {
+      name: "Open Ollama in Settings",
+    });
+    const href = link.getAttribute("href") ?? "";
+    const url = new URL(href, "http://localhost");
+    expect(url.pathname).toBe("/settings");
+    expect(url.searchParams.get("provider")).toBe("ollama");
+    expect(url.searchParams.get("baseUrl")).toBe("http://localhost:11434");
+    expect(url.searchParams.get("model")).toBe("llama3.1:8b");
+  });
+
+  test("DGX Spark's Open in Settings uses vllm backend key without defaults", () => {
     mockUseParams.mockReturnValue({ provider: "dgx-spark" });
     mockUseSWR.mockReturnValue({ data: sampleDoc } as ReturnType<typeof useSWR>);
     render(<ProviderGuidePage />);
     const link = screen.getByRole("link", {
       name: "Open DGX Spark in Settings",
     });
-    expect(link).toHaveAttribute("href", "/settings?provider=dgx-spark");
+    const url = new URL(link.getAttribute("href") ?? "", "http://localhost");
+    expect(url.searchParams.get("provider")).toBe("vllm");
+    expect(url.searchParams.get("baseUrl")).toBeNull();
+    expect(url.searchParams.get("model")).toBeNull();
   });
 
   test("unknown provider id shows an alert, not a crash", () => {
@@ -478,5 +533,103 @@ describe("ProviderGuidePage", () => {
     for (const l of backLinks) {
       expect(l).toHaveAttribute("href", "/learn/cookbook");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DeepLinkBanner
+// ---------------------------------------------------------------------------
+
+describe("DeepLinkBanner", () => {
+  const baseValues = {
+    provider: "ollama",
+    baseUrl: "http://localhost:11434",
+    model: "llama3.1:8b",
+  };
+
+  test("renders heading, fields, and the required secrets reassurance", () => {
+    render(
+      <DeepLinkBanner
+        values={baseValues}
+        providerDisplayName="Ollama"
+        onCancel={() => {}}
+        onUseValues={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("region", {
+        name: "Review provider values from this guide",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ollama")).toBeInTheDocument();
+    expect(screen.getByText("http://localhost:11434")).toBeInTheDocument();
+    expect(screen.getByText("llama3.1:8b")).toBeInTheDocument();
+    // Pitch §Resolved Decisions #4 — this copy is load-bearing.
+    expect(
+      screen.getByText(
+        "No API keys or secrets will be filled in automatically.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  test("Cancel is the safe default and fires onCancel", async () => {
+    const onCancel = vi.fn();
+    const onUseValues = vi.fn();
+    render(
+      <DeepLinkBanner
+        values={baseValues}
+        providerDisplayName="Ollama"
+        onCancel={onCancel}
+        onUseValues={onUseValues}
+      />,
+    );
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(cancel);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onUseValues).not.toHaveBeenCalled();
+  });
+
+  test("Use values fires onUseValues", async () => {
+    const onCancel = vi.fn();
+    const onUseValues = vi.fn();
+    render(
+      <DeepLinkBanner
+        values={baseValues}
+        providerDisplayName="Ollama"
+        onCancel={onCancel}
+        onUseValues={onUseValues}
+      />,
+    );
+    const use = screen.getByRole("button", { name: "Use values" });
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.setup().click(use);
+    expect(onUseValues).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  test("omits optional rows when baseUrl or model are missing", () => {
+    render(
+      <DeepLinkBanner
+        values={{ provider: "anthropic" }}
+        providerDisplayName="Anthropic"
+        onCancel={() => {}}
+        onUseValues={() => {}}
+      />,
+    );
+    expect(screen.getByText("Anthropic")).toBeInTheDocument();
+    expect(screen.queryByText("Base URL:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Model:")).not.toBeInTheDocument();
+  });
+
+  test("falls back to raw provider key when no display name is given", () => {
+    render(
+      <DeepLinkBanner
+        values={{ provider: "vllm" }}
+        onCancel={() => {}}
+        onUseValues={() => {}}
+      />,
+    );
+    expect(screen.getByText("vllm")).toBeInTheDocument();
   });
 });

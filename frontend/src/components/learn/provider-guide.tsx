@@ -16,6 +16,7 @@ import { MarkdownDoc } from "./markdown-doc";
 import { topLevelHeadings } from "./markdown-toc";
 import {
   docSlugForProvider,
+  settingsDeepLinkFor,
   type CookbookProvider,
   type ProviderDifficulty,
 } from "./provider-catalog";
@@ -42,7 +43,7 @@ export function ProviderGuide({ provider }: ProviderGuideProps) {
   );
 
   const headings = data ? topLevelHeadings(data.content) : [];
-  const settingsHref = `/settings?provider=${encodeURIComponent(provider.id)}`;
+  const settingsHref = settingsDeepLinkFor(provider);
 
   return (
     <div className="flex flex-col gap-4">
