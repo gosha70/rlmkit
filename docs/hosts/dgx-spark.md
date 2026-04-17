@@ -5,10 +5,12 @@ prosumer Grace Blackwell hardware.
 
 ## Setup
 
-Full setup instructions live in
-[RLM Studio guide → DGX Spark](/docs/rlm-studio-guide.md).
-That document remains authoritative; duplicating it here risks drift.
-This page is a placeholder so the Cookbook surface is complete.
+Full setup instructions live in the **RLM Studio guide**
+(`docs/rlm-studio-guide.md` in the repo; also served via
+`/api/docs/rlm-studio-guide`). That document remains authoritative;
+duplicating it here risks drift. This page is a placeholder so the
+Cookbook surface is complete; once a Concepts or full-doc Learn
+route ships, this reference will be swapped for a real in-app link.
 
 ## Quick reference
 
