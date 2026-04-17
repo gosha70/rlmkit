@@ -49,7 +49,9 @@ _DOCS_ALLOWLIST: dict[str, str] = {
     "hosts-dgx-spark": "hosts/dgx-spark.md",
     "hosts-openai": "hosts/openai.md",
     "hosts-anthropic": "hosts/anthropic.md",
-    "hosts-groq": "hosts/groq.md",
+    # hosts-groq intentionally omitted: the app's provider catalog does
+    # not currently support a `groq` backend. When Groq support lands,
+    # re-add this entry and the matching frontend catalog entry.
 }
 
 

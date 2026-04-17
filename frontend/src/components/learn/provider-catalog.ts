@@ -65,13 +65,11 @@ export const COOKBOOK_PROVIDERS: ReadonlyArray<CookbookProvider> = [
     bestFor: "Claude family; strong at reasoning and long context.",
     group: "Cloud",
   },
-  {
-    id: "groq",
-    name: "Groq",
-    difficulty: "Moderate",
-    bestFor: "Fastest cloud inference for supported open models.",
-    group: "Cloud",
-  },
+  // Groq intentionally omitted: the app's provider catalog
+  // (src/rlmkit/ui/data/providers_catalog.py) does not currently
+  // support a `groq` backend, so a Cookbook entry for it would send
+  // users to a path that /api/llm-providers can't complete. Add back
+  // once a Groq ProviderEntry ships.
 ];
 
 export const PROVIDER_GROUPS_IN_ORDER: ReadonlyArray<ProviderGroup> = [
