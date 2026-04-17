@@ -6,6 +6,7 @@ import { AppShell } from "@/components/shared/app-shell";
 import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { MarkdownDoc } from "@/components/learn/markdown-doc";
+import { ModeChooser } from "@/components/learn/mode-chooser";
 import { ReplayWalkthrough } from "@/components/learn/replay-walkthrough";
 import { getBundledReplay, getDiagnostics, type LearnReplay } from "@/lib/api";
 
@@ -90,42 +91,13 @@ export default function ConceptsPage() {
           >
             Which mode should I use?
           </h3>
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <p className="text-sm font-medium">Pick by the shape of your task:</p>
-            <ul className="mt-3 flex flex-col gap-2 text-sm">
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-                <span>
-                  <span className="font-semibold">Direct</span> — small,
-                  self-contained input that fits in one prompt.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-                <span>
-                  <span className="font-semibold">RLM</span> — large or
-                  complex content; the model inspects and reasons
-                  step-by-step through a sandboxed Python REPL.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-purple-500" />
-                <span>
-                  <span className="font-semibold">Compare</span> — run
-                  strategies, providers, or profiles side-by-side for a
-                  benchmark.
-                </span>
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 inline-block h-2 w-2 shrink-0 rounded-full bg-slate-500" />
-                <span>
-                  <span className="font-semibold">Auto</span> — Studio
-                  picks Direct or RLM for you based on input size. Good
-                  default when you&apos;re not sure.
-                </span>
-              </li>
-            </ul>
-          </div>
+          <ModeChooser />
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            The four modes above are also wired into Settings &rarr; Chat
+            Providers; this is just a guided way to pick the right one
+            for the task you&apos;re about to run.
+          </p>
 
           <aside className="mt-4 rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
             <p className="font-semibold">When not to use RLM</p>

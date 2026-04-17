@@ -569,3 +569,66 @@ describe("ReplayWalkthrough", () => {
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ModeChooser — Concepts §B interactive (V2 step 6)
+// ---------------------------------------------------------------------------
+
+import {
+  ModeChooser,
+  getModeForScenario,
+} from "@/components/learn/mode-chooser";
+
+describe("getModeForScenario", () => {
+  test("maps each declared scenario id to the documented mode", () => {
+    expect(getModeForScenario("not-sure")).toBe("Auto");
+    expect(getModeForScenario("short-note")).toBe("Direct");
+    expect(getModeForScenario("long-doc")).toBe("RLM");
+    expect(getModeForScenario("compare-prompts")).toBe("Compare");
+  });
+
+  test("returns undefined for an unknown scenario id", () => {
+    expect(getModeForScenario("definitely-not-a-real-scenario")).toBeUndefined();
+  });
+});
+
+describe("ModeChooser", () => {
+  test("opens with the 'not sure' scenario, recommending Auto", () => {
+    render(<ModeChooser />);
+    expect(
+      screen.getByRole("combobox", { name: "Pick a scenario" }),
+    ).toHaveTextContent(/Not sure/);
+    expect(screen.getByText(/Recommendation: Auto\./)).toBeInTheDocument();
+    // Auto row is highlighted; the others are not.
+    const autoRow = document.querySelector(
+      'li[data-mode="Auto"][data-active="true"]',
+    );
+    expect(autoRow).not.toBeNull();
+    const otherActive = document.querySelectorAll(
+      'li[data-active="true"]',
+    );
+    expect(otherActive.length).toBe(1);
+  });
+
+  test("renders one row per mode, in the documented order", () => {
+    render(<ModeChooser />);
+    const rows = document.querySelectorAll("li[data-mode]");
+    const modes = Array.from(rows).map((r) => r.getAttribute("data-mode"));
+    expect(modes).toEqual(["Direct", "RLM", "Compare", "Auto"]);
+  });
+
+  test("recommendation is wired to aria-current=true on the right row", () => {
+    render(<ModeChooser />);
+    const autoRow = document.querySelector('li[data-mode="Auto"]');
+    expect(autoRow?.getAttribute("aria-current")).toBe("true");
+    const directRow = document.querySelector('li[data-mode="Direct"]');
+    expect(directRow?.getAttribute("aria-current")).toBeNull();
+  });
+
+  test("rationale is announced in an aria-live region", () => {
+    const { container } = render(<ModeChooser />);
+    const live = container.querySelector('[aria-live="polite"]');
+    expect(live).not.toBeNull();
+    expect(live?.textContent).toMatch(/Recommendation: Auto/);
+  });
+});
