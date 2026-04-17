@@ -48,7 +48,7 @@ const allOk: DiagnosticsResponse = {
   backend: ok("Backend reachable"),
   provider: ok("1 enabled provider(s)"),
   judge: ok("Judge configured"),
-  storage: ok("Storage writable"),
+  storage: ok("Storage reachable"),
 };
 
 // ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ describe("DiagnosticsStrip", () => {
       screen.getByLabelText(/Judge: OK — Judge configured/),
     ).toBeInTheDocument();
     expect(
-      screen.getByLabelText(/Storage: OK — Storage writable/),
+      screen.getByLabelText(/Storage: OK — Storage reachable/),
     ).toBeInTheDocument();
   });
 

@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rlmkit.server.dependencies import get_state
-from rlmkit.server.models import ProviderConfig
+from rlmkit.server.models import LLMProviderConfig, ProviderConfig
 
 pytestmark = [pytest.mark.e2e]
 
@@ -32,22 +32,61 @@ class TestDiagnosticsEndpoint:
         data = client.get("/api/diagnostics").json()
         assert data["backend"]["status"] == "ok"
 
-    def test_provider_error_when_no_enabled_provider(self, client: TestClient) -> None:
-        # Fresh state has no provider_configs with enabled=True.
+    def test_provider_error_when_no_configured_provider(self, client: TestClient) -> None:
+        # Empty both the current source (llm_providers) and the legacy fallback.
         state = get_state()
+        state.config.llm_providers = []
         state.config.provider_configs = []
         data = client.get("/api/diagnostics").json()
         assert data["provider"]["status"] == "error"
         assert data["provider"]["fixUrl"] == "/settings"
 
-    def test_provider_ok_when_one_provider_enabled(self, client: TestClient) -> None:
+    def test_provider_error_when_only_not_configured_llm_provider(self, client: TestClient) -> None:
+        # A freshly-created LLM Provider that has never received credentials
+        # stays status="not_configured" — that must not pass the check.
         state = get_state()
+        state.config.llm_providers = [
+            LLMProviderConfig(
+                id="lp-1",
+                name="Unconfigured",
+                backend="openai",
+                model="gpt-4o",
+                status="not_configured",
+            ),
+        ]
+        state.config.provider_configs = []
+        data = client.get("/api/diagnostics").json()
+        assert data["provider"]["status"] == "error"
+
+    def test_provider_ok_when_configured_llm_provider_exists(self, client: TestClient) -> None:
+        # Current UI flow: user creates an LLM Provider + API key, status
+        # transitions to "configured" (or "connected" after a successful test).
+        state = get_state()
+        state.config.llm_providers = [
+            LLMProviderConfig(
+                id="lp-1",
+                name="My OpenAI",
+                backend="openai",
+                model="gpt-4o",
+                status="configured",
+            ),
+        ]
+        state.config.provider_configs = []
+        data = client.get("/api/diagnostics").json()
+        assert data["provider"]["status"] == "ok"
+        assert "1" in data["provider"]["message"]
+        assert data["provider"]["fixUrl"] is None
+
+    def test_provider_ok_via_legacy_provider_configs_fallback(self, client: TestClient) -> None:
+        # Backward compat: installs that predate named LLM Providers still
+        # carry an enabled entry in the legacy provider_configs list.
+        state = get_state()
+        state.config.llm_providers = []
         state.config.provider_configs = [
             ProviderConfig(provider="openai", model="gpt-4o", enabled=True),
         ]
         data = client.get("/api/diagnostics").json()
         assert data["provider"]["status"] == "ok"
-        assert data["provider"]["fixUrl"] is None
 
     def test_judge_warn_when_not_configured(self, client: TestClient) -> None:
         state = get_state()
@@ -65,6 +104,10 @@ class TestDiagnosticsEndpoint:
     def test_storage_ok_on_healthy_telemetry_store(self, client: TestClient) -> None:
         data = client.get("/api/diagnostics").json()
         assert data["storage"]["status"] == "ok"
+        # Message reflects the narrower guarantee: read-only probe.
+        assert data["storage"]["message"] == "Storage reachable"
+        # fixUrl is intentionally omitted until /learn/troubleshoot ships.
+        assert data["storage"]["fixUrl"] is None
 
     def test_storage_error_when_telemetry_raises(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
@@ -78,4 +121,5 @@ class TestDiagnosticsEndpoint:
         data = client.get("/api/diagnostics").json()
         assert data["storage"]["status"] == "error"
         assert "RuntimeError" in data["storage"]["message"]
-        assert data["storage"]["fixUrl"] == "/learn/troubleshoot"
+        # No fixUrl until /learn/troubleshoot ships in Step 6.
+        assert data["storage"]["fixUrl"] is None
