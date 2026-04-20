@@ -622,6 +622,9 @@ export interface LearnReplayMetadata {
   executionId?: string;
   originalStepCount?: number;
   truncated?: boolean;
+  // True when the source run ended in `error`. Optional; bundled
+  // replays and pre-V2b fixtures omit it without incident.
+  failed?: boolean;
   convertorVersion: number;
 }
 
@@ -634,8 +637,7 @@ export interface LearnReplay {
 }
 
 // Bundled replays live under frontend/public/learn/replays/<id>.json so
-// they ship with the static asset pipeline. The backend trace-backed
-// replay endpoint (NEXT.md item 3) lands separately when V2b is shaped.
+// they ship with the static asset pipeline.
 const BUNDLED_REPLAY_PATH = "/learn/replays/bundled-rlm-demo.json";
 
 export async function getBundledReplay(): Promise<LearnReplay> {
@@ -645,6 +647,12 @@ export async function getBundledReplay(): Promise<LearnReplay> {
   }
   return (await resp.json()) as LearnReplay;
 }
+
+// Trace-backed replay (V2b). Returns the same LearnReplay shape as
+// the bundled loader; the converter on the backend enforces the
+// kind-inference + truncation contract pinned in NEXT.md §3.
+export const getReplay = (executionId: string) =>
+  fetchJSON<LearnReplay>(`/api/replays/${encodeURIComponent(executionId)}`);
 
 // Chat
 export const submitChat = (req: ChatRequest) =>

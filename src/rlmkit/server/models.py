@@ -122,6 +122,82 @@ class TroubleshootResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Replay — Learn tab Concepts §C (V2b trace-backed)
+# ---------------------------------------------------------------------------
+#
+# Mirrors the TypeScript shape shipped in V2a
+# (frontend/src/lib/api.ts). JSON surface is camelCase because the
+# client's `LearnReplay` type uses that; field names carry
+# `# noqa: N815` the same way DiagnosticCheck.fixUrl does to keep
+# the two sides identical without Pydantic alias machinery.
+
+
+LearnReplayStepKind = Literal["question", "plan", "code", "result", "decision", "answer"]
+
+
+class LearnReplayStepDetails(BaseModel):
+    """Optional deep-content payload surfaced by the Advanced tray."""
+
+    prompt: str | None = None
+    code: str | None = None
+    output: str | None = None
+
+
+class LearnReplayStepMetrics(BaseModel):
+    """Optional per-step metrics (tokens, latency, cost)."""
+
+    tokensIn: int | None = None  # noqa: N815
+    tokensOut: int | None = None  # noqa: N815
+    latencyMs: int | None = None  # noqa: N815
+    costUsd: float | None = None  # noqa: N815
+
+
+class LearnReplayStep(BaseModel):
+    """Single replay step rendered in the Concepts §C walkthrough."""
+
+    id: str
+    kind: LearnReplayStepKind
+    title: str
+    summary: str
+    details: LearnReplayStepDetails | None = None
+    metrics: LearnReplayStepMetrics | None = None
+
+
+class LearnReplayMetadata(BaseModel):
+    """Provenance and display-time flags for a LearnReplay.
+
+    ``failed`` is optional / default ``False`` so bundled replays
+    and pre-V2b fixtures omit it without incident. ``truncated`` +
+    ``originalStepCount`` pair together for the walkthrough's
+    "showing X of N steps" copy. ``convertorVersion`` bumps when
+    the trace → replay inference rules change so clients can
+    detect stale bundled assets.
+    """
+
+    source: Literal["bundled", "trace"]
+    executionId: str | None = None  # noqa: N815 — only set for source="trace"
+    originalStepCount: int | None = None  # noqa: N815
+    truncated: bool | None = None
+    failed: bool | None = None
+    convertorVersion: int  # noqa: N815
+
+
+class LearnReplay(BaseModel):
+    """The full replay payload served by GET /api/replays/{id}.
+
+    See ``doc_internal/specs/learn-tab/NEXT.md`` §3a–§3f for the
+    contract. Returned bare (no wrapper) from the endpoint to
+    mirror other single-resource GETs (traces, docs).
+    """
+
+    id: str
+    title: str
+    description: str
+    steps: list[LearnReplayStep]
+    metadata: LearnReplayMetadata
+
+
+# ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
 
