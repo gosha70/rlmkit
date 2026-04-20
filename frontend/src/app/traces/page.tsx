@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
 import { Timeline } from "@/components/trace/timeline";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/api";
 
 function TracesPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [trace, setTrace] = useState<TraceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -232,6 +233,9 @@ function TracesPageInner() {
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Tokens</TableHead>
                     <TableHead className="text-right">Cost</TableHead>
+                    <TableHead className="w-36 text-right">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -286,6 +290,24 @@ function TracesPageInner() {
                       </TableCell>
                       <TableCell className="text-right">
                         ${exec.total_cost.toFixed(4)}
+                      </TableCell>
+                      <TableCell
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(
+                              `/learn/replay/${encodeURIComponent(exec.execution_id)}`,
+                            );
+                          }}
+                          aria-label={`Replay in Learn: ${exec.query}`}
+                        >
+                          Replay in Learn
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

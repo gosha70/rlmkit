@@ -17,7 +17,10 @@ import type { TraceStep, ExecutionSummary } from "@/lib/api";
 // Mock next/navigation — used by TracesPage (useSearchParams)
 // ---------------------------------------------------------------------------
 
+const mockRouterPush = vi.fn();
+
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockRouterPush }),
   useSearchParams: () => ({ get: () => null }),
 }));
 
@@ -304,5 +307,72 @@ describe("TracesPage", () => {
     expect(
       screen.getByText(/No executions yet/),
     ).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // Replay-in-Learn CTA (V2b step 7)
+  //
+  // Per NEXT.md §3d: the trailing button must route to
+  // /learn/replay/<id> via `router.push` without triggering the row's
+  // own "open trace detail" click handler. Both branches of the
+  // stopPropagation contract are asserted: the button itself navigates,
+  // and clicking the button does NOT load a trace for the row.
+  // -------------------------------------------------------------------------
+
+  test("renders Replay in Learn button per execution row", () => {
+    mockUseSWR.mockReturnValue({
+      data: [
+        makeExecution(),
+        makeExecution({ execution_id: "exec-2", query: "Explain recursion" }),
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    render(<TracesPage />);
+    expect(
+      screen.getByRole("button", { name: /Replay in Learn: What is 2 \+ 2/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Replay in Learn: Explain recursion/ }),
+    ).toBeInTheDocument();
+  });
+
+  test("Replay in Learn click routes to /learn/replay/<id>", () => {
+    mockRouterPush.mockClear();
+    mockUseSWR.mockReturnValue({
+      data: [makeExecution({ execution_id: "exec-42" })],
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    render(<TracesPage />);
+    const button = screen.getByRole("button", {
+      name: /Replay in Learn: What is 2 \+ 2/,
+    });
+    fireEvent.click(button);
+
+    expect(mockRouterPush).toHaveBeenCalledTimes(1);
+    expect(mockRouterPush).toHaveBeenCalledWith("/learn/replay/exec-42");
+  });
+
+  test("Replay in Learn click does not trigger the row's open-trace handler", () => {
+    mockRouterPush.mockClear();
+    // The row handler fetches a trace via getTrace() which would set
+    // loading=true. We assert the button click does NOT cause the
+    // "Loading trace…" text to appear — the row handler stayed cold.
+    mockUseSWR.mockReturnValue({
+      data: [makeExecution()],
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    render(<TracesPage />);
+    const button = screen.getByRole("button", {
+      name: /Replay in Learn: What is 2 \+ 2/,
+    });
+    fireEvent.click(button);
+
+    // Row-handler-triggered side effects must NOT appear.
+    expect(screen.queryByText(/Loading trace/i)).not.toBeInTheDocument();
+    // But navigation did happen.
+    expect(mockRouterPush).toHaveBeenCalledTimes(1);
   });
 });
