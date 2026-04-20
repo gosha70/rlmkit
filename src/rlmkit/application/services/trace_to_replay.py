@@ -153,7 +153,12 @@ def _synthesize_answer(
 
     if failed:
         summary = (trace.result.error or "").strip() or "The run ended without a final answer."
-        details_output = trace.result.error or last_output or None
+        # details.output must hold the *trace-side* failing payload
+        # (e.g. the error step's output). Falling back to
+        # trace.result.error here would duplicate ``summary`` into
+        # ``details`` and discard the real trace output when both are
+        # present — see NEXT.md §3b "error folds into answer".
+        details_output = last_output
         title = "Failed run"
     else:
         summary = (trace.result.answer or "").strip() or "(no answer)"

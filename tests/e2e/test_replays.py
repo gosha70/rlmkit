@@ -194,6 +194,57 @@ class TestReplayEndpoint:
         assert len(answer_steps) == 1
         assert "timeout" in answer_steps[0]["summary"].lower()
 
+    def test_optional_fields_omitted_when_none_not_serialized_as_null(
+        self, client: TestClient
+    ) -> None:
+        """Bundled replay JSON omits absent optional fields; HTTP must match.
+
+        Without ``response_model_exclude_none=True`` Pydantic v2 emits
+        ``"truncated": null`` / ``"failed": null`` / ``"details": null``
+        / ``"metrics": null``, and the HTTP contract drifts from the
+        static bundled assets under ``frontend/public/learn/replays/``.
+        """
+        state = get_state()
+        run_id = uuid.uuid4().hex
+        state.telemetry.record_run(
+            run_id=run_id,
+            created_at=time.time(),
+            mode="direct",
+            query="Hi",
+            answer="Hello",
+            success=True,
+        )
+
+        resp = client.get(f"/api/replays/{run_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # Happy-path run: not truncated and not failed → those keys must
+        # be absent entirely, not present with a null value.
+        assert "truncated" not in data["metadata"]
+        assert "failed" not in data["metadata"]
+
+        # Any step without details/metrics must omit the key, not emit
+        # null. Check every step (bookends + middle) for the invariant:
+        # if the key is present, its value must be non-null.
+        for step in data["steps"]:
+            if "details" in step:
+                assert step["details"] is not None, (
+                    f"step {step['id']} serialized details=null instead of omitting it"
+                )
+            if "metrics" in step:
+                assert step["metrics"] is not None, (
+                    f"step {step['id']} serialized metrics=null instead of omitting it"
+                )
+
+        # Belt-and-braces: the raw JSON text must not contain null values
+        # for these optional replay fields.
+        body = resp.text
+        assert '"truncated":null' not in body
+        assert '"failed":null' not in body
+        assert '"details":null' not in body
+        assert '"metrics":null' not in body
+
     def test_response_is_bare_learn_replay_not_wrapped(self, client: TestClient) -> None:
         """Single-resource endpoint returns the resource directly.
 

@@ -272,6 +272,44 @@ class TestFailureHandling:
         assert all(s.kind in ("code", "result") for s in middle)
         assert not any("stack trace here" in (s.details.output or "") for s in middle if s.details)
 
+    def test_failed_run_preserves_trace_output_in_answer_details(self) -> None:
+        # Contract (NEXT.md §3b): summary = run-level error label;
+        # details.output = the failing *trace-side* payload (e.g. the
+        # error step's output). Must not duplicate summary into details
+        # when a real trace output exists.
+        steps = [
+            _inspect(0, code="x = 1 / 0"),
+            _error(1, output="Traceback:\n  ZeroDivisionError"),
+        ]
+        replay = trace_to_replay(
+            _trace(
+                steps,
+                success=False,
+                error="Provider timeout after 30s",
+                answer="",
+            )
+        )
+        answer = replay.steps[-1]
+        assert answer.kind == "answer"
+        assert answer.summary == "Provider timeout after 30s"
+        assert answer.details is not None
+        assert answer.details.output == "Traceback:\n  ZeroDivisionError"
+
+    def test_failed_run_without_trace_output_leaves_details_absent(self) -> None:
+        # No trace-side output → details must be None (→ omitted on the
+        # wire), not a duplicate of the summary string.
+        replay = trace_to_replay(
+            _trace(
+                [_inspect(0, code="x = 1")],
+                success=False,
+                error="Provider timeout after 30s",
+                answer="",
+            )
+        )
+        answer = replay.steps[-1]
+        assert answer.summary == "Provider timeout after 30s"
+        assert answer.details is None
+
     def test_success_false_without_explicit_error_still_marked_failed(self) -> None:
         replay = trace_to_replay(_trace([_inspect(0)], success=False, error=None))
         assert replay.metadata.failed is True

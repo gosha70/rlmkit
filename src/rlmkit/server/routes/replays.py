@@ -24,7 +24,7 @@ from rlmkit.server.routes.traces import load_canonical_trace
 router = APIRouter()
 
 
-@router.get("/api/replays/{execution_id}")
+@router.get("/api/replays/{execution_id}", response_model_exclude_none=True)
 async def get_replay(
     execution_id: str,
     state: AppState = Depends(get_state),  # noqa: B008
