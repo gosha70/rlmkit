@@ -12,6 +12,7 @@ from rlmkit.server.models import (
     TraceResult,
     TraceStep,
 )
+from rlmkit.server.routes.chat import _canonical_action_type
 from rlmkit.telemetry.store import RunDetail
 
 router = APIRouter()
@@ -113,17 +114,34 @@ async def get_trace(
     state: AppState = Depends(get_state),
 ) -> TraceResponse:
     """Get execution trace with steps."""
-    # Check in-memory first (running executions)
+    trace = load_canonical_trace(execution_id, state)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    return trace
+
+
+def load_canonical_trace(
+    execution_id: str,
+    state: AppState,
+) -> TraceResponse | None:
+    """Return a canonical TraceResponse for ``execution_id``, or ``None``.
+
+    Shared loader used by ``/api/traces/{id}`` and
+    ``/api/replays/{id}`` (V2b). Checks the in-memory live-execution
+    dict first, then the persisted telemetry store. Both branches
+    emit the canonical ``inspect | subcall | final | error``
+    action-type enum so downstream consumers (the replay converter
+    in particular) never have to guess which path the trace came
+    from. See ``doc_internal/specs/learn-tab/NEXT.md`` §3e/§3f for
+    the pinned canonicalization rule.
+    """
     execution = state.executions.get(execution_id)
     if execution is not None:
         return _trace_from_execution_record(execution, state)
-
-    # Check telemetry store
     detail = state.telemetry.get_run(execution_id)
     if detail is not None:
         return _trace_from_telemetry(detail, state)
-
-    raise HTTPException(status_code=404, detail="Execution not found")
+    return None
 
 
 @router.delete("/api/executions/{execution_id}", status_code=204)
@@ -146,13 +164,32 @@ async def delete_all_executions(
 
 
 def _trace_from_execution_record(execution: ExecutionRecord, state: AppState) -> TraceResponse:
-    """Build TraceResponse from an in-memory ExecutionRecord."""
+    """Build TraceResponse from an in-memory ExecutionRecord.
+
+    Raw step data stores the LLM-side "role" field
+    (``"assistant"`` / ``"execution"``). The canonical
+    ``ExecutionTrace`` action-type enum (``inspect | subcall |
+    final | error``) is what telemetry / the replay converter /
+    the JSONL export all expect, so this loader normalizes via
+    :func:`_canonical_action_type` — the same helper the save
+    path uses — before emitting TraceStep rows. Keeps the
+    in-memory branch and the telemetry-backed branch on one
+    action-type enum (pinned in NEXT.md §3e/§3f).
+    """
+    result_data = execution.result or {}
+    success = bool(result_data.get("success", False))
+    total = len(execution.steps)
     steps = []
     for i, step_data in enumerate(execution.steps):
+        action_type = _canonical_action_type(
+            step_data.get("role"),
+            is_last=(i == total - 1),
+            success=success,
+        )
         steps.append(
             TraceStep(
                 index=i,
-                action_type=step_data.get("role", "inspect"),
+                action_type=action_type,
                 code=step_data.get("code"),
                 output=step_data.get("content", ""),
                 input_tokens=step_data.get("input_tokens", 0),
@@ -161,8 +198,6 @@ def _trace_from_execution_record(execution: ExecutionRecord, state: AppState) ->
                 model=step_data.get("model"),
             )
         )
-
-    result_data = execution.result or {}
     return TraceResponse(
         execution_id=execution.execution_id,
         session_id=execution.session_id,
