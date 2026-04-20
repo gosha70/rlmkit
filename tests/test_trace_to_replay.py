@@ -30,7 +30,6 @@ from rlmkit.server.models import (
     TraceStep,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
@@ -177,8 +176,10 @@ class TestKindInference:
         replay = trace_to_replay(_trace(steps))
         middle = replay.steps[1:-1]
         assert [s.kind for s in middle] == ["code", "result"]
-        assert middle[0].details is not None and middle[0].details.code == "x = 1"
-        assert middle[1].details is not None and middle[1].details.output == "1\n"
+        assert middle[0].details is not None
+        assert middle[0].details.code == "x = 1"
+        assert middle[1].details is not None
+        assert middle[1].details.output == "1\n"
 
     def test_standalone_inspect_emits_lone_code(self) -> None:
         # inspect without a following subcall — valid per NEXT.md §3b.
