@@ -157,7 +157,8 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 - **Chat** — Upload documents and query them using one or more Chat Providers in parallel. Responses appear in a side-by-side column layout with per-response metrics (tokens, cost, latency).
 - **Dashboard** — View aggregated metrics per session: total tokens, cost, average latency, token savings. Charts break down performance by provider and execution mode.
-- **Traces** — Inspect every execution step-by-step. See the code the LLM generated, the output it received, token counts, and timing for each step. Visualize as timeline, tree, or raw code.
+- **Traces** — Inspect every execution step-by-step. See the code the LLM generated, the output it received, token counts, and timing for each step. Visualize as timeline, tree, or raw code. Each row has a **Replay in Learn** action that reconstructs the run as a scrubbable walkthrough on the Learn tab.
+- **Learn** — Concepts, Cookbook, and Troubleshooting guides with an interactive replay walkthrough that steps through the RLM loop. Open a bundled demo from the Concepts page, or deep-link from Traces to replay any past execution.
 - **Settings** — Configure providers, create Chat Providers, set budgets, manage profiles, customize system prompts, and switch themes.
 
 For a complete walkthrough of all RLM Studio features, see **[docs/rlm-studio-guide.md](docs/rlm-studio-guide.md)**.
@@ -170,6 +171,7 @@ graph TB
         Chat[Chat Page]
         Dash[Dashboard]
         Traces[Traces]
+        Learn[Learn]
         Settings[Settings]
     end
 

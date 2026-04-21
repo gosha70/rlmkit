@@ -3,6 +3,68 @@
 All notable changes to RLMKit are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+Learn tab V2 — a self-contained surface that teaches the RLM loop
+through a scrubbable, step-by-step replay. Shipped in three slices
+(V1 → V2a → V2b) across PRs #20, #23, and #24.
+
+### Added
+- **Learn tab (V1, PR #20)**: new `/learn` surface with Concepts,
+  Cookbook, and Troubleshooting sub-pages. Mode chooser, diagnostics
+  strip, and markdown-backed guides for `rlm-concepts`, `rlm-prompt-tuning`,
+  `rlm-studio-guide`, and `lessons-from-ai-copilots`.
+- **Replay walkthrough widget (V2a, PR #23)**: 6-node SVG diagram,
+  play / pause / step / reset controls at 1× / 1.5× / 2× speeds,
+  three-pane layout (controls / diagram / step list + detail). Mounts
+  on the Concepts page with a bundled demo replay. Advanced details
+  tray is folded into the right pane and resets to collapsed on
+  step change.
+- **Trace-backed replay (V2b, PR #24)**: deep-link from any execution
+  to its own walkthrough.
+  - `GET /api/replays/{execution_id}` — pure-service converter
+    (`src/rlmkit/application/services/trace_to_replay.py`) that turns
+    a canonical `TraceResponse` into a `LearnReplay`. Returns a bare
+    `LearnReplay` (no wrapper); 404 with the standard error envelope
+    when the id is unknown. Omits null optional fields on the wire to
+    match bundled replay JSON.
+  - `/learn/replay/[executionId]` — SWR-based page that mirrors
+    Concepts' loading / error / ready pattern; reuses the shared
+    `ReplayWalkthrough` widget exactly (no second renderer).
+    Surfaces a truncation banner when `metadata.truncated` fires.
+  - Traces row CTA — small outline "Replay in Learn" button per row
+    navigates to the new page; keyboard-safe (Enter/Space on the
+    button no longer bubbles into the row's open-trace handler).
+  - Shared canonical trace loader — fixes the live-execution path
+    so both `/api/traces/{id}` and `/api/replays/{id}` see the same
+    `inspect | subcall | final | error` action-type enum.
+  - Contract refinement: code-less `inspect` steps (the RLM
+    controller's "Runtime fingerprint" preamble) are dropped from
+    trace-sourced replays rather than rendered as empty code cards.
+
+### Tests
+- +5 converter unit tests for the code-less-inspect refinement
+  (real-trace fixture + whitespace-only / null / post-skip-subcall
+  edges).
+- +5 e2e tests for the replay route (unknown id → 404, telemetry
+  round-trip, in-memory canonicalization regression guard, failed
+  run with `metadata.failed` + folded error, null-omission wire
+  shape, bare `LearnReplay` response).
+- +34 unit tests for the `trace_to_replay` service across bookends,
+  kind inference, metadata, failure handling, truncation, step
+  bounds, ids/titles, and final-step folding.
+- +8 frontend tests (5 for the page, 3 for the Traces CTA) covering
+  loading / error / ready / truncated states and the keyboard /
+  mouse stopPropagation contract.
+
+### Fixed
+- Failed-run replays now preserve the trace-side failing output in
+  `answer.details.output` instead of duplicating the run-level
+  error string from `summary`.
+- Truncation banner copy now matches the metadata it cites
+  ("The full replay would have had N steps" — `originalStepCount`
+  is the pre-truncation replay length, not the raw trace step count).
+
 ## [1.0.0] - 2026-03-28
 
 Cycle 3 (Quality, DevOps & Release) + Cool-down 3.

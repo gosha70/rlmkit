@@ -7,10 +7,10 @@ import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import {
   MessageSquare,
-  LayoutDashboard,
-  Activity,
-  Columns3,
-  Route,
+  Gauge,
+  AudioWaveform,
+  SlidersHorizontal,
+  BookMarked,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -42,10 +42,10 @@ interface SidebarProps {
 
 const NAV_ITEMS = [
   { href: "/", label: "Chat", icon: MessageSquare },
-  { href: "/compare", label: "LLM Tuner", icon: Columns3 },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/traces", label: "Traces", icon: Activity },
-  { href: "/learn", label: "Learn", icon: Route },
+  { href: "/compare", label: "LLM Tuner", icon: SlidersHorizontal },
+  { href: "/dashboard", label: "Dashboard", icon: Gauge },
+  { href: "/traces", label: "Traces", icon: AudioWaveform },
+  { href: "/learn", label: "Learn", icon: BookMarked },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
