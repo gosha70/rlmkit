@@ -206,6 +206,84 @@ class TestKindInference:
         assert "decision" not in kinds
 
 
+class TestCodelessInspectSkipping:
+    """V2b refinement (NEXT.md §3b): drop inspect steps with falsy
+    or whitespace-only ``code``.
+
+    Every real RLM run emits a leading ``inspect`` row for the
+    controller's "Runtime fingerprint" preamble (role=assistant,
+    no code). Without this rule the replay leads with a ghost
+    ``code`` step that has no code payload and the generic fallback
+    summary — visible noise in the happy path.
+    """
+
+    def test_real_rlm_fingerprint_trace_produces_no_ghost_code_step(self) -> None:
+        # Fixture mirrors a real trace captured during manual QA:
+        #   step 0: inspect, code="",  output="Runtime fingerprint"
+        #   step 1: inspect, code=<grep>,   output=<assistant echo>
+        #   step 2: subcall, output=<sandbox result>
+        #   step 3: final,   output=<answer>
+        # The first inspect must be dropped; step 1+2 pair; step 3
+        # folds into the synthetic answer. Result: no empty-code
+        # card at position 1, clean [question, code, result, answer].
+        steps = [
+            TraceStep(
+                index=0,
+                action_type="inspect",
+                code="",
+                output="Runtime fingerprint",
+            ),
+            _inspect(1, code="print(grep(pattern='MARKER-'))"),
+            _subcall(2, output="Found 1 match"),
+            _final(3, output="The secret password is: PINEAPPLE"),
+        ]
+        replay = trace_to_replay(_trace(steps))
+        kinds = [s.kind for s in replay.steps]
+        assert kinds == ["question", "code", "result", "answer"]
+        # No ghost card: the single `code` step must carry real code.
+        code_step = next(s for s in replay.steps if s.kind == "code")
+        assert code_step.details is not None
+        assert code_step.details.code == "print(grep(pattern='MARKER-'))"
+
+    def test_whitespace_only_code_is_also_dropped(self) -> None:
+        steps = [
+            TraceStep(index=0, action_type="inspect", code="   \n\t", output=""),
+            _final(1),
+        ]
+        replay = trace_to_replay(_trace(steps))
+        # Only bookends survive.
+        assert [s.kind for s in replay.steps] == ["question", "answer"]
+
+    def test_null_code_inspect_is_dropped(self) -> None:
+        steps = [
+            TraceStep(index=0, action_type="inspect", code=None, output=""),
+            _final(1),
+        ]
+        replay = trace_to_replay(_trace(steps))
+        assert [s.kind for s in replay.steps] == ["question", "answer"]
+
+    def test_subcall_after_dropped_inspect_renders_as_standalone_result(self) -> None:
+        # Edge case: if a code-less inspect is immediately followed by
+        # a subcall, the subcall must render as a lone `result`, not
+        # pair with the dropped inspect (per NEXT.md §3b refinement).
+        steps = [
+            TraceStep(index=0, action_type="inspect", code="", output=""),
+            _subcall(1, output="orphan-sandbox-output"),
+            _final(2),
+        ]
+        replay = trace_to_replay(_trace(steps))
+        kinds = [s.kind for s in replay.steps]
+        assert kinds == ["question", "result", "answer"]
+
+    def test_inspect_with_real_code_still_emits_code_step(self) -> None:
+        # Regression guard: the skip rule must NOT fire on inspects
+        # that carry model-authored code. Standalone inspects with
+        # real code still render as lone `code` steps.
+        steps = [_inspect(0, code="x = grep(prompt, pattern='y')"), _final(1)]
+        replay = trace_to_replay(_trace(steps))
+        assert [s.kind for s in replay.steps] == ["question", "code", "answer"]
+
+
 # ---------------------------------------------------------------------------
 # Metadata
 # ---------------------------------------------------------------------------

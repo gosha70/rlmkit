@@ -262,6 +262,18 @@ def _build_groups(steps: list[TraceStep]) -> list[_Group]:
             i += 1
             continue
         if s.action_type == "inspect":
+            # V2b refinement (NEXT.md §3b): drop inspect steps whose
+            # ``code`` is falsy or whitespace-only. These are almost
+            # always controller/setup rows (e.g. the "Runtime
+            # fingerprint" preamble every RLM run emits) rather than
+            # model-authored actions; rendering them as empty
+            # code-kind steps produces visible noise in the happy path
+            # — a "Code generated" card with no code and the fallback
+            # summary. A following ``subcall`` renders as a standalone
+            # ``result`` rather than pairing with the dropped inspect.
+            if not (s.code or "").strip():
+                i += 1
+                continue
             # Pair with an immediately-following subcall if present.
             if i + 1 < n and steps[i + 1].action_type == "subcall":
                 groups.append(
@@ -274,7 +286,8 @@ def _build_groups(steps: list[TraceStep]) -> list[_Group]:
                 )
                 i += 2
                 continue
-            # Standalone inspect (no observed execution result).
+            # Standalone inspect with real code (no observed
+            # execution result — valid per NEXT.md §3b).
             groups.append(_Group(steps=[_step_from_inspect(s)]))
             i += 1
             continue
