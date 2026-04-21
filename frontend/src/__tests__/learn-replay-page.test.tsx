@@ -133,6 +133,13 @@ describe("ReplayPage", () => {
     const note = screen.getByRole("note");
     expect(note).toHaveTextContent(/truncated/i);
     expect(note).toHaveTextContent(/128/);
+    // Copy must reflect what metadata.originalStepCount actually is
+    // (the pre-truncation *replay* length, including synthetic bookends
+    // and with final/error folded into answer — NOT the raw trace
+    // step count). The prior "The original trace had N steps" copy
+    // misattributed the value.
+    expect(note).toHaveTextContent(/full replay would have had/i);
+    expect(note.textContent ?? "").not.toMatch(/original trace had/i);
     expect(screen.getByTestId("replay-walkthrough")).toBeInTheDocument();
   });
 

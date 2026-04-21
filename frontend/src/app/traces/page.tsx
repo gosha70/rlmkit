@@ -247,6 +247,14 @@ function TracesPageInner() {
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
+                        // Only handle Enter/Space when the row itself is
+                        // the keyboard target. Interactive descendants
+                        // (the checkbox, the Replay-in-Learn CTA) bubble
+                        // keydown events up to the row; without this
+                        // guard their Enter/Space activations would also
+                        // trigger "open trace detail", racing the
+                        // descendant's own handler.
+                        if (e.target !== e.currentTarget) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
                           handleSelectExecution(exec.execution_id);

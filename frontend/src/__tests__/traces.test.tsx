@@ -375,4 +375,32 @@ describe("TracesPage", () => {
     // But navigation did happen.
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
   });
+
+  test("keyboard Enter/Space on CTA does not bubble into row's open-trace handler", () => {
+    // Regression guard: the row's onKeyDown handler previously fired
+    // for keydown events originating anywhere in the row, including
+    // from focused descendants like this CTA. A keyboard user pressing
+    // Enter on the "Replay in Learn" button would trigger the row's
+    // handleSelectExecution() in addition to (or instead of) the
+    // button's own activation. The fix adds
+    // `if (e.target !== e.currentTarget) return;` to the row handler.
+    mockRouterPush.mockClear();
+    mockUseSWR.mockReturnValue({
+      data: [makeExecution()],
+      isLoading: false,
+    } as ReturnType<typeof useSWR>);
+
+    render(<TracesPage />);
+    const button = screen.getByRole("button", {
+      name: /Replay in Learn: What is 2 \+ 2/,
+    });
+
+    // Bubble a keydown from the button up to the row. handleSelect-
+    // Execution calls setLoading(true) synchronously, so if the row
+    // handler fires "Loading trace…" will render on the next tick.
+    fireEvent.keyDown(button, { key: "Enter" });
+    fireEvent.keyDown(button, { key: " " });
+
+    expect(screen.queryByText(/Loading trace/i)).not.toBeInTheDocument();
+  });
 });

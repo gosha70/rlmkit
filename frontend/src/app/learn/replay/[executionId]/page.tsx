@@ -76,8 +76,8 @@ export default function ReplayPage() {
                 className="mb-4 rounded-md border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200"
               >
                 This replay was truncated to stay within the display
-                cap. The original trace had {replay.metadata.originalStepCount}{" "}
-                steps.
+                cap. The full replay would have had{" "}
+                {replay.metadata.originalStepCount} steps.
               </div>
             ) : null}
             <ReplayWalkthrough replay={replay} />
