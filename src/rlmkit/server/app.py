@@ -31,6 +31,7 @@ from rlmkit.server.routes import (
     profiles,
     prompts,
     providers,
+    replays,
     sessions,
     traces,
 )
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(evaluations.router)
     app.include_router(diagnostics.router)
     app.include_router(docs.router)
+    app.include_router(replays.router)
 
     @app.get("/health")
     async def health_check() -> HealthResponse:
