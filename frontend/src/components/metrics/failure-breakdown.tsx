@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { ChartContainer } from "./chart-container";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Lightbulb } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useChartTooltipStyle } from "./use-chart-tooltip";
 import type { FailureMetricsResponse, FailureCategory } from "@/lib/api";
@@ -43,7 +44,8 @@ const PROVIDER_COLORS = [
 
 export function FailureBreakdown({ data }: FailureBreakdownProps) {
   const tooltipStyle = useChartTooltipStyle();
-  const { total_runs, total_failures, failure_rate, by_provider } = data;
+  const { total_runs, total_failures, failure_rate, by_provider, by_category } =
+    data;
 
   // Build grouped chart data: one row per error category, one bar per provider.
   // Shape: [{ category: "Timeout", "vLLM-RLM": 1, "DIRECT-ANTHROPIC": 0, ... }, ...]
@@ -64,6 +66,12 @@ export function FailureBreakdown({ data }: FailureBreakdownProps) {
       return hasAny ? row : null;
     })
     .filter(Boolean) as Record<string, string | number>[];
+
+  // Spec §8d: surface a remediation hint when prefill_timeout appears.
+  // Links to the troubleshoot entry the classifier writer added
+  // (`docs/troubleshoot.yaml::prefill-timeout-enable-caching`).
+  const prefillTimeoutCount =
+    by_category.find((c) => c.category === "prefill_timeout")?.count ?? 0;
 
   return (
     <Card>
@@ -111,6 +119,33 @@ export function FailureBreakdown({ data }: FailureBreakdownProps) {
                   </BarChart>
                 )}
               </ChartContainer>
+            )}
+
+            {prefillTimeoutCount > 0 && (
+              <aside
+                role="note"
+                aria-label="Prefill-timeout remediation hint"
+                className="flex items-start gap-2 rounded-md border border-amber-300/60 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/40"
+              >
+                <Lightbulb className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="space-y-1">
+                  <p className="font-medium text-amber-900 dark:text-amber-200">
+                    Prefill-dominated timeouts detected ({prefillTimeoutCount})
+                  </p>
+                  <p className="text-xs text-amber-800/90 dark:text-amber-200/90">
+                    Most of the loop's wall-time was spent re-prefilling a
+                    growing prompt with little or no prefix-cache hit.
+                    Enable prefix caching on the provider or shorten
+                    history replay to recover throughput.
+                  </p>
+                  <Link
+                    href="/learn/troubleshoot#prefill-timeout-enable-caching"
+                    className="inline-block text-xs font-medium text-amber-900 underline hover:text-amber-950 dark:text-amber-200 dark:hover:text-amber-100"
+                  >
+                    Open troubleshoot entry →
+                  </Link>
+                </div>
+              </aside>
             )}
           </>
         )}

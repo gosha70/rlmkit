@@ -1011,8 +1011,14 @@ interface ResultsPanelProps {
   onJudge: () => void;
 }
 
-/** Client-side ranking so re-sorting doesn't require a re-run. */
-function _rankSlots(
+/** Client-side ranking so re-sorting doesn't require a re-run.
+ *
+ * Exported for vitest coverage (AC-17 regression guard). Kept as a
+ * pure function — the parent component re-runs it on every render
+ * via ``useMemo``, so tests can exercise it directly with fabricated
+ * slots and no DOM.
+ */
+export function _rankSlots(
   slots: CompareMatrixSlotResponse[],
   metric: MatrixRankingMetric,
   judgeScores: Record<string, JudgeScoreData>,
