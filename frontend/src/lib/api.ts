@@ -45,7 +45,11 @@ export type MatrixRankingMetric =
   | "tokens"
   | "latency"
   | "answer_per_cost"
-  | "judge_score";
+  | "judge_score"
+  // Phase 5 — prefill/decode-oriented ranking options.
+  | "ttft"
+  | "decode_tokens_per_sec"
+  | "cache_hit_rate";
 
 export interface CompareMatrixRequest {
   content?: string | null;
@@ -88,6 +92,14 @@ export interface CompareMatrixSlotResponse {
   total_cost: number;
   elapsed_seconds: number;
   steps: number;
+  // Phase 5 — per-slot prefill/decode aggregates (optional so old
+  // bundled fixtures keep parsing).
+  total_prompt_tokens?: number;
+  total_completion_tokens?: number;
+  total_cached_tokens?: number;
+  total_decode_ms?: number;
+  median_ttft_ms?: number | null;
+  cache_hit_rate?: number;
 }
 
 export interface CompareMatrixResponse {

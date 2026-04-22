@@ -6,6 +6,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Prefill / decode telemetry
+- **Phase 6 — DGX Spark cookbook §4b (spec v1.7).** One paragraph added
+  to `docs/hosts/dgx-spark.md` calling out that vLLM's
+  `--enable-prefix-caching` flag is the single biggest knob for
+  RLM-on-Spark wall-time. AC: 10.
+- **Phase 5 — Compare perf fields, ranking widen, frontend tab, feature flag (spec v1.7).**
+  `CompareMatrixSlotResponse` gains six per-slot perf aggregates
+  (`total_prompt_tokens`, `total_completion_tokens`,
+  `total_cached_tokens`, `total_decode_ms`, `median_ttft_ms`,
+  `cache_hit_rate`), populated from each slot's trace at write time
+  so frontend ranking doesn't need a second fetch. All three
+  request payload classes (`CompareMatrixRequest`,
+  `CompareMatrixRequestV2`, `CompareMatrixUnifiedRequest`) widen
+  the `ranking_metric` Literal to include `"ttft"`,
+  `"decode_tokens_per_sec"`, `"cache_hit_rate"`; the backend ranker
+  in `RunMatrixComparisonUseCase._rank` handles the three new
+  metrics (computed directly from the raw-DTO trace keys to respect
+  the dependency rule). Frontend `MatrixRankingMetric` union and
+  `CompareMatrixSlotResponse` interface mirror the additions; the
+  Compare page's client-side ranker switch grows three new branches
+  that read the new per-slot fields and sort null-telemetry slots
+  last. A Traces "Performance" tab appears when
+  `NEXT_PUBLIC_RLMKIT_PERF_UI=1`, rendering a per-step table of
+  prompt/completion/cached tokens, TTFT, decode, and duration.
+  ACs: 6, 16, 17, 18.
 - **Phase 4 — classifier PREFILL_TIMEOUT + write-time persistence + route helpers (spec v1.7).**
   `OutcomeCategory` gains `PREFILL_TIMEOUT`;
   `classify_execution_outcome` accepts an optional `trace:

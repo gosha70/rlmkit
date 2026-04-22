@@ -110,6 +110,37 @@ const RANKING_METRICS: {
   },
 ];
 
+// Phase 5 — "Performance shape" ranking options. Hidden behind
+// `RLMKIT_PERF_UI=1` so we can flip the set on after QA. Matches
+// `process.env.NEXT_PUBLIC_RLMKIT_PERF_UI` at build time (plain env
+// lookup so no runtime config plumbing is needed). When off, the
+// backend still accepts these values — the frontend just doesn't
+// surface them in the dropdown.
+const PERF_RANKING_METRICS: typeof RANKING_METRICS = [
+  {
+    value: "ttft",
+    label: "TTFT (lowest wins)",
+    help: "Median time-to-first-token across the slot's steps",
+  },
+  {
+    value: "decode_tokens_per_sec",
+    label: "Decode tok/s (highest wins)",
+    help: "Completion tokens per decode-phase second; measures steady-state speed",
+  },
+  {
+    value: "cache_hit_rate",
+    label: "Cache hit rate (highest wins)",
+    help: "Fraction of prompt tokens served from the provider's prefix cache",
+  },
+];
+
+const PERF_UI_ENABLED: boolean =
+  process.env.NEXT_PUBLIC_RLMKIT_PERF_UI === "1";
+
+const VISIBLE_RANKING_METRICS: typeof RANKING_METRICS = PERF_UI_ENABLED
+  ? [...RANKING_METRICS, ...PERF_RANKING_METRICS]
+  : RANKING_METRICS;
+
 // Matches the backend MAX_SLOTS constant in RunMatrixComparisonUseCase.
 const MAX_SLOTS = 10;
 
@@ -1010,6 +1041,25 @@ function _rankSlots(
         // Zero-cost providers (local models) get -Infinity → always rank first
         score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -Infinity;
         break;
+      case "ttft":
+        // Lower TTFT is better; slots without a value sort last.
+        score = s.median_ttft_ms ?? Number.POSITIVE_INFINITY;
+        break;
+      case "decode_tokens_per_sec": {
+        const decodeMs = s.total_decode_ms ?? 0;
+        const completion = s.total_completion_tokens ?? 0;
+        // Higher tok/s is better → negate. Slots without a decode
+        // phase sort last (infinity).
+        score =
+          decodeMs > 0
+            ? -(completion / (decodeMs / 1000))
+            : Number.POSITIVE_INFINITY;
+        break;
+      }
+      case "cache_hit_rate":
+        // Higher cache_hit_rate is better → negate.
+        score = -(s.cache_hit_rate ?? 0);
+        break;
       default:
         score = s.total_cost;
     }
@@ -1081,7 +1131,7 @@ function ResultsPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RANKING_METRICS.map((opt) => (
+                {VISIBLE_RANKING_METRICS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>

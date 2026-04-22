@@ -159,6 +159,16 @@ python -m vllm.entrypoints.openai.api_server \
 
 See §7 for why these flags matter on Spark's unified memory.
 
+## 4b. Prefix caching is the biggest RLM win on Spark
+
+RLM loops replay a growing prompt every step, so prefix caching turns
+N full prefills into one full prefill + N cheap reads. vLLM enables
+it with `--enable-prefix-caching`. Combine with a generous
+`--max-model-len` (so long prefixes fit) but a modest request-side
+`max_tokens` (so the KV cache has room for the cached prefix). Ollama
+does not currently expose a prefix-cache flag; expect RLM loops on
+Ollama to be noticeably slower than on vLLM-with-caching.
+
 ## 4a. Optional: Open WebUI as a smoke-test client
 
 If you want to confirm the Spark-side server works from something
