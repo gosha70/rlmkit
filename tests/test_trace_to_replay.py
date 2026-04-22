@@ -551,3 +551,92 @@ class TestFinalStepFolding:
         answer = replay.steps[-1]
         assert answer.details is not None
         assert answer.details.output == "terminal output"
+
+
+# ---------------------------------------------------------------------------
+# Replay metrics — P2 regression guard: preserve measured zeros, omit absence
+# ---------------------------------------------------------------------------
+
+
+class TestReplayMetricsTelemetryZeros:
+    """A measured ``cached_tokens=0`` or ``decode_ms=0`` must not be
+    collapsed into "field unavailable" by the replay converter — that
+    would make cache-miss and single-chunk responses invisible in the
+    Learn-tab replay payload, which defeats the purpose of the new
+    telemetry."""
+
+    def test_measured_zero_cached_tokens_is_preserved(self) -> None:
+        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+
+        step = TraceStep(
+            index=0,
+            action_type="final",
+            input_tokens=100,
+            output_tokens=20,
+            duration_seconds=0.2,
+            ttft_ms=150,  # measured — gates the prefill/decode block
+            decode_ms=50,
+            cached_tokens=0,  # measured cache MISS (not "unknown")
+            cache_write_tokens=0,
+        )
+        metrics = _metrics_from_step(step)
+        assert metrics is not None
+        assert metrics.ttftMs == 150
+        assert metrics.decodeMs == 50
+        # The critical assertion: zero survives as zero, not None.
+        assert metrics.cachedTokens == 0
+        assert metrics.cacheWriteTokens == 0
+
+    def test_measured_zero_decode_ms_is_preserved(self) -> None:
+        """Single-chunk provider → TTFT == total_ms → decode_ms=0 by
+        adapter contract. That zero is a real signal, not absence."""
+        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+
+        step = TraceStep(
+            index=0,
+            action_type="final",
+            input_tokens=50,
+            output_tokens=10,
+            duration_seconds=0.1,
+            ttft_ms=100,
+            decode_ms=0,  # single-chunk response
+            cached_tokens=20,
+            cache_write_tokens=0,
+        )
+        metrics = _metrics_from_step(step)
+        assert metrics is not None
+        assert metrics.decodeMs == 0
+        assert metrics.cachedTokens == 20
+
+    def test_legacy_step_without_any_prefill_signal_omits_new_fields(self) -> None:
+        """When a step has no prefill/decode signal at all (ttft_ms is
+        None and all three ints are 0), the four new fields are
+        omitted rather than lied about with zeros."""
+        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+
+        step = TraceStep(
+            index=0,
+            action_type="final",
+            input_tokens=100,
+            output_tokens=20,
+            duration_seconds=0.2,
+            # ttft_ms defaults to None; decode/cache default to 0.
+        )
+        metrics = _metrics_from_step(step)
+        assert metrics is not None
+        # Traditional fields survive.
+        assert metrics.tokensIn == 100
+        assert metrics.tokensOut == 20
+        # No prefill/decode signal → omit the four new fields.
+        assert metrics.ttftMs is None
+        assert metrics.decodeMs is None
+        assert metrics.cachedTokens is None
+        assert metrics.cacheWriteTokens is None
+
+    def test_all_absent_step_returns_none(self) -> None:
+        """With zero traditional metrics AND no prefill/decode signal,
+        the step has no metrics to show — return None."""
+        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+
+        step = TraceStep(index=0, action_type="inspect")
+        assert _metrics_from_step(step) is None

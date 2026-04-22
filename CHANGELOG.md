@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Prefill / decode telemetry
+- **Phase 3 — use-case trace writers + REST/replay shape + CI guard (spec v1.7).**
+  Every `TRACE_KEY_ROLE: "assistant"` dict in `application/use_cases/`
+  now populates the four new telemetry keys (`ttft_ms`, `decode_ms`,
+  `cached_tokens`, `cache_write_tokens`) from the returning
+  `LLMResponseDTO`. Eleven assistant-role sites covered across
+  `run_rlm.py` (8), `run_direct.py` (2 — sync + async branches), and
+  the Phase-2 `run_rag.py` site. The server-side `TraceStep` Pydantic
+  model, the `/api/traces/{id}` response builder, and the Learn-tab
+  replay converter (`trace_to_replay.py`) mirror the six new fields;
+  frontend `TraceStep` and `LearnReplayStepMetrics` interfaces get
+  matching optional fields. A new CI guard test
+  (`tests/test_trace_writers.py`) greps the use-case tree for every
+  assistant dict and fails if any is missing the four keys — blocks
+  future PRs that add a new assistant-role writer without attending
+  to telemetry. ACs: 9, 29.
 - **Phase 2 — data model + cache extraction + store migration + RAG two-step trace (spec v1.7).**
   `TraceStep` gains six fields (`prompt_tokens`, `completion_tokens`,
   `ttft_ms`, `decode_ms`, `cached_tokens`, `cache_write_tokens`) plus a

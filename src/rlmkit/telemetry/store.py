@@ -338,8 +338,21 @@ class TelemetryStore:
         recursion_depth: int = 0,
         input_tokens: int = 0,
         output_tokens: int = 0,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        ttft_ms: int | None = None,
+        decode_ms: int = 0,
+        cached_tokens: int = 0,
+        cache_write_tokens: int = 0,
     ) -> str:
-        """Record a single step within a run. Returns the step ID."""
+        """Record a single step within a run. Returns the step ID.
+
+        The six prefill/decode fields (``prompt_tokens``,
+        ``completion_tokens``, ``ttft_ms``, ``decode_ms``,
+        ``cached_tokens``, ``cache_write_tokens``) ship with safe
+        defaults so older callers that don't pass them stay compatible.
+        The underlying columns live on schema v2 (see ``_MIGRATIONS``).
+        """
         sid = uuid.uuid4().hex
         with self._lock:
             try:
@@ -348,8 +361,10 @@ class TelemetryStore:
                     """INSERT INTO steps
                        (id, run_id, step_index, action_type, code, output,
                         tokens, cost, duration, model, recursion_depth,
-                        input_tokens, output_tokens)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        input_tokens, output_tokens,
+                        prompt_tokens, completion_tokens, ttft_ms,
+                        decode_ms, cached_tokens, cache_write_tokens)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         sid,
                         run_id,
@@ -364,6 +379,12 @@ class TelemetryStore:
                         recursion_depth,
                         input_tokens,
                         output_tokens,
+                        prompt_tokens,
+                        completion_tokens,
+                        ttft_ms,
+                        decode_ms,
+                        cached_tokens,
+                        cache_write_tokens,
                     ),
                 )
                 conn.commit()

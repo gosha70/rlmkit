@@ -153,6 +153,10 @@ class RunDirectUseCase:
                         TRACE_KEY_OUTPUT_TOKENS: response.output_tokens,
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
                         TRACE_KEY_ELAPSED_SECONDS: elapsed,
+                        "ttft_ms": response.ttft_ms,
+                        "decode_ms": response.decode_ms,
+                        "cached_tokens": response.cached_tokens,
+                        "cache_write_tokens": response.cache_write_tokens,
                     }
                 ],
             )
@@ -195,6 +199,12 @@ class RunDirectUseCase:
             {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
         )
 
+        # Telemetry fields populated from whichever LLM path ran.
+        ttft_ms: int | None = None
+        decode_ms: int = 0
+        cached_tokens: int = 0
+        cache_write_tokens: int = 0
+
         try:
             if event_emitter and hasattr(self._llm, "complete_stream_async"):
                 collected: list[str] = []
@@ -210,6 +220,10 @@ class RunDirectUseCase:
                     answer = final_dto.content
                     input_tokens = final_dto.input_tokens
                     output_tokens = final_dto.output_tokens
+                    ttft_ms = final_dto.ttft_ms
+                    decode_ms = final_dto.decode_ms
+                    cached_tokens = final_dto.cached_tokens
+                    cache_write_tokens = final_dto.cache_write_tokens
                 else:
                     # Defensive fallback: adapter did not emit a terminal
                     # chunk. Log and fall back to the pre-Phase-1 heuristic.
@@ -225,11 +239,19 @@ class RunDirectUseCase:
                 answer = response.content
                 input_tokens = response.input_tokens
                 output_tokens = response.output_tokens
+                ttft_ms = response.ttft_ms
+                decode_ms = response.decode_ms
+                cached_tokens = response.cached_tokens
+                cache_write_tokens = response.cache_write_tokens
             else:
                 response = await asyncio.to_thread(self._llm.complete, messages)
                 answer = response.content
                 input_tokens = response.input_tokens
                 output_tokens = response.output_tokens
+                ttft_ms = response.ttft_ms
+                decode_ms = response.decode_ms
+                cached_tokens = response.cached_tokens
+                cache_write_tokens = response.cache_write_tokens
 
             elapsed = time.time() - start
 
@@ -242,6 +264,10 @@ class RunDirectUseCase:
                 TRACE_KEY_OUTPUT_TOKENS: output_tokens,
                 TRACE_KEY_MODEL: getattr(self._llm, "active_model", None),
                 TRACE_KEY_ELAPSED_SECONDS: elapsed,
+                "ttft_ms": ttft_ms,
+                "decode_ms": decode_ms,
+                "cached_tokens": cached_tokens,
+                "cache_write_tokens": cache_write_tokens,
             }
 
             total_cost = self._compute_cost(input_tokens, output_tokens)

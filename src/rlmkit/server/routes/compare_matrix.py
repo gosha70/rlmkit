@@ -757,16 +757,25 @@ def _record_slot_telemetry(
                 is_last=(i == total - 1),
                 success=result.success,
             )
+            input_tokens = step_data.get("input_tokens", 0)
+            output_tokens = step_data.get("output_tokens", 0)
             state.telemetry.record_step(
                 run_id=meta.execution_id,
                 step_index=i,
                 action_type=action_type,
                 code=step_data.get("code"),
                 output=step_data.get("content"),
-                input_tokens=step_data.get("input_tokens", 0),
-                output_tokens=step_data.get("output_tokens", 0),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 duration=step_data.get("elapsed_seconds", 0.0),
                 model=step_data.get("model"),
+                # Prefill/decode telemetry — mirrors the chat route.
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+                ttft_ms=step_data.get("ttft_ms"),
+                decode_ms=int(step_data.get("decode_ms", 0) or 0),
+                cached_tokens=int(step_data.get("cached_tokens", 0) or 0),
+                cache_write_tokens=int(step_data.get("cache_write_tokens", 0) or 0),
             )
     except Exception:
         # Telemetry failures must never break the user's matrix response.

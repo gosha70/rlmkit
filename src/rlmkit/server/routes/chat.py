@@ -575,16 +575,28 @@ def _record_telemetry(
             is_last=(i == total - 1),
             success=result.success,
         )
+        input_tokens = step_data.get(TRACE_KEY_INPUT_TOKENS, 0)
+        output_tokens = step_data.get(TRACE_KEY_OUTPUT_TOKENS, 0)
         state.telemetry.record_step(
             run_id=run_id,
             step_index=i,
             action_type=action_type,
             code=step_data.get(TRACE_KEY_CODE),
             output=step_data.get(TRACE_KEY_CONTENT),
-            input_tokens=step_data.get(TRACE_KEY_INPUT_TOKENS, 0),
-            output_tokens=step_data.get(TRACE_KEY_OUTPUT_TOKENS, 0),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             duration=step_data.get(TRACE_KEY_ELAPSED_SECONDS, 0.0),
             model=step_data.get(TRACE_KEY_MODEL),
+            # Prefill/decode telemetry (spec v1.7). The four plain-string
+            # keys come straight from the use-case raw-DTO writers; the
+            # prompt/completion split is the raw token counts, mirroring
+            # the route-layer translator in _helpers.
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            ttft_ms=step_data.get("ttft_ms"),
+            decode_ms=int(step_data.get("decode_ms", 0) or 0),
+            cached_tokens=int(step_data.get("cached_tokens", 0) or 0),
+            cache_write_tokens=int(step_data.get("cache_write_tokens", 0) or 0),
         )
 
 
