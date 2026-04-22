@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Prefill / decode telemetry
+- **Phase 1 — streaming-under-the-hood (spec v1.7).** `LLMPort.
+  complete_stream_async` now yields `StreamChunk` events; the terminal
+  chunk carries a populated `LLMResponseDTO` with four new fields
+  (`ttft_ms`, `decode_ms`, `cached_tokens`, `cache_write_tokens`).
+  `LiteLLMAdapter.complete()` and `.complete_async()` stream under
+  the hood by default so TTFT and decode_ms are measured on every
+  call. The legacy `openai` / `anthropic` / `ollama` / `mock`
+  adapters migrate to the new `StreamChunk` signature; `ttft_ms` is
+  `None` on the three wrappers because their underlying clients have
+  no streaming backend. The two in-repo consumers (`run_rlm.py`,
+  `run_direct.py`) read `chunk.response` on the final chunk and drop
+  the previous approximate-token synthesis. Panic lever:
+  `RLMKIT_STREAMED_COMPLETE=0` restores the pre-Phase-1
+  non-streaming behavior for the two sync paths (`complete`,
+  `complete_async`); the `complete_stream_async` signature change
+  is unconditional because Protocol signatures cannot branch on
+  env. Cache-token extraction, TraceStep changes, and store
+  migration land in Phase 2.
+
 Learn tab V2 — a self-contained surface that teaches the RLM loop
 through a scrubbable, step-by-step replay. Shipped in three slices
 (V1 → V2a → V2b) across PRs #20, #23, and #24.

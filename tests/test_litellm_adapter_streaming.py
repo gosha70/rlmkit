@@ -1,0 +1,327 @@
+"""Phase 1 streaming-under-the-hood tests for LiteLLMAdapter.
+
+Covers acceptance criteria AC-1 (ttft_ms populated on complete()),
+AC-2 (TTFT tracks first non-empty content chunk), AC-11 (complete_async
+mirrors complete on the same fake chunk sequence), AC-12 (terminal
+StreamChunk carries a populated LLMResponseDTO with the four new
+fields).
+
+All litellm calls are mocked; no external services are contacted.
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from rlmkit.application.dto import LLMResponseDTO, StreamChunk
+from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+
+
+def _chunk(content: str | None, *, finish_reason: str | None = None, usage=None, model="gpt-4o"):
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content=content, role=None),
+                finish_reason=finish_reason,
+                index=0,
+            )
+        ],
+        model=model,
+        usage=usage,
+    )
+
+
+def _role_only_chunk():
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content=None, role="assistant"),
+                finish_reason=None,
+                index=0,
+            )
+        ],
+        model="gpt-4o",
+        usage=None,
+    )
+
+
+def _empty_content_chunk():
+    return _chunk("")
+
+
+def _usage(prompt: int = 10, completion: int = 5):
+    return SimpleNamespace(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=prompt + completion,
+    )
+
+
+def _terminal_chunk(prompt: int = 10, completion: int = 5):
+    return _chunk(None, finish_reason="stop", usage=_usage(prompt, completion))
+
+
+class TestCompleteTTFT:
+    """AC-1, AC-2 — complete() populates ttft_ms on the first non-empty chunk."""
+
+    @patch("litellm.completion")
+    def test_complete_populates_ttft_ms(self, mock_completion):
+        """AC-1: ttft_ms is non-None after a successful call."""
+        mock_completion.return_value = iter([_chunk("hi"), _terminal_chunk()])
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert isinstance(result, LLMResponseDTO)
+        assert result.ttft_ms is not None
+        assert result.ttft_ms >= 0
+
+    @patch("litellm.completion")
+    def test_complete_ttft_tracks_first_non_empty_content(self, mock_completion):
+        """AC-2: role-only and empty-content chunks do not count toward TTFT.
+
+        The adapter's ``_observe_chunk`` only calls ``time.monotonic``
+        when a chunk carries non-empty content, so we only need to
+        script timestamps for (t_start, first real content, end).
+        """
+        # Add 0.0005 s to each timestamp to sidestep float-to-int
+        # truncation (50.0 ms computes as 49 under `int()`).
+        times = iter([100.0, 100.0505, 100.0805])
+        mock_completion.return_value = iter(
+            [
+                _role_only_chunk(),
+                _empty_content_chunk(),
+                _chunk("hi"),
+                _terminal_chunk(),
+            ]
+        )
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with patch(
+            "rlmkit.infrastructure.llm.litellm_adapter.time.monotonic",
+            lambda: next(times),
+        ):
+            result = adapter.complete([{"role": "user", "content": "?"}])
+
+        # First content chunk observed at t+50.5 ms → TTFT = 50 ms.
+        # If the adapter had counted the role-only or empty-content
+        # frames we would have measured ~0 ms, which is the
+        # regression this test guards against.
+        assert result.ttft_ms == 50
+        # Total 80 ms, so decode is 80 - 50 = 30 ms.
+        assert result.decode_ms == 30
+
+    @patch("litellm.completion")
+    def test_complete_single_chunk_provider_ttft_equals_total(self, mock_completion):
+        """Fallback contract: when no content chunk is observed,
+        ttft_ms == total_ms so decode_ms is 0."""
+        # Only a terminal chunk, no content deltas.
+        mock_completion.return_value = iter([_terminal_chunk()])
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert result.ttft_ms is not None
+        assert result.decode_ms == 0
+
+    @patch("litellm.completion")
+    def test_complete_flag_off_falls_back_to_non_streaming(self, mock_completion, monkeypatch):
+        """Panic lever: RLMKIT_STREAMED_COMPLETE=0 skips streaming; ttft_ms is None."""
+        monkeypatch.setenv("RLMKIT_STREAMED_COMPLETE", "0")
+
+        # Non-streaming mock: plain object with .choices/.usage/.model.
+        mock_completion.return_value = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content="plain", role="assistant"),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=7, completion_tokens=3, total_tokens=10),
+            model="gpt-4o",
+        )
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert result.content == "plain"
+        assert result.input_tokens == 7
+        assert result.output_tokens == 3
+        assert result.ttft_ms is None
+        assert result.decode_ms == 0
+
+
+class TestCompleteAsyncParity:
+    """AC-11 — complete_async mirrors complete on the same fake sequence."""
+
+    @pytest.mark.asyncio
+    async def test_complete_async_populates_ttft_and_decode(self):
+        async def mock_async_iter():
+            yield _chunk("hi")
+            yield _terminal_chunk(prompt=11, completion=4)
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with patch("litellm.acompletion", return_value=mock_async_iter()):
+            result = await adapter.complete_async([{"role": "user", "content": "?"}])
+
+        assert result.content == "hi"
+        assert result.input_tokens == 11
+        assert result.output_tokens == 4
+        assert result.ttft_ms is not None
+        assert result.decode_ms >= 0
+
+
+class TestCompleteStreamLastTelemetry:
+    """complete_stream() exposes telemetry via last_response_telemetry."""
+
+    @patch("litellm.completion")
+    def test_last_response_telemetry_populated_after_exhaustion(self, mock_completion):
+        mock_completion.return_value = iter(
+            [_chunk("Hello"), _chunk(" World"), _terminal_chunk(prompt=12, completion=6)]
+        )
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        collected = list(adapter.complete_stream([{"role": "user", "content": "?"}]))
+
+        assert collected == ["Hello", " World"]
+        telemetry = adapter.last_response_telemetry
+        assert telemetry is not None
+        assert telemetry.ttft_ms is not None
+        assert telemetry.prompt_tokens == 12
+        assert telemetry.completion_tokens == 6
+
+
+class TestReasoningModelContentFallback:
+    """Regression guard: reasoning-model content must not be dropped.
+
+    Pre-Phase-1 ``complete()`` went through ``_extract_content(message)``
+    which falls back to ``reasoning_content`` / ``thinking`` / ``thought``.
+    The streaming path must honor the same fallback on chunk deltas
+    AND on a terminal chunk's ``message`` when no delta ever arrived.
+    """
+
+    @patch("litellm.completion")
+    def test_reasoning_content_on_delta_is_used(self, mock_completion):
+        """DeepSeek-R1-style stream: content=None but reasoning_content on delta."""
+        reasoning_chunk = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        role=None,
+                        reasoning_content="The answer is 42.",
+                    ),
+                    finish_reason=None,
+                    index=0,
+                )
+            ],
+            model="deepseek-r1",
+            usage=None,
+        )
+        mock_completion.return_value = iter(
+            [reasoning_chunk, _terminal_chunk(prompt=10, completion=5)]
+        )
+
+        adapter = LiteLLMAdapter(model="deepseek-r1")
+        result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert result.content == "The answer is 42."
+
+    @patch("litellm.completion")
+    def test_terminal_message_content_fallback(self, mock_completion):
+        """Provider packs full response on terminal chunk's message, no deltas.
+
+        Some providers consolidate with ``include_usage=True`` and emit
+        a single terminal chunk whose ``choices[0].message.content``
+        carries the full response. The accumulator must pull it.
+        """
+        terminal_with_message = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, role=None),
+                    message=SimpleNamespace(content="answer via terminal", role="assistant"),
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
+            model="gpt-4o",
+            usage=_usage(10, 5),
+        )
+        mock_completion.return_value = iter([terminal_with_message])
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert result.content == "answer via terminal"
+
+
+class TestMissingUsageFallback:
+    """Regression guard: providers that omit usage must not silently zero tokens.
+
+    Streaming with ``include_usage=True`` is not honored by every
+    LiteLLM provider. When usage is absent, the adapter must fall
+    back to ``litellm.token_counter`` rather than returning 0.
+    """
+
+    @patch("litellm.token_counter")
+    @patch("litellm.completion")
+    def test_token_counter_backfill_when_usage_absent(self, mock_completion, mock_token_counter):
+        # Stream with content but no usage on any chunk.
+        terminal_no_usage = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, role=None),
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
+            model="some-local-model",
+            usage=None,
+        )
+        mock_completion.return_value = iter([_chunk("hello world"), terminal_no_usage])
+
+        # First call: prompt-token count; second: completion-token count.
+        mock_token_counter.side_effect = [42, 3]
+
+        adapter = LiteLLMAdapter(model="some-local-model")
+        result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert result.input_tokens == 42
+        assert result.output_tokens == 3
+        assert result.content == "hello world"
+
+
+class TestCompleteStreamAsyncStreamChunk:
+    """AC-12 — complete_stream_async terminal chunk carries LLMResponseDTO."""
+
+    @pytest.mark.asyncio
+    async def test_terminal_stream_chunk_carries_populated_dto(self):
+        async def mock_async_iter():
+            yield _chunk("Hello")
+            yield _chunk(" World")
+            yield _terminal_chunk(prompt=13, completion=7)
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with patch("litellm.acompletion", return_value=mock_async_iter()):
+            chunks: list[StreamChunk] = []
+            async for ch in adapter.complete_stream_async([{"role": "user", "content": "?"}]):
+                chunks.append(ch)
+
+        # Non-final chunks carry deltas
+        deltas = [c.delta for c in chunks if not c.is_final]
+        assert deltas == ["Hello", " World"]
+
+        # Terminal chunk has is_final=True and a populated response DTO
+        final = chunks[-1]
+        assert final.is_final is True
+        assert final.response is not None
+        assert final.response.input_tokens == 13
+        assert final.response.output_tokens == 7
+        assert final.response.ttft_ms is not None
+        assert final.response.decode_ms >= 0
+        # Phase 1 leaves cache extraction for Phase 2
+        assert final.response.cached_tokens == 0
+        assert final.response.cache_write_tokens == 0

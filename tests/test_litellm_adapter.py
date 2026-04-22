@@ -23,37 +23,49 @@ def _mock_completion_response(
     completion_tokens: int = 5,
     finish_reason: str = "stop",
 ):
-    """Build a mock object mimicking litellm.completion() return value."""
+    """Build a streaming-mode iterable mimicking ``litellm.completion(stream=True)``.
+
+    Phase 1 routes every ``complete()`` call through streaming under
+    the hood. The return shape is an iterator of chunks; the final
+    chunk carries ``usage`` and ``model``. DTO-level assertions
+    (``result.content``, ``result.input_tokens``) are unchanged.
+    """
+    texts = [content] if content else []
+    return iter(
+        _mock_stream_chunks(
+            texts,
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            finish_reason=finish_reason,
+        )
+    )
+
+
+def _mock_stream_chunks(
+    texts,
+    *,
+    model: str = "gpt-4o",
+    prompt_tokens: int = 10,
+    completion_tokens: int = 5,
+    finish_reason: str = "stop",
+):
+    """Build a list of mock streaming chunks, usage on the terminal chunk."""
+    chunks = []
+    for t in texts:
+        delta = SimpleNamespace(content=t, role=None)
+        choice = SimpleNamespace(delta=delta, index=0, finish_reason=None)
+        chunks.append(SimpleNamespace(choices=[choice], model=model, usage=None))
+    # Terminal chunk carries finish_reason + usage so streaming-under-the-hood
+    # can populate the returned LLMResponseDTO with token counts.
+    final_delta = SimpleNamespace(content=None, role=None)
+    final_choice = SimpleNamespace(delta=final_delta, index=0, finish_reason=finish_reason)
     usage = SimpleNamespace(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=prompt_tokens + completion_tokens,
     )
-    message = SimpleNamespace(content=content, role="assistant")
-    choice = SimpleNamespace(
-        message=message,
-        finish_reason=finish_reason,
-        index=0,
-    )
-    return SimpleNamespace(
-        choices=[choice],
-        usage=usage,
-        model=model,
-        id="chatcmpl-test",
-    )
-
-
-def _mock_stream_chunks(texts):
-    """Build a list of mock streaming chunks."""
-    chunks = []
-    for t in texts:
-        delta = SimpleNamespace(content=t, role=None)
-        choice = SimpleNamespace(delta=delta, index=0, finish_reason=None)
-        chunks.append(SimpleNamespace(choices=[choice]))
-    # Final chunk with finish_reason
-    final_delta = SimpleNamespace(content=None, role=None)
-    final_choice = SimpleNamespace(delta=final_delta, index=0, finish_reason="stop")
-    chunks.append(SimpleNamespace(choices=[final_choice]))
+    chunks.append(SimpleNamespace(choices=[final_choice], model=model, usage=usage))
     return chunks
 
 
@@ -238,10 +250,10 @@ class TestLiteLLMAdapterComplete:
 
     @patch("litellm.completion")
     def test_complete_handles_none_content(self, mock_completion):
-        """Handle case where LLM returns None content."""
+        """Handle case where LLM returns no content chunks (None content)."""
+        # Streaming mode: a stream with zero content deltas produces
+        # an empty string. Pass content=None to skip the delta chunk.
         mock_completion.return_value = _mock_completion_response(content=None)
-        # Need to manually set content to None since helper sets it
-        mock_completion.return_value.choices[0].message.content = None
 
         adapter = LiteLLMAdapter(model="gpt-4o")
         result = adapter.complete([{"role": "user", "content": "Hi"}])
@@ -451,7 +463,14 @@ class TestLiteLLMAdapterHealth:
 
     @patch("litellm.completion")
     def test_health_check_success(self, mock_completion):
-        mock_completion.return_value = _mock_completion_response(content="pong")
+        # check_health() issues a plain non-streaming completion and
+        # only inspects ``response.choices``, so mock a minimal
+        # SimpleNamespace rather than a streaming chunk iterable.
+        mock_completion.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="pong"))],
+            usage=None,
+            model="gpt-4o",
+        )
 
         adapter = LiteLLMAdapter(model="gpt-4o")
         assert adapter.check_health() is True

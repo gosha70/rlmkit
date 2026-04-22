@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from typing import Protocol, runtime_checkable
 
-from rlmkit.application.dto import LLMResponseDTO
+from rlmkit.application.dto import LLMResponseDTO, StreamChunk
 
 
 @runtime_checkable
@@ -78,15 +78,22 @@ class LLMPort(Protocol):
         """
         ...
 
-    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
-        """Async streaming completion, yielding text chunks.
+    async def complete_stream_async(
+        self, messages: list[dict[str, str]]
+    ) -> AsyncIterator[StreamChunk]:
+        """Async streaming completion, yielding :class:`StreamChunk` events.
+
+        The terminating chunk has ``is_final=True`` and a populated
+        ``response`` :class:`LLMResponseDTO` — including TTFT, decode_ms,
+        and token counts from the provider's usage record.
 
         Args:
             messages: Ordered chat messages.
 
         Yields:
-            Text chunks as they are produced.
+            :class:`StreamChunk` events; the final chunk carries the
+            completed response DTO.
         """
         ...
         # Yield required to make the type checker recognise this as AsyncIterator
-        yield ""  # type: ignore[misc]  # pragma: no cover
+        yield StreamChunk(delta="")  # type: ignore[misc]  # pragma: no cover

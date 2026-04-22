@@ -45,6 +45,18 @@ class LLMResponseDTO:
         input_tokens: Input token count (from API, if available).
         output_tokens: Output token count (from API, if available).
         finish_reason: Why generation stopped.
+        ttft_ms: Wall-clock delta from request start to first non-empty
+            content chunk, in milliseconds. ``None`` when (a) the call
+            errored before any chunk, or (b) the adapter has no streaming
+            backend (legacy wrappers yield a single terminal chunk).
+        decode_ms: Wall-clock delta from TTFT to completion, in
+            milliseconds. ``0`` when non-streaming or when the provider
+            emitted a single chunk (TTFT == total).
+        cached_tokens: Prompt tokens served from the provider's prefix
+            cache. ``0`` on providers that don't report cache info or
+            before cache-extraction lands (Phase 2).
+        cache_write_tokens: Prompt tokens written to the provider's
+            prefix cache (Anthropic-style). ``0`` elsewhere.
     """
 
     content: str
@@ -52,6 +64,33 @@ class LLMResponseDTO:
     input_tokens: int = 0
     output_tokens: int = 0
     finish_reason: str | None = None
+    ttft_ms: int | None = None
+    decode_ms: int = 0
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+@dataclass
+class StreamChunk:
+    """A single chunk yielded from an async streaming LLM call.
+
+    Non-final chunks carry a text ``delta`` and ``is_final=False``.
+    The terminating chunk always has ``is_final=True`` and a populated
+    ``response`` built from the underlying provider's usage record.
+
+    Attributes:
+        delta: Text delta. May be ``""`` on role-announcement or
+            cache-metadata chunks; on the terminal chunk it is
+            typically ``""`` (the full text lives on ``response.content``).
+        is_final: ``True`` on the last chunk only.
+        response: Completed :class:`LLMResponseDTO` — populated on the
+            terminal chunk for every successful call, regardless of
+            adapter. ``None`` only on non-final chunks.
+    """
+
+    delta: str
+    is_final: bool = False
+    response: LLMResponseDTO | None = None
 
 
 @dataclass

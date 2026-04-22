@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
-from rlmkit.application.dto import LLMResponseDTO
+from rlmkit.application.dto import LLMResponseDTO, StreamChunk
 
 
 class OllamaAdapter:
@@ -55,16 +55,19 @@ class OllamaAdapter:
         """Async completion delegating to the sync method."""
         return await asyncio.to_thread(self.complete, messages)
 
-    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+    async def complete_stream_async(
+        self, messages: list[dict[str, str]]
+    ) -> AsyncIterator[StreamChunk]:
         """Non-blocking streaming: delegates to complete_async (asyncio.to_thread).
 
         The legacy Ollama client does not support native streaming, so this
-        method yields a single chunk from the thread-offloaded complete_async
-        call rather than looping over the sync complete_stream(), which would
-        block the event loop and bypass complete_with_metadata token accounting.
+        method yields a single terminal ``StreamChunk`` carrying the full
+        response DTO. ``ttft_ms`` is ``None`` (no streaming backend);
+        token counts and content come from ``complete_with_metadata``.
         """
         response = await self.complete_async(messages)
-        yield response.content
+        yield StreamChunk(delta=response.content, is_final=False)
+        yield StreamChunk(delta="", is_final=True, response=response)
 
     def get_pricing(self) -> dict[str, float]:
         """Ollama models are free (local). Return zero pricing."""

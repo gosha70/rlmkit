@@ -7,6 +7,7 @@ This is the simplest execution mode and serves as a baseline.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
@@ -25,6 +26,8 @@ from rlmkit.application.sandbox_vars import (
 )
 from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
 from rlmkit.prompts import get_mode_system_prompt
+
+logger = logging.getLogger(__name__)
 
 
 def _format_error_answer(error_str: str) -> str:
@@ -195,14 +198,28 @@ class RunDirectUseCase:
         try:
             if event_emitter and hasattr(self._llm, "complete_stream_async"):
                 collected: list[str] = []
-                async for token in self._llm.complete_stream_async(messages):
-                    collected.append(token)
-                    await event_emitter.on_token(token)
-                answer = "".join(collected)
-                approx_input = max(1, sum(len(m["content"]) for m in messages) // 4)
-                approx_output = max(1, len(answer) // 4)
-                input_tokens = approx_input
-                output_tokens = approx_output
+                final_dto: LLMResponseDTO | None = None
+                async for chunk in self._llm.complete_stream_async(messages):
+                    if chunk.is_final:
+                        final_dto = chunk.response
+                        continue
+                    if chunk.delta:
+                        collected.append(chunk.delta)
+                        await event_emitter.on_token(chunk.delta)
+                if final_dto is not None:
+                    answer = final_dto.content
+                    input_tokens = final_dto.input_tokens
+                    output_tokens = final_dto.output_tokens
+                else:
+                    # Defensive fallback: adapter did not emit a terminal
+                    # chunk. Log and fall back to the pre-Phase-1 heuristic.
+                    logger.warning(
+                        "complete_stream_async did not yield a terminal "
+                        "StreamChunk; falling back to token-length heuristic"
+                    )
+                    answer = "".join(collected)
+                    input_tokens = max(1, sum(len(m["content"]) for m in messages) // 4)
+                    output_tokens = max(1, len(answer) // 4)
             elif hasattr(self._llm, "complete_async"):
                 response: LLMResponseDTO = await self._llm.complete_async(messages)
                 answer = response.content

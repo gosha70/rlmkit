@@ -11,12 +11,48 @@ primary reasoning and a cheaper recursive_model for exploration subcalls.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass, field
 from typing import Any
 
-from rlmkit.application.dto import LLMResponseDTO
+from rlmkit.application.dto import LLMResponseDTO, StreamChunk
 
 logger = logging.getLogger(__name__)
+
+# Panic-lever flag. Default on. When set to "0", `complete()` and
+# `complete_async()` fall back to the pre-Phase-1 non-streaming path
+# and return a DTO with `ttft_ms=None, decode_ms=0`. The flag does not
+# gate `complete_stream_async()` (Protocol signature change is
+# unconditional) or `complete_stream()` (always walks the shared
+# helper).
+_STREAMED_COMPLETE_ENV_VAR = "RLMKIT_STREAMED_COMPLETE"
+
+
+def _streamed_complete_enabled() -> bool:
+    return os.getenv(_STREAMED_COMPLETE_ENV_VAR, "1") != "0"
+
+
+@dataclass
+class _StreamingTelemetry:
+    """Pure observation record built while walking a streaming iterator."""
+
+    ttft_ms: int | None = None
+    decode_ms: int = 0
+    total_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0  # populated by Phase 2 cache extraction
+    cache_write_tokens: int = 0  # populated by Phase 2 cache extraction
+    finish_reason: str | None = None
+    model: str | None = None
+    chunks: list[str] = field(default_factory=list)
+
+    @property
+    def content(self) -> str:
+        return "".join(self.chunks)
+
 
 _CONNECTION_KEYWORDS = (
     "connection refused",
@@ -153,6 +189,10 @@ class LiteLLMAdapter:
         # trace can record exactly what the clamp decided.
         self._last_clamp_info: dict[str, Any] = {}
 
+        # Telemetry from the most recent `complete_stream()` call; exposed
+        # via the `last_response_telemetry` property.
+        self._last_stream_telemetry: _StreamingTelemetry | None = None
+
     @property
     def last_clamp_info(self) -> dict[str, Any]:
         """Return the clamp diagnostics from the most recent _build_params call.
@@ -164,10 +204,27 @@ class LiteLLMAdapter:
         """
         return self._last_clamp_info
 
+    @property
+    def last_response_telemetry(self) -> _StreamingTelemetry | None:
+        """Telemetry record for the most recent `complete_stream()` call.
+
+        Populated after the iterator is exhausted. ``None`` before the
+        first call. Readers consume this to pull TTFT / decode_ms off
+        the sync streaming path without changing its yield contract.
+        """
+        return self._last_stream_telemetry
+
     # -- LLMPort protocol methods --
 
     def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Generate a completion using LiteLLM.
+
+        When ``RLMKIT_STREAMED_COMPLETE`` is set and not "0" (the
+        default), the call is issued with ``stream=True`` under the
+        hood so that TTFT and decode_ms can be measured; the iterator
+        is accumulated into a single DTO. When the flag is "0", the
+        original non-streaming path is used and ``ttft_ms`` remains
+        ``None`` on the returned DTO.
 
         Args:
             messages: Chat messages with 'role' and 'content' keys.
@@ -182,29 +239,44 @@ class LiteLLMAdapter:
 
         params = self._build_params(messages)
 
+        if not _streamed_complete_enabled():
+            try:
+                response = litellm.completion(**params)
+            except Exception as exc:
+                raise self._translate_exception(exc, "LiteLLM completion failed") from exc
+
+            choice = response.choices[0]
+            usage = response.usage
+            return LLMResponseDTO(
+                content=self._extract_content(choice.message),
+                model=response.model or self._active_model,
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+                finish_reason=choice.finish_reason,
+            )
+
+        params["stream"] = True
+        stream_options = dict(params.get("stream_options") or {})
+        stream_options["include_usage"] = True
+        params["stream_options"] = stream_options
+
         try:
             response = litellm.completion(**params)
+            telemetry = self._accumulate_stream_sync(response)
         except Exception as exc:
-            if _is_timeout_error(exc):
-                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
-            if _is_connection_error(exc):
-                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
-            raise RuntimeError(f"LiteLLM completion failed: {exc}") from exc
+            raise self._translate_exception(exc, "LiteLLM completion failed") from exc
 
-        choice = response.choices[0]
-        usage = response.usage
-        content = self._extract_content(choice.message)
-
-        return LLMResponseDTO(
-            content=content,
-            model=response.model or self._active_model,
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
-            finish_reason=choice.finish_reason,
-        )
+        self._backfill_token_counts(telemetry, messages)
+        return self._dto_from_telemetry(telemetry)
 
     def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Generate a streaming completion, yielding text chunks.
+
+        Records TTFT and decode_ms internally; readers can pull the
+        resulting :class:`_StreamingTelemetry` from
+        :pyattr:`last_response_telemetry` after the iterator is
+        exhausted. The yielded chunks are unchanged — the WebSocket
+        path sees no buffering regression.
 
         Args:
             messages: Chat messages.
@@ -216,19 +288,18 @@ class LiteLLMAdapter:
 
         params = self._build_params(messages)
         params["stream"] = True
+        stream_options = dict(params.get("stream_options") or {})
+        stream_options["include_usage"] = True
+        params["stream_options"] = stream_options
 
+        telemetry = _StreamingTelemetry()
+        self._last_stream_telemetry = telemetry
         try:
             response = litellm.completion(**params)
-            for chunk in response:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    yield delta.content
+            yield from self._walk_stream_sync(response, telemetry, forward_deltas=True)
         except Exception as exc:
-            if _is_timeout_error(exc):
-                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
-            if _is_connection_error(exc):
-                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
-            raise RuntimeError(f"LiteLLM streaming failed: {exc}") from exc
+            raise self._translate_exception(exc, "LiteLLM streaming failed") from exc
+        self._backfill_token_counts(telemetry, messages)
 
     def count_tokens(
         self,
@@ -308,6 +379,13 @@ class LiteLLMAdapter:
     async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Async completion using ``litellm.acompletion``.
 
+        When ``RLMKIT_STREAMED_COMPLETE`` is set and not "0" (the
+        default), the call is issued with ``stream=True`` so that TTFT
+        and decode_ms can be measured; the async iterator is
+        accumulated into a single DTO. When the flag is "0", the
+        original non-streaming path is used and ``ttft_ms`` remains
+        ``None`` on the returned DTO.
+
         Args:
             messages: Chat messages with 'role' and 'content' keys.
 
@@ -321,52 +399,79 @@ class LiteLLMAdapter:
 
         params = self._build_params(messages)
 
+        if not _streamed_complete_enabled():
+            try:
+                response = await litellm.acompletion(**params)
+            except Exception as exc:
+                raise self._translate_exception(exc, "LiteLLM async completion failed") from exc
+
+            choice = response.choices[0]
+            usage = response.usage
+            return LLMResponseDTO(
+                content=self._extract_content(choice.message),
+                model=response.model or self._active_model,
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+                finish_reason=choice.finish_reason,
+            )
+
+        params["stream"] = True
+        stream_options = dict(params.get("stream_options") or {})
+        stream_options["include_usage"] = True
+        params["stream_options"] = stream_options
+
         try:
             response = await litellm.acompletion(**params)
+            telemetry = await self._accumulate_stream_async(response)
         except Exception as exc:
-            if _is_timeout_error(exc):
-                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
-            if _is_connection_error(exc):
-                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
-            raise RuntimeError(f"LiteLLM async completion failed: {exc}") from exc
+            raise self._translate_exception(exc, "LiteLLM async completion failed") from exc
 
-        choice = response.choices[0]
-        usage = response.usage
+        self._backfill_token_counts(telemetry, messages)
+        return self._dto_from_telemetry(telemetry)
 
-        return LLMResponseDTO(
-            content=self._extract_content(choice.message),
-            model=response.model or self._active_model,
-            input_tokens=usage.prompt_tokens if usage else 0,
-            output_tokens=usage.completion_tokens if usage else 0,
-            finish_reason=choice.finish_reason,
-        )
+    async def complete_stream_async(
+        self, messages: list[dict[str, str]]
+    ) -> AsyncIterator[StreamChunk]:
+        """Async streaming completion, yielding :class:`StreamChunk` events.
 
-    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
-        """Async streaming completion, yielding text chunks.
+        Non-final chunks carry text deltas. The terminal chunk has
+        ``is_final=True`` and a populated ``response`` built from the
+        provider's usage record — including TTFT, decode_ms, and
+        token counts.
 
         Args:
             messages: Chat messages.
 
         Yields:
-            Text chunks as they are produced by the LLM.
+            :class:`StreamChunk` events; the final chunk carries the
+            completed DTO.
         """
         import litellm
 
         params = self._build_params(messages)
         params["stream"] = True
+        stream_options = dict(params.get("stream_options") or {})
+        stream_options["include_usage"] = True
+        params["stream_options"] = stream_options
 
+        telemetry = _StreamingTelemetry()
         try:
             response = await litellm.acompletion(**params)
+            t_start = time.monotonic()
             async for chunk in response:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    yield delta.content
+                self._observe_chunk(chunk, telemetry, t_start)
+                delta_text = self._chunk_delta_text(chunk)
+                if delta_text:
+                    yield StreamChunk(delta=delta_text, is_final=False)
         except Exception as exc:
-            if _is_timeout_error(exc):
-                raise RuntimeError(_timeout_error_message(self._timeout, exc)) from exc
-            if _is_connection_error(exc):
-                raise RuntimeError(_connection_error_message(self._api_base, exc)) from exc
-            raise RuntimeError(f"LiteLLM async streaming failed: {exc}") from exc
+            raise self._translate_exception(exc, "LiteLLM async streaming failed") from exc
+
+        telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
+        if telemetry.ttft_ms is not None:
+            telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
+
+        self._backfill_token_counts(telemetry, messages)
+        yield StreamChunk(delta="", is_final=True, response=self._dto_from_telemetry(telemetry))
 
     # -- Two-model support --
 
@@ -510,6 +615,232 @@ class LiteLLMAdapter:
             return 0.0
 
     # -- Private helpers --
+
+    def _translate_exception(self, exc: BaseException, default_prefix: str) -> RuntimeError:
+        """Map a raw litellm exception to a RuntimeError with adapter context."""
+        if _is_timeout_error(exc):
+            return RuntimeError(_timeout_error_message(self._timeout, exc))
+        if _is_connection_error(exc):
+            return RuntimeError(_connection_error_message(self._api_base, exc))
+        return RuntimeError(f"{default_prefix}: {exc}")
+
+    @staticmethod
+    def _reasoning_field_names() -> list[str]:
+        """Return the ordered list of reasoning-side field names to fall back on.
+
+        Mirrors :meth:`_extract_content` for the message path. Reading
+        from the prompt-messages YAML keeps the fallback list in one
+        place for reasoning/thinking models (DeepSeek-R1, Phi-4-reasoning,
+        Ollama thinking models) that surface visible output on a side
+        channel instead of ``content``.
+        """
+        from rlmkit.prompts import get_rlm_message
+
+        return [
+            f.strip() for f in get_rlm_message("reasoning_content_fields").split(",") if f.strip()
+        ]
+
+    def _chunk_delta_text(self, chunk: Any) -> str:
+        """Return the text delta from a streaming chunk, or ``""`` if none.
+
+        Falls back through the reasoning-side field names (``reasoning_content``,
+        ``thinking``, ``thought``) when ``delta.content`` is empty. Without
+        this fallback, reasoning-model streams would arrive as empty
+        content and the returned DTO would have ``content == ""`` even
+        though the model produced visible output.
+        """
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            return ""
+        delta = getattr(choices[0], "delta", None)
+        if delta is None:
+            return ""
+        content = getattr(delta, "content", None) or ""
+        if content:
+            return content
+        for field_name in self._reasoning_field_names():
+            val = getattr(delta, field_name, None)
+            if val:
+                return str(val)
+        return ""
+
+    def _terminal_message_text(self, chunk: Any) -> str:
+        """Pull content from a terminal chunk's ``message`` if present.
+
+        Some providers pack the full response on the terminal chunk's
+        ``choices[0].message`` instead of streaming deltas (e.g. when
+        ``include_usage=True`` is honored by consolidating). Reuse
+        :meth:`_extract_content` which already handles
+        ``content`` + reasoning-side fallback.
+        """
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            return ""
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            return ""
+        return self._extract_content(message)
+
+    def _observe_chunk(
+        self,
+        chunk: Any,
+        telemetry: _StreamingTelemetry,
+        t_start: float,
+    ) -> None:
+        """Fold one streaming chunk into the telemetry record.
+
+        Records TTFT on the first non-empty content delta, accumulates
+        content, and captures usage + model + finish_reason when the
+        provider puts them on later chunks. Never raises on missing
+        fields. Falls back to the terminal chunk's ``message.content``
+        when no delta ever arrived (reasoning-model one-shot stream).
+        """
+        delta_text = self._chunk_delta_text(chunk)
+        if delta_text:
+            if telemetry.ttft_ms is None:
+                telemetry.ttft_ms = int((time.monotonic() - t_start) * 1000)
+            telemetry.chunks.append(delta_text)
+
+        choices = getattr(chunk, "choices", None) or []
+        if choices:
+            finish = getattr(choices[0], "finish_reason", None)
+            if finish:
+                telemetry.finish_reason = finish
+                # Terminal-chunk message fallback: if no deltas ever
+                # arrived, pull content from choices[0].message now.
+                # Reasoning models on some providers emit one terminal
+                # frame with the full response on `message` and no
+                # content on any `delta`.
+                if not telemetry.chunks:
+                    message_text = self._terminal_message_text(chunk)
+                    if message_text:
+                        if telemetry.ttft_ms is None:
+                            telemetry.ttft_ms = int((time.monotonic() - t_start) * 1000)
+                        telemetry.chunks.append(message_text)
+
+        model = getattr(chunk, "model", None)
+        if model:
+            telemetry.model = model
+
+        usage = getattr(chunk, "usage", None)
+        if usage is not None:
+            prompt = getattr(usage, "prompt_tokens", None)
+            completion = getattr(usage, "completion_tokens", None)
+            if prompt:
+                telemetry.prompt_tokens = int(prompt)
+            if completion:
+                telemetry.completion_tokens = int(completion)
+
+    def _backfill_token_counts(
+        self,
+        telemetry: _StreamingTelemetry,
+        messages: list[dict[str, str]],
+    ) -> None:
+        """Fill in token counts when the provider omitted usage frames.
+
+        Streaming with ``include_usage=True`` is not honored by every
+        provider/model on the LiteLLM surface. When usage is missing,
+        ``prompt_tokens`` / ``completion_tokens`` would otherwise be 0,
+        silently undercounting budgets and trace metrics downstream.
+        Falls back to ``litellm.token_counter`` for the prompt
+        (model-aware) and for the accumulated content. Never raises —
+        leaves 0 on tokenizer failure.
+        """
+        if telemetry.prompt_tokens == 0:
+            try:
+                import litellm
+
+                telemetry.prompt_tokens = int(
+                    litellm.token_counter(model=self._active_model, messages=messages)
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Prompt-token backfill failed for model=%s: %s",
+                    self._active_model,
+                    exc,
+                )
+        if telemetry.completion_tokens == 0 and telemetry.chunks:
+            try:
+                import litellm
+
+                telemetry.completion_tokens = int(
+                    litellm.token_counter(model=self._active_model, text=telemetry.content)
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Completion-token backfill failed for model=%s: %s",
+                    self._active_model,
+                    exc,
+                )
+
+    def _accumulate_stream_sync(self, response: Iterator[Any]) -> _StreamingTelemetry:
+        """Walk a sync streaming iterator, return the accumulated telemetry."""
+        telemetry = _StreamingTelemetry()
+        t_start = time.monotonic()
+        for chunk in response:
+            self._observe_chunk(chunk, telemetry, t_start)
+        telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
+        if telemetry.ttft_ms is not None:
+            telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
+        else:
+            # No content chunk ever arrived (provider emitted only
+            # role/usage frames). Treat TTFT as total so downstream
+            # readers get a usable number rather than None.
+            telemetry.ttft_ms = telemetry.total_ms
+        return telemetry
+
+    async def _accumulate_stream_async(self, response: AsyncIterator[Any]) -> _StreamingTelemetry:
+        """Walk an async streaming iterator, return the accumulated telemetry."""
+        telemetry = _StreamingTelemetry()
+        t_start = time.monotonic()
+        async for chunk in response:
+            self._observe_chunk(chunk, telemetry, t_start)
+        telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
+        if telemetry.ttft_ms is not None:
+            telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
+        else:
+            telemetry.ttft_ms = telemetry.total_ms
+        return telemetry
+
+    def _walk_stream_sync(
+        self,
+        response: Iterator[Any],
+        telemetry: _StreamingTelemetry,
+        *,
+        forward_deltas: bool,
+    ) -> Iterator[str]:
+        """Walk a sync stream, mutate telemetry in place, yield deltas.
+
+        Used by :meth:`complete_stream` to share observation logic
+        with :meth:`complete` while preserving the chunk-yield
+        contract of the streaming API.
+        """
+        t_start = time.monotonic()
+        for chunk in response:
+            self._observe_chunk(chunk, telemetry, t_start)
+            if forward_deltas:
+                delta_text = self._chunk_delta_text(chunk)
+                if delta_text:
+                    yield delta_text
+        telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
+        if telemetry.ttft_ms is not None:
+            telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
+        else:
+            telemetry.ttft_ms = telemetry.total_ms
+
+    def _dto_from_telemetry(self, telemetry: _StreamingTelemetry) -> LLMResponseDTO:
+        """Build the adapter's returned DTO from an accumulated telemetry record."""
+        return LLMResponseDTO(
+            content=telemetry.content,
+            model=telemetry.model or self._active_model,
+            input_tokens=telemetry.prompt_tokens,
+            output_tokens=telemetry.completion_tokens,
+            finish_reason=telemetry.finish_reason,
+            ttft_ms=telemetry.ttft_ms,
+            decode_ms=telemetry.decode_ms,
+            cached_tokens=telemetry.cached_tokens,
+            cache_write_tokens=telemetry.cache_write_tokens,
+        )
 
     def _extract_content(self, message: Any) -> str:
         """Extract text content from an LLM response message.
