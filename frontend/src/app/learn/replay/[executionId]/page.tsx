@@ -15,8 +15,9 @@
  * the user a one-click path out regardless of how they landed here.
  */
 
+import { Suspense } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 
 import { BackToLearn } from "@/components/learn/back-to-learn";
@@ -24,9 +25,16 @@ import { ReplayWalkthrough } from "@/components/learn/replay-walkthrough";
 import { AppShell } from "@/components/shared/app-shell";
 import { getReplay, type LearnReplay } from "@/lib/api";
 
-export default function ReplayPage() {
+const FROM_TARGETS: Record<string, { href: string; label: string }> = {
+  traces: { href: "/traces", label: "Back to Traces" },
+};
+
+function ReplayPageInner() {
   const params = useParams<{ executionId: string }>();
+  const searchParams = useSearchParams();
   const executionId = params?.executionId ?? "";
+  const from = searchParams.get("from");
+  const backTarget = (from && FROM_TARGETS[from]) || undefined;
 
   const { data: replay, error } = useSWR<LearnReplay>(
     executionId ? ["learn-replay", executionId] : null,
@@ -37,7 +45,7 @@ export default function ReplayPage() {
   return (
     <AppShell>
       <div className="mx-auto max-w-5xl px-6 py-8">
-        <BackToLearn className="mb-4" />
+        <BackToLearn className="mb-4" href={backTarget?.href} label={backTarget?.label} />
 
         <header className="mb-6">
           <h2 className="text-2xl font-semibold tracking-tight">
@@ -85,5 +93,13 @@ export default function ReplayPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+export default function ReplayPage() {
+  return (
+    <Suspense>
+      <ReplayPageInner />
+    </Suspense>
   );
 }

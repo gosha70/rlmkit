@@ -26,6 +26,7 @@ import type { LearnReplay } from "@/lib/api";
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ executionId: "exec-123" }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("swr", () => ({ default: vi.fn() }));

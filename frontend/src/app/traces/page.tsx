@@ -309,7 +309,7 @@ function TracesPageInner() {
                           onClick={(e) => {
                             e.stopPropagation();
                             router.push(
-                              `/learn/replay/${encodeURIComponent(exec.execution_id)}`,
+                              `/learn/replay/${encodeURIComponent(exec.execution_id)}?from=traces`,
                             );
                           }}
                           aria-label={`Replay in Learn: ${exec.query}`}

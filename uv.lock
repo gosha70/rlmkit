@@ -3050,6 +3050,7 @@ all = [
     { name = "anthropic" },
     { name = "bandit" },
     { name = "fastapi" },
+    { name = "lxml" },
     { name = "mypy" },
     { name = "nest-asyncio" },
     { name = "ollama" },
@@ -3089,6 +3090,7 @@ eval = [
 ]
 server = [
     { name = "fastapi" },
+    { name = "lxml" },
     { name = "pypdf" },
     { name = "python-docx" },
     { name = "python-multipart" },
@@ -3111,6 +3113,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.110.0" },
     { name = "httpx", specifier = ">=0.25.0" },
     { name = "litellm", specifier = ">=1.83.0" },
+    { name = "lxml", marker = "extra == 'server'", specifier = ">=6.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "nest-asyncio", marker = "extra == 'dev'", specifier = ">=1.6.0" },
     { name = "ollama", marker = "extra == 'ui'", specifier = ">=0.1.0" },
