@@ -290,6 +290,10 @@ class RunRLMUseCase:
                     TRACE_KEY_CODE: parsed.code,
                     TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
                     TRACE_KEY_ELAPSED_SECONDS: time.time() - step_start,
+                    "ttft_ms": response.ttft_ms,
+                    "decode_ms": response.decode_ms,
+                    "cached_tokens": response.cached_tokens,
+                    "cache_write_tokens": response.cache_write_tokens,
                 }
                 if clamp_info:
                     trace_entry[TRACE_KEY_CLAMP] = clamp_info
@@ -534,6 +538,10 @@ class RunRLMUseCase:
                                     getattr(self._llm, "active_model", None) or synth_response.model
                                 ),
                                 TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                                "ttft_ms": synth_response.ttft_ms,
+                                "decode_ms": synth_response.decode_ms,
+                                "cached_tokens": synth_response.cached_tokens,
+                                "cache_write_tokens": synth_response.cache_write_tokens,
                                 "note": "early post-coverage synthesis",
                             }
                         )
@@ -668,6 +676,10 @@ class RunRLMUseCase:
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                         or synth_response.model,
                         TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                        "ttft_ms": synth_response.ttft_ms,
+                        "decode_ms": synth_response.decode_ms,
+                        "cached_tokens": synth_response.cached_tokens,
+                        "cache_write_tokens": synth_response.cache_write_tokens,
                         "note": "synthesis fallback",
                     }
                 )
@@ -748,6 +760,10 @@ class RunRLMUseCase:
                             TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                             or synth_response.model,
                             TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                            "ttft_ms": synth_response.ttft_ms,
+                            "decode_ms": synth_response.decode_ms,
+                            "cached_tokens": synth_response.cached_tokens,
+                            "cache_write_tokens": synth_response.cache_write_tokens,
                             "note": "synthesis fallback",
                         }
                     )
@@ -1098,6 +1114,10 @@ class RunRLMUseCase:
                     TRACE_KEY_CODE: parsed.code,
                     TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
                     TRACE_KEY_ELAPSED_SECONDS: time.time() - step_start,
+                    "ttft_ms": response.ttft_ms,
+                    "decode_ms": response.decode_ms,
+                    "cached_tokens": response.cached_tokens,
+                    "cache_write_tokens": response.cache_write_tokens,
                 }
                 if clamp_info:
                     step_entry[TRACE_KEY_CLAMP] = clamp_info
@@ -1355,6 +1375,10 @@ class RunRLMUseCase:
                                 getattr(self._llm, "active_model", None) or synth_response.model
                             ),
                             TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                            "ttft_ms": synth_response.ttft_ms,
+                            "decode_ms": synth_response.decode_ms,
+                            "cached_tokens": synth_response.cached_tokens,
+                            "cache_write_tokens": synth_response.cache_write_tokens,
                             "note": "early post-coverage synthesis",
                         }
                         trace.append(synth_entry)
@@ -1484,6 +1508,10 @@ class RunRLMUseCase:
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                         or synth_response.model,
                         TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                        "ttft_ms": synth_response.ttft_ms,
+                        "decode_ms": synth_response.decode_ms,
+                        "cached_tokens": synth_response.cached_tokens,
+                        "cache_write_tokens": synth_response.cache_write_tokens,
                         "note": "synthesis fallback",
                     }
                 )
@@ -1569,6 +1597,10 @@ class RunRLMUseCase:
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                         or synth_response.model,
                         TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                        "ttft_ms": synth_response.ttft_ms,
+                        "decode_ms": synth_response.decode_ms,
+                        "cached_tokens": synth_response.cached_tokens,
+                        "cache_write_tokens": synth_response.cache_write_tokens,
                         "note": "synthesis fallback",
                     }
                     trace.append(synth_entry)

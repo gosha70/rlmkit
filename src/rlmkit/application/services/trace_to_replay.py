@@ -329,13 +329,32 @@ def _metrics_from_step(s: TraceStep) -> LearnReplayStepMetrics | None:
     tokens_out = s.output_tokens or None
     latency_ms = int(s.duration_seconds * 1000) if s.duration_seconds else None
     cost = s.cost_usd or None
-    if tokens_in is None and tokens_out is None and latency_ms is None and cost is None:
+    # Prefill/decode telemetry (optional — None means "not populated by
+    # this trace", not "zero").
+    ttft_ms = s.ttft_ms
+    decode_ms = s.decode_ms or None
+    cached_tokens = s.cached_tokens or None
+    cache_write_tokens = s.cache_write_tokens or None
+    if (
+        tokens_in is None
+        and tokens_out is None
+        and latency_ms is None
+        and cost is None
+        and ttft_ms is None
+        and decode_ms is None
+        and cached_tokens is None
+        and cache_write_tokens is None
+    ):
         return None
     return LearnReplayStepMetrics(
         tokensIn=tokens_in,
         tokensOut=tokens_out,
         latencyMs=latency_ms,
         costUsd=cost,
+        ttftMs=ttft_ms,
+        decodeMs=decode_ms,
+        cachedTokens=cached_tokens,
+        cacheWriteTokens=cache_write_tokens,
     )
 
 

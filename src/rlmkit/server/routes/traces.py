@@ -186,16 +186,24 @@ def _trace_from_execution_record(execution: ExecutionRecord, state: AppState) ->
             is_last=(i == total - 1),
             success=success,
         )
+        input_tokens = step_data.get("input_tokens", 0)
+        output_tokens = step_data.get("output_tokens", 0)
         steps.append(
             TraceStep(
                 index=i,
                 action_type=action_type,
                 code=step_data.get("code"),
                 output=step_data.get("content", ""),
-                input_tokens=step_data.get("input_tokens", 0),
-                output_tokens=step_data.get("output_tokens", 0),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 duration_seconds=step_data.get("elapsed_seconds", 0.0),
                 model=step_data.get("model"),
+                prompt_tokens=step_data.get("prompt_tokens", input_tokens),
+                completion_tokens=step_data.get("completion_tokens", output_tokens),
+                ttft_ms=step_data.get("ttft_ms"),
+                decode_ms=step_data.get("decode_ms", 0),
+                cached_tokens=step_data.get("cached_tokens", 0),
+                cache_write_tokens=step_data.get("cache_write_tokens", 0),
             )
         )
     return TraceResponse(
@@ -237,16 +245,24 @@ def _trace_from_telemetry(
 
     steps = []
     for step in detail.steps:
+        input_tokens = step.get("input_tokens", 0)
+        output_tokens = step.get("output_tokens", 0)
         steps.append(
             TraceStep(
                 index=step.get("step_index", 0),
                 action_type=step.get("action_type", "inspect"),
                 code=step.get("code"),
                 output=step.get("output", ""),
-                input_tokens=step.get("input_tokens", 0),
-                output_tokens=step.get("output_tokens", 0),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 duration_seconds=step.get("duration", 0.0),
                 model=step.get("model"),
+                prompt_tokens=step.get("prompt_tokens", input_tokens),
+                completion_tokens=step.get("completion_tokens", output_tokens),
+                ttft_ms=step.get("ttft_ms"),
+                decode_ms=step.get("decode_ms", 0),
+                cached_tokens=step.get("cached_tokens", 0),
+                cache_write_tokens=step.get("cache_write_tokens", 0),
             )
         )
 

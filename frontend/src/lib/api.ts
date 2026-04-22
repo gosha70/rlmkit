@@ -197,6 +197,14 @@ export interface TraceStep {
   recursion_depth: number;
   model?: string | null;
   timestamp?: string | null;
+  // Prefill/decode telemetry (spec v1.7 Phase 3). Defaults cover legacy
+  // traces recorded before these fields existed.
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  ttft_ms?: number | null;
+  decode_ms?: number;
+  cached_tokens?: number;
+  cache_write_tokens?: number;
 }
 
 export interface TraceResponse {
@@ -606,6 +614,10 @@ export interface LearnReplayStepMetrics {
   tokensOut?: number;
   latencyMs?: number;
   costUsd?: number;
+  ttftMs?: number | null;
+  decodeMs?: number;
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 export interface LearnReplayStep {
