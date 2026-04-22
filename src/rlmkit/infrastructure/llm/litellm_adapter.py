@@ -497,6 +497,15 @@ class LiteLLMAdapter:
         telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
         if telemetry.ttft_ms is not None:
             telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
+        else:
+            # Single-frame provider (terminal-only chunk with no content
+            # deltas). Mirror the sync/_accumulate_stream_async fallback:
+            # TTFT == total_ms, decode_ms == 0. Without this branch the
+            # terminal DTO reports ttft_ms=None while complete() /
+            # complete_async() report a measured value for the same
+            # stream — WebSocket consumers trust the terminal DTO, so
+            # missing this fallback loses TTFT telemetry.
+            telemetry.ttft_ms = telemetry.total_ms
 
         self._backfill_token_counts(telemetry, messages)
         yield StreamChunk(delta="", is_final=True, response=self._dto_from_telemetry(telemetry))

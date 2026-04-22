@@ -325,3 +325,34 @@ class TestCompleteStreamAsyncStreamChunk:
         # Phase 1 leaves cache extraction for Phase 2
         assert final.response.cached_tokens == 0
         assert final.response.cache_write_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_single_frame_terminal_only_stream_populates_ttft(self):
+        """Regression guard: single-frame (terminal-only) async stream.
+
+        When a provider emits no content deltas and only a terminal
+        chunk, `complete_async()` sets `ttft_ms = total_ms` so readers
+        get a usable number. `complete_stream_async()` must mirror that
+        fallback — the terminal StreamChunk's DTO is what WebSocket
+        consumers in ``run_rlm.py`` / ``run_direct.py`` trust for
+        telemetry, and a ``None`` TTFT there silently loses the signal.
+        """
+
+        async def mock_async_iter():
+            # Only a terminal chunk, no content frames.
+            yield _terminal_chunk(prompt=10, completion=5)
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with patch("litellm.acompletion", return_value=mock_async_iter()):
+            chunks: list[StreamChunk] = []
+            async for ch in adapter.complete_stream_async([{"role": "user", "content": "?"}]):
+                chunks.append(ch)
+
+        final = chunks[-1]
+        assert final.is_final is True
+        assert final.response is not None
+        # The critical assertion: TTFT must not be None on a
+        # single-frame stream — matches complete_async() behavior.
+        assert final.response.ttft_ms is not None
+        # decode_ms is 0 because there was no decode phase.
+        assert final.response.decode_ms == 0
