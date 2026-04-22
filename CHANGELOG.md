@@ -6,6 +6,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Prefill / decode telemetry
+
+#### Approved deviations from spec v1.7
+
+The `doc_internal/specs/prefill-decode-telemetry.md` spec is
+gitignored, so approved deviations live here to travel with the PR:
+
+- **AC-8**: spec wording asks for a wall-clock assertion ("first
+  websocket `token` arrives within `prior_baseline_ttft_ms + 50` ms").
+  Implemented as an order-based regression guard instead —
+  `tests/test_websocket_streaming.py::test_first_post_connect_event_is_token_not_aggregate`
+  asserts the first post-`connected` event is a `token`, not an
+  aggregate. Catches the same class of bug (buffering regression
+  that holds chunks until end-of-stream) without CI timing flake.
+- **Three hot-path call sites → two**: spec §Prerequisite refactor
+  names three `complete_stream_async` consumers. `git grep` finds
+  only two (`run_rlm.py:1019`, `run_direct.py:198`). Both migrated.
+- **Per-adapter test layout**: spec mentions
+  `tests/infrastructure/llm/test_*_adapter.py`; this repo has a flat
+  `tests/` layout. New tests added there rather than inventing a
+  new directory.
+- **Legacy adapters' `ttft_ms`**: `openai`/`anthropic`/`ollama`
+  wrappers have no streaming backend, so `ttft_ms` is `None` on
+  their terminal `StreamChunk.response`. `StreamChunk.response`
+  itself is always non-None for successful calls.
+- **`_rank` perf-aggregate computation**: the use-case-layer ranker
+  computes aggregates from the raw-DTO trace keys directly rather
+  than materializing via `server/routes/_helpers.py`, to respect
+  the Clean-Architecture dependency rule
+  (`application/` must not import from `server/`).
+- **`RLMKIT_STREAMED_COMPLETE` scope**: the flag gates
+  `complete()` / `complete_async()` only — `complete_stream_async`'s
+  Protocol signature change is unconditional (Protocols cannot
+  branch on env).
+- **`judge_score` backend passthrough**: pre-existing drift —
+  frontend `MatrixRankingMetric` included `judge_score` but backend
+  rejected it. Widened the backend Literal and added a
+  no-op passthrough branch in `_rank` (frontend re-ranks
+  client-side) so the request doesn't 422.
+
 - **Phase 6 — DGX Spark cookbook §4b (spec v1.7).** One paragraph added
   to `docs/hosts/dgx-spark.md` calling out that vLLM's
   `--enable-prefix-caching` flag is the single biggest knob for
