@@ -25,7 +25,7 @@ OpenAI requires a billing source before API calls succeed. Add one at
 
 ## 3. Add to RLM Studio
 
-In **Settings → LLM Providers → New**:
+See [hosts/README.md §3](README.md#3-what-rlm-studio-needs) for the general field shape. OpenAI-specific values:
 
 | Field    | Value                       |
 |----------|-----------------------------|

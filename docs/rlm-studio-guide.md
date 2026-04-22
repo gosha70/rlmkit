@@ -12,7 +12,7 @@ RLM Studio is a web application for experimenting with, tuning, and monitoring R
 
 ```bash
 # Terminal 1: Backend API
-uv run uvicorn rlmkit.server.app:app --reload
+uv run python -m rlmkit.server --reload
 
 # Terminal 2: Frontend
 cd frontend && npm run dev
@@ -22,13 +22,15 @@ The frontend runs on `http://localhost:3000`. The backend runs on `http://localh
 
 ## Pages Overview
 
-RLM Studio has four main pages, accessible from the sidebar:
+RLM Studio has six pages, accessible from the sidebar:
 
 | Page | Purpose |
 |------|---------|
 | **Chat** | Send queries to one or more Chat Providers in parallel |
+| **Compare** | Run the same query across a Provider × Mode grid (LLM Tuner) |
 | **Dashboard** | View aggregated metrics and charts per session |
 | **Traces** | Inspect individual execution traces step by step |
+| **Learn** | Concepts, Cookbook, and Troubleshooting guides with a scrubbable RLM loop replay |
 | **Settings** | Configure providers, Chat Providers, budgets, profiles, prompts, and theme |
 
 ---
@@ -39,7 +41,7 @@ Settings is where you configure everything before running experiments. It has si
 
 ### Providers
 
-Providers are the raw LLM connections. RLM Studio supports OpenAI, Anthropic, Ollama (local), and LM Studio (local) out of the box. For each provider you can:
+Providers are the raw LLM connections. RLM Studio supports OpenAI, Anthropic, Ollama (local), LM Studio (local), and vLLM (local) out of the box — plus any of the 100+ backends LiteLLM supports via env var overrides. For each provider you can:
 
 - **Select a model** from the provider's model catalog
 - **Enter an API key** (or rely on environment variables like `OPENAI_API_KEY`)
@@ -50,6 +52,24 @@ Providers are the raw LLM connections. RLM Studio supports OpenAI, Anthropic, Ol
 
 Providers that detect an environment variable show "API key set" automatically. You only need to configure them manually if you want to override the key or change the default model.
 
+For step-by-step setup per backend, see **[docs/hosts/README.md](hosts/README.md)** — it covers the decision tree across backends, deployment topologies (all-local vs laptop + remote GPU vs all-cloud), and security boundaries for keyless local backends.
+
+#### Scheduled connection testing
+
+RLM Studio can re-test every configured provider on a timer so you see offline backends before a chat run fails. Configure it under **Settings → Providers**:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| **Connection test interval (minutes)** | 0 | How often the background daemon re-tests all providers. `0` disables the daemon. Range: 0–1440 (24 h). |
+
+Each cycle tests up to 5 providers in parallel with a 10-second per-test timeout. A provider flips to **offline** only after 2 consecutive failures (to avoid flap from a transient network blip). A single manual **Test Connection** success flips an offline provider back to connected immediately.
+
+Each provider row shows three audit fields:
+
+- **Last tested at** — UTC timestamp of the most recent test.
+- **Last tested by** — `manual` (you clicked Test Connection) or `background` (the daemon).
+- **Consecutive failures** — number of back-to-back failures against the current threshold.
+
 ### Chat Providers and Profiles
 
 A **Chat Provider** binds a specific LLM (provider + model) to a **Profile**. The Profile controls execution mode, runtime settings, and budget limits. Editing a Profile immediately affects all Chat Providers that reference it — no caching, no duplication.
@@ -57,7 +77,7 @@ A **Chat Provider** binds a specific LLM (provider + model) to a **Profile**. Th
 | | Chat Provider | Profile |
 |---|---|---|
 | **Purpose** | A runnable configuration you select on the Chat page | A reusable settings template referenced by Chat Providers |
-| **Bound to an LLM?** | Yes — specific provider + model (e.g., Anthropic / claude-sonnet-4-5) | No — provider-agnostic |
+| **Bound to an LLM?** | Yes — specific provider + model (e.g., Anthropic / claude-sonnet-4-6) | No — provider-agnostic |
 | **Used in Chat?** | Yes — select one or more, each executes independently | Indirectly — through the Chat Providers that reference it |
 | **Controls** | LLM selection, RAG-specific config | Execution mode, runtime settings (temp, top_p, max tokens, timeout), budget limits |
 | **Editable fields** | Name, LLM provider, model, profile, RAG config | Strategy, runtime settings, budget, system prompts, description |
@@ -70,7 +90,7 @@ A **Chat Provider** is a named, runnable configuration that pairs a specific LLM
 
 Each Chat Provider specifies:
 
-- **LLM Provider + Model** — e.g., Anthropic / claude-sonnet-4-5
+- **LLM Provider + Model** — e.g., Anthropic / claude-sonnet-4-6
 - **Profile** — controls execution mode (Direct / RLM / RAG), runtime settings, and budget limits
 - **RAG config** (optional) — chunk size, overlap, top_k, embedding model (only shown when the profile's strategy is RAG)
 
@@ -82,8 +102,8 @@ Create multiple Chat Providers with different LLM + Profile combinations, then s
 |-------------------|----------|---------|-------|
 | GPT-4o Direct | OpenAI / gpt-4o | Accurate | Baseline — full context, direct mode |
 | GPT-4o RLM | OpenAI / gpt-4o | RLM deep | Same model, recursive exploration |
-| Claude Sonnet Direct | Anthropic / claude-sonnet-4-5 | Accurate | Cross-provider comparison |
-| Claude Sonnet RLM | Anthropic / claude-sonnet-4-5 | RLM deep | Cross-provider + cross-mode |
+| Claude Sonnet Direct | Anthropic / claude-sonnet-4-6 | Accurate | Cross-provider comparison |
+| Claude Sonnet RLM | Anthropic / claude-sonnet-4-6 | RLM deep | Cross-provider + cross-mode |
 
 **Example setup for tuning RLM parameters:** Create custom profiles with different step budgets, then assign them to Chat Providers using the same LLM.
 
@@ -170,7 +190,16 @@ The Chat page is where you run experiments.
    - **Cost** — USD cost for this execution
    - **Latency** — wall-clock time
 
-5. **Continue the conversation** — Conversation history is maintained per Chat Provider. Each follow-up question includes the relevant conversation history for that provider, enabling multi-turn dialogues.
+5. **Continue the conversation** — Conversation history is maintained per Chat Provider. Each follow-up question includes the relevant conversation history for that provider, enabling multi-turn dialogues. The `conversation_memory_enabled` toggle on each Chat Provider controls whether history is delivered at all; see [Conversation memory](#conversation-memory) below for the per-mode delivery differences.
+
+### Conversation memory
+
+History delivery differs by execution mode:
+
+- **Direct / Compare** — prior turns are assembled into the prompt as a "Previous conversation:" prefix, token-budgeted (default 30% of the model's context window). The LLM sees history as native chat messages.
+- **RLM / RAG / Auto** — prior turns are bound as a Python variable named `history` inside the sandbox REPL. The variable is a list of `{"turn": int, "user": str, "assistant": str}` dicts, byte-capped so the sandbox can't exhaust host memory. The model only reads history if its generated code references `history` — meaning history costs zero tokens when the model doesn't need it.
+
+Toggle `conversation_memory_enabled = False` on a Chat Provider to disable history entirely — useful for stateless benchmarking where every query should start clean.
 
 ### Side-by-Side Comparison
 
@@ -201,6 +230,24 @@ The Dashboard provides aggregated metrics for a selected session.
 - **Total Cost** — sum of all execution costs
 - **Avg Latency** — mean execution time
 - **Token Savings** — percentage saved by RLM compared to Direct mode
+
+All four summary cards exclude non-usable outcomes (see [Outcome classification](#outcome-classification) below) so averages reflect only runs that produced a real answer.
+
+### Outcome classification
+
+Every execution is classified into one of five outcome categories:
+
+| Category | Meaning | Usable? |
+|----------|---------|---------|
+| `success` | The run completed and produced an answer | Yes |
+| `timeout` | The wall-clock timeout fired before the run finished | No |
+| `budget_exhausted` | Token / cost / step budget ran out | No (unless ≥50 chars of answer returned) |
+| `context_overflow` | The prompt exceeded the model's context window | No |
+| `general_error` | Any other failure — adapter error, sandbox violation, network failure, etc. | No |
+
+Non-usable outcomes are excluded from cost, latency, and token aggregations across the Dashboard — the summary cards, charts, and ranking all count only the runs that actually produced an answer. The Recent Executions table still shows every run including failures, with the outcome category in the status column.
+
+For session-level failure metrics, use `GET /api/metrics/failures/{session_id}` — the response includes the failure rate, a breakdown by category, and a breakdown by provider and mode. The Dashboard's failure chart is driven by this endpoint.
 
 ### Charts
 
@@ -253,6 +300,129 @@ When you select an execution, the trace detail shows:
 
 **Step Detail** — click any step in Timeline or Tree to see its full details: the raw code, output, model used, duration, and token breakdown.
 
+### Replay in Learn
+
+Every row in the execution list has a **Replay in Learn** action. Clicking it navigates to `/learn/replay/{execution_id}` and renders that specific run as a scrubbable, step-by-step walkthrough — the same widget the Learn tab uses for bundled demos, but driven by your trace. Useful for sharing a link to a specific failure, teaching the RLM loop from a real run, or reviewing a teammate's session.
+
+### Deleting traces
+
+Traces accumulate as you experiment. Two affordances keep the list manageable:
+
+- **Single-row delete** — each row has a trash icon; clicking opens a confirm dialog and removes just that execution.
+- **Bulk delete (Gmail-style)** — tick the checkbox in the header to select all visible rows, or click individual checkboxes to build a selection. The toolbar shows a delete action with the count; confirm to remove all selected executions.
+
+Deletions are permanent — once removed, a trace cannot be replayed, graphed, or judged. Deleting a session does not delete its traces; delete the traces first if that's what you want.
+
+---
+
+## Learn
+
+The Learn page is an in-product tutorial surface. It teaches the RLM paradigm through live examples and renders the same `docs/` content you're reading now as interactive guides.
+
+### Sub-pages
+
+| Sub-page | What it shows |
+|----------|---------------|
+| **Concepts** | The RLM loop explained with an interactive replay walkthrough (6-node SVG diagram, play / pause / step / reset controls at 1×, 1.5×, 2× speeds). Ships with a bundled demo replay. |
+| **Cookbook** | The per-host setup guides from `docs/hosts/*.md` rendered in-app. Pick a backend (Anthropic, OpenAI, Ollama, LM Studio, vLLM, DGX Spark) and get the Install → Start → Model → Add to RLM Studio → Test flow without leaving the app. |
+| **Troubleshooting** | A searchable, structured view of [`docs/troubleshoot.yaml`](troubleshoot.yaml). Symptoms are grouped by area (connectivity, runtime, sandbox, etc.); each entry has a cause and a fix. |
+
+### Replay walkthrough
+
+The walkthrough widget is a three-pane layout — controls and step list on the left, a 6-node SVG diagram in the centre, and the currently-focused step's detail on the right. As you step forward, the active node highlights, the step list scrolls, and the right pane updates with the code the LLM wrote, the output it received, and token counts.
+
+Two entry points:
+
+1. **Bundled demo** — the Concepts page ships with a pre-recorded replay so you can try the widget without running anything yourself.
+2. **From a trace** — any Traces row exposes **Replay in Learn**, which deep-links to `/learn/replay/{execution_id}`. The same widget loads, but backed by your real execution.
+
+A **truncation banner** appears when the underlying trace was longer than the replay cap — it tells you how many steps the full run had so you know the walkthrough is a head/tail slice rather than the complete run.
+
+### Deep-link from Traces
+
+The Traces row CTA is keyboard-safe — Enter or Space on the **Replay in Learn** button navigates without also firing the row's open-trace handler. Clicking the row itself still opens the full trace detail; clicking the button opens the walkthrough.
+
+---
+
+## Compare
+
+The Compare page — also known as the **LLM Tuner** — runs the same query against a grid of (LLM Provider × Execution Mode) cells and ranks the results. It's the fastest way to answer *"which provider + mode should I use for this kind of workload?"* without clicking through Chat N×M times.
+
+### Workflow
+
+1. Pick one or more **LLM providers** (each becomes a column).
+2. Pick one or more **execution modes** — Direct, RLM, RAG (each becomes a row).
+3. Optionally upload a document, then type a query.
+4. Pick a **ranking metric** (see below).
+5. Click **Run** — every cell executes in parallel against `POST /api/chat/compare-matrix`.
+
+Each cell shows the answer, token count, cost, and latency. The winner for your selected metric is highlighted.
+
+### Ranking metrics
+
+| Metric | Winner is the cell with… |
+|--------|---------------------------|
+| **Cost** | Lowest total USD cost |
+| **Tokens** | Fewest total tokens consumed |
+| **Latency** | Lowest wall-clock time |
+| **Answer per cost** | Best answer-length-per-dollar ratio |
+| **Judge score** | Highest LLM-as-judge `overall_score` (requires a judge Chat Provider set in Settings; see [Judge & scoring](#judge--scoring)) |
+
+### Ephemeral Chat Providers
+
+Compare builds Chat Providers on the fly from your picked Provider × Mode combinations. They do not appear under **Settings → Chat Providers** and do not persist after the run — the grid is a disposable experiment surface. If you find a combination worth keeping, recreate it as a permanent Chat Provider in Settings.
+
+### Latency expectation
+
+The matrix endpoint is synchronous — the UI waits until every cell completes (or errors) before rendering. Plan for the slowest cell to dominate the clock: a 3×3 grid with one slow provider will wait for that provider before anything renders. Budget overruns and provider failures surface per-cell without blocking siblings, so you still see partial results even when one combination errors.
+
+---
+
+## Judge & scoring
+
+LLM-as-judge is an optional scoring layer: a dedicated judge LLM rates every answer on a rubric, producing an `overall_score` you can sort and compare by. The Compare page uses it as a ranking metric; the Traces page shows it per execution.
+
+### Picking a judge provider
+
+Under **Settings → Providers**, designate one Chat Provider as the **judge**. The judge config lives at the app level (`judge_chat_provider_id`), so every execution across the app that gets scored uses the same judge. Picking a strong model (e.g. `claude-sonnet-4-6` or `gpt-4o`) gives more reliable scores than a small local model; the judge cost is separate from the scored run's cost.
+
+### Pointwise rubric (v2.0)
+
+The default scoring path is **pointwise** — the judge scores one answer at a time on five dimensions, each on a 1–5 scale:
+
+| Dimension | Anchor |
+|-----------|--------|
+| **Relevance** | Does the answer address the query? |
+| **Correctness** | Is the answer factually / logically correct against the source? |
+| **Completeness** | Are all relevant parts of the query addressed? |
+| **Coherence** | Is the answer well-structured and readable? |
+| **Conciseness** | Is the answer free of padding and repetition? |
+
+`overall_score = mean(dimension_scores)`, rounded to 2 decimals and clamped to `[1.0, 5.0]`.
+
+The rubric prompts live in `src/rlmkit/prompts/judge_pointwise.yaml`; edit there to tune anchors.
+
+### Pairwise rubric
+
+For head-to-head comparisons, the judge can score two answers against each other on the same five dimensions, plus a winner: `a`, `b`, or `tie`. The prompts live in `src/rlmkit/prompts/judge_pairwise.yaml`.
+
+### Auto-scoring non-usable outcomes
+
+The judge is an LLM call — it has a cost and a latency. Running it on a failed execution is wasteful, so non-usable outcomes (see [Outcome classification](#outcome-classification)) skip the judge entirely and receive a deterministic auto-score:
+
+| Outcome | `overall_score` | Rationale |
+|---------|-----------------|-----------|
+| `budget_exhausted` with ≥50 chars of answer | **1.0** | Partial answer; scored at the floor so it doesn't pollute the top of a ranking. |
+| All other non-usable outcomes (timeout, context overflow, hard failures, …) | **0.0** | No usable answer; scored below the rubric floor so these sort last when judge_score is the ranking metric. |
+
+This keeps `judge_score` sortable across a mix of successes and failures without spending judge tokens on runs that have nothing to score.
+
+### Where judge scores surface
+
+- **Compare** — pick "Judge score" as the ranking metric; cells are highlighted by `overall_score`.
+- **Traces** — the judge score appears on each execution row; unjudged slots sort below judged ones.
+- **Dashboard** — average judge score can be tracked across sessions (in charts that include this metric).
+
 ---
 
 ## Typical Experiment Workflows
@@ -261,8 +431,8 @@ When you select an execution, the trace detail shows:
 
 1. Go to **Settings > Providers** and configure at least one LLM provider (e.g., Anthropic)
 2. Go to **Settings > Chat Providers** and create two:
-   - "Claude Direct" — Anthropic / claude-sonnet-4-5 / Profile: Accurate
-   - "Claude RLM" — Anthropic / claude-sonnet-4-5 / Profile: RLM deep
+   - "Claude Direct" — Anthropic / claude-sonnet-4-6 / Profile: Accurate
+   - "Claude RLM" — Anthropic / claude-sonnet-4-6 / Profile: RLM deep
 3. Go to **Chat**, select both Chat Providers
 4. Upload a large document
 5. Ask a question — both providers respond in parallel
@@ -280,7 +450,7 @@ When you select an execution, the trace detail shows:
 
 ### Cross-Provider Benchmarking
 
-1. Create Chat Providers for OpenAI/gpt-4o and Anthropic/claude-sonnet-4-5, both using the "Accurate" profile
+1. Create Chat Providers for OpenAI/gpt-4o and Anthropic/claude-sonnet-4-6, both using the "Accurate" profile
 2. Run identical queries against both
 3. Compare response quality, token usage, and cost in the column layout
 4. Use **Dashboard > Cost by Chat Provider** to see cumulative cost differences
@@ -302,7 +472,7 @@ When you select an execution, the trace detail shows:
 The backend defaults to port 8000. To change it:
 
 ```bash
-uv run uvicorn rlmkit.server.app:app --reload --port 8002
+RLMKIT_PORT=8002 uv run python -m rlmkit.server --reload
 ```
 
 Then set the frontend to point at the new port. Create or edit `frontend/.env.local`:

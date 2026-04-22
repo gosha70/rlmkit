@@ -7,8 +7,8 @@ Thank you for your interest in contributing to RLMKit! This guide will help you 
 ### Prerequisites
 
 - Python 3.10+
-- [uv](https://github.com/astral-sh/uv) for dependency management
-- Docker (for Neo4j and vector DB services)
+- [uv](https://github.com/astral-sh/uv) for Python dependency management
+- Node.js 22+ (for the frontend)
 - Git
 
 ### Development Setup
@@ -18,52 +18,60 @@ Thank you for your interest in contributing to RLMKit! This guide will help you 
 git clone https://github.com/gosha70/rlmkit.git
 cd rlmkit
 
-# Install dependencies
+# Install Python dependencies
 uv sync
 
 # Copy environment variables
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env with your API keys (optional — providers also configurable in the UI)
 
-# Start backing services
-docker compose up -d
-
-# Verify everything works
+# Run the backend test suite
 uv run pytest
+
+# (Optional) Install and test the frontend
+cd frontend && npm install && npm test
 ```
+
+### Running the App Locally
+
+```bash
+# Terminal 1: backend API
+uv run python -m rlmkit.server --reload
+
+# Terminal 2: frontend
+cd frontend && npm run dev
+```
+
+Open <http://localhost:3000> in your browser.
 
 ## Project Conventions
 
-Please review `CLAUDE.md` for the full set of project conventions. Key points:
+See `CLAUDE.md` for the full set of project conventions. Summary:
+
+### Architecture
+
+- RLMKit uses Clean Architecture. The dependency rule is non-negotiable: `domain` → `application` → `infrastructure` / `server`. Inner layers never import from outer.
+- Ports (`LLMPort`, `SandboxPort`, `StoragePort`, `EmbeddingPort`) are `@runtime_checkable` Protocols. Use structural checks (`hasattr`, `callable`), not `isinstance(x, Protocol)`.
+- All LLM calls go through `LLMPort` (primary adapter: `LiteLLMAdapter`). No direct SDK imports outside `infrastructure/llm/`.
+- All sandbox executions go through `SandboxPort` — choose from Local, Subprocess, Restricted, Docker.
 
 ### Prompts
 
-- All prompts live as versioned YAML files in `prompts/`. Never use inline prompt strings.
+- All prompts live as versioned YAML files in `src/rlmkit/prompts/`. Never inline system-prompt or rubric strings in code.
 
 ### LLM Calls
 
-- Every LLM call must be wrapped in a traced function with latency and token logging.
-- The embeddings model is pinned in config — never hardcode model names.
-
-### RAG Pipeline
-
-- Default to hybrid search (vector + BM25 keyword) before graph traversal.
-- Chunk overlap should be 10–15% of chunk size.
-- Never embed raw HTML/Markdown; always clean to plain text first.
-- A reranking step is required before final context assembly.
-- All retrieval results must include source references for citation.
-
-### Knowledge Graph
-
-- Graph schema is defined in code. Changes require migration scripts.
-- Graph traversal depth is configurable (default: 2 hops).
+- Every LLM call must be wrapped with latency and token logging.
+- Embedding model IDs live in config — never hardcode.
 
 ### Code Style
 
-- **Type hints** on all functions.
+- **Type hints** on all public APIs.
 - **Docstrings** on all public APIs.
-- Use **Ruff** for linting and **Black** for formatting.
-- Target **80%+** test coverage.
+- **Pydantic v2** for request/response models.
+- **Ruff** + **Black** for lint and format.
+- **No magic strings** for mode / trace-key literals — import from the centralized constants.
+- Target **80%+** test coverage on `application/` and `infrastructure/`.
 
 ## How to Contribute
 
@@ -81,35 +89,41 @@ Use the [Feature Request](https://github.com/gosha70/rlmkit/issues/new?template=
 
 ### Submitting Pull Requests
 
-1. **Fork** the repository and create a branch from `main`.
+1. **Fork** the repository and create a branch from `master`.
 2. **Follow** the coding standards described above.
 3. **Write tests** — no live API calls in unit tests. Use mock LLM response fixtures.
-4. **Run the test suite** before submitting:
+4. **Run the test suites** before submitting:
    ```bash
    uv run pytest
+   cd frontend && npm test
    ```
 5. **Fill out the PR template** completely.
 6. **Keep PRs focused** — one logical change per PR.
 
 ### Testing Guidelines
 
-- Use `pytest` with fixtures for mock LLM responses.
-- Retrieval evaluation: measure `recall@k` and `precision@k` on labeled datasets.
-- Answer quality: use LLM-as-judge with rubrics in `eval/rubrics/`.
-- Graph tests: validate schema constraints and Cypher query correctness.
-- If your change affects retrieval or generation quality, include eval results in your PR description.
+- Use `pytest` with fakes for LLM responses; no live API calls in unit tests.
+- Use `TestClient` for REST endpoint tests; real WebSocket connections for streaming e2e.
+- `vitest` for frontend component and integration tests (`cd frontend && npm test`).
+- Use `reset_state()` to isolate the AppState singleton between tests.
+- If your change affects retrieval or generation quality, include before/after metrics in your PR description.
 
 ## Project Structure Overview
 
 | Directory | Purpose |
-|-----------|----------|
-| `src/rlmkit/` | Core library code |
-| `src/rlmkit/envs/` | Execution environments |
-| `src/rlmkit/llm/` | LLM provider integrations |
-| `tests/` | Test suite |
-| `benchmarks/` | Performance benchmarks |
-| `examples/` | Usage examples |
-| `frontend/` | Production UI (React+Vite) |
+|-----------|---------|
+| `src/rlmkit/domain/` | Entities, value objects, ports — zero external deps |
+| `src/rlmkit/application/` | Use cases, services, constants |
+| `src/rlmkit/infrastructure/` | Adapters (LiteLLM, sandbox, storage, embeddings) |
+| `src/rlmkit/server/` | FastAPI app, routes, Pydantic models, AppState |
+| `src/rlmkit/core/` | Original RLM controller loop |
+| `src/rlmkit/envs/` | Execution environments (`DockerExecutor`, `PyReplEnv`) |
+| `src/rlmkit/llm/` | Provider registration and auto-detection |
+| `src/rlmkit/prompts/` | Versioned YAML prompt templates |
+| `tests/` | Backend test suite |
+| `frontend/` | Next.js + React + shadcn/ui UI |
+| `docs/` | User-facing docs (`rlm-concepts`, `rlm-studio-guide`, `hosts/`, `troubleshoot.yaml`) |
+| `doc_internal/` | Internal specs, plans, ADRs (gitignored — contributor-local) |
 | `docker/` | Docker configurations |
 
 ## Code of Conduct

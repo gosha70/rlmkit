@@ -30,7 +30,7 @@ What actually happened. Include error messages or tracebacks if available.
 - **Python version**: [e.g., 3.11.5]
 - **RLMKit version/commit**: [e.g., `main` @ abc1234]
 - **LLM provider**: [e.g., OpenAI, Anthropic, Ollama]
-- **Model**: [e.g., gpt-4o, claude-sonnet-4-5-20250929]
+- **Model**: [e.g., gpt-4o, claude-sonnet-4-6]
 
 ## Relevant Logs
 

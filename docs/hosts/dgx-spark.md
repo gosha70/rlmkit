@@ -15,6 +15,7 @@ pre-fills the vLLM shape because that's the OpenAI-compatible path.
 
 ```bash
 hostnamectl
+hostname -I                # grab the LAN IP you'll point RLM Studio at
 cat /etc/os-release
 uname -a
 nvidia-smi
@@ -24,7 +25,29 @@ ip addr
 ```
 
 `nvidia-smi` must show the GPU and a sensible driver version before
-you proceed. Everything downstream assumes it does.
+you proceed. Everything downstream assumes it does. Note the IP from
+`hostname -I` — this is the `<dgx-spark-ip>` you'll plug into RLM
+Studio below.
+
+## 2a. Deployment topology
+
+The intended pattern is **RLMKit on your dev laptop + the LLM on the
+Spark**. The laptop runs the backend (:8000) and frontend (:3000);
+the Spark runs Ollama (:11434) or vLLM (:8000). RLM Studio is
+configured with a Base URL of `http://<dgx-spark-ip>:<port>` and
+reaches the Spark over your LAN (or VPN / SSH tunnel).
+
+End-to-end health check for this topology:
+
+```bash
+# From the laptop, once the Spark-side server is up
+curl http://<dgx-spark-ip>:11434/api/tags                    # Ollama reachable?
+curl http://localhost:8000/health | python3 -m json.tool      # RLMKit backend up?
+```
+
+Both curls should return 200s before you try a Test Connection from
+the UI. See [hosts/README.md §2](README.md#2-deployment-topologies)
+for the equivalent pattern for other remote-GPU setups.
 
 ## 2. Install and start Ollama
 
@@ -136,7 +159,29 @@ python -m vllm.entrypoints.openai.api_server \
 
 See §7 for why these flags matter on Spark's unified memory.
 
+## 4a. Optional: Open WebUI as a smoke-test client
+
+If you want to confirm the Spark-side server works from something
+other than RLM Studio, Open WebUI gives you a chat UI in a browser.
+Run it against your Ollama (or OpenAI-compatible vLLM) endpoint:
+
+```bash
+docker run -d \
+  -p 3001:8080 \
+  -e OLLAMA_BASE_URL=http://<dgx-spark-ip>:11434 \
+  -v open-webui:/app/backend/data \
+  --name open-webui \
+  --restart always \
+  ghcr.io/open-webui/open-webui:main
+```
+
+Open <http://localhost:3001> and pick the model you pulled in §3. If
+it responds, your Spark-side inference stack is sound — any failure
+after this point is on the RLMKit side of the boundary.
+
 ## 5. Add to RLM Studio
+
+See [hosts/README.md §3](README.md#3-what-rlm-studio-needs) for the general field shape. DGX Spark exposes two backends; pick the one you actually started.
 
 ### Ollama path
 
@@ -154,11 +199,7 @@ See §7 for why these flags matter on Spark's unified memory.
 | Base URL | `http://<dgx-spark-ip>:8000/v1`  |
 | Model    | Same id you passed to `--model`  |
 
-No API key is required by default. RLM Studio's Settings does not
-currently expose an API-key field for local backends (vLLM counts as
-local), so if you need to secure your Spark server, run it behind a
-trusted network boundary — VPN, SSH tunnel, or listen only on
-`127.0.0.1` — rather than via vLLM's own `--api-key`.
+No API key is required. See [hosts/README.md §5](README.md#5-security--network-boundaries) for securing a local backend — prefer a VPN, SSH tunnel, or `127.0.0.1` binding over `vllm --api-key`.
 
 ## 6. Test connection
 
