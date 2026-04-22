@@ -127,6 +127,7 @@ export function Sidebar({
             width={28}
             height={28}
             className="shrink-0 rounded-full"
+            style={{ width: "auto", height: "auto" }}
           />
           {!collapsed && <span className="text-sm font-semibold">RLMKit</span>}
         </div>
