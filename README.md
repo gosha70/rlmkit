@@ -163,6 +163,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 For a complete walkthrough of all RLM Studio features, see **[docs/rlm-studio-guide.md](docs/rlm-studio-guide.md)**.
 
+## Documentation
+
+In-depth guides live under [`docs/`](docs/). Start with whichever matches what you're trying to do:
+
+| Guide | For |
+|-------|-----|
+| [docs/rlm-concepts.md](docs/rlm-concepts.md) | Understanding the RLM paradigm — the recursive loop, circuit breakers, the JSON action protocol, and what RLMKit adds beyond the original paper |
+| [docs/rlm-studio-guide.md](docs/rlm-studio-guide.md) | Full walkthrough of the RLM Studio web app — pages, settings, workflows, Learn / Compare / Judge |
+| [docs/rlm-prompt-tuning.md](docs/rlm-prompt-tuning.md) | Safe patterns for customizing system prompts in Direct / RLM / RAG modes |
+| [docs/hosts/README.md](docs/hosts/README.md) | Connecting an LLM backend — decision tree across providers, deployment topologies, security boundaries. Per-provider guides for OpenAI, Anthropic, Ollama, LM Studio, vLLM, DGX Spark |
+| [docs/RLMKit_Design_Document.md](docs/RLMKit_Design_Document.md) | Design rationale, architecture decisions, and internals for contributors |
+
 ## Architecture
 
 ```mermaid
