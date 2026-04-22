@@ -356,7 +356,13 @@ class MetricsResponse(BaseModel):
 
 class FailureCategorySummary(BaseModel):
     # Keep in sync with OutcomeCategory enum in outcome_classifier.py
-    category: Literal["timeout", "budget_exhausted", "context_overflow", "general_error"]
+    category: Literal[
+        "timeout",
+        "prefill_timeout",
+        "budget_exhausted",
+        "context_overflow",
+        "general_error",
+    ]
     count: int = 0
 
 

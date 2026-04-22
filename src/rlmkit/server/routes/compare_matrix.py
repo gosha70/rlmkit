@@ -726,6 +726,22 @@ def _record_slot_telemetry(
     """Persist one matrix slot as a telemetry ``runs`` row + steps."""
     try:
         result = slot_result.result
+
+        # Classify per slot (not aggregate) so PREFILL_TIMEOUT stays
+        # stable across dashboard reloads — see spec §8b.
+        from rlmkit.application.services.outcome_classifier import (
+            classify_execution_outcome,
+        )
+        from rlmkit.server.routes._helpers import _materialize_trace
+
+        slot_trace = _materialize_trace(result.trace, run_success=result.success)
+        outcome = classify_execution_outcome(
+            success=result.success,
+            error=result.error,
+            answer=result.answer,
+            trace=slot_trace,
+        )
+
         state.telemetry.record_run(
             run_id=meta.execution_id,
             created_at=created_at.timestamp(),
@@ -746,6 +762,7 @@ def _record_slot_telemetry(
             chat_provider_name=meta.chat_provider_name,
             comparison_group_id=comparison_group_id,
             steps_count=result.steps,
+            outcome_category=outcome.category.value,
         )
         # Canonicalize action types to match in-memory traces / JSONL exports.
         from rlmkit.server.routes.chat import _canonical_action_type

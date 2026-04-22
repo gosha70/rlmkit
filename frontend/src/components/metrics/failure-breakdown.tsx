@@ -11,15 +11,19 @@ interface FailureBreakdownProps {
   data: FailureMetricsResponse;
 }
 
-const CATEGORY_LABELS: Record<FailureCategory, string> = {
+// Exported so tests can assert on category coverage without reaching
+// into the recharts DOM (which is mocked in the frontend test env).
+export const CATEGORY_LABELS: Record<FailureCategory, string> = {
   timeout: "Timeout",
+  prefill_timeout: "Prefill Timeout",
   budget_exhausted: "Budget Exhausted",
   context_overflow: "Context Overflow",
   general_error: "General Error",
 };
 
-const ALL_CATEGORIES: FailureCategory[] = [
+export const ALL_CATEGORIES: FailureCategory[] = [
   "timeout",
+  "prefill_timeout",
   "budget_exhausted",
   "context_overflow",
   "general_error",

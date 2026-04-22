@@ -6,6 +6,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Prefill / decode telemetry
+- **Phase 4 — classifier PREFILL_TIMEOUT + write-time persistence + route helpers (spec v1.7).**
+  `OutcomeCategory` gains `PREFILL_TIMEOUT`;
+  `classify_execution_outcome` accepts an optional `trace:
+  ExecutionTrace | None` kwarg and promotes a timeout failure to
+  PREFILL_TIMEOUT when ≥2 steps satisfy `ttft_ms / (duration_ms) >
+  0.7` — two or more prefill-heavy steps is the signature of
+  prefix-cache failure vs. a single cold-start. `TelemetryStore.
+  record_run` gains an `outcome_category: str | None` kwarg; the
+  store stays a dumb sink that writes verbatim. New route helper
+  module `server/routes/_helpers.py` exposes
+  `_translate_raw_trace_entry` (raw-DTO → `TraceStep`) and
+  `_materialize_trace` (tolerant wrapper); both chat and
+  compare_matrix materialize the trace, classify, and pass the
+  persisted category through `record_run`. `_RunPoint` in
+  `metrics.py` gains `outcome_category`; the dashboard's failure
+  aggregator now prefers the persisted value and only re-derives
+  for legacy `NULL` rows — legacy TIMEOUT rows are never
+  retroactively promoted. New troubleshoot entry
+  `prefill-timeout-enable-caching` surfaces on the Learn tab.
+  Judge (`server/judge.py`) is unchanged per AC-28. ACs: 7, 13b,
+  14, 15, 21, 24, 25, 26, 27, 28.
 - **Phase 3 — use-case trace writers + REST/replay shape + CI guard (spec v1.7).**
   Every `TRACE_KEY_ROLE: "assistant"` dict in `application/use_cases/`
   now populates the four new telemetry keys (`ttft_ms`, `decode_ms`,

@@ -547,6 +547,23 @@ def _record_telemetry(
             so ``aggregate_by_provider()`` remains consistent across code paths.
         model: Model identifier (e.g. "gpt-4o", "claude-sonnet-4-6").
     """
+    # Materialize the raw trace once and classify the outcome before
+    # persisting. The classifier keys on TTFT/duration ratios, so it
+    # needs the trace in memory here (dashboard reads are N+1 if we
+    # defer classification to read time — see spec §8b).
+    from rlmkit.application.services.outcome_classifier import (
+        classify_execution_outcome,
+    )
+    from rlmkit.server.routes._helpers import _materialize_trace
+
+    trace_obj = _materialize_trace(result.trace, run_success=result.success)
+    outcome = classify_execution_outcome(
+        success=result.success,
+        error=result.error,
+        answer=result.answer,
+        trace=trace_obj,
+    )
+
     run_id = state.telemetry.record_run(
         run_id=execution.execution_id,
         created_at=execution.started_at.timestamp() if execution.started_at else 0.0,
@@ -567,6 +584,7 @@ def _record_telemetry(
         chat_provider_id=execution.chat_provider_id,
         chat_provider_name=execution.chat_provider_name,
         steps_count=result.steps,
+        outcome_category=outcome.category.value,
     )
     total = len(result.trace)
     for i, step_data in enumerate(result.trace):

@@ -491,7 +491,14 @@ export interface HealthResponse {
 }
 
 // Failure metrics
-export type FailureCategory = "timeout" | "budget_exhausted" | "context_overflow" | "general_error";
+export type FailureCategory =
+  | "timeout"
+  // Phase 4 — prefill-dominated timeouts are a distinct remediation class
+  // (enable prefix caching, shorten history replay).
+  | "prefill_timeout"
+  | "budget_exhausted"
+  | "context_overflow"
+  | "general_error";
 
 export interface FailureCategorySummary {
   category: FailureCategory;
