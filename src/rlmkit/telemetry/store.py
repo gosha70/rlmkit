@@ -94,6 +94,55 @@ CREATE INDEX IF NOT EXISTS idx_ratings_run ON ratings(run_id);
 
 
 # ---------------------------------------------------------------------------
+# Schema migrations
+# ---------------------------------------------------------------------------
+#
+# `_SCHEMA_SQL` above is **frozen at the v1 baseline** and must not grow
+# new columns. Every post-v1 schema change goes in `_MIGRATIONS` keyed by
+# target version; both fresh installs and upgrades run through the same
+# migration path via `_run_migrations()` using SQLite's `PRAGMA user_version`.
+# This keeps the bootstrap rule pinned: one code path, no branching.
+
+_CURRENT_SCHEMA_VERSION = 2
+
+_MIGRATIONS: dict[int, list[str]] = {
+    2: [
+        # Prefill/decode telemetry fields on steps.
+        "ALTER TABLE steps ADD COLUMN prompt_tokens INTEGER DEFAULT 0",
+        "ALTER TABLE steps ADD COLUMN completion_tokens INTEGER DEFAULT 0",
+        "ALTER TABLE steps ADD COLUMN ttft_ms INTEGER",
+        "ALTER TABLE steps ADD COLUMN decode_ms INTEGER DEFAULT 0",
+        "ALTER TABLE steps ADD COLUMN cached_tokens INTEGER DEFAULT 0",
+        "ALTER TABLE steps ADD COLUMN cache_write_tokens INTEGER DEFAULT 0",
+        # Run-level outcome category (wired to writers in phase 4).
+        "ALTER TABLE runs ADD COLUMN outcome_category TEXT",
+    ],
+}
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply every migration whose target version exceeds PRAGMA user_version.
+
+    Uses SQLite's built-in ``user_version`` pragma as the schema-version
+    store — no extra table required. Idempotent: reopening an
+    already-migrated DB is a no-op because each migration block bumps
+    the pragma only after its statements commit successfully.
+
+    Fresh installs run the v1 `_SCHEMA_SQL` (pragma starts at 0) and then
+    the v2 migration adds the new columns. Upgrades from pre-Phase-2 DBs
+    also start at 0 and follow the same path.
+    """
+    current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    for target_version in sorted(_MIGRATIONS):
+        if target_version <= current:
+            continue
+        for stmt in _MIGRATIONS[target_version]:
+            conn.execute(stmt)
+        conn.execute(f"PRAGMA user_version = {target_version}")
+        conn.commit()
+
+
+# ---------------------------------------------------------------------------
 # Data classes for query results
 # ---------------------------------------------------------------------------
 
@@ -120,6 +169,7 @@ class RunSummary:
     answer_length: int
     comparison_group_id: str | None = None
     answer: str = ""
+    outcome_category: str | None = None
 
 
 @dataclass
@@ -191,6 +241,7 @@ class TelemetryStore:
             conn = self._connect()
             conn.executescript(_SCHEMA_SQL)
             conn.commit()
+            _run_migrations(conn)
 
     def close(self) -> None:
         """Close the database connection."""
@@ -640,6 +691,10 @@ class TelemetryStore:
 
     @staticmethod
     def _row_to_summary(row: sqlite3.Row) -> RunSummary:
+        # outcome_category was added in schema v2; read defensively so legacy
+        # rows on databases that haven't migrated yet don't blow up reads.
+        keys = row.keys()
+        outcome_category = row["outcome_category"] if "outcome_category" in keys else None
         return RunSummary(
             id=row["id"],
             created_at=row["created_at"],
@@ -659,6 +714,7 @@ class TelemetryStore:
             answer_length=row["answer_length"],
             comparison_group_id=row["comparison_group_id"],
             answer=row["answer"] or "",
+            outcome_category=outcome_category,
         )
 
 

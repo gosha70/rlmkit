@@ -6,6 +6,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Prefill / decode telemetry
+- **Phase 2 — data model + cache extraction + store migration + RAG two-step trace (spec v1.7).**
+  `TraceStep` gains six fields (`prompt_tokens`, `completion_tokens`,
+  `ttft_ms`, `decode_ms`, `cached_tokens`, `cache_write_tokens`) plus a
+  `TraceStep.from_dict` classmethod (AC-23). `ExecutionTrace` gains four
+  derived properties (`total_prompt_tokens`, `total_completion_tokens`,
+  `cache_hit_rate` capped at 1.0, `median_ttft_ms`) — AC-4.
+  `LiteLLMAdapter._extract_cache_tokens` handles Anthropic
+  (`cache_read_input_tokens` + `cache_creation_input_tokens`) and OpenAI
+  (`prompt_tokens_details.cached_tokens`) schemas; returns `(0, 0)` for
+  unknown providers — AC-3. Cache counts are now populated on every
+  streamed LiteLLM response. Telemetry store gains a migration harness
+  keyed on `PRAGMA user_version`: `_SCHEMA_SQL` stays frozen at the v1
+  baseline; `_MIGRATIONS` is the single source of truth for post-v1
+  schema changes. The v2 block adds the six step columns +
+  `runs.outcome_category` (the column is added now; writers wire up in
+  Phase 4) — AC-5, AC-20, AC-22. `run_rag.py` now emits a two-entry
+  trace: step 0 is `rag_retrieval` (retrieval-side metrics unchanged),
+  step 1 is `assistant` with the four new telemetry keys populated from
+  the LLM response DTO — AC-13a. Route-layer materialization (AC-13b)
+  arrives in Phase 4.
 - **Phase 1 — streaming-under-the-hood (spec v1.7).** `LLMPort.
   complete_stream_async` now yields `StreamChunk` events; the terminal
   chunk carries a populated `LLMResponseDTO` with four new fields

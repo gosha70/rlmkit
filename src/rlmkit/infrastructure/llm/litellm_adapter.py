@@ -88,6 +88,34 @@ def _is_connection_error(exc: BaseException) -> bool:
     return any(kw in msg for kw in _CONNECTION_KEYWORDS)
 
 
+def _extract_cache_tokens(usage: Any) -> tuple[int, int]:
+    """Return ``(cached_read_tokens, cache_write_tokens)`` from a usage record.
+
+    Handles Anthropic (``cache_read_input_tokens`` +
+    ``cache_creation_input_tokens``), OpenAI
+    (``prompt_tokens_details.cached_tokens``; no distinct write counter —
+    returns 0 for cache_write), and any provider that surfaces neither
+    (returns ``(0, 0)``).
+
+    Never raises — missing fields are the common case (Ollama, vLLM
+    without prefix caching, etc.).
+    """
+    if usage is None:
+        return 0, 0
+    # Anthropic via LiteLLM
+    read = getattr(usage, "cache_read_input_tokens", None) or 0
+    write = getattr(usage, "cache_creation_input_tokens", None) or 0
+    if read or write:
+        return int(read), int(write)
+    # OpenAI via LiteLLM
+    details = getattr(usage, "prompt_tokens_details", None)
+    if details is not None:
+        cached = getattr(details, "cached_tokens", None) or 0
+        if cached:
+            return int(cached), 0
+    return 0, 0
+
+
 _TIMEOUT_KEYWORDS = (
     "timed out",
     "timeout",
@@ -730,6 +758,13 @@ class LiteLLMAdapter:
                 telemetry.prompt_tokens = int(prompt)
             if completion:
                 telemetry.completion_tokens = int(completion)
+            cached, cache_write = _extract_cache_tokens(usage)
+            # Providers stream partial usage frames during a call; keep the
+            # highest observed value rather than overwriting with 0.
+            if cached:
+                telemetry.cached_tokens = cached
+            if cache_write:
+                telemetry.cache_write_tokens = cache_write
 
     def _backfill_token_counts(
         self,
