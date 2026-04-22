@@ -35,6 +35,10 @@ RankingMetric = Literal[
     "tokens",
     "latency",
     "answer_per_cost",
+    # Judge-scored ordering is produced client-side (the frontend
+    # re-ranks on every response); the backend accepts it as a
+    # passthrough so the request schema matches the frontend union.
+    "judge_score",
     # Phase 5 — prefill/decode-oriented ranking.
     "ttft",
     "decode_tokens_per_sec",
@@ -373,6 +377,10 @@ class RunMatrixComparisonUseCase:
                 # have rate=0.0 and sort last.
                 agg = _perf_aggregates(i)
                 return (-agg["cache_hit_rate"], i)
+            if metric == "judge_score":
+                # Judge scores are produced out-of-band and re-ranked
+                # client-side; the backend preserves input order here.
+                return (0.0, i)
             raise ValueError(f"Unknown ranking metric: {metric!r}")  # pragma: no cover
 
         successes.sort(key=_key)

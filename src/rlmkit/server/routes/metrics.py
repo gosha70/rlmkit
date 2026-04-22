@@ -162,6 +162,12 @@ async def get_metrics(
 def _resolve_outcome(point: _RunPoint) -> ExecutionOutcome:
     """Prefer the point's persisted outcome_category; fall back to re-derive.
 
+    Spec alias: the prefill/decode spec §8c calls the caller of this
+    helper ``_aggregate_failures``. The dashboard's two failure-
+    aggregation loops are in ``_build_metrics_response`` and
+    ``_build_failure_response`` (grep for ``_resolve_outcome`` to find
+    them). Both prefer the persisted category over re-classification.
+
     Phase 4 classifies at write time, so most rows carry a persisted
     category by the time they reach the dashboard. Legacy rows (pre-
     Phase-4, column NULL) and legacy assistant-message points never

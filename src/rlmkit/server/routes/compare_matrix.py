@@ -65,6 +65,7 @@ _RANKING_METRICS = (
     "tokens",
     "latency",
     "answer_per_cost",
+    "judge_score",
     "ttft",
     "decode_tokens_per_sec",
     "cache_hit_rate",
@@ -90,6 +91,10 @@ class CompareMatrixRequest(BaseModel):
         "tokens",
         "latency",
         "answer_per_cost",
+        # ``judge_score`` is ranked client-side only (the frontend
+        # re-ranks every response); the backend accepts it as a
+        # passthrough so the request doesn't 422.
+        "judge_score",
         "ttft",
         "decode_tokens_per_sec",
         "cache_hit_rate",
@@ -110,6 +115,10 @@ class CompareMatrixRequestV2(BaseModel):
         "tokens",
         "latency",
         "answer_per_cost",
+        # ``judge_score`` is ranked client-side only (the frontend
+        # re-ranks every response); the backend accepts it as a
+        # passthrough so the request doesn't 422.
+        "judge_score",
         "ttft",
         "decode_tokens_per_sec",
         "cache_hit_rate",
@@ -136,6 +145,10 @@ class CompareMatrixUnifiedRequest(BaseModel):
         "tokens",
         "latency",
         "answer_per_cost",
+        # ``judge_score`` is ranked client-side only (the frontend
+        # re-ranks every response); the backend accepts it as a
+        # passthrough so the request doesn't 422.
+        "judge_score",
         "ttft",
         "decode_tokens_per_sec",
         "cache_hit_rate",
@@ -841,7 +854,7 @@ def _record_slot_telemetry(
             outcome_category=outcome.category.value,
         )
         # Canonicalize action types to match in-memory traces / JSONL exports.
-        from rlmkit.server.routes.chat import _canonical_action_type
+        from rlmkit.server.routes._helpers import _canonical_action_type
 
         total = len(result.trace)
         for i, step_data in enumerate(result.trace):

@@ -1057,8 +1057,14 @@ function _rankSlots(
         break;
       }
       case "cache_hit_rate":
-        // Higher cache_hit_rate is better → negate.
-        score = -(s.cache_hit_rate ?? 0);
+        // Higher cache_hit_rate is better → negate. Slots without the
+        // field at all (legacy bundles, pre-Phase-5 responses) sort
+        // last — matching the null-last discipline used by ttft and
+        // decode_tokens_per_sec.
+        score =
+          s.cache_hit_rate == null
+            ? Number.POSITIVE_INFINITY
+            : -s.cache_hit_rate;
         break;
       default:
         score = s.total_cost;

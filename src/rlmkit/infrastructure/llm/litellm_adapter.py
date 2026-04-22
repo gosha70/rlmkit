@@ -483,9 +483,9 @@ class LiteLLMAdapter:
         params["stream_options"] = stream_options
 
         telemetry = _StreamingTelemetry()
+        t_start = time.monotonic()
         try:
             response = await litellm.acompletion(**params)
-            t_start = time.monotonic()
             async for chunk in response:
                 self._observe_chunk(chunk, telemetry, t_start)
                 delta_text = self._chunk_delta_text(chunk)

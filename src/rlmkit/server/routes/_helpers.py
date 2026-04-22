@@ -27,7 +27,36 @@ from rlmkit.application.sandbox_vars import (
     TRACE_KEY_STEP,
 )
 from rlmkit.domain.entities import ExecutionTrace, TraceStep
-from rlmkit.server.routes.chat import _canonical_action_type
+
+# ---------------------------------------------------------------------------
+# Role → action_type canonicalization
+# ---------------------------------------------------------------------------
+#
+# Lifted here from ``chat.py`` so the route helpers don't depend on the
+# chat module (which would otherwise be a circular import for every
+# route that wants the translator or the materializer). The two
+# pre-existing chat-side callers (``_save_trajectory`` and the JSONL
+# export path) continue to work via a re-export on ``chat.py``.
+#
+# Contract is pinned: ``assistant → inspect``, ``execution → subcall``,
+# last step promotes to ``final`` **only** when ``success=True``.
+# Failed-terminal steps keep the role-mapped action_type (usually
+# ``inspect``); no ``error`` branch exists and this spec does not add
+# one (see v1.5 prose correction).
+
+_ACTION_TYPE_MAP = {"assistant": "inspect", "execution": "subcall"}
+
+
+def _canonical_action_type(role: str | None, is_last: bool, success: bool) -> str:
+    """Normalize a raw trace role into a canonical ExecutionTrace action type.
+
+    Mirrors the normalization used by :func:`_save_trajectory` so telemetry
+    rows, JSONL exports, and in-memory traces all agree.
+    """
+    action_type = _ACTION_TYPE_MAP.get(role or "", "inspect")
+    if is_last and success:
+        action_type = "final"
+    return action_type
 
 
 def _translate_raw_trace_entry(

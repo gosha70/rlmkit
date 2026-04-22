@@ -12,7 +12,7 @@ from rlmkit.server.models import (
     TraceResult,
     TraceStep,
 )
-from rlmkit.server.routes.chat import _canonical_action_type
+from rlmkit.server.routes._helpers import _canonical_action_type
 from rlmkit.telemetry.store import RunDetail
 
 router = APIRouter()

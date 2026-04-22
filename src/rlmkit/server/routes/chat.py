@@ -42,6 +42,7 @@ from rlmkit.application.services.history_context import (
     compute_inprompt_budget,
     extract_final_qa_pairs,
 )
+from rlmkit.application.services.outcome_classifier import classify_execution_outcome
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
@@ -379,22 +380,19 @@ def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
 
 
 # Canonical ExecutionTrace action types.
-# Use-case traces store raw roles ("assistant"/"execution"); the rest of the
-# system (JSONL export, ExecutionTrace schema, UI) expects the canonical
-# set from rlmkit.core.trace: inspect/subcall/final/error.
-_ACTION_TYPE_MAP = {"assistant": "inspect", "execution": "subcall"}
-
-
-def _canonical_action_type(role: str | None, is_last: bool, success: bool) -> str:
-    """Normalize a raw trace role into a canonical ExecutionTrace action type.
-
-    Mirrors the normalization used by :func:`_save_trajectory` so telemetry
-    rows, JSONL exports, and in-memory traces all agree.
-    """
-    action_type = _ACTION_TYPE_MAP.get(role or "", "inspect")
-    if is_last and success:
-        action_type = "final"
-    return action_type
+# Use-case traces store raw roles ("assistant"/"execution"); the rest of
+# the system (JSONL export, ExecutionTrace schema, UI) expects the
+# canonical set from rlmkit.core.trace: inspect/subcall/final/error.
+#
+# `_canonical_action_type` lives in ``_helpers.py`` so the route helpers
+# don't depend on this module (avoids the circular import that forced
+# the earlier lazy import of ``_materialize_trace``). Re-exported here
+# for the in-file callers (`_save_trajectory`, JSONL export path) and
+# any external importers that already grep ``chat.py`` for this symbol.
+from rlmkit.server.routes._helpers import (  # noqa: E402
+    _canonical_action_type,
+    _materialize_trace,
+)
 
 
 def _save_trajectory(
@@ -551,11 +549,6 @@ def _record_telemetry(
     # persisting. The classifier keys on TTFT/duration ratios, so it
     # needs the trace in memory here (dashboard reads are N+1 if we
     # defer classification to read time — see spec §8b).
-    from rlmkit.application.services.outcome_classifier import (
-        classify_execution_outcome,
-    )
-    from rlmkit.server.routes._helpers import _materialize_trace
-
     trace_obj = _materialize_trace(result.trace, run_success=result.success)
     outcome = classify_execution_outcome(
         success=result.success,
