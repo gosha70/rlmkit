@@ -278,8 +278,17 @@ class TelemetryStore:
         chat_provider_name: str | None = None,
         comparison_group_id: str | None = None,
         steps_count: int = 0,
+        outcome_category: str | None = None,
     ) -> str:
-        """Record a completed run. Returns the run ID."""
+        """Record a completed run. Returns the run ID.
+
+        ``outcome_category`` is an already-classified string from the
+        caller (values are expected to be valid
+        :class:`OutcomeCategory` values, but the store is a dumb sink
+        and does not validate). Passing ``None`` is permitted; legacy
+        rows surface ``None`` on read and re-derive via the no-trace
+        classifier path on the dashboard.
+        """
         rid = run_id or uuid.uuid4().hex
         if answer_length is None:
             answer_length = len(answer)
@@ -292,8 +301,9 @@ class TelemetryStore:
                         content_length, answer, answer_length, input_tokens,
                         output_tokens, total_tokens, total_cost, elapsed_seconds,
                         success, error, session_id, chat_provider_id,
-                        chat_provider_name, comparison_group_id, steps_count)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        chat_provider_name, comparison_group_id, steps_count,
+                        outcome_category)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         rid,
                         created_at,
@@ -316,6 +326,7 @@ class TelemetryStore:
                         chat_provider_name,
                         comparison_group_id,
                         steps_count,
+                        outcome_category,
                     ),
                 )
                 conn.commit()
