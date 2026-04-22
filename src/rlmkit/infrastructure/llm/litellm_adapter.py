@@ -859,13 +859,13 @@ class LiteLLMAdapter:
         fallback_fields = [
             f.strip() for f in get_rlm_message("reasoning_content_fields").split(",") if f.strip()
         ]
-        for field in fallback_fields:
-            val = getattr(message, field, None)
+        for field_name in fallback_fields:
+            val = getattr(message, field_name, None)
             if val:
                 logger.debug(
                     "model=%s: content empty, using %s (%d chars)",
                     self._active_model,
-                    field,
+                    field_name,
                     len(str(val)),
                 )
                 return str(val)
