@@ -25,7 +25,7 @@ starter credit amount under **Billing**.
 
 ## 3. Add to RLM Studio
 
-In **Settings → LLM Providers → New**:
+See [hosts/README.md §3](README.md#3-what-rlm-studio-needs) for the general field shape. Anthropic-specific values:
 
 | Field    | Value                                 |
 |----------|---------------------------------------|

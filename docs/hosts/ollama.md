@@ -46,7 +46,7 @@ experiments, `llama3.1:8b` is a good default: 4–5 GB, runs on 16 GB RAM.
 
 ## 4. Add to RLM Studio
 
-In **Settings → LLM Providers → New**:
+See [hosts/README.md §3](README.md#3-what-rlm-studio-needs) for the general field shape. Ollama-specific values:
 
 | Field    | Value                    |
 |----------|--------------------------|
@@ -54,7 +54,7 @@ In **Settings → LLM Providers → New**:
 | Model    | `llama3.1:8b`            |
 | Base URL | `http://localhost:11434` |
 
-No API key is required.
+No API key is required. See [hosts/README.md §5](README.md#5-security--network-boundaries) for how to secure a local backend.
 
 ## 5. Test connection
 

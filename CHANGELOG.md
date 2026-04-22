@@ -65,6 +65,83 @@ through a scrubbable, step-by-step replay. Shipped in three slices
   ("The full replay would have had N steps" — `originalStepCount`
   is the pre-truncation replay length, not the raw trace step count).
 
+---
+
+Evaluation & Ops — a cluster of features landed in the same window
+that together close the "is my RLMKit deployment healthy, and are
+my results any good?" feedback loop. Grouped separately from the
+Learn tab work because it ships independently.
+
+### Added (Evaluation & Ops)
+- **LLM Tuner / Compare matrix** — new `/compare` page backed by
+  `POST /api/chat/compare-matrix`. Runs the same query across a
+  Provider × Mode grid in parallel, ranks cells by cost, tokens,
+  latency, `answer_per_cost`, or `judge_score`. Ephemeral Chat
+  Providers are built on the fly from the picked combinations and
+  don't persist to Settings. Synchronous endpoint — the UI renders
+  once every cell has completed or errored.
+- **LLM-as-judge rubric v2.0** — pointwise scoring across five
+  dimensions (relevance, correctness, completeness, coherence,
+  conciseness, each 1–5) plus a pairwise variant with an explicit
+  `a`/`b`/`tie` winner. `overall_score` is the mean of dimensions,
+  rounded to 2 decimals, clamped to [1.0, 5.0]. Rubric prompts live
+  in `src/rlmkit/prompts/judge_pointwise.yaml` and
+  `judge_pairwise.yaml`. Judge provider is configured app-wide via
+  `judge_chat_provider_id`. Non-usable outcomes auto-score without
+  calling the judge: 1.0 for `budget_exhausted` with ≥50 chars of
+  answer, 0.0 for all other failures — keeps `judge_score` sortable
+  across a mix of successes and failures without wasting judge
+  tokens.
+- **Outcome classifier + failure metrics** — every execution is
+  classified into one of `success`, `timeout`, `budget_exhausted`,
+  `context_overflow`, `general_error`. Non-success outcomes are
+  excluded from cost / latency / token aggregations across the
+  Dashboard. New endpoint `GET /api/metrics/failures/{session_id}`
+  returns failure rate plus breakdowns by category, provider, and
+  mode. Dashboard gains a failure chart.
+- **Scheduled connection testing** — new global setting
+  `connection_test_interval_minutes` (0–1440, 0 disables). A
+  background daemon re-tests up to 5 providers in parallel with a
+  10-second per-test timeout. A provider flips to `offline` only
+  after 2 consecutive failures (flap avoidance); a single manual
+  `Test Connection` success flips it back to connected immediately.
+  Per-provider audit fields: `last_tested_at`, `last_tested_by`
+  (`manual` | `background`), `consecutive_failures`. Settings UI
+  surfaces all three.
+- **Conversation memory toggle** — `conversation_memory_enabled`
+  flag on `ChatProviderConfig`. RLM / RAG / Auto modes bind prior
+  turns as a Python variable `history` inside the sandbox REPL
+  (byte-capped, model reads on demand — zero token cost when
+  unused). Direct / Compare modes deliver history as an in-prompt
+  "Previous conversation:" prefix, token-budgeted (default 30% of
+  context window). Flip the toggle off for stateless benchmarking.
+- **Trace bulk delete** — Gmail-style selection on the Traces page,
+  plus single-row delete with confirm dialog. Backend endpoints:
+  `DELETE /api/executions/{id}` for single and
+  `DELETE /api/executions` to clear a session.
+- **LLM-provider UX polish** — Test Connection in the edit form
+  (not just the list row), provider logo in the sidebar, fix for
+  the model-dropdown not refreshing after a Test Connection that
+  invalidated the previous model list.
+
+### Fixed (Evaluation & Ops)
+- Stall breaker now accepts plain-text answers once all uploaded
+  files have been inspected, even if the model hasn't emitted an
+  explicit final-answer JSON action.
+- JSON action parser tolerates trailing braces, prose after the
+  JSON block, and `<think>…</think>` wrappers — matches how
+  reasoning-tuned models actually emit tool calls.
+- PDFs ≥ 50 MB no longer fail with a truncation error during
+  upload; the size cap was lifted and chunking handles large files
+  incrementally.
+- Anthropic requests guard against `temperature` + `top_p` being
+  sent together (the Anthropic API rejects this combination with
+  an empty response). When a profile sets a custom temperature,
+  `top_p` is cleared automatically.
+- Timeout warnings surface in the UI before the wall-clock cap
+  fires, so users see a warning banner rather than silent
+  truncation.
+
 ## [1.0.0] - 2026-03-28
 
 Cycle 3 (Quality, DevOps & Release) + Cool-down 3.

@@ -39,7 +39,7 @@ repo (`meta-llama/Llama-3.1-8B-Instruct`) or a local path.
 
 ## 4. Add to RLM Studio
 
-In **Settings → LLM Providers → New**:
+See [hosts/README.md §3](README.md#3-what-rlm-studio-needs) for the general field shape. vLLM-specific values:
 
 | Field    | Value                                 |
 |----------|---------------------------------------|
@@ -47,11 +47,7 @@ In **Settings → LLM Providers → New**:
 | Model    | Same id passed to `--model`           |
 | Base URL | `http://localhost:8000/v1`            |
 
-vLLM does not require an API key by default. RLM Studio's Settings
-does not currently expose an API-key field for local backends
-(`vllm` counts as local), so if you need to secure your server,
-prefer a trusted network boundary — VPN, SSH tunnel, or binding only
-to `127.0.0.1` — over vLLM's own `--api-key`.
+No API key is required. RLM Studio's Settings intentionally doesn't expose an API-key field for local backends — prefer a trusted network boundary over `vllm --api-key`. See [hosts/README.md §5](README.md#5-security--network-boundaries) for details.
 
 ## 5. Test connection
 
