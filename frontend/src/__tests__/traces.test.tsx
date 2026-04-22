@@ -351,7 +351,7 @@ describe("TracesPage", () => {
     fireEvent.click(button);
 
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/learn/replay/exec-42");
+    expect(mockRouterPush).toHaveBeenCalledWith("/learn/replay/exec-42?from=traces");
   });
 
   test("Replay in Learn click does not trigger the row's open-trace handler", () => {
