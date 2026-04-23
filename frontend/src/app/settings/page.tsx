@@ -440,7 +440,9 @@ function SettingsPageInner() {
     // Clear the form-mode test banner so a stale result from a prior
     // edit doesn't render when the form reopens for a new provider.
     setTestResults((prev) => {
-      const { __form__: _drop, ...rest } = prev;
+      if (!(FORM_TEST_RESULT_KEY in prev)) return prev;
+      const rest = { ...prev };
+      delete rest[FORM_TEST_RESULT_KEY];
       return rest;
     });
   };
@@ -461,7 +463,9 @@ function SettingsPageInner() {
     // would imply the just-loaded values were tested, which they
     // weren't, and would also drive the post-save status stamp.
     setTestResults((prev) => {
-      const { __form__: _drop, ...rest } = prev;
+      if (!(FORM_TEST_RESULT_KEY in prev)) return prev;
+      const rest = { ...prev };
+      delete rest[FORM_TEST_RESULT_KEY];
       return rest;
     });
     setShowLLMProviderForm(true);
@@ -476,14 +480,14 @@ function SettingsPageInner() {
   useEffect(() => {
     setTestResults((prev) => {
       if (!(FORM_TEST_RESULT_KEY in prev)) return prev;
-      const { __form__: _drop, ...rest } = prev;
+      const rest = { ...prev };
+      delete rest[FORM_TEST_RESULT_KEY];
       return rest;
     });
     // Intentionally depends only on fields that change the probe
     // (backend, model, endpoint, api_key). `name` and
     // `context_window` do not affect the outcome, so typing them
     // shouldn't clear a fresh result.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     llmProviderForm.backend,
     llmProviderForm.model,

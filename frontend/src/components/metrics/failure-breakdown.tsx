@@ -133,7 +133,7 @@ export function FailureBreakdown({ data }: FailureBreakdownProps) {
                     Prefill-dominated timeouts detected ({prefillTimeoutCount})
                   </p>
                   <p className="text-xs text-amber-800/90 dark:text-amber-200/90">
-                    Most of the loop's wall-time was spent re-prefilling a
+                    Most of the loop&apos;s wall-time was spent re-prefilling a
                     growing prompt with little or no prefix-cache hit.
                     Enable prefix caching on the provider or shorten
                     history replay to recover throughput.
