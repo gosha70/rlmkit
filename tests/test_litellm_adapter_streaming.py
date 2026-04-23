@@ -356,3 +356,117 @@ class TestCompleteStreamAsyncStreamChunk:
         assert final.response.ttft_ms is not None
         # decode_ms is 0 because there was no decode phase.
         assert final.response.decode_ms == 0
+
+
+class TestTransportFallbackOnStreamFailure:
+    """Phase 1 follow-up: transport-layer failure before any content
+    must fall back to non-streaming ``acompletion`` instead of
+    hard-failing the request. Guards the spec's "streaming-under-
+    the-hood must not regress availability" contract."""
+
+    @pytest.mark.asyncio
+    async def test_complete_async_falls_back_when_stream_setup_fails(self):
+        """``complete_async`` retries once through non-streaming when the
+        streaming path hits a connection-class error."""
+
+        import litellm as _litellm
+
+        call_log: list[str] = []
+
+        async def _fail_then_succeed(*args, **kwargs):
+            # First call: streaming. Raise a connection error.
+            # Second call: non-streaming. Return a complete DTO.
+            if kwargs.get("stream"):
+                call_log.append("stream")
+                raise _litellm.APIConnectionError(
+                    message="AnthropicException - [Errno 9] Bad file descriptor",
+                    llm_provider="anthropic",
+                    model="claude-sonnet-4-6",
+                )
+            call_log.append("non_stream")
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="fallback content", role="assistant"),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=40, completion_tokens=8, total_tokens=48),
+                model="claude-sonnet-4-6",
+            )
+
+        adapter = LiteLLMAdapter(model="claude-sonnet-4-6")
+        with patch("litellm.acompletion", side_effect=_fail_then_succeed):
+            result = await adapter.complete_async([{"role": "user", "content": "?"}])
+
+        assert call_log == ["stream", "non_stream"]
+        assert result.content == "fallback content"
+        assert result.input_tokens == 40
+        assert result.output_tokens == 8
+        # Non-streaming fallback can't measure TTFT — honest None.
+        assert result.ttft_ms is None
+
+    @pytest.mark.asyncio
+    async def test_complete_async_non_transport_error_still_raises(self):
+        """Auth/4xx errors are NOT retried via non-streaming — those
+        would just fail the same way and hide the real cause."""
+
+        import litellm as _litellm
+
+        async def _auth_error(*args, **kwargs):
+            raise _litellm.AuthenticationError(
+                message="Invalid API key",
+                llm_provider="openai",
+                model="gpt-4o",
+            )
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with patch("litellm.acompletion", side_effect=_auth_error):
+            with pytest.raises(RuntimeError, match="LiteLLM async completion failed"):
+                await adapter.complete_async([{"role": "user", "content": "?"}])
+
+    @pytest.mark.asyncio
+    async def test_complete_stream_async_falls_back_before_first_content(self):
+        """``complete_stream_async`` that hits a transport error before
+        yielding any content falls back to a single-chunk non-streaming
+        response."""
+
+        import litellm as _litellm
+
+        async def _fail_then_succeed(*args, **kwargs):
+            if kwargs.get("stream"):
+                raise _litellm.APIConnectionError(
+                    message="Connection reset by peer",
+                    llm_provider="anthropic",
+                    model="claude-sonnet-4-6",
+                )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="recovered", role="assistant"),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=20, completion_tokens=4, total_tokens=24),
+                model="claude-sonnet-4-6",
+            )
+
+        adapter = LiteLLMAdapter(model="claude-sonnet-4-6")
+        with patch("litellm.acompletion", side_effect=_fail_then_succeed):
+            chunks: list[StreamChunk] = []
+            async for ch in adapter.complete_stream_async([{"role": "user", "content": "?"}]):
+                chunks.append(ch)
+
+        # Final chunk carries a populated DTO. Content may arrive
+        # either as one delta chunk + terminal, or only on terminal,
+        # depending on fallback shape. Assert the invariant: the
+        # request completed, the consumer got the full content, and
+        # ttft_ms is None (honest "no streaming timing available").
+        assert chunks[-1].is_final is True
+        assert chunks[-1].response is not None
+        assert chunks[-1].response.content == "recovered"
+        assert chunks[-1].response.ttft_ms is None
+        collected = "".join(c.delta for c in chunks if not c.is_final)
+        # Either the delta chunk carried the content, or not — but
+        # the terminal DTO always has it.
+        assert collected == "recovered" or collected == ""

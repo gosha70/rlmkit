@@ -547,10 +547,58 @@ class LiteLLMAdapter:
             response = await litellm.acompletion(**params)
             telemetry = await self._accumulate_stream_async(response)
         except Exception as exc:
+            # Transport-layer failure on the streaming path (Anthropic's
+            # flaky MidStreamFallbackError, connection reset, etc.). The
+            # pre-Phase-1 non-streaming path could have succeeded via
+            # litellm's internal num_retries because the legacy
+            # acompletion(stream=False) surface handles retryable
+            # errors differently. Fall back to non-streaming once so
+            # transient transport issues don't hard-fail the request —
+            # we lose TTFT/decode visibility for that call but keep
+            # the user's response.
+            if _is_connection_error(exc):
+                logger.warning(
+                    "Streaming complete_async hit transport error (%s); "
+                    "falling back to non-streaming once",
+                    exc,
+                )
+                return await self._non_streaming_fallback(messages)
             raise self._translate_exception(exc, "LiteLLM async completion failed") from exc
 
         self._backfill_token_counts(telemetry, messages)
         return self._dto_from_telemetry(telemetry)
+
+    async def _non_streaming_fallback(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        """Retry a failed streaming call via non-streaming ``acompletion``.
+
+        Used when the streaming path hits a transport-layer failure
+        before yielding any content. The non-streaming path has
+        different retry semantics inside litellm, so a stream that
+        failed mid-setup often succeeds on a plain retry. The returned
+        DTO has ``ttft_ms=None`` — honest signal that streaming fell
+        back and we couldn't measure per-token timing.
+        """
+        import litellm
+
+        params = self._build_params(messages)
+        # Explicitly no stream/stream_options — we're bypassing Phase 1
+        # observability for this one call to save the request.
+        try:
+            response = await litellm.acompletion(**params)
+        except Exception as exc:
+            raise self._translate_exception(
+                exc, "LiteLLM async completion failed (after streaming fallback)"
+            ) from exc
+
+        choice = response.choices[0]
+        usage = response.usage
+        return LLMResponseDTO(
+            content=self._extract_content(choice.message),
+            model=response.model or self._active_model,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+            finish_reason=choice.finish_reason,
+        )
 
     async def complete_stream_async(
         self, messages: list[dict[str, str]]
@@ -580,14 +628,47 @@ class LiteLLMAdapter:
         telemetry = _StreamingTelemetry()
         t_start = time.monotonic()
         response: Any = None
+        observed_any_delta = False
         try:
             response = await litellm.acompletion(**params)
             async for chunk in response:
                 self._observe_chunk(chunk, telemetry, t_start)
                 delta_text = self._chunk_delta_text(chunk)
                 if delta_text:
+                    observed_any_delta = True
                     yield StreamChunk(delta=delta_text, is_final=False)
         except Exception as exc:
+            # Transport-layer failure BEFORE any content reached the
+            # consumer: safe to transparently fall back to a single
+            # non-streaming call. The user gets one big final chunk
+            # instead of streamed tokens, but the request completes
+            # instead of hard-failing on transient Anthropic/OpenAI
+            # connection resets. If content has already been yielded,
+            # the UI is showing a partial response and a fallback
+            # would produce a different full response — unsafe.
+            if not observed_any_delta and _is_connection_error(exc):
+                # Close the failed stream before retrying so its FD
+                # doesn't survive into the fallback call.
+                if response is not None:
+                    await _close_stream(response)
+                    response = None
+                logger.warning(
+                    "Streaming complete_stream_async hit transport error "
+                    "before any content (%s); falling back to non-streaming",
+                    exc,
+                )
+                try:
+                    fb_dto = await self._non_streaming_fallback(messages)
+                except Exception:
+                    raise self._translate_exception(exc, "LiteLLM async streaming failed") from exc
+                # Emit the full response as one content chunk + terminal
+                # StreamChunk. Consumers (`run_rlm.py`, `run_direct.py`)
+                # treat chunk.response on is_final as authoritative, so
+                # this shape matches their expectations.
+                if fb_dto.content:
+                    yield StreamChunk(delta=fb_dto.content, is_final=False)
+                yield StreamChunk(delta="", is_final=True, response=fb_dto)
+                return
             raise self._translate_exception(exc, "LiteLLM async streaming failed") from exc
         finally:
             # Always close the httpx-backed stream. Without this the

@@ -196,7 +196,7 @@ def _build_probe_params(
 def test_provider(
     provider: LLMProviderConfig,
     timeout_s: float = 10.0,  # noqa: PT028  # not a pytest function — name is a domain verb
-    api_key_override: str | None = None,
+    api_key_override: str | None = None,  # noqa: PT028
 ) -> ProviderTestResult:
     """Probe an LLM Provider for connectivity.
 
