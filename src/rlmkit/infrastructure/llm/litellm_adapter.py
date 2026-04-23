@@ -158,6 +158,49 @@ def _extract_cache_tokens(usage: Any) -> tuple[int, int]:
     return 0, 0
 
 
+def _close_stream_sync(stream: Any) -> None:
+    """Best-effort sync cleanup for a LiteLLM streaming iterator.
+
+    Same FD-hygiene concern as :func:`_close_stream` but for the
+    synchronous paths (``complete``, ``complete_stream``).
+    """
+    close = getattr(stream, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as exc:
+            logger.debug("sync stream close() failed: %s", exc)
+
+
+async def _close_stream(stream: Any) -> None:
+    """Best-effort cleanup for a LiteLLM streaming iterator.
+
+    ``litellm.acompletion(stream=True)`` returns a wrapper
+    (``CustomStreamWrapper``) that owns an httpx response under the
+    hood. Failing to close it leaves the socket orphaned; Python's
+    async-generator GC may later close it from a different task
+    after the FD was reused, producing
+    ``[Errno 9] Bad file descriptor``.
+
+    Tries ``aclose()`` (httpx-style async), then ``close()`` (sync
+    fallback). Swallows everything — cleanup must never raise over
+    the user's actual response.
+    """
+    aclose = getattr(stream, "aclose", None)
+    if callable(aclose):
+        try:
+            await aclose()
+            return
+        except Exception as exc:
+            logger.debug("stream aclose() failed: %s", exc)
+    close = getattr(stream, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as exc:
+            logger.debug("stream close() failed: %s", exc)
+
+
 def _usage_shape_keys(usage: Any) -> list[str]:
     """Return the visible attribute/key names on a usage record, for debug."""
     if isinstance(usage, dict):
@@ -536,6 +579,7 @@ class LiteLLMAdapter:
 
         telemetry = _StreamingTelemetry()
         t_start = time.monotonic()
+        response: Any = None
         try:
             response = await litellm.acompletion(**params)
             async for chunk in response:
@@ -545,6 +589,16 @@ class LiteLLMAdapter:
                     yield StreamChunk(delta=delta_text, is_final=False)
         except Exception as exc:
             raise self._translate_exception(exc, "LiteLLM async streaming failed") from exc
+        finally:
+            # Always close the httpx-backed stream. Without this the
+            # socket gets orphaned when the caller stops consuming the
+            # generator early (WebSocket disconnect, use-case budget
+            # hit, cancellation). Python's later async-gen GC then
+            # closes the FD after it may have been reused by a
+            # different task — that's the "[Errno 9] Bad file
+            # descriptor" MidStreamFallbackError observed on Anthropic.
+            if response is not None:
+                await _close_stream(response)
 
         telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
         if telemetry.ttft_ms is not None:
@@ -870,11 +924,19 @@ class LiteLLMAdapter:
                 )
 
     def _accumulate_stream_sync(self, response: Iterator[Any]) -> _StreamingTelemetry:
-        """Walk a sync streaming iterator, return the accumulated telemetry."""
+        """Walk a sync streaming iterator, return the accumulated telemetry.
+
+        try/finally+close() mirrors the async path's FD-hygiene fix;
+        stops the underlying socket from being abandoned if an
+        exception fires mid-walk.
+        """
         telemetry = _StreamingTelemetry()
         t_start = time.monotonic()
-        for chunk in response:
-            self._observe_chunk(chunk, telemetry, t_start)
+        try:
+            for chunk in response:
+                self._observe_chunk(chunk, telemetry, t_start)
+        finally:
+            _close_stream_sync(response)
         telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
         if telemetry.ttft_ms is not None:
             telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
@@ -886,11 +948,23 @@ class LiteLLMAdapter:
         return telemetry
 
     async def _accumulate_stream_async(self, response: AsyncIterator[Any]) -> _StreamingTelemetry:
-        """Walk an async streaming iterator, return the accumulated telemetry."""
+        """Walk an async streaming iterator, return the accumulated telemetry.
+
+        Wraps the walk in try/finally and closes the underlying stream
+        explicitly on the way out. Without this, an exception mid-walk
+        (or a later cancellation) leaves the httpx response socket
+        orphaned — Python's async-generator GC then runs on a
+        different task/loop, and the FD can be closed after it's been
+        reused, producing the ``[Errno 9] Bad file descriptor``
+        "MidStreamFallbackError" we saw on Anthropic.
+        """
         telemetry = _StreamingTelemetry()
         t_start = time.monotonic()
-        async for chunk in response:
-            self._observe_chunk(chunk, telemetry, t_start)
+        try:
+            async for chunk in response:
+                self._observe_chunk(chunk, telemetry, t_start)
+        finally:
+            await _close_stream(response)
         telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
         if telemetry.ttft_ms is not None:
             telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
@@ -909,15 +983,19 @@ class LiteLLMAdapter:
 
         Used by :meth:`complete_stream` to share observation logic
         with :meth:`complete` while preserving the chunk-yield
-        contract of the streaming API.
+        contract of the streaming API. try/finally closes the
+        underlying stream even if the caller abandons the generator.
         """
         t_start = time.monotonic()
-        for chunk in response:
-            self._observe_chunk(chunk, telemetry, t_start)
-            if forward_deltas:
-                delta_text = self._chunk_delta_text(chunk)
-                if delta_text:
-                    yield delta_text
+        try:
+            for chunk in response:
+                self._observe_chunk(chunk, telemetry, t_start)
+                if forward_deltas:
+                    delta_text = self._chunk_delta_text(chunk)
+                    if delta_text:
+                        yield delta_text
+        finally:
+            _close_stream_sync(response)
         telemetry.total_ms = int((time.monotonic() - t_start) * 1000)
         if telemetry.ttft_ms is not None:
             telemetry.decode_ms = max(0, telemetry.total_ms - telemetry.ttft_ms)
