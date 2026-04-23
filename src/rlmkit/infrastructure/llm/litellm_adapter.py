@@ -387,10 +387,48 @@ class LiteLLMAdapter:
             response = litellm.completion(**params)
             telemetry = self._accumulate_stream_sync(response)
         except Exception as exc:
+            # Symmetric with complete_async: retry once via
+            # non-streaming on transport-layer failures so the
+            # streaming-first default doesn't regress availability
+            # for sync callers (run_rag, sync branches in
+            # run_direct/run_rlm, public client paths).
+            if _is_connection_error(exc):
+                logger.warning(
+                    "Streaming complete hit transport error (%s); "
+                    "falling back to non-streaming once",
+                    exc,
+                )
+                return self._non_streaming_fallback_sync(messages)
             raise self._translate_exception(exc, "LiteLLM completion failed") from exc
 
         self._backfill_token_counts(telemetry, messages)
         return self._dto_from_telemetry(telemetry)
+
+    def _non_streaming_fallback_sync(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        """Sync twin of ``_non_streaming_fallback``. Retries a failed
+        streaming ``complete()`` via plain non-streaming
+        ``litellm.completion``. Returns a DTO with ``ttft_ms=None``.
+        """
+        import litellm
+
+        params = self._build_params(messages)
+        # Explicitly no stream/stream_options.
+        try:
+            response = litellm.completion(**params)
+        except Exception as exc:
+            raise self._translate_exception(
+                exc, "LiteLLM completion failed (after streaming fallback)"
+            ) from exc
+
+        choice = response.choices[0]
+        usage = response.usage
+        return LLMResponseDTO(
+            content=self._extract_content(choice.message),
+            model=response.model or self._active_model,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+            finish_reason=choice.finish_reason,
+        )
 
     def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         """Generate a streaming completion, yielding text chunks.

@@ -364,6 +364,114 @@ class TestTransportFallbackOnStreamFailure:
     hard-failing the request. Guards the spec's "streaming-under-
     the-hood must not regress availability" contract."""
 
+    def test_complete_sync_falls_back_when_stream_setup_fails(self):
+        """Sync ``complete()`` mirrors ``complete_async``: a
+        transport-layer failure on the streaming call retries once
+        via non-streaming ``litellm.completion``."""
+
+        import litellm as _litellm
+
+        call_log: list[str] = []
+
+        def _fail_then_succeed(*args, **kwargs):
+            if kwargs.get("stream"):
+                call_log.append("stream")
+                raise _litellm.APIConnectionError(
+                    message="AnthropicException - [Errno 54] Connection reset by peer",
+                    llm_provider="anthropic",
+                    model="claude-sonnet-4-6",
+                )
+            call_log.append("non_stream")
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content="sync fallback content", role="assistant"),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=30, completion_tokens=6, total_tokens=36),
+                model="claude-sonnet-4-6",
+            )
+
+        adapter = LiteLLMAdapter(model="claude-sonnet-4-6")
+        with patch("litellm.completion", side_effect=_fail_then_succeed):
+            result = adapter.complete([{"role": "user", "content": "?"}])
+
+        assert call_log == ["stream", "non_stream"]
+        assert result.content == "sync fallback content"
+        assert result.input_tokens == 30
+        assert result.output_tokens == 6
+        assert result.ttft_ms is None
+
+    def test_complete_sync_falls_back_when_stream_walk_fails(self):
+        """Transport failure during iteration (not setup) should also
+        trigger the non-streaming fallback. The failing iterator's
+        ``finally`` closes the orphan stream; the retry produces a
+        clean DTO."""
+
+        import litellm as _litellm
+
+        call_log: list[str] = []
+
+        def _failing_iter():
+            # Emit one well-formed chunk, then raise mid-walk.
+            yield _chunk("partial")
+            raise _litellm.APIConnectionError(
+                message="AnthropicException - [Errno 9] Bad file descriptor",
+                llm_provider="anthropic",
+                model="claude-sonnet-4-6",
+            )
+
+        def _fail_then_succeed(*args, **kwargs):
+            if kwargs.get("stream"):
+                call_log.append("stream")
+                return _failing_iter()
+            call_log.append("non_stream")
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="recovered after mid-walk fail", role="assistant"
+                        ),
+                        finish_reason="stop",
+                    )
+                ],
+                usage=SimpleNamespace(prompt_tokens=25, completion_tokens=7, total_tokens=32),
+                model="claude-sonnet-4-6",
+            )
+
+        adapter = LiteLLMAdapter(model="claude-sonnet-4-6")
+        with patch("litellm.completion", side_effect=_fail_then_succeed):
+            result = adapter.complete([{"role": "user", "content": "?"}])
+
+        # Verify the streaming attempt was made, then the non-streaming
+        # retry succeeded. Partial content from the failed stream is
+        # discarded — the returned DTO reflects the clean retry, not a
+        # concatenation.
+        assert call_log == ["stream", "non_stream"]
+        assert result.content == "recovered after mid-walk fail"
+        assert result.input_tokens == 25
+        assert result.output_tokens == 7
+        assert result.ttft_ms is None
+
+    def test_complete_sync_non_transport_error_still_raises(self):
+        """Auth/4xx errors on the sync streaming path still raise —
+        no second attempt, no hiding real errors."""
+
+        import litellm as _litellm
+
+        def _auth_error(*args, **kwargs):
+            raise _litellm.AuthenticationError(
+                message="Invalid API key",
+                llm_provider="openai",
+                model="gpt-4o",
+            )
+
+        adapter = LiteLLMAdapter(model="gpt-4o")
+        with patch("litellm.completion", side_effect=_auth_error):
+            with pytest.raises(RuntimeError, match="LiteLLM completion failed"):
+                adapter.complete([{"role": "user", "content": "?"}])
+
     @pytest.mark.asyncio
     async def test_complete_async_falls_back_when_stream_setup_fails(self):
         """``complete_async`` retries once through non-streaming when the
