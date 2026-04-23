@@ -1269,6 +1269,22 @@ function ComparisonChart({ slots, metric, ranking, judgeScores }: ComparisonChar
           value = js ? js.overall_score : 0;
           break;
         }
+        // Phase 5 prefill/decode metrics. Previously fell through to
+        // `default: value = s.total_cost`, which plotted COST bars
+        // under the TTFT / decode / cache-hit label — visibly wrong
+        // whenever one of these metrics was selected.
+        case "ttft":
+          value = s.median_ttft_ms ?? 0;
+          break;
+        case "decode_tokens_per_sec":
+          value =
+            (s.total_decode_ms ?? 0) > 0
+              ? (s.total_completion_tokens ?? 0) / ((s.total_decode_ms ?? 0) / 1000)
+              : 0;
+          break;
+        case "cache_hit_rate":
+          value = s.cache_hit_rate ?? 0;
+          break;
         default:
           value = s.total_cost;
       }
@@ -1284,7 +1300,19 @@ function ComparisonChart({ slots, metric, ranking, judgeScores }: ComparisonChar
   }, [slots, metric, ranking, judgeScores]);
 
   const metricLabel = RANKING_METRICS.find((m) => m.value === metric)?.label ?? metric;
-  const isHigherBetter = metric === "answer_per_cost" || metric === "judge_score";
+  // Metrics where a HIGHER number is the better outcome. TTFT is
+  // deliberately NOT in this set — lower is better for time-to-first-
+  // token. answer_per_cost and judge_score are higher-better.
+  // decode_tokens_per_sec and cache_hit_rate are Phase 5 additions:
+  // higher decode tok/s = faster steady-state, higher cache-hit rate
+  // = more prefix reuse → both higher is better.
+  const HIGHER_IS_BETTER_METRICS = new Set<MatrixRankingMetric>([
+    "answer_per_cost",
+    "judge_score",
+    "decode_tokens_per_sec",
+    "cache_hit_rate",
+  ]);
+  const isHigherBetter = HIGHER_IS_BETTER_METRICS.has(metric);
 
   if (chartData.length === 0) return null;
 
