@@ -130,20 +130,42 @@ def _extract_cache_tokens(usage: Any) -> tuple[int, int]:
     # OpenAI via LiteLLM — nested under ``prompt_tokens_details``.
     details = _read_usage_field(usage, "prompt_tokens_details")
     if details is not None:
-        cached = _read_usage_field(details, "cached_tokens") or 0
+        cached_raw = _read_usage_field(details, "cached_tokens")
+        cached = int(cached_raw) if cached_raw else 0
         if cached:
             logger.debug("OpenAI prompt_tokens_details.cached_tokens=%s", cached)
-            return int(cached), 0
-    # Explicit debug breadcrumb when no cache signal is observed — lets
-    # users confirm whether "0" means "no cache hit" vs "my helper
-    # missed the field" when tuning cache behavior in manual testing.
+            return cached, 0
+        # Details present but zero / missing cache hit. Log exact
+        # shape so the operator can tell whether OpenAI literally
+        # sent cached_tokens=0 (legit "no cache hit this request")
+        # vs. a field-name drift we haven't taught the helper about.
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "usage.prompt_tokens_details present but no cache hit: "
+                "cached_tokens=%r details_keys=%s",
+                cached_raw,
+                _usage_shape_keys(details),
+            )
+        return 0, 0
+    # No details at all — legacy response shape or a provider that
+    # doesn't report cache info. Log the top-level keys so we can
+    # teach the helper about any new provider schema we encounter.
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(
-            "usage had no cache tokens: attrs=%s has_details=%s",
-            sorted(k for k in (getattr(usage, "__dict__", {}) or {})),
-            _read_usage_field(usage, "prompt_tokens_details") is not None,
+            "usage had no cache tokens: attrs=%s has_details=False",
+            _usage_shape_keys(usage),
         )
     return 0, 0
+
+
+def _usage_shape_keys(usage: Any) -> list[str]:
+    """Return the visible attribute/key names on a usage record, for debug."""
+    if isinstance(usage, dict):
+        return sorted(str(k) for k in usage.keys())
+    d = getattr(usage, "__dict__", None)
+    if d is not None:
+        return sorted(str(k) for k in d.keys())
+    return []
 
 
 _TIMEOUT_KEYWORDS = (
