@@ -153,10 +153,14 @@ def _sanitize_error_message(exc: BaseException) -> str:
 def _build_probe_params(
     provider: LLMProviderConfig,
     timeout_s: float,
+    api_key_override: str | None = None,
 ) -> dict[str, object]:
     """Build the kwargs passed to ``litellm.completion``.
 
     Mirrors the logic previously inline in ``POST /api/llm-providers/{id}/test``.
+    When ``api_key_override`` is set it wins over the secret-store lookup —
+    used by the stateless form-test endpoint to avoid persisting an unsaved
+    key to the secret store or ``os.environ``.
     """
     # Local import so importing this module does not force litellm load
     # (keeps unit tests that don't probe fast and avoids circular imports).
@@ -176,7 +180,7 @@ def _build_probe_params(
 
     entry = PROVIDERS_BY_KEY.get(provider.backend)
     if entry and entry.requires_api_key:
-        api_key = _get_api_key(provider.id, provider.backend)
+        api_key = api_key_override or _get_api_key(provider.id, provider.backend)
         if api_key:
             params["api_key"] = api_key
 
@@ -192,6 +196,7 @@ def _build_probe_params(
 def test_provider(
     provider: LLMProviderConfig,
     timeout_s: float = 10.0,  # noqa: PT028  # not a pytest function — name is a domain verb
+    api_key_override: str | None = None,
 ) -> ProviderTestResult:
     """Probe an LLM Provider for connectivity.
 
@@ -204,11 +209,17 @@ def test_provider(
     provider:
         The provider config to probe.  Read fields: ``id``, ``backend``,
         ``model``, ``endpoint``.  API keys resolved via the usual precedence
-        (instance-scoped secret → backend env var).
+        (instance-scoped secret → backend env var) UNLESS
+        ``api_key_override`` is set.
     timeout_s:
         Upper bound on probe duration.  Passed to ``litellm.completion`` and
         enforced at the socket level.  The function returns within
         ``timeout_s + ~2s`` on a well-behaved client library.
+    api_key_override:
+        When non-None, use this key directly instead of looking one up.
+        Intended for the stateless form-test path, where the user's
+        unsaved key must be probed without persisting it to the secret
+        store or ``os.environ``.
 
     Returns
     -------
@@ -233,7 +244,7 @@ def test_provider(
                 error_message="litellm not installed",
             )
 
-        params = _build_probe_params(provider, timeout_s)
+        params = _build_probe_params(provider, timeout_s, api_key_override=api_key_override)
         try:
             response = litellm.completion(**params)
         except Exception as exc:  # noqa: BLE001 — any litellm failure = offline probe result

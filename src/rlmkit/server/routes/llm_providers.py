@@ -330,6 +330,89 @@ async def delete_llm_provider(
         state.save_config()
 
 
+class LLMProviderTestRequest(LLMProviderCreateRequest):
+    """Body for ``POST /api/llm-providers/test``.
+
+    Extends the create-request shape with an optional
+    ``llm_provider_id`` used by the Edit form: when the user edits a
+    provider and leaves the API-key field blank (respecting the
+    "leave blank to keep current key" contract), the frontend sends
+    the id so the backend can resolve the saved key without the user
+    having to re-paste it.
+    """
+
+    llm_provider_id: str | None = None
+
+
+@router.post("/api/llm-providers/test")
+async def test_llm_provider_config(
+    req: LLMProviderTestRequest,
+) -> ProviderTestResponse:
+    """Test connection against an in-memory LLM Provider config.
+
+    Nothing is persisted:
+
+    * the API key is passed through ``test_provider(api_key_override=)``,
+      never written to the secret store or ``os.environ``;
+    * the request-scoped UUID prevents concurrent form tests from
+      racing on a shared secret-store slot;
+    * edit-mode requests that leave ``api_key`` blank resolve the
+      saved key via ``llm_provider_id``, matching the
+      "leave blank to keep current key" save-path contract.
+
+    Defined BEFORE the ``/{llm_provider_id}/test`` route so FastAPI's
+    path resolver picks this fixed-prefix match rather than treating
+    ``test`` as a literal id.
+    """
+    from rlmkit.application.services.provider_tester import test_provider
+
+    if req.backend not in PROVIDERS_BY_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown backend: {req.backend}. Available: {list(PROVIDERS_BY_KEY.keys())}",
+        )
+
+    # Resolve the API key precedence:
+    # 1. Explicit api_key in the request (user typed a new key).
+    # 2. Saved key for the referenced provider (edit mode, field blank).
+    # 3. None (the tester falls back to env-var lookup for providers
+    #    where that makes sense; see `_build_probe_params`).
+    api_key_override: str | None = None
+    if req.api_key:
+        api_key_override = req.api_key
+    elif req.llm_provider_id:
+        api_key_override = _get_api_key(req.llm_provider_id, req.backend)
+
+    # Build an in-memory LLMProviderConfig. Request-scoped uuid avoids
+    # any chance of concurrent form tests colliding on shared state.
+    now = datetime.now(timezone.utc)
+    lp = LLMProviderConfig(
+        id=f"__ephemeral_test_{uuid.uuid4().hex}__",
+        name=req.name or "ephemeral",
+        backend=req.backend,
+        model=req.model,
+        endpoint=req.endpoint,
+        runtime_settings=req.runtime_settings or RuntimeSettings(),
+        context_window=req.context_window,
+        status="not_configured",
+        created_at=now,
+        updated_at=now,
+    )
+
+    result = test_provider(lp, timeout_s=15.0, api_key_override=api_key_override)
+
+    if result.status == "connected":
+        return ProviderTestResponse(
+            connected=True,
+            latency_ms=result.latency_ms,
+            model=lp.model,
+        )
+    return ProviderTestResponse(
+        connected=False,
+        error=result.error_message,
+    )
+
+
 @router.post("/api/llm-providers/{llm_provider_id}/test")
 async def test_llm_provider(
     llm_provider_id: str,

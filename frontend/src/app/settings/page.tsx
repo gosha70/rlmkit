@@ -37,6 +37,7 @@ import {
   updateLLMProvider,
   deleteLLMProvider,
   testLLMProvider,
+  testLLMProviderConfig,
   getProviderModels,
   type AppConfig,
   type RunProfile,
@@ -145,6 +146,11 @@ function SettingsPageInner() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // LLM Providers state
+  // Sentinel key in `testResults` that holds the form-level Test
+  // Connection result (distinct from per-row saved-provider results).
+  // Referenced by the invalidation effect, the save path (signal for
+  // post-save status stamp), and the form banner renderer.
+  const FORM_TEST_RESULT_KEY = "__form__";
   const [showLLMProviderForm, setShowLLMProviderForm] = useState(false);
   const [editingLLMProviderId, setEditingLLMProviderId] = useState<string | null>(null);
   const [llmProviderForm, setLLMProviderForm] = useState<{
@@ -431,6 +437,12 @@ function SettingsPageInner() {
     setLLMProviderForm({ name: "", backend: BACKEND_OPENAI, model: "", api_key: "", endpoint: "", context_window: "" });
     setEditingLLMProviderId(null);
     setLLMProviderModels([]);
+    // Clear the form-mode test banner so a stale result from a prior
+    // edit doesn't render when the form reopens for a new provider.
+    setTestResults((prev) => {
+      const { __form__: _drop, ...rest } = prev;
+      return rest;
+    });
   };
 
   const handleEditLLMProvider = (lp: LLMProviderConfig) => {
@@ -444,28 +456,89 @@ function SettingsPageInner() {
       endpoint: lp.endpoint || "",
       context_window: lp.context_window ? String(lp.context_window) : "",
     });
+    // A banner from a previous form session (create flow or a
+    // different provider's edit) must not leak into this one — it
+    // would imply the just-loaded values were tested, which they
+    // weren't, and would also drive the post-save status stamp.
+    setTestResults((prev) => {
+      const { __form__: _drop, ...rest } = prev;
+      return rest;
+    });
     setShowLLMProviderForm(true);
+  };
+
+  // Invalidate the form-level test result whenever the user edits a
+  // field that actually affects the probe outcome. Keeping a stale
+  // green banner while the form has been mutated would both mislead
+  // the user (implying the current values tested OK) and trigger a
+  // bogus post-save status stamp in handleSaveLLMProvider, which
+  // uses the banner's presence as its "propagate status" signal.
+  useEffect(() => {
+    setTestResults((prev) => {
+      if (!(FORM_TEST_RESULT_KEY in prev)) return prev;
+      const { __form__: _drop, ...rest } = prev;
+      return rest;
+    });
+    // Intentionally depends only on fields that change the probe
+    // (backend, model, endpoint, api_key). `name` and
+    // `context_window` do not affect the outcome, so typing them
+    // shouldn't clear a fresh result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    llmProviderForm.backend,
+    llmProviderForm.model,
+    llmProviderForm.endpoint,
+    llmProviderForm.api_key,
+  ]);
+
+  // Build the request payload from the current form state. Used by
+  // both save and test paths so the two always see the same values.
+  const buildLLMProviderRequest = (): LLMProviderCreateRequest => {
+    const parsedCtxWindow = llmProviderForm.context_window.trim()
+      ? parseInt(llmProviderForm.context_window.trim(), 10)
+      : null;
+    return {
+      name: llmProviderForm.name.trim(),
+      backend: llmProviderForm.backend,
+      model: llmProviderForm.model.trim(),
+      api_key: llmProviderForm.api_key.trim() || null,
+      endpoint: llmProviderForm.endpoint.trim() || null,
+      context_window:
+        parsedCtxWindow && parsedCtxWindow > 0 ? parsedCtxWindow : null,
+    };
   };
 
   const handleSaveLLMProvider = async () => {
     if (!llmProviderForm.name.trim() || !llmProviderForm.model.trim()) return;
     setSavingLLMProvider(true);
     try {
-      const parsedCtxWindow = llmProviderForm.context_window.trim()
-        ? parseInt(llmProviderForm.context_window.trim(), 10)
-        : null;
-      const req: LLMProviderCreateRequest = {
-        name: llmProviderForm.name.trim(),
-        backend: llmProviderForm.backend,
-        model: llmProviderForm.model.trim(),
-        api_key: llmProviderForm.api_key.trim() || null,
-        endpoint: llmProviderForm.endpoint.trim() || null,
-        context_window: parsedCtxWindow && parsedCtxWindow > 0 ? parsedCtxWindow : null,
-      };
+      const req = buildLLMProviderRequest();
+      // If the user ran Test Connection in the form before saving, we
+      // already have a fresh result for these exact values. Propagate
+      // that status to the saved record so the list row's colored dot
+      // matches — otherwise a successful form test followed by Save
+      // leaves the row at the default "configured" (orange) despite
+      // the user just seeing a green "Connected" banner.
+      const formTestResult = testResults[FORM_TEST_RESULT_KEY];
+      let savedId: string | null = null;
       if (editingLLMProviderId) {
         await updateLLMProvider(editingLLMProviderId, req);
+        savedId = editingLLMProviderId;
       } else {
-        await createLLMProvider(req);
+        const created = await createLLMProvider(req);
+        savedId = created.id;
+      }
+      if (savedId && formTestResult) {
+        // Re-run the id-keyed test endpoint so the backend persists
+        // status + last_tested_at on the saved record. Cheapest path
+        // to unify "test banner" with "list-row dot" without adding
+        // a save-time status flag on the API.
+        try {
+          await testLLMProvider(savedId);
+        } catch (err) {
+          // Status-stamping is best-effort — save already succeeded.
+          console.warn("Post-save status stamp failed:", err);
+        }
       }
       setShowLLMProviderForm(false);
       resetLLMProviderForm();
@@ -476,6 +549,45 @@ function SettingsPageInner() {
       toast.error("Failed to save LLM Provider");
     } finally {
       setSavingLLMProvider(false);
+    }
+  };
+
+  // Form-mode Test Connection. Sends the CURRENT form payload
+  // (unsaved changes included) to the stateless
+  // `POST /api/llm-providers/test` endpoint. This fixes the
+  // long-standing bug where clicking Test Connection in Edit mode
+  // tested the last-saved record and silently ignored in-flight edits
+  // to api_key / model / endpoint. Result renders in the same banner
+  // used by the saved-row Test button.
+  const handleTestLLMProviderForm = async () => {
+    if (!llmProviderForm.name.trim() || !llmProviderForm.model.trim()) return;
+    setTestingLLMProviderId(FORM_TEST_RESULT_KEY);
+    try {
+      // In edit mode, pass the provider id so the backend can fall
+      // back to the saved API key when the form's api_key field is
+      // blank (mirrors the "leave blank to keep current key" save
+      // contract). Create mode omits the id → no saved-key fallback.
+      const req = {
+        ...buildLLMProviderRequest(),
+        llm_provider_id: editingLLMProviderId,
+      };
+      const result = await testLLMProviderConfig(req);
+      setTestResults((prev) => ({
+        ...prev,
+        [FORM_TEST_RESULT_KEY]: {
+          connected: result.connected,
+          error: result.error,
+          latency_ms: result.latency_ms,
+        },
+      }));
+    } catch (err) {
+      console.error("Test failed:", err);
+      setTestResults((prev) => ({
+        ...prev,
+        [FORM_TEST_RESULT_KEY]: { connected: false, error: String(err) },
+      }));
+    } finally {
+      setTestingLLMProviderId(null);
     }
   };
 
@@ -722,15 +834,24 @@ function SettingsPageInner() {
                     >
                       {editingLLMProviderId ? "Save" : "Create"}
                     </Button>
-                    {editingLLMProviderId && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => handleTestLLMProvider(editingLLMProviderId)}
-                        disabled={testingLLMProviderId === editingLLMProviderId || savingLLMProvider}
-                      >
-                        {testingLLMProviderId === editingLLMProviderId ? "Testing…" : "Test Connection"}
-                      </Button>
-                    )}
+                    {/* Test Connection runs against the current form
+                        values in both Create and Edit modes. Previously
+                        Edit mode tested the last-saved record, so
+                        unsaved changes to api_key / model / endpoint
+                        were silently ignored. Now identical in both
+                        modes: form payload → stateless test endpoint. */}
+                    <Button
+                      variant="secondary"
+                      onClick={handleTestLLMProviderForm}
+                      disabled={
+                        testingLLMProviderId === FORM_TEST_RESULT_KEY ||
+                        savingLLMProvider ||
+                        !llmProviderForm.name.trim() ||
+                        !llmProviderForm.model.trim()
+                      }
+                    >
+                      {testingLLMProviderId === FORM_TEST_RESULT_KEY ? "Testing…" : "Test Connection"}
+                    </Button>
                     <Button
                       variant="outline"
                       onClick={() => { setShowLLMProviderForm(false); resetLLMProviderForm(); }}
@@ -739,11 +860,11 @@ function SettingsPageInner() {
                       Cancel
                     </Button>
                   </div>
-                  {editingLLMProviderId && testResults[editingLLMProviderId] && (
-                    <div className={`mt-2 rounded-md p-2 text-sm ${testResults[editingLLMProviderId].connected ? "bg-emerald-500/10 text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
-                      {testResults[editingLLMProviderId].connected
-                        ? `Connected (${testResults[editingLLMProviderId].latency_ms ?? 0}ms)`
-                        : `Failed: ${testResults[editingLLMProviderId].error || "Connection failed"}`}
+                  {testResults[FORM_TEST_RESULT_KEY] && (
+                    <div className={`mt-2 rounded-md p-2 text-sm ${testResults[FORM_TEST_RESULT_KEY].connected ? "bg-emerald-500/10 text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
+                      {testResults[FORM_TEST_RESULT_KEY].connected
+                        ? `Connected (${testResults[FORM_TEST_RESULT_KEY].latency_ms ?? 0}ms)`
+                        : `Failed: ${testResults[FORM_TEST_RESULT_KEY].error || "Connection failed"}`}
                     </div>
                   )}
                 </CardContent>

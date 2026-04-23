@@ -850,6 +850,27 @@ export const deleteLLMProvider = (id: string) =>
 export const testLLMProvider = (id: string) =>
   fetchJSON<ProviderTestResponse>(`/api/llm-providers/${id}/test`, { method: "POST" });
 
+/**
+ * Test an unsaved LLM Provider config. Used by the Settings form's
+ * Test Connection button in both Create and Edit modes so the test
+ * runs against the CURRENT form values, not the last-saved record.
+ * Nothing is persisted to state.
+ *
+ * In Edit mode the frontend passes ``llm_provider_id`` so the
+ * backend can resolve the saved API key when the form's api_key
+ * field is blank — mirroring the save path's "leave blank to keep
+ * current key" contract.
+ */
+export interface LLMProviderTestRequest extends LLMProviderCreateRequest {
+  llm_provider_id?: string | null;
+}
+
+export const testLLMProviderConfig = (req: LLMProviderTestRequest) =>
+  fetchJSON<ProviderTestResponse>("/api/llm-providers/test", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+
 export const getLLMProviderModels = (id: string) =>
   fetchJSON<ModelInfo[]>(`/api/llm-providers/${id}/models`);
 
