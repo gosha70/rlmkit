@@ -58,6 +58,36 @@ class TestExtractCacheTokens:
         usage = SimpleNamespace()
         assert _extract_cache_tokens(usage) == (0, 0)
 
+    def test_openai_schema_as_plain_dict(self):
+        """LiteLLM occasionally surfaces ``usage`` as a dict when
+        ``stream_options.include_usage=True`` flows through certain
+        providers. Attribute-style access returns None there, which
+        used to collapse cached_tokens to 0 even when OpenAI reported
+        a real hit. Regression guard for manual-QA finding."""
+        usage = {
+            "prompt_tokens": 5000,
+            "completion_tokens": 100,
+            "prompt_tokens_details": {"cached_tokens": 3072},
+        }
+        read, write = _extract_cache_tokens(usage)
+        assert read == 3072
+        assert write == 0
+
+    def test_anthropic_schema_as_plain_dict(self):
+        """Same dict-shape hardening for the Anthropic path."""
+        usage = {
+            "cache_read_input_tokens": 210,
+            "cache_creation_input_tokens": 40,
+        }
+        assert _extract_cache_tokens(usage) == (210, 40)
+
+    def test_mixed_attr_with_dict_details(self):
+        """Object-style ``usage`` but dict-style ``prompt_tokens_details``."""
+        usage = SimpleNamespace(
+            prompt_tokens_details={"cached_tokens": 512},
+        )
+        assert _extract_cache_tokens(usage) == (512, 0)
+
 
 class TestCacheTokensFlowIntoDTO:
     """Verify _observe_chunk surfaces cache tokens on the returned DTO."""

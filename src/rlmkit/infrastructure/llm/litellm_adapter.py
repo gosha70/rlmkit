@@ -88,6 +88,24 @@ def _is_connection_error(exc: BaseException) -> bool:
     return any(kw in msg for kw in _CONNECTION_KEYWORDS)
 
 
+def _read_usage_field(usage: Any, name: str) -> Any:
+    """Fetch a field from a LiteLLM usage record tolerating both shapes.
+
+    LiteLLM sometimes exposes ``usage`` as a Pydantic-like object
+    (attribute access) and sometimes as a plain dict (when streaming
+    with ``include_usage=True`` on some providers). Try both so cache
+    extraction works uniformly.
+    """
+    if usage is None:
+        return None
+    val = getattr(usage, name, None)
+    if val is not None:
+        return val
+    if isinstance(usage, dict):
+        return usage.get(name)
+    return None
+
+
 def _extract_cache_tokens(usage: Any) -> tuple[int, int]:
     """Return ``(cached_read_tokens, cache_write_tokens)`` from a usage record.
 
@@ -97,22 +115,34 @@ def _extract_cache_tokens(usage: Any) -> tuple[int, int]:
     returns 0 for cache_write), and any provider that surfaces neither
     (returns ``(0, 0)``).
 
+    Tolerates both attribute-style and dict-style access, since LiteLLM
+    can return either shape depending on provider + streaming mode.
     Never raises — missing fields are the common case (Ollama, vLLM
-    without prefix caching, etc.).
+    without prefix caching, OpenAI's first request to a new prefix).
     """
     if usage is None:
         return 0, 0
-    # Anthropic via LiteLLM
-    read = getattr(usage, "cache_read_input_tokens", None) or 0
-    write = getattr(usage, "cache_creation_input_tokens", None) or 0
+    # Anthropic via LiteLLM.
+    read = _read_usage_field(usage, "cache_read_input_tokens") or 0
+    write = _read_usage_field(usage, "cache_creation_input_tokens") or 0
     if read or write:
         return int(read), int(write)
-    # OpenAI via LiteLLM
-    details = getattr(usage, "prompt_tokens_details", None)
+    # OpenAI via LiteLLM — nested under ``prompt_tokens_details``.
+    details = _read_usage_field(usage, "prompt_tokens_details")
     if details is not None:
-        cached = getattr(details, "cached_tokens", None) or 0
+        cached = _read_usage_field(details, "cached_tokens") or 0
         if cached:
+            logger.debug("OpenAI prompt_tokens_details.cached_tokens=%s", cached)
             return int(cached), 0
+    # Explicit debug breadcrumb when no cache signal is observed — lets
+    # users confirm whether "0" means "no cache hit" vs "my helper
+    # missed the field" when tuning cache behavior in manual testing.
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug(
+            "usage had no cache tokens: attrs=%s has_details=%s",
+            sorted(k for k in (getattr(usage, "__dict__", {}) or {})),
+            _read_usage_field(usage, "prompt_tokens_details") is not None,
+        )
     return 0, 0
 
 
