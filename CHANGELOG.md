@@ -5,6 +5,145 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Prefill / decode telemetry
+
+#### Approved deviations from spec v1.7
+
+The `doc_internal/specs/prefill-decode-telemetry.md` spec is
+gitignored, so approved deviations live here to travel with the PR:
+
+- **AC-8**: spec wording asks for a wall-clock assertion ("first
+  websocket `token` arrives within `prior_baseline_ttft_ms + 50` ms").
+  Implemented as an order-based regression guard instead —
+  `tests/test_websocket_streaming.py::test_first_post_connect_event_is_token_not_aggregate`
+  asserts the first post-`connected` event is a `token`, not an
+  aggregate. Catches the same class of bug (buffering regression
+  that holds chunks until end-of-stream) without CI timing flake.
+- **Three hot-path call sites → two**: spec §Prerequisite refactor
+  names three `complete_stream_async` consumers. `git grep` finds
+  only two (`run_rlm.py:1019`, `run_direct.py:198`). Both migrated.
+- **Per-adapter test layout**: spec mentions
+  `tests/infrastructure/llm/test_*_adapter.py`; this repo has a flat
+  `tests/` layout. New tests added there rather than inventing a
+  new directory.
+- **Legacy adapters' `ttft_ms`**: `openai`/`anthropic`/`ollama`
+  wrappers have no streaming backend, so `ttft_ms` is `None` on
+  their terminal `StreamChunk.response`. `StreamChunk.response`
+  itself is always non-None for successful calls.
+- **`_rank` perf-aggregate computation**: the use-case-layer ranker
+  computes aggregates from the raw-DTO trace keys directly rather
+  than materializing via `server/routes/_helpers.py`, to respect
+  the Clean-Architecture dependency rule
+  (`application/` must not import from `server/`).
+- **`RLMKIT_STREAMED_COMPLETE` scope**: the flag gates
+  `complete()` / `complete_async()` only — `complete_stream_async`'s
+  Protocol signature change is unconditional (Protocols cannot
+  branch on env).
+- **`judge_score` backend passthrough**: pre-existing drift —
+  frontend `MatrixRankingMetric` included `judge_score` but backend
+  rejected it. Widened the backend Literal and added a
+  no-op passthrough branch in `_rank` (frontend re-ranks
+  client-side) so the request doesn't 422.
+
+- **Phase 6 — DGX Spark cookbook §4b (spec v1.7).** One paragraph added
+  to `docs/hosts/dgx-spark.md` calling out that vLLM's
+  `--enable-prefix-caching` flag is the single biggest knob for
+  RLM-on-Spark wall-time. AC: 10.
+- **Phase 5 — Compare perf fields, ranking widen, frontend tab, feature flag (spec v1.7).**
+  `CompareMatrixSlotResponse` gains six per-slot perf aggregates
+  (`total_prompt_tokens`, `total_completion_tokens`,
+  `total_cached_tokens`, `total_decode_ms`, `median_ttft_ms`,
+  `cache_hit_rate`), populated from each slot's trace at write time
+  so frontend ranking doesn't need a second fetch. All three
+  request payload classes (`CompareMatrixRequest`,
+  `CompareMatrixRequestV2`, `CompareMatrixUnifiedRequest`) widen
+  the `ranking_metric` Literal to include `"ttft"`,
+  `"decode_tokens_per_sec"`, `"cache_hit_rate"`; the backend ranker
+  in `RunMatrixComparisonUseCase._rank` handles the three new
+  metrics (computed directly from the raw-DTO trace keys to respect
+  the dependency rule). Frontend `MatrixRankingMetric` union and
+  `CompareMatrixSlotResponse` interface mirror the additions; the
+  Compare page's client-side ranker switch grows three new branches
+  that read the new per-slot fields and sort null-telemetry slots
+  last. A Traces "Performance" tab appears when
+  `NEXT_PUBLIC_RLMKIT_PERF_UI=1`, rendering a per-step table of
+  prompt/completion/cached tokens, TTFT, decode, and duration.
+  ACs: 6, 16, 17, 18.
+- **Phase 4 — classifier PREFILL_TIMEOUT + write-time persistence + route helpers (spec v1.7).**
+  `OutcomeCategory` gains `PREFILL_TIMEOUT`;
+  `classify_execution_outcome` accepts an optional `trace:
+  ExecutionTrace | None` kwarg and promotes a timeout failure to
+  PREFILL_TIMEOUT when ≥2 steps satisfy `ttft_ms / (duration_ms) >
+  0.7` — two or more prefill-heavy steps is the signature of
+  prefix-cache failure vs. a single cold-start. `TelemetryStore.
+  record_run` gains an `outcome_category: str | None` kwarg; the
+  store stays a dumb sink that writes verbatim. New route helper
+  module `server/routes/_helpers.py` exposes
+  `_translate_raw_trace_entry` (raw-DTO → `TraceStep`) and
+  `_materialize_trace` (tolerant wrapper); both chat and
+  compare_matrix materialize the trace, classify, and pass the
+  persisted category through `record_run`. `_RunPoint` in
+  `metrics.py` gains `outcome_category`; the dashboard's failure
+  aggregator now prefers the persisted value and only re-derives
+  for legacy `NULL` rows — legacy TIMEOUT rows are never
+  retroactively promoted. New troubleshoot entry
+  `prefill-timeout-enable-caching` surfaces on the Learn tab.
+  Judge (`server/judge.py`) is unchanged per AC-28. ACs: 7, 13b,
+  14, 15, 21, 24, 25, 26, 27, 28.
+- **Phase 3 — use-case trace writers + REST/replay shape + CI guard (spec v1.7).**
+  Every `TRACE_KEY_ROLE: "assistant"` dict in `application/use_cases/`
+  now populates the four new telemetry keys (`ttft_ms`, `decode_ms`,
+  `cached_tokens`, `cache_write_tokens`) from the returning
+  `LLMResponseDTO`. Eleven assistant-role sites covered across
+  `run_rlm.py` (8), `run_direct.py` (2 — sync + async branches), and
+  the Phase-2 `run_rag.py` site. The server-side `TraceStep` Pydantic
+  model, the `/api/traces/{id}` response builder, and the Learn-tab
+  replay converter (`trace_to_replay.py`) mirror the six new fields;
+  frontend `TraceStep` and `LearnReplayStepMetrics` interfaces get
+  matching optional fields. A new CI guard test
+  (`tests/test_trace_writers.py`) greps the use-case tree for every
+  assistant dict and fails if any is missing the four keys — blocks
+  future PRs that add a new assistant-role writer without attending
+  to telemetry. ACs: 9, 29.
+- **Phase 2 — data model + cache extraction + store migration + RAG two-step trace (spec v1.7).**
+  `TraceStep` gains six fields (`prompt_tokens`, `completion_tokens`,
+  `ttft_ms`, `decode_ms`, `cached_tokens`, `cache_write_tokens`) plus a
+  `TraceStep.from_dict` classmethod (AC-23). `ExecutionTrace` gains four
+  derived properties (`total_prompt_tokens`, `total_completion_tokens`,
+  `cache_hit_rate` capped at 1.0, `median_ttft_ms`) — AC-4.
+  `LiteLLMAdapter._extract_cache_tokens` handles Anthropic
+  (`cache_read_input_tokens` + `cache_creation_input_tokens`) and OpenAI
+  (`prompt_tokens_details.cached_tokens`) schemas; returns `(0, 0)` for
+  unknown providers — AC-3. Cache counts are now populated on every
+  streamed LiteLLM response. Telemetry store gains a migration harness
+  keyed on `PRAGMA user_version`: `_SCHEMA_SQL` stays frozen at the v1
+  baseline; `_MIGRATIONS` is the single source of truth for post-v1
+  schema changes. The v2 block adds the six step columns +
+  `runs.outcome_category` (the column is added now; writers wire up in
+  Phase 4) — AC-5, AC-20, AC-22. `run_rag.py` now emits a two-entry
+  trace: step 0 is `rag_retrieval` (retrieval-side metrics unchanged),
+  step 1 is `assistant` with the four new telemetry keys populated from
+  the LLM response DTO — AC-13a. Route-layer materialization (AC-13b)
+  arrives in Phase 4.
+- **Phase 1 — streaming-under-the-hood (spec v1.7).** `LLMPort.
+  complete_stream_async` now yields `StreamChunk` events; the terminal
+  chunk carries a populated `LLMResponseDTO` with four new fields
+  (`ttft_ms`, `decode_ms`, `cached_tokens`, `cache_write_tokens`).
+  `LiteLLMAdapter.complete()` and `.complete_async()` stream under
+  the hood by default so TTFT and decode_ms are measured on every
+  call. The legacy `openai` / `anthropic` / `ollama` / `mock`
+  adapters migrate to the new `StreamChunk` signature; `ttft_ms` is
+  `None` on the three wrappers because their underlying clients have
+  no streaming backend. The two in-repo consumers (`run_rlm.py`,
+  `run_direct.py`) read `chunk.response` on the final chunk and drop
+  the previous approximate-token synthesis. Panic lever:
+  `RLMKIT_STREAMED_COMPLETE=0` restores the pre-Phase-1
+  non-streaming behavior for the two sync paths (`complete`,
+  `complete_async`); the `complete_stream_async` signature change
+  is unconditional because Protocol signatures cannot branch on
+  env. Cache-token extraction, TraceStep changes, and store
+  migration land in Phase 2.
+
 Learn tab V2 — a self-contained surface that teaches the RLM loop
 through a scrubbable, step-by-step replay. Shipped in three slices
 (V1 → V2a → V2b) across PRs #20, #23, and #24.

@@ -30,7 +30,20 @@ from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
 logger = logging.getLogger(__name__)
 
 SlotMode = Literal["direct", "rag", "rlm"]
-RankingMetric = Literal["cost", "tokens", "latency", "answer_per_cost"]
+RankingMetric = Literal[
+    "cost",
+    "tokens",
+    "latency",
+    "answer_per_cost",
+    # Judge-scored ordering is produced client-side (the frontend
+    # re-ranks on every response); the backend accepts it as a
+    # passthrough so the request schema matches the frontend union.
+    "judge_score",
+    # Phase 5 — prefill/decode-oriented ranking.
+    "ttft",
+    "decode_tokens_per_sec",
+    "cache_hit_rate",
+]
 
 _SUPPORTED_MODES: frozenset[str] = frozenset({"direct", "rag", "rlm"})
 
@@ -282,9 +295,50 @@ class RunMatrixComparisonUseCase:
         """Return slot indices ordered best→worst by *metric*.
 
         Failed slots are always last, in their original input order.
+        For the three Phase-5 perf metrics, slots lacking the relevant
+        telemetry (e.g. ``median_ttft_ms`` is ``None``) sort last
+        among successes, matching the "failed slots last" contract.
         """
         successes = [i for i, s in enumerate(slots) if s.result.success]
         failures = [i for i, s in enumerate(slots) if not s.result.success]
+
+        def _perf_aggregates(i: int) -> dict:
+            """Sum perf aggregates over the slot's raw trace dicts.
+
+            Computed directly from the raw DTO keys (plain strings per
+            spec v1.7 §3) rather than via a materialized TraceStep —
+            the use-case layer cannot import the route-layer
+            materializer without violating the dependency rule.
+            """
+            raw = slots[i].result.trace or []
+            ttft_values: list[int] = []
+            total_decode_ms = 0
+            total_completion_tokens = 0
+            total_prompt_tokens = 0
+            total_cached_tokens = 0
+            for entry in raw:
+                if not isinstance(entry, dict):
+                    continue
+                ttft = entry.get("ttft_ms")
+                if ttft is not None:
+                    ttft_values.append(int(ttft))
+                total_decode_ms += int(entry.get("decode_ms", 0) or 0)
+                total_completion_tokens += int(entry.get("output_tokens", 0) or 0)
+                total_prompt_tokens += int(entry.get("input_tokens", 0) or 0)
+                total_cached_tokens += int(entry.get("cached_tokens", 0) or 0)
+            median_ttft = None
+            if ttft_values:
+                ttft_values.sort()
+                median_ttft = ttft_values[len(ttft_values) // 2]
+            cache_hit_rate = 0.0
+            if total_prompt_tokens > 0:
+                cache_hit_rate = min(1.0, total_cached_tokens / total_prompt_tokens)
+            return {
+                "median_ttft_ms": median_ttft,
+                "total_decode_ms": total_decode_ms,
+                "total_completion_tokens": total_completion_tokens,
+                "cache_hit_rate": cache_hit_rate,
+            }
 
         def _key(i: int) -> tuple[float, int]:
             r = slots[i].result
@@ -302,6 +356,31 @@ class RunMatrixComparisonUseCase:
                     # Free slots are best; penalize only zero-length answers.
                     return (-float(answer_length), i)
                 return (-answer_length / r.total_cost, i)
+            if metric == "ttft":
+                # Lower TTFT is better; slots without TTFT sort last
+                # among successes (infinity sentinel).
+                agg = _perf_aggregates(i)
+                ttft = agg["median_ttft_ms"]
+                if ttft is None:
+                    return (float("inf"), i)
+                return (float(ttft), i)
+            if metric == "decode_tokens_per_sec":
+                # Higher is better; slots with no decode phase sort last.
+                agg = _perf_aggregates(i)
+                decode_ms = agg["total_decode_ms"]
+                if decode_ms <= 0:
+                    return (float("inf"), i)
+                tps = agg["total_completion_tokens"] / (decode_ms / 1000.0)
+                return (-tps, i)
+            if metric == "cache_hit_rate":
+                # Higher is better; slots with no prompt tokens observed
+                # have rate=0.0 and sort last.
+                agg = _perf_aggregates(i)
+                return (-agg["cache_hit_rate"], i)
+            if metric == "judge_score":
+                # Judge scores are produced out-of-band and re-ranked
+                # client-side; the backend preserves input order here.
+                return (0.0, i)
             raise ValueError(f"Unknown ranking metric: {metric!r}")  # pragma: no cover
 
         successes.sort(key=_key)

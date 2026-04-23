@@ -216,56 +216,111 @@ class TestMajor3AsyncPorts:
 
     @pytest.mark.asyncio
     async def test_litellm_complete_async_calls_acompletion(self):
-        """LiteLLMAdapter.complete_async should call litellm.acompletion."""
+        """LiteLLMAdapter.complete_async should call litellm.acompletion.
+
+        Phase 1 routes complete_async through streaming under the hood,
+        so the mocked acompletion return must be a chunk iterator
+        carrying usage on the terminal chunk.
+        """
+        from types import SimpleNamespace
+
         from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="gpt-4o")
 
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "async answer"
-        mock_response.choices[0].finish_reason = "stop"
-        mock_response.model = "gpt-4o"
-        mock_response.usage = MagicMock()
-        mock_response.usage.prompt_tokens = 10
-        mock_response.usage.completion_tokens = 5
+        content_chunk = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content="async answer", role=None),
+                    finish_reason=None,
+                    index=0,
+                )
+            ],
+            model="gpt-4o",
+            usage=None,
+        )
+        terminal_chunk = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, role=None),
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
+            model="gpt-4o",
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        )
 
-        with patch("litellm.acompletion", return_value=mock_response) as mock_ac:
+        async def mock_async_iter():
+            yield content_chunk
+            yield terminal_chunk
+
+        with patch("litellm.acompletion", return_value=mock_async_iter()) as mock_ac:
             result = await adapter.complete_async([{"role": "user", "content": "hello"}])
             mock_ac.assert_called_once()
             assert isinstance(result, LLMResponseDTO)
             assert result.content == "async answer"
             assert result.input_tokens == 10
             assert result.output_tokens == 5
+            # stream-under-the-hood is the default; TTFT is measured
+            assert result.ttft_ms is not None
 
     @pytest.mark.asyncio
     async def test_litellm_complete_stream_async_yields_chunks(self):
-        """LiteLLMAdapter.complete_stream_async should yield text chunks."""
+        """LiteLLMAdapter.complete_stream_async yields StreamChunk events.
+
+        Non-final chunks carry text deltas; the final chunk has
+        is_final=True and a populated response DTO.
+        """
+        from types import SimpleNamespace
+
+        from rlmkit.application.dto import StreamChunk
         from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="gpt-4o")
 
-        # Build mock async iterator
-        chunk1 = MagicMock()
-        chunk1.choices = [MagicMock()]
-        chunk1.choices[0].delta = MagicMock()
-        chunk1.choices[0].delta.content = "Hello"
+        def _content_chunk(text: str):
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=text, role=None),
+                        finish_reason=None,
+                        index=0,
+                    )
+                ],
+                model="gpt-4o",
+                usage=None,
+            )
 
-        chunk2 = MagicMock()
-        chunk2.choices = [MagicMock()]
-        chunk2.choices[0].delta = MagicMock()
-        chunk2.choices[0].delta.content = " World"
+        terminal_chunk = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=None, role=None),
+                    finish_reason="stop",
+                    index=0,
+                )
+            ],
+            model="gpt-4o",
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5),
+        )
 
         async def mock_async_iter():
-            for c in [chunk1, chunk2]:
-                yield c
+            yield _content_chunk("Hello")
+            yield _content_chunk(" World")
+            yield terminal_chunk
 
         with patch("litellm.acompletion", return_value=mock_async_iter()):
-            collected = []
-            async for text in adapter.complete_stream_async([{"role": "user", "content": "hi"}]):
-                collected.append(text)
+            collected: list[StreamChunk] = []
+            async for chunk in adapter.complete_stream_async([{"role": "user", "content": "hi"}]):
+                collected.append(chunk)
 
-            assert collected == ["Hello", " World"]
+            # Two content StreamChunks + one terminal StreamChunk.
+            assert [c.delta for c in collected if not c.is_final] == ["Hello", " World"]
+            assert collected[-1].is_final is True
+            assert collected[-1].response is not None
+            assert collected[-1].response.input_tokens == 3
+            assert collected[-1].response.output_tokens == 2
+            assert collected[-1].response.ttft_ms is not None
 
 
 # ---------------------------------------------------------------------------

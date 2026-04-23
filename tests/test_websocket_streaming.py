@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.application.dto import LLMResponseDTO
+from rlmkit.application.dto import LLMResponseDTO, StreamChunk
 from rlmkit.server.app import create_app
 from rlmkit.server.dependencies import get_state, reset_state
 
@@ -51,10 +51,24 @@ class FakeStreamingLLM:
     async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         return self.complete(messages)
 
-    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+    async def complete_stream_async(
+        self, messages: list[dict[str, str]]
+    ) -> AsyncIterator[StreamChunk]:
         text = self._get_next_response()
         for char in text:
-            yield char
+            yield StreamChunk(delta=char, is_final=False)
+        yield StreamChunk(
+            delta="",
+            is_final=True,
+            response=LLMResponseDTO(
+                content=text,
+                model="fake-model",
+                input_tokens=10,
+                output_tokens=5,
+                ttft_ms=1,
+                decode_ms=max(0, len(text) - 1),
+            ),
+        )
 
     def count_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
@@ -223,6 +237,43 @@ class TestDirectStreaming:
                     break
 
             assert "".join(tokens) == "abc"
+
+    def test_first_post_connect_event_is_token_not_aggregate(self, client, monkeypatch):
+        """AC-8 (regression-guard form): streaming-under-the-hood must not
+        introduce a buffer that holds chunks until the stream ends.
+
+        Order-based variant of the spec's wall-clock assertion: the first
+        non-control message after 'connected' must be a 'token' event,
+        never 'step' / 'metrics' / 'complete'. A regression that
+        accumulates all chunks before yielding would surface here.
+        """
+        fake_llm = FakeStreamingLLM(["hello"])
+
+        state = get_state()
+        monkeypatch.setattr(state, "create_llm_adapter", lambda: fake_llm)
+
+        with client.websocket_connect("/ws/chat/s1") as ws:
+            ws.receive_json()  # connected
+
+            ws.send_json(
+                {
+                    "type": "query",
+                    "id": "msg-ttft",
+                    "query": "q",
+                    "content": "c",
+                    "mode": "direct",
+                }
+            )
+
+            first = ws.receive_json()
+            # Accept an "error" only if it carries meaningful context —
+            # in practice the fake streams cleanly, so the assertion
+            # is simple.
+            assert first["type"] == "token", (
+                f"Expected first event to be 'token', got {first['type']!r}. "
+                f"A non-token first event indicates streaming regression "
+                f"(buffer held chunks until end-of-stream)."
+            )
 
 
 # ---------------------------------------------------------------------------

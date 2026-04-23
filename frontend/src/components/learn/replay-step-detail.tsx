@@ -110,6 +110,37 @@ export function ReplayStepDetail({ step, className }: ReplayStepDetailProps) {
                         value={`$${step.metrics.costUsd.toFixed(4)}`}
                       />
                     )}
+                    {/* Prefill/decode telemetry (spec v1.7 Phase 3).
+                        Each field is rendered only when populated so
+                        legacy replays (no telemetry) stay clean. Zero
+                        is a measured value and survives intentionally —
+                        see _metrics_from_step's zero-preservation
+                        contract. */}
+                    {step.metrics.ttftMs !== undefined &&
+                      step.metrics.ttftMs !== null && (
+                        <MetricRow
+                          label="TTFT"
+                          value={`${step.metrics.ttftMs} ms`}
+                        />
+                      )}
+                    {step.metrics.decodeMs !== undefined && (
+                      <MetricRow
+                        label="Decode"
+                        value={`${step.metrics.decodeMs} ms`}
+                      />
+                    )}
+                    {step.metrics.cachedTokens !== undefined && (
+                      <MetricRow
+                        label="Cached tokens"
+                        value={String(step.metrics.cachedTokens)}
+                      />
+                    )}
+                    {step.metrics.cacheWriteTokens !== undefined && (
+                      <MetricRow
+                        label="Cache writes"
+                        value={String(step.metrics.cacheWriteTokens)}
+                      />
+                    )}
                   </dl>
                 </div>
               )}

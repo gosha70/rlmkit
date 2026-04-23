@@ -59,7 +59,17 @@ SlotMode = Literal["direct", "rlm", "rag"]
 
 # Supported ranking metrics are the same set the use case exposes, restated
 # here so the request schema can validate them at the HTTP boundary.
-_RANKING_METRICS = ("cost", "tokens", "latency", "answer_per_cost")
+# Phase 5 widens the set with three prefill/decode-oriented metrics.
+_RANKING_METRICS = (
+    "cost",
+    "tokens",
+    "latency",
+    "answer_per_cost",
+    "judge_score",
+    "ttft",
+    "decode_tokens_per_sec",
+    "cache_hit_rate",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +86,19 @@ class CompareMatrixRequest(BaseModel):
     chat_provider_ids: list[str] = Field(..., min_length=1, max_length=10)
     modes: list[SlotMode] = Field(..., min_length=1, max_length=3)
     session_id: str | None = None
-    ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+    ranking_metric: Literal[
+        "cost",
+        "tokens",
+        "latency",
+        "answer_per_cost",
+        # ``judge_score`` is ranked client-side only (the frontend
+        # re-ranks every response); the backend accepts it as a
+        # passthrough so the request doesn't 422.
+        "judge_score",
+        "ttft",
+        "decode_tokens_per_sec",
+        "cache_hit_rate",
+    ] = "cost"
 
 
 class CompareMatrixRequestV2(BaseModel):
@@ -88,7 +110,19 @@ class CompareMatrixRequestV2(BaseModel):
     llm_provider_ids: list[str] = Field(..., min_length=1, max_length=10)
     modes: list[SlotMode] = Field(..., min_length=1, max_length=3)
     session_id: str | None = None
-    ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+    ranking_metric: Literal[
+        "cost",
+        "tokens",
+        "latency",
+        "answer_per_cost",
+        # ``judge_score`` is ranked client-side only (the frontend
+        # re-ranks every response); the backend accepts it as a
+        # passthrough so the request doesn't 422.
+        "judge_score",
+        "ttft",
+        "decode_tokens_per_sec",
+        "cache_hit_rate",
+    ] = "cost"
     runtime_settings: RuntimeSettings = Field(default_factory=RuntimeSettings)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
     rag_config: RAGConfig | None = None
@@ -106,7 +140,19 @@ class CompareMatrixUnifiedRequest(BaseModel):
     llm_provider_ids: list[str] | None = None
     modes: list[SlotMode] = Field(default=["direct"], min_length=1, max_length=3)
     session_id: str | None = None
-    ranking_metric: Literal["cost", "tokens", "latency", "answer_per_cost"] = "cost"
+    ranking_metric: Literal[
+        "cost",
+        "tokens",
+        "latency",
+        "answer_per_cost",
+        # ``judge_score`` is ranked client-side only (the frontend
+        # re-ranks every response); the backend accepts it as a
+        # passthrough so the request doesn't 422.
+        "judge_score",
+        "ttft",
+        "decode_tokens_per_sec",
+        "cache_hit_rate",
+    ] = "cost"
     # V2-only fields
     runtime_settings: RuntimeSettings | None = None
     budget: BudgetConfig | None = None
@@ -138,6 +184,16 @@ class CompareMatrixSlotResponse(BaseModel):
     total_cost: float = 0.0
     elapsed_seconds: float = 0.0
     steps: int = 0
+    # Phase 5 — per-slot prefill/decode aggregates. Populated from the
+    # slot's ExecutionTrace at write time so frontend ranking doesn't
+    # need a second fetch. Defaults cover legacy slots and pre-Phase-3
+    # traces without telemetry.
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_cached_tokens: int = 0
+    total_decode_ms: int = 0
+    median_ttft_ms: int | None = None
+    cache_hit_rate: float = 0.0
 
 
 class CompareMatrixResponse(BaseModel):
@@ -147,6 +203,37 @@ class CompareMatrixResponse(BaseModel):
     ranking: list[int]
     ranking_metric: str
     total_elapsed: float
+
+
+def _slot_perf_aggregates(raw_trace: list[dict] | None) -> dict:
+    """Compute per-slot prefill/decode aggregates from the raw trace.
+
+    Materializes the raw-DTO trace via the shared route helper and
+    reuses the domain ExecutionTrace derived properties so this stays
+    the single source of truth for totals / cache hit rate / median
+    TTFT. Returns defaults when the trace is empty or carries no
+    telemetry.
+    """
+    from rlmkit.server.routes._helpers import _materialize_trace
+
+    trace = _materialize_trace(raw_trace, run_success=True)
+    if trace is None or not trace.steps:
+        return {
+            "total_prompt_tokens": 0,
+            "total_completion_tokens": 0,
+            "total_cached_tokens": 0,
+            "total_decode_ms": 0,
+            "median_ttft_ms": None,
+            "cache_hit_rate": 0.0,
+        }
+    return {
+        "total_prompt_tokens": trace.total_prompt_tokens,
+        "total_completion_tokens": trace.total_completion_tokens,
+        "total_cached_tokens": sum(s.cached_tokens for s in trace.steps),
+        "total_decode_ms": sum(s.decode_ms for s in trace.steps),
+        "median_ttft_ms": trace.median_ttft_ms,
+        "cache_hit_rate": trace.cache_hit_rate,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +523,7 @@ async def _compare_matrix_v2(
             total_cost=s.result.total_cost,
             elapsed_seconds=s.result.elapsed_time,
             steps=s.result.steps,
+            **_slot_perf_aggregates(s.result.trace),
         )
         for s in result.slots
     ]
@@ -694,6 +782,7 @@ async def compare_matrix(
             total_cost=s.result.total_cost,
             elapsed_seconds=s.result.elapsed_time,
             steps=s.result.steps,
+            **_slot_perf_aggregates(s.result.trace),
         )
         for s in result.slots
     ]
@@ -726,6 +815,22 @@ def _record_slot_telemetry(
     """Persist one matrix slot as a telemetry ``runs`` row + steps."""
     try:
         result = slot_result.result
+
+        # Classify per slot (not aggregate) so PREFILL_TIMEOUT stays
+        # stable across dashboard reloads — see spec §8b.
+        from rlmkit.application.services.outcome_classifier import (
+            classify_execution_outcome,
+        )
+        from rlmkit.server.routes._helpers import _materialize_trace
+
+        slot_trace = _materialize_trace(result.trace, run_success=result.success)
+        outcome = classify_execution_outcome(
+            success=result.success,
+            error=result.error,
+            answer=result.answer,
+            trace=slot_trace,
+        )
+
         state.telemetry.record_run(
             run_id=meta.execution_id,
             created_at=created_at.timestamp(),
@@ -746,9 +851,10 @@ def _record_slot_telemetry(
             chat_provider_name=meta.chat_provider_name,
             comparison_group_id=comparison_group_id,
             steps_count=result.steps,
+            outcome_category=outcome.category.value,
         )
         # Canonicalize action types to match in-memory traces / JSONL exports.
-        from rlmkit.server.routes.chat import _canonical_action_type
+        from rlmkit.server.routes._helpers import _canonical_action_type
 
         total = len(result.trace)
         for i, step_data in enumerate(result.trace):
@@ -757,16 +863,25 @@ def _record_slot_telemetry(
                 is_last=(i == total - 1),
                 success=result.success,
             )
+            input_tokens = step_data.get("input_tokens", 0)
+            output_tokens = step_data.get("output_tokens", 0)
             state.telemetry.record_step(
                 run_id=meta.execution_id,
                 step_index=i,
                 action_type=action_type,
                 code=step_data.get("code"),
                 output=step_data.get("content"),
-                input_tokens=step_data.get("input_tokens", 0),
-                output_tokens=step_data.get("output_tokens", 0),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 duration=step_data.get("elapsed_seconds", 0.0),
                 model=step_data.get("model"),
+                # Prefill/decode telemetry — mirrors the chat route.
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+                ttft_ms=step_data.get("ttft_ms"),
+                decode_ms=int(step_data.get("decode_ms", 0) or 0),
+                cached_tokens=int(step_data.get("cached_tokens", 0) or 0),
+                cache_write_tokens=int(step_data.get("cache_write_tokens", 0) or 0),
             )
     except Exception:
         # Telemetry failures must never break the user's matrix response.

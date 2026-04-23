@@ -42,6 +42,7 @@ from rlmkit.application.services.history_context import (
     compute_inprompt_budget,
     extract_final_qa_pairs,
 )
+from rlmkit.application.services.outcome_classifier import classify_execution_outcome
 from rlmkit.application.use_cases.run_direct import RunDirectUseCase
 from rlmkit.application.use_cases.run_rag import RunRAGUseCase
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
@@ -379,22 +380,19 @@ def _resolve_file_content(file_ids: list[str], state: AppState) -> str:
 
 
 # Canonical ExecutionTrace action types.
-# Use-case traces store raw roles ("assistant"/"execution"); the rest of the
-# system (JSONL export, ExecutionTrace schema, UI) expects the canonical
-# set from rlmkit.core.trace: inspect/subcall/final/error.
-_ACTION_TYPE_MAP = {"assistant": "inspect", "execution": "subcall"}
-
-
-def _canonical_action_type(role: str | None, is_last: bool, success: bool) -> str:
-    """Normalize a raw trace role into a canonical ExecutionTrace action type.
-
-    Mirrors the normalization used by :func:`_save_trajectory` so telemetry
-    rows, JSONL exports, and in-memory traces all agree.
-    """
-    action_type = _ACTION_TYPE_MAP.get(role or "", "inspect")
-    if is_last and success:
-        action_type = "final"
-    return action_type
+# Use-case traces store raw roles ("assistant"/"execution"); the rest of
+# the system (JSONL export, ExecutionTrace schema, UI) expects the
+# canonical set from rlmkit.core.trace: inspect/subcall/final/error.
+#
+# `_canonical_action_type` lives in ``_helpers.py`` so the route helpers
+# don't depend on this module (avoids the circular import that forced
+# the earlier lazy import of ``_materialize_trace``). Re-exported here
+# for the in-file callers (`_save_trajectory`, JSONL export path) and
+# any external importers that already grep ``chat.py`` for this symbol.
+from rlmkit.server.routes._helpers import (  # noqa: E402
+    _canonical_action_type,
+    _materialize_trace,
+)
 
 
 def _save_trajectory(
@@ -547,6 +545,18 @@ def _record_telemetry(
             so ``aggregate_by_provider()`` remains consistent across code paths.
         model: Model identifier (e.g. "gpt-4o", "claude-sonnet-4-6").
     """
+    # Materialize the raw trace once and classify the outcome before
+    # persisting. The classifier keys on TTFT/duration ratios, so it
+    # needs the trace in memory here (dashboard reads are N+1 if we
+    # defer classification to read time — see spec §8b).
+    trace_obj = _materialize_trace(result.trace, run_success=result.success)
+    outcome = classify_execution_outcome(
+        success=result.success,
+        error=result.error,
+        answer=result.answer,
+        trace=trace_obj,
+    )
+
     run_id = state.telemetry.record_run(
         run_id=execution.execution_id,
         created_at=execution.started_at.timestamp() if execution.started_at else 0.0,
@@ -567,6 +577,7 @@ def _record_telemetry(
         chat_provider_id=execution.chat_provider_id,
         chat_provider_name=execution.chat_provider_name,
         steps_count=result.steps,
+        outcome_category=outcome.category.value,
     )
     total = len(result.trace)
     for i, step_data in enumerate(result.trace):
@@ -575,16 +586,28 @@ def _record_telemetry(
             is_last=(i == total - 1),
             success=result.success,
         )
+        input_tokens = step_data.get(TRACE_KEY_INPUT_TOKENS, 0)
+        output_tokens = step_data.get(TRACE_KEY_OUTPUT_TOKENS, 0)
         state.telemetry.record_step(
             run_id=run_id,
             step_index=i,
             action_type=action_type,
             code=step_data.get(TRACE_KEY_CODE),
             output=step_data.get(TRACE_KEY_CONTENT),
-            input_tokens=step_data.get(TRACE_KEY_INPUT_TOKENS, 0),
-            output_tokens=step_data.get(TRACE_KEY_OUTPUT_TOKENS, 0),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             duration=step_data.get(TRACE_KEY_ELAPSED_SECONDS, 0.0),
             model=step_data.get(TRACE_KEY_MODEL),
+            # Prefill/decode telemetry (spec v1.7). The four plain-string
+            # keys come straight from the use-case raw-DTO writers; the
+            # prompt/completion split is the raw token counts, mirroring
+            # the route-layer translator in _helpers.
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            ttft_ms=step_data.get("ttft_ms"),
+            decode_ms=int(step_data.get("decode_ms", 0) or 0),
+            cached_tokens=int(step_data.get("cached_tokens", 0) or 0),
+            cache_write_tokens=int(step_data.get("cache_write_tokens", 0) or 0),
         )
 
 

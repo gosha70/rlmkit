@@ -290,6 +290,10 @@ class RunRLMUseCase:
                     TRACE_KEY_CODE: parsed.code,
                     TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
                     TRACE_KEY_ELAPSED_SECONDS: time.time() - step_start,
+                    "ttft_ms": response.ttft_ms,
+                    "decode_ms": response.decode_ms,
+                    "cached_tokens": response.cached_tokens,
+                    "cache_write_tokens": response.cache_write_tokens,
                 }
                 if clamp_info:
                     trace_entry[TRACE_KEY_CLAMP] = clamp_info
@@ -534,6 +538,10 @@ class RunRLMUseCase:
                                     getattr(self._llm, "active_model", None) or synth_response.model
                                 ),
                                 TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                                "ttft_ms": synth_response.ttft_ms,
+                                "decode_ms": synth_response.decode_ms,
+                                "cached_tokens": synth_response.cached_tokens,
+                                "cache_write_tokens": synth_response.cache_write_tokens,
                                 "note": "early post-coverage synthesis",
                             }
                         )
@@ -668,6 +676,10 @@ class RunRLMUseCase:
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                         or synth_response.model,
                         TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                        "ttft_ms": synth_response.ttft_ms,
+                        "decode_ms": synth_response.decode_ms,
+                        "cached_tokens": synth_response.cached_tokens,
+                        "cache_write_tokens": synth_response.cache_write_tokens,
                         "note": "synthesis fallback",
                     }
                 )
@@ -748,6 +760,10 @@ class RunRLMUseCase:
                             TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                             or synth_response.model,
                             TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                            "ttft_ms": synth_response.ttft_ms,
+                            "decode_ms": synth_response.decode_ms,
+                            "cached_tokens": synth_response.cached_tokens,
+                            "cache_write_tokens": synth_response.cache_write_tokens,
                             "note": "synthesis fallback",
                         }
                     )
@@ -1016,19 +1032,39 @@ class RunRLMUseCase:
                 try:
                     if event_emitter and hasattr(self._llm, "complete_stream_async"):
                         collected: list[str] = []
-                        async for token in self._llm.complete_stream_async(call_messages):
-                            collected.append(token)
-                            await event_emitter.on_token(token)
-                        text = "".join(collected)
-                        # Approximate token counts for streamed responses
-                        approx_input = max(1, sum(len(m["content"]) for m in call_messages) // 4)
-                        approx_output = max(1, len(text) // 4)
-                        response = LLMResponseDTO(
-                            content=text,
-                            model=getattr(self._llm, "active_model", ""),
-                            input_tokens=approx_input,
-                            output_tokens=approx_output,
-                        )
+                        final_dto: LLMResponseDTO | None = None
+                        async for chunk in self._llm.complete_stream_async(call_messages):
+                            if chunk.is_final:
+                                final_dto = chunk.response
+                                continue
+                            if chunk.delta:
+                                collected.append(chunk.delta)
+                                await event_emitter.on_token(chunk.delta)
+                        if final_dto is not None:
+                            response = final_dto
+                            # `content` is authoritative on the final DTO;
+                            # the collected deltas are echoed to the WS for
+                            # UX but do not feed token accounting.
+                        else:
+                            # Defensive fallback: adapter did not emit a
+                            # terminal chunk. Preserve the pre-Phase-1
+                            # synthesis so the use case still produces a
+                            # DTO, and log the contract violation.
+                            logger.warning(
+                                "complete_stream_async did not yield a terminal "
+                                "StreamChunk; falling back to token-length heuristic"
+                            )
+                            text = "".join(collected)
+                            approx_input = max(
+                                1, sum(len(m["content"]) for m in call_messages) // 4
+                            )
+                            approx_output = max(1, len(text) // 4)
+                            response = LLMResponseDTO(
+                                content=text,
+                                model=getattr(self._llm, "active_model", ""),
+                                input_tokens=approx_input,
+                                output_tokens=approx_output,
+                            )
                     elif hasattr(self._llm, "complete_async"):
                         response = await self._llm.complete_async(call_messages)
                     else:
@@ -1078,6 +1114,10 @@ class RunRLMUseCase:
                     TRACE_KEY_CODE: parsed.code,
                     TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
                     TRACE_KEY_ELAPSED_SECONDS: time.time() - step_start,
+                    "ttft_ms": response.ttft_ms,
+                    "decode_ms": response.decode_ms,
+                    "cached_tokens": response.cached_tokens,
+                    "cache_write_tokens": response.cache_write_tokens,
                 }
                 if clamp_info:
                     step_entry[TRACE_KEY_CLAMP] = clamp_info
@@ -1335,6 +1375,10 @@ class RunRLMUseCase:
                                 getattr(self._llm, "active_model", None) or synth_response.model
                             ),
                             TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                            "ttft_ms": synth_response.ttft_ms,
+                            "decode_ms": synth_response.decode_ms,
+                            "cached_tokens": synth_response.cached_tokens,
+                            "cache_write_tokens": synth_response.cache_write_tokens,
                             "note": "early post-coverage synthesis",
                         }
                         trace.append(synth_entry)
@@ -1464,6 +1508,10 @@ class RunRLMUseCase:
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                         or synth_response.model,
                         TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                        "ttft_ms": synth_response.ttft_ms,
+                        "decode_ms": synth_response.decode_ms,
+                        "cached_tokens": synth_response.cached_tokens,
+                        "cache_write_tokens": synth_response.cache_write_tokens,
                         "note": "synthesis fallback",
                     }
                 )
@@ -1549,6 +1597,10 @@ class RunRLMUseCase:
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None)
                         or synth_response.model,
                         TRACE_KEY_ELAPSED_SECONDS: time.time() - synth_step_start,
+                        "ttft_ms": synth_response.ttft_ms,
+                        "decode_ms": synth_response.decode_ms,
+                        "cached_tokens": synth_response.cached_tokens,
+                        "cache_write_tokens": synth_response.cache_write_tokens,
                         "note": "synthesis fallback",
                     }
                     trace.append(synth_entry)

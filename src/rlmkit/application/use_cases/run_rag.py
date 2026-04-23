@@ -14,6 +14,12 @@ from rlmkit.application.ports.llm_port import LLMPort
 from rlmkit.application.ports.storage_port import StoragePort
 from rlmkit.application.sandbox_vars import (
     MODE_RAG,
+    TRACE_KEY_CONTENT,
+    TRACE_KEY_ELAPSED_SECONDS,
+    TRACE_KEY_INPUT_TOKENS,
+    TRACE_KEY_MODE,
+    TRACE_KEY_MODEL,
+    TRACE_KEY_OUTPUT_TOKENS,
     TRACE_KEY_ROLE,
     TRACE_KEY_STEP,
 )
@@ -162,7 +168,9 @@ class RunRAGUseCase:
                 },
             )
 
+            llm_start = time.time()
             response: LLMResponseDTO = self._llm.complete(messages)
+            llm_elapsed = time.time() - llm_start
             elapsed = time.time() - start
 
             # Collect embedding token usage if the adapter exposes it
@@ -179,6 +187,12 @@ class RunRAGUseCase:
             except Exception:
                 llm_cost = 0.0
 
+            # Two-step trace (§3a of the prefill/decode spec): retrieval
+            # is step 0 (rag_retrieval → canonicalizes to `inspect`) and
+            # the LLM completion is step 1 (assistant → canonicalizes to
+            # `final` automatically because it's the last step on a
+            # successful run). Splitting the phases keeps embedding
+            # latency separate from LLM decode latency.
             return RunResultDTO(
                 answer=response.content,
                 mode_used=MODE_RAG,
@@ -196,7 +210,23 @@ class RunRAGUseCase:
                         "scores": [score for score, _, _ in results],
                         "embedding_tokens": embed_tokens,
                         "embedding_cost": embed_cost,
-                    }
+                    },
+                    {
+                        TRACE_KEY_STEP: 1,
+                        TRACE_KEY_ROLE: "assistant",
+                        TRACE_KEY_CONTENT: response.content,
+                        TRACE_KEY_MODE: MODE_RAG,
+                        TRACE_KEY_INPUT_TOKENS: response.input_tokens,
+                        TRACE_KEY_OUTPUT_TOKENS: response.output_tokens,
+                        TRACE_KEY_ELAPSED_SECONDS: llm_elapsed,
+                        TRACE_KEY_MODEL: (
+                            getattr(self._llm, "active_model", None) or response.model
+                        ),
+                        "ttft_ms": response.ttft_ms,
+                        "decode_ms": response.decode_ms,
+                        "cached_tokens": response.cached_tokens,
+                        "cache_write_tokens": response.cache_write_tokens,
+                    },
                 ],
                 metadata={
                     "chunks_total": len(chunks) if not skip_indexing else None,

@@ -144,12 +144,21 @@ class LearnReplayStepDetails(BaseModel):
 
 
 class LearnReplayStepMetrics(BaseModel):
-    """Optional per-step metrics (tokens, latency, cost)."""
+    """Optional per-step metrics (tokens, latency, cost).
+
+    The four `ttft*/decode*/cache*` fields (spec v1.7 Phase 3) surface
+    on the Learn tab's advanced-details tray when populated. Optional
+    with `None` defaults so legacy bundled replays keep working.
+    """
 
     tokensIn: int | None = None  # noqa: N815
     tokensOut: int | None = None  # noqa: N815
     latencyMs: int | None = None  # noqa: N815
     costUsd: float | None = None  # noqa: N815
+    ttftMs: int | None = None  # noqa: N815
+    decodeMs: int | None = None  # noqa: N815
+    cachedTokens: int | None = None  # noqa: N815
+    cacheWriteTokens: int | None = None  # noqa: N815
 
 
 class LearnReplayStep(BaseModel):
@@ -347,7 +356,13 @@ class MetricsResponse(BaseModel):
 
 class FailureCategorySummary(BaseModel):
     # Keep in sync with OutcomeCategory enum in outcome_classifier.py
-    category: Literal["timeout", "budget_exhausted", "context_overflow", "general_error"]
+    category: Literal[
+        "timeout",
+        "prefill_timeout",
+        "budget_exhausted",
+        "context_overflow",
+        "general_error",
+    ]
     count: int = 0
 
 
@@ -378,6 +393,14 @@ class TraceStep(BaseModel):
     recursion_depth: int = 0
     model: str | None = None
     timestamp: datetime | None = None
+    # Prefill/decode telemetry (spec v1.7). Defaults cover legacy traces
+    # recorded before Phase 3.
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    ttft_ms: int | None = None
+    decode_ms: int = 0
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 class TraceBudget(BaseModel):

@@ -92,6 +92,23 @@
     - cookbook/dgx-spark
     - cookbook/vllm
 
+- id: prefill-timeout-enable-caching
+  title: Run timed out on prefill, not decode
+  symptom: RLM loop halts with "timeout", Traces shows per-step
+    TTFT dominating duration, cache_hit_rate near 0.0
+  cause: Each loop step re-prefills the growing history; the provider
+    is either not caching prefixes (Ollama, vLLM without
+    --enable-prefix-caching) or the cache is not being hit
+  category: Budget
+  fix:
+    - If using vLLM, start with --enable-prefix-caching
+    - If using Anthropic/OpenAI, confirm prompt caching is enabled
+      for your account and the system prompt is stable across turns
+    - Lower max_steps or shorten history replay in the profile
+  seealso:
+    - cookbook/dgx-spark
+    - cookbook/vllm
+
 - id: vllm-base-model-chat-endpoint
   title: vLLM returns garbage for chat requests
   symptom: Chat requests come back empty or nonsensical; completions against the same model work

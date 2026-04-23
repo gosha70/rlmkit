@@ -110,6 +110,37 @@ const RANKING_METRICS: {
   },
 ];
 
+// Phase 5 — "Performance shape" ranking options. Hidden behind
+// `RLMKIT_PERF_UI=1` so we can flip the set on after QA. Matches
+// `process.env.NEXT_PUBLIC_RLMKIT_PERF_UI` at build time (plain env
+// lookup so no runtime config plumbing is needed). When off, the
+// backend still accepts these values — the frontend just doesn't
+// surface them in the dropdown.
+const PERF_RANKING_METRICS: typeof RANKING_METRICS = [
+  {
+    value: "ttft",
+    label: "TTFT (lowest wins)",
+    help: "Median time-to-first-token across the slot's steps",
+  },
+  {
+    value: "decode_tokens_per_sec",
+    label: "Decode tok/s (highest wins)",
+    help: "Completion tokens per decode-phase second; measures steady-state speed",
+  },
+  {
+    value: "cache_hit_rate",
+    label: "Cache hit rate (highest wins)",
+    help: "Fraction of prompt tokens served from the provider's prefix cache",
+  },
+];
+
+const PERF_UI_ENABLED: boolean =
+  process.env.NEXT_PUBLIC_RLMKIT_PERF_UI === "1";
+
+const VISIBLE_RANKING_METRICS: typeof RANKING_METRICS = PERF_UI_ENABLED
+  ? [...RANKING_METRICS, ...PERF_RANKING_METRICS]
+  : RANKING_METRICS;
+
 // Matches the backend MAX_SLOTS constant in RunMatrixComparisonUseCase.
 const MAX_SLOTS = 10;
 
@@ -980,8 +1011,14 @@ interface ResultsPanelProps {
   onJudge: () => void;
 }
 
-/** Client-side ranking so re-sorting doesn't require a re-run. */
-function _rankSlots(
+/** Client-side ranking so re-sorting doesn't require a re-run.
+ *
+ * Exported for vitest coverage (AC-17 regression guard). Kept as a
+ * pure function — the parent component re-runs it on every render
+ * via ``useMemo``, so tests can exercise it directly with fabricated
+ * slots and no DOM.
+ */
+export function _rankSlots(
   slots: CompareMatrixSlotResponse[],
   metric: MatrixRankingMetric,
   judgeScores: Record<string, JudgeScoreData>,
@@ -1009,6 +1046,31 @@ function _rankSlots(
       case "answer_per_cost":
         // Zero-cost providers (local models) get -Infinity → always rank first
         score = s.total_cost > 0 ? -(s.answer.length / s.total_cost) : -Infinity;
+        break;
+      case "ttft":
+        // Lower TTFT is better; slots without a value sort last.
+        score = s.median_ttft_ms ?? Number.POSITIVE_INFINITY;
+        break;
+      case "decode_tokens_per_sec": {
+        const decodeMs = s.total_decode_ms ?? 0;
+        const completion = s.total_completion_tokens ?? 0;
+        // Higher tok/s is better → negate. Slots without a decode
+        // phase sort last (infinity).
+        score =
+          decodeMs > 0
+            ? -(completion / (decodeMs / 1000))
+            : Number.POSITIVE_INFINITY;
+        break;
+      }
+      case "cache_hit_rate":
+        // Higher cache_hit_rate is better → negate. Slots without the
+        // field at all (legacy bundles, pre-Phase-5 responses) sort
+        // last — matching the null-last discipline used by ttft and
+        // decode_tokens_per_sec.
+        score =
+          s.cache_hit_rate == null
+            ? Number.POSITIVE_INFINITY
+            : -s.cache_hit_rate;
         break;
       default:
         score = s.total_cost;
@@ -1081,7 +1143,7 @@ function ResultsPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RANKING_METRICS.map((opt) => (
+                {VISIBLE_RANKING_METRICS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>
@@ -1207,6 +1269,22 @@ function ComparisonChart({ slots, metric, ranking, judgeScores }: ComparisonChar
           value = js ? js.overall_score : 0;
           break;
         }
+        // Phase 5 prefill/decode metrics. Previously fell through to
+        // `default: value = s.total_cost`, which plotted COST bars
+        // under the TTFT / decode / cache-hit label — visibly wrong
+        // whenever one of these metrics was selected.
+        case "ttft":
+          value = s.median_ttft_ms ?? 0;
+          break;
+        case "decode_tokens_per_sec":
+          value =
+            (s.total_decode_ms ?? 0) > 0
+              ? (s.total_completion_tokens ?? 0) / ((s.total_decode_ms ?? 0) / 1000)
+              : 0;
+          break;
+        case "cache_hit_rate":
+          value = s.cache_hit_rate ?? 0;
+          break;
         default:
           value = s.total_cost;
       }
@@ -1222,7 +1300,19 @@ function ComparisonChart({ slots, metric, ranking, judgeScores }: ComparisonChar
   }, [slots, metric, ranking, judgeScores]);
 
   const metricLabel = RANKING_METRICS.find((m) => m.value === metric)?.label ?? metric;
-  const isHigherBetter = metric === "answer_per_cost" || metric === "judge_score";
+  // Metrics where a HIGHER number is the better outcome. TTFT is
+  // deliberately NOT in this set — lower is better for time-to-first-
+  // token. answer_per_cost and judge_score are higher-better.
+  // decode_tokens_per_sec and cache_hit_rate are Phase 5 additions:
+  // higher decode tok/s = faster steady-state, higher cache-hit rate
+  // = more prefix reuse → both higher is better.
+  const HIGHER_IS_BETTER_METRICS = new Set<MatrixRankingMetric>([
+    "answer_per_cost",
+    "judge_score",
+    "decode_tokens_per_sec",
+    "cache_hit_rate",
+  ]);
+  const isHigherBetter = HIGHER_IS_BETTER_METRICS.has(metric);
 
   if (chartData.length === 0) return null;
 

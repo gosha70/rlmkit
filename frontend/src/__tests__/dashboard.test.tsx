@@ -361,3 +361,48 @@ describe("DashboardPage", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// FailureBreakdown — prefill_timeout category wired into the chart
+// ---------------------------------------------------------------------------
+
+describe("FailureBreakdown", () => {
+  test("ALL_CATEGORIES includes prefill_timeout", async () => {
+    const { ALL_CATEGORIES, CATEGORY_LABELS } = await import(
+      "@/components/metrics/failure-breakdown"
+    );
+    // Both the enum and the label map must carry the new category so
+    // the recharts BarChart can render a bar for it. Without this,
+    // /api/metrics/failures rows with category="prefill_timeout" would
+    // be silently dropped by the frontend — regression guard for the
+    // Phase 4 wiring.
+    expect(ALL_CATEGORIES).toContain("prefill_timeout");
+    expect(CATEGORY_LABELS.prefill_timeout).toBe("Prefill Timeout");
+  });
+
+  test("renders without error when backend reports prefill_timeout", async () => {
+    const { FailureBreakdown } = await import(
+      "@/components/metrics/failure-breakdown"
+    );
+    const data = {
+      session_id: "s1",
+      total_runs: 5,
+      total_failures: 2,
+      failure_rate: 0.4,
+      by_category: [
+        { category: "prefill_timeout" as const, count: 2, percentage: 100 },
+      ],
+      by_provider: {
+        openai: [
+          { category: "prefill_timeout" as const, count: 2, percentage: 100 },
+        ],
+      },
+      by_mode: {},
+    };
+    render(<FailureBreakdown data={data} />);
+    // Card renders the failure-count summary line; recharts is mocked
+    // so bars don't appear in the DOM — the assertion above covers the
+    // category-coverage invariant.
+    expect(screen.getByText(/2 of 5 runs failed/i)).toBeInTheDocument();
+  });
+});

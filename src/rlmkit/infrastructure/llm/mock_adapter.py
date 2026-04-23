@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 
-from rlmkit.application.dto import LLMResponseDTO
+from rlmkit.application.dto import LLMResponseDTO, StreamChunk
 
 
 class MockLLMAdapter:
@@ -57,10 +57,22 @@ class MockLLMAdapter:
         """Async completion delegating to the sync method."""
         return await asyncio.to_thread(self.complete, messages)
 
-    async def complete_stream_async(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
-        """Async streaming delegating to the sync method."""
-        for chunk in self.complete_stream(messages):
-            yield chunk
+    async def complete_stream_async(
+        self, messages: list[dict[str, str]]
+    ) -> AsyncIterator[StreamChunk]:
+        """Yield one ``StreamChunk`` per character plus a terminal chunk.
+
+        The terminal chunk carries an ``LLMResponseDTO`` with synthetic
+        but deterministic telemetry (``ttft_ms=1``, ``decode_ms`` equal
+        to ``max(0, len(content) - 1)``) so tests can assert exact
+        values.
+        """
+        response = await self.complete_async(messages)
+        for char in response.content:
+            yield StreamChunk(delta=char, is_final=False)
+        response.ttft_ms = 1
+        response.decode_ms = max(0, len(response.content) - 1)
+        yield StreamChunk(delta="", is_final=True, response=response)
 
     def reset(self) -> None:
         """Reset call count and history."""

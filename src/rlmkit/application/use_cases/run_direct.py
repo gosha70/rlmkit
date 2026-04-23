@@ -7,6 +7,7 @@ This is the simplest execution mode and serves as a baseline.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO, RunResultDTO
@@ -25,6 +26,8 @@ from rlmkit.application.sandbox_vars import (
 )
 from rlmkit.infrastructure.llm.litellm_adapter import TIMEOUT_ERROR_PREFIX
 from rlmkit.prompts import get_mode_system_prompt
+
+logger = logging.getLogger(__name__)
 
 
 def _format_error_answer(error_str: str) -> str:
@@ -150,6 +153,10 @@ class RunDirectUseCase:
                         TRACE_KEY_OUTPUT_TOKENS: response.output_tokens,
                         TRACE_KEY_MODEL: getattr(self._llm, "active_model", None) or response.model,
                         TRACE_KEY_ELAPSED_SECONDS: elapsed,
+                        "ttft_ms": response.ttft_ms,
+                        "decode_ms": response.decode_ms,
+                        "cached_tokens": response.cached_tokens,
+                        "cache_write_tokens": response.cache_write_tokens,
                     }
                 ],
             )
@@ -192,27 +199,59 @@ class RunDirectUseCase:
             {"role": "user", "content": f"Content:\n{content}\n\nQuestion: {query}"},
         )
 
+        # Telemetry fields populated from whichever LLM path ran.
+        ttft_ms: int | None = None
+        decode_ms: int = 0
+        cached_tokens: int = 0
+        cache_write_tokens: int = 0
+
         try:
             if event_emitter and hasattr(self._llm, "complete_stream_async"):
                 collected: list[str] = []
-                async for token in self._llm.complete_stream_async(messages):
-                    collected.append(token)
-                    await event_emitter.on_token(token)
-                answer = "".join(collected)
-                approx_input = max(1, sum(len(m["content"]) for m in messages) // 4)
-                approx_output = max(1, len(answer) // 4)
-                input_tokens = approx_input
-                output_tokens = approx_output
+                final_dto: LLMResponseDTO | None = None
+                async for chunk in self._llm.complete_stream_async(messages):
+                    if chunk.is_final:
+                        final_dto = chunk.response
+                        continue
+                    if chunk.delta:
+                        collected.append(chunk.delta)
+                        await event_emitter.on_token(chunk.delta)
+                if final_dto is not None:
+                    answer = final_dto.content
+                    input_tokens = final_dto.input_tokens
+                    output_tokens = final_dto.output_tokens
+                    ttft_ms = final_dto.ttft_ms
+                    decode_ms = final_dto.decode_ms
+                    cached_tokens = final_dto.cached_tokens
+                    cache_write_tokens = final_dto.cache_write_tokens
+                else:
+                    # Defensive fallback: adapter did not emit a terminal
+                    # chunk. Log and fall back to the pre-Phase-1 heuristic.
+                    logger.warning(
+                        "complete_stream_async did not yield a terminal "
+                        "StreamChunk; falling back to token-length heuristic"
+                    )
+                    answer = "".join(collected)
+                    input_tokens = max(1, sum(len(m["content"]) for m in messages) // 4)
+                    output_tokens = max(1, len(answer) // 4)
             elif hasattr(self._llm, "complete_async"):
                 response: LLMResponseDTO = await self._llm.complete_async(messages)
                 answer = response.content
                 input_tokens = response.input_tokens
                 output_tokens = response.output_tokens
+                ttft_ms = response.ttft_ms
+                decode_ms = response.decode_ms
+                cached_tokens = response.cached_tokens
+                cache_write_tokens = response.cache_write_tokens
             else:
                 response = await asyncio.to_thread(self._llm.complete, messages)
                 answer = response.content
                 input_tokens = response.input_tokens
                 output_tokens = response.output_tokens
+                ttft_ms = response.ttft_ms
+                decode_ms = response.decode_ms
+                cached_tokens = response.cached_tokens
+                cache_write_tokens = response.cache_write_tokens
 
             elapsed = time.time() - start
 
@@ -225,6 +264,10 @@ class RunDirectUseCase:
                 TRACE_KEY_OUTPUT_TOKENS: output_tokens,
                 TRACE_KEY_MODEL: getattr(self._llm, "active_model", None),
                 TRACE_KEY_ELAPSED_SECONDS: elapsed,
+                "ttft_ms": ttft_ms,
+                "decode_ms": decode_ms,
+                "cached_tokens": cached_tokens,
+                "cache_write_tokens": cache_write_tokens,
             }
 
             total_cost = self._compute_cost(input_tokens, output_tokens)

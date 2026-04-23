@@ -329,13 +329,55 @@ def _metrics_from_step(s: TraceStep) -> LearnReplayStepMetrics | None:
     tokens_out = s.output_tokens or None
     latency_ms = int(s.duration_seconds * 1000) if s.duration_seconds else None
     cost = s.cost_usd or None
-    if tokens_in is None and tokens_out is None and latency_ms is None and cost is None:
+
+    # Prefill/decode telemetry gating (spec v1.7 Phase 3).
+    #
+    # decode_ms / cached_tokens / cache_write_tokens are plain ints (0 is
+    # a legitimate measurement — "single-chunk response", "cache miss",
+    # "provider that doesn't distinguish writes"). Only ttft_ms is
+    # genuinely None-able on the domain entity ("not populated by this
+    # trace").
+    #
+    # Rule: a step has prefill/decode telemetry when ttft_ms is
+    # populated OR any of the three ints is non-zero. When gated, we
+    # emit all four as-is, preserving measured zeros. When ungated
+    # (pre-Phase-3 legacy steps with all-default fields) we omit the
+    # four new keys entirely rather than lie with zeros.
+    has_prefill_decode = (
+        s.ttft_ms is not None or s.decode_ms > 0 or s.cached_tokens > 0 or s.cache_write_tokens > 0
+    )
+    ttft_ms: int | None
+    decode_ms: int | None
+    cached_tokens: int | None
+    cache_write_tokens: int | None
+    if has_prefill_decode:
+        ttft_ms = s.ttft_ms
+        decode_ms = s.decode_ms
+        cached_tokens = s.cached_tokens
+        cache_write_tokens = s.cache_write_tokens
+    else:
+        ttft_ms = None
+        decode_ms = None
+        cached_tokens = None
+        cache_write_tokens = None
+
+    if (
+        tokens_in is None
+        and tokens_out is None
+        and latency_ms is None
+        and cost is None
+        and not has_prefill_decode
+    ):
         return None
     return LearnReplayStepMetrics(
         tokensIn=tokens_in,
         tokensOut=tokens_out,
         latencyMs=latency_ms,
         costUsd=cost,
+        ttftMs=ttft_ms,
+        decodeMs=decode_ms,
+        cachedTokens=cached_tokens,
+        cacheWriteTokens=cache_write_tokens,
     )
 
 

@@ -45,7 +45,11 @@ export type MatrixRankingMetric =
   | "tokens"
   | "latency"
   | "answer_per_cost"
-  | "judge_score";
+  | "judge_score"
+  // Phase 5 — prefill/decode-oriented ranking options.
+  | "ttft"
+  | "decode_tokens_per_sec"
+  | "cache_hit_rate";
 
 export interface CompareMatrixRequest {
   content?: string | null;
@@ -88,6 +92,14 @@ export interface CompareMatrixSlotResponse {
   total_cost: number;
   elapsed_seconds: number;
   steps: number;
+  // Phase 5 — per-slot prefill/decode aggregates (optional so old
+  // bundled fixtures keep parsing).
+  total_prompt_tokens?: number;
+  total_completion_tokens?: number;
+  total_cached_tokens?: number;
+  total_decode_ms?: number;
+  median_ttft_ms?: number | null;
+  cache_hit_rate?: number;
 }
 
 export interface CompareMatrixResponse {
@@ -197,6 +209,14 @@ export interface TraceStep {
   recursion_depth: number;
   model?: string | null;
   timestamp?: string | null;
+  // Prefill/decode telemetry (spec v1.7 Phase 3). Defaults cover legacy
+  // traces recorded before these fields existed.
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  ttft_ms?: number | null;
+  decode_ms?: number;
+  cached_tokens?: number;
+  cache_write_tokens?: number;
 }
 
 export interface TraceResponse {
@@ -483,7 +503,14 @@ export interface HealthResponse {
 }
 
 // Failure metrics
-export type FailureCategory = "timeout" | "budget_exhausted" | "context_overflow" | "general_error";
+export type FailureCategory =
+  | "timeout"
+  // Phase 4 — prefill-dominated timeouts are a distinct remediation class
+  // (enable prefix caching, shorten history replay).
+  | "prefill_timeout"
+  | "budget_exhausted"
+  | "context_overflow"
+  | "general_error";
 
 export interface FailureCategorySummary {
   category: FailureCategory;
@@ -606,6 +633,10 @@ export interface LearnReplayStepMetrics {
   tokensOut?: number;
   latencyMs?: number;
   costUsd?: number;
+  ttftMs?: number | null;
+  decodeMs?: number;
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 export interface LearnReplayStep {
@@ -818,6 +849,27 @@ export const deleteLLMProvider = (id: string) =>
 
 export const testLLMProvider = (id: string) =>
   fetchJSON<ProviderTestResponse>(`/api/llm-providers/${id}/test`, { method: "POST" });
+
+/**
+ * Test an unsaved LLM Provider config. Used by the Settings form's
+ * Test Connection button in both Create and Edit modes so the test
+ * runs against the CURRENT form values, not the last-saved record.
+ * Nothing is persisted to state.
+ *
+ * In Edit mode the frontend passes ``llm_provider_id`` so the
+ * backend can resolve the saved API key when the form's api_key
+ * field is blank — mirroring the save path's "leave blank to keep
+ * current key" contract.
+ */
+export interface LLMProviderTestRequest extends LLMProviderCreateRequest {
+  llm_provider_id?: string | null;
+}
+
+export const testLLMProviderConfig = (req: LLMProviderTestRequest) =>
+  fetchJSON<ProviderTestResponse>("/api/llm-providers/test", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
 
 export const getLLMProviderModels = (id: string) =>
   fetchJSON<ModelInfo[]>(`/api/llm-providers/${id}/models`);

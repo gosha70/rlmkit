@@ -29,6 +29,70 @@ import {
   type TraceStep,
 } from "@/lib/api";
 
+const PERF_UI_ENABLED: boolean = process.env.NEXT_PUBLIC_RLMKIT_PERF_UI === "1";
+
+function PerformanceTab({ steps }: { steps: TraceStep[] }) {
+  const rows = steps.map((s) => ({
+    index: s.index,
+    action: s.action_type,
+    promptTokens: s.prompt_tokens ?? s.input_tokens ?? 0,
+    completionTokens: s.completion_tokens ?? s.output_tokens ?? 0,
+    cachedTokens: s.cached_tokens ?? 0,
+    ttftMs: s.ttft_ms ?? null,
+    decodeMs: s.decode_ms ?? 0,
+    durationSeconds: s.duration_seconds ?? 0,
+  }));
+
+  const anyTelemetry = rows.some(
+    (r) => r.ttftMs !== null || r.decodeMs > 0 || r.cachedTokens > 0,
+  );
+
+  if (!anyTelemetry) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No prefill/decode telemetry on this trace. Performance metrics are
+        populated on runs recorded after Phase 3 of the prefill/decode
+        telemetry rollout.
+      </p>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Step</TableHead>
+          <TableHead>Action</TableHead>
+          <TableHead className="text-right">Prompt</TableHead>
+          <TableHead className="text-right">Completion</TableHead>
+          <TableHead className="text-right">Cached</TableHead>
+          <TableHead className="text-right">TTFT (ms)</TableHead>
+          <TableHead className="text-right">Decode (ms)</TableHead>
+          <TableHead className="text-right">Duration (s)</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((r) => (
+          <TableRow key={r.index}>
+            <TableCell>{r.index + 1}</TableCell>
+            <TableCell className="text-muted-foreground">{r.action}</TableCell>
+            <TableCell className="text-right">{r.promptTokens}</TableCell>
+            <TableCell className="text-right">{r.completionTokens}</TableCell>
+            <TableCell className="text-right">{r.cachedTokens}</TableCell>
+            <TableCell className="text-right">
+              {r.ttftMs === null ? "—" : r.ttftMs}
+            </TableCell>
+            <TableCell className="text-right">{r.decodeMs}</TableCell>
+            <TableCell className="text-right">
+              {r.durationSeconds.toFixed(2)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 function TracesPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -381,6 +445,9 @@ function TracesPageInner() {
                 <TabsTrigger value="timeline">Timeline</TabsTrigger>
                 <TabsTrigger value="tree">Tree</TabsTrigger>
                 <TabsTrigger value="code">Code</TabsTrigger>
+                {PERF_UI_ENABLED && (
+                  <TabsTrigger value="performance">Performance</TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="timeline">
@@ -416,6 +483,12 @@ function TracesPageInner() {
                   )}
                 </div>
               </TabsContent>
+
+              {PERF_UI_ENABLED && (
+                <TabsContent value="performance">
+                  <PerformanceTab steps={trace.steps} />
+                </TabsContent>
+              )}
             </Tabs>
 
             {/* Step detail panel */}

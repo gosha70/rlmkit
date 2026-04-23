@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from rlmkit.application.sandbox_vars import EPHEMERAL_CP_PREFIX
 from rlmkit.application.services.outcome_classifier import (
+    ExecutionOutcome,
     OutcomeCategory,
     classify_execution_outcome,
 )
@@ -68,6 +69,12 @@ class _RunPoint:
     success: bool = True
     error: str | None = None
     answer: str = ""
+    # Persisted outcome category (spec v1.7 §8c). Populated on rows
+    # written after Phase 4; ``None`` for legacy rows (column NULL) and
+    # for legacy assistant-message points that were never classified
+    # at write time. Fallback to the no-trace classifier path when
+    # None — see ``_aggregate_failures``.
+    outcome_category: str | None = None
 
 
 @router.get("/api/metrics/failures/{session_id}")
@@ -152,6 +159,33 @@ async def get_metrics(
     return _build_metrics_response(session_id, points)
 
 
+def _resolve_outcome(point: _RunPoint) -> ExecutionOutcome:
+    """Prefer the point's persisted outcome_category; fall back to re-derive.
+
+    Spec alias: the prefill/decode spec §8c calls the caller of this
+    helper ``_aggregate_failures``. The dashboard's two failure-
+    aggregation loops are in ``_build_metrics_response`` and
+    ``_build_failure_response`` (grep for ``_resolve_outcome`` to find
+    them). Both prefer the persisted category over re-classification.
+
+    Phase 4 classifies at write time, so most rows carry a persisted
+    category by the time they reach the dashboard. Legacy rows (pre-
+    Phase-4, column NULL) and legacy assistant-message points never
+    had one; for those we re-derive with no trace (spec §8c). Legacy
+    TIMEOUT rows are never retroactively promoted to PREFILL_TIMEOUT
+    — we don't have per-step timing for them.
+    """
+    cat_str = point.outcome_category
+    if cat_str is None:
+        return classify_execution_outcome(point.success, point.error, point.answer)
+    try:
+        category = OutcomeCategory(cat_str)
+    except ValueError:
+        # Unknown persisted value — treat as legacy and re-derive.
+        return classify_execution_outcome(point.success, point.error, point.answer)
+    return ExecutionOutcome(category, is_usable=(category == OutcomeCategory.SUCCESS))
+
+
 def _point_from_telemetry(run: Any) -> _RunPoint:
     """Convert a telemetry :class:`RunSummary` into a :class:`_RunPoint`."""
     return _RunPoint(
@@ -166,6 +200,7 @@ def _point_from_telemetry(run: Any) -> _RunPoint:
         success=run.success,
         error=run.error,
         answer=run.answer,
+        outcome_category=getattr(run, "outcome_category", None),
     )
 
 
@@ -199,6 +234,9 @@ def _point_from_message(
         success=bool(msg_metrics.get("success", True)),
         error=msg_metrics.get("error"),
         answer=msg.get("content", ""),
+        # Legacy messages pre-date the outcome_category column; the
+        # dashboard re-derives via the no-trace classifier fallback.
+        outcome_category=None,
     )
 
 
@@ -224,7 +262,10 @@ def _build_metrics_response(
         # Classify to determine if this run should contribute to averages.
         # Non-usable runs (failures, degraded warnings) are counted but
         # excluded from cost/latency/token aggregations to avoid skewing.
-        outcome = classify_execution_outcome(point.success, point.error, point.answer)
+        # Prefer the persisted outcome_category (Phase 4 write-time
+        # classification); fall back to re-deriving from scalars for
+        # legacy rows with NULL category (spec v1.7 §8c).
+        outcome = _resolve_outcome(point)
         if outcome.is_usable:
             usable_count += 1
             total_tokens += point.tokens
@@ -306,7 +347,7 @@ def _build_failure_response(
     by_mode: dict[str, dict[str, int]] = {}
 
     for point in points:
-        outcome = classify_execution_outcome(point.success, point.error, point.answer)
+        outcome = _resolve_outcome(point)
         if outcome.category not in _FAILURE_CATEGORIES:
             continue
 
