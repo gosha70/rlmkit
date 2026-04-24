@@ -35,10 +35,10 @@ export function Timeline({ steps, onSelect, selectedIndex }: TimelineProps) {
             onClick={() => onSelect(step)}
             aria-label={`Step ${step.index + 1}: ${step.action_type}, ${step.duration_seconds.toFixed(1)} seconds`}
           >
-            <span className="w-16 shrink-0 text-xs text-muted-foreground">
+            <span className="w-16 shrink-0 text-xs text-foreground/70">
               Step {step.index + 1}
             </span>
-            <Badge variant="outline" className="shrink-0 text-[10px]">
+            <Badge variant="outline" className="shrink-0 text-xs">
               {step.action_type}
             </Badge>
             <div className="flex-1">
@@ -49,10 +49,10 @@ export function Timeline({ steps, onSelect, selectedIndex }: TimelineProps) {
                 />
               </div>
             </div>
-            <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
+            <span className="w-12 shrink-0 text-right text-xs text-foreground/70">
               {step.duration_seconds.toFixed(1)}s
             </span>
-            <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">
+            <span className="w-16 shrink-0 text-right text-xs text-foreground/70">
               {(step.input_tokens + step.output_tokens).toLocaleString()} tok
             </span>
           </button>

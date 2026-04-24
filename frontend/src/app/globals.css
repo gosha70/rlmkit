@@ -1,8 +1,14 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Align Tailwind v4's `dark:` variant with the app's `.dark` class
+ * (set by the theme toggle). Without this, Tailwind v4 defaults to
+ * `prefers-color-scheme: dark`, which follows the OS and diverges
+ * from the rest of the app's CSS-var-based theme switching. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #fafafa;
+  --background: #ededed;
   --foreground: #171717;
   --card: #ffffff;
   --card-foreground: #171717;
@@ -18,8 +24,8 @@
   --accent-foreground: #171717;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e5e5e5;
-  --input: #e5e5e5;
+  --border: #c7c7cc;
+  --input: #c7c7cc;
   --ring: #2563eb;
   --success: #059669;
   --warning: #d97706;
@@ -65,7 +71,7 @@
 .dark {
   --background: #0a0a0a;
   --foreground: #fafafa;
-  --card: #171717;
+  --card: #1e1e1e;
   --card-foreground: #fafafa;
   --popover: #171717;
   --popover-foreground: #fafafa;
@@ -79,8 +85,8 @@
   --accent-foreground: #fafafa;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #262626;
-  --input: #262626;
+  --border: #404040;
+  --input: #404040;
   --ring: #3b82f6;
   --success: #10b981;
   --warning: #f59e0b;

@@ -28,7 +28,7 @@ export function TraceTree({ steps, onSelect, selectedIndex }: TraceTreeProps) {
           <span className="text-xs text-muted-foreground">
             {step.recursion_depth > 0 ? "|-" : ""} {step.index + 1}.
           </span>
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-xs">
             {step.action_type}
           </Badge>
           <span className="flex-1 truncate font-mono text-xs">

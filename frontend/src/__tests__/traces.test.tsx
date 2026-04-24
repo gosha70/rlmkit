@@ -266,7 +266,7 @@ describe("TracesPage", () => {
     render(<TracesPage />);
     // The row should have role=button and the aria-label
     expect(
-      screen.getByRole("button", { name: /View trace for: What is 2 \+ 2/ }),
+      screen.getByRole("button", { name: /Expand trace for: What is 2 \+ 2/ }),
     ).toBeInTheDocument();
   });
 
