@@ -1,0 +1,121 @@
+# RLMKit — single-node self-hosted compose stack.
+#
+# One-command startup:
+#
+#   cp .env.example .env   # fill in at least one provider key (OPENAI_API_KEY
+#                          # or ANTHROPIC_API_KEY), then:
+#   docker compose up --build
+#
+# Backend:  http://localhost:8000  (health at /health)
+# Frontend: http://localhost:3000
+#
+# State persists to the `rlmkit-data` named volume, mounted at
+# /home/rlmkit/.rlmkit inside the backend container (the non-root
+# runtime user's state directory). Back it up with:
+#
+#   docker run --rm -v rlmkit-data:/data -v "$PWD:/backup" alpine \
+#     tar -czf /backup/rlmkit-backup-$(date +%F).tar.gz -C /data .
+#
+# For scope and support boundary, see docs/OPERATIONS.md. v1.1 is
+# single-node; this compose stack is intentionally not a multi-tenant
+# deployment template.
+
+name: rlmkit
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: rlmkit-api:local
+    container_name: rlmkit-backend
+    restart: unless-stopped
+    environment:
+      # Provider keys. Read from the compose .env file. Anything not set
+      # here can also be configured via the Studio Settings page at
+      # runtime; the SecretStore (chmod 600 JSON in the volume) will
+      # persist them.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+
+      # Optional: point at a local Ollama / vLLM instance reachable from
+      # this container. If you enable the bundled Ollama service below,
+      # set OLLAMA_BASE_URL=http://ollama:11434.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+
+      # Server bind. Leaving RLMKIT_HOST at 0.0.0.0 inside the container
+      # is correct — container isolation is the security boundary, not
+      # loopback. Do not publish the port to a public interface without
+      # a reverse proxy in front.
+      RLMKIT_HOST: 0.0.0.0
+      RLMKIT_PORT: "8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Persisted state: config, sessions, evaluations, telemetry.db,
+      # api_keys.json fallback. See docs/OPERATIONS.md §2.
+      - rlmkit-data:/home/rlmkit/.rlmkit
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read(); sys.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        # Baked into the client bundle at build time. Browser requests
+        # go to this URL — which is the host's localhost, not the
+        # container network — because the browser is on the host.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_RLMKIT_PERF_UI: ${NEXT_PUBLIC_RLMKIT_PERF_UI:-}
+    image: rlmkit-frontend:local
+    container_name: rlmkit-frontend
+    restart: unless-stopped
+    environment:
+      # Next.js server-side rewrites (see frontend/next.config.ts) run
+      # inside this container and call the backend via the compose
+      # network, not via the host.
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Optional smoke-test inference backend. Uncomment to run a local Ollama
+  # alongside the stack — useful for a "does the plumbing work end-to-end"
+  # test without a cloud provider key.
+  #
+  # With this enabled:
+  #   1. Uncomment the service below.
+  #   2. In your .env, set OLLAMA_BASE_URL=http://ollama:11434.
+  #   3. After `docker compose up`, pull a model:
+  #        docker compose exec ollama ollama pull llama3.2
+  #   4. Add an Ollama provider in Settings with base URL
+  #      http://localhost:11434 (from the host) or http://ollama:11434
+  #      (from the backend's perspective — what the compose env uses).
+  # ---------------------------------------------------------------------------
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: rlmkit-ollama
+  #   restart: unless-stopped
+  #   ports:
+  #     - "127.0.0.1:11434:11434"
+  #   volumes:
+  #     - ollama-models:/root/.ollama
+
+volumes:
+  rlmkit-data:
+    name: rlmkit-data
+  # ollama-models:
+  #   name: rlmkit-ollama-models

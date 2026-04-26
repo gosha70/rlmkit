@@ -1,0 +1,67 @@
+# Keep the docker build context small.
+# Without this the backend build copies the .venv, node_modules, caches,
+# coverage output, and the full git history — inflating context by
+# hundreds of MB and cache-busting every layer on any edit.
+
+# VCS
+.git
+.gitignore
+.github
+.gitattributes
+
+# Python caches and tooling output
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+coverage.xml
+build
+dist
+*.egg-info
+
+# Node / Next.js caches
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/.vite
+frontend/storybook-static
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# Local state that must not leak into the image
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.log
+
+# Private / gitignored docs
+doc_internal
+benchmarks
+debug_parsing.py
+scripts
+
+# Playwright artifacts
+.playwright
+playwright-report
+test-results
+
+# Docker files themselves (not needed inside the image)
+Dockerfile*
+docker-compose*.yml

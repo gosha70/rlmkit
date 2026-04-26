@@ -1,0 +1,121 @@
+# syntax=docker/dockerfile:1.7
+
+# RLMKit API server — multi-stage build.
+#
+# Stage 1 (builder) uses `uv` to resolve + install locked dependencies
+# into a standalone virtualenv at /opt/rlmkit-venv, with rlmkit itself
+# installed in editable mode pointing at /app/src. Stage 2 (runtime)
+# copies the venv + the same /app/src layout + /app/docs, running on a
+# slim Python 3.12 base.
+#
+# Why the paths match between builder and runtime: uv installs the
+# project editable by default, so the venv contains an
+# __editable__.rlmkit-*.pth file pointing at the source tree at the
+# path it was at during install. If the runtime stage put the source
+# anywhere else, python would import the project against a path that
+# doesn't exist and the backend wouldn't start. Both stages therefore
+# use /app/src. Additionally, server/routes/docs.py resolves
+# _PROJECT_ROOT via Path(__file__).resolve().parents[4] — with the
+# source at /app/src/rlmkit/server/routes/docs.py, that evaluates to
+# /app, so the Learn tab's docs/ tree must also live at /app/docs/.
+#
+# Build:
+#   docker build -f docker/Dockerfile.api -t rlmkit-api .
+#
+# Run (see docker-compose.yml for the recommended invocation):
+#   docker run --rm -p 8000:8000 \
+#     -e OPENAI_API_KEY=... \
+#     -v rlmkit-data:/home/rlmkit/.rlmkit \
+#     rlmkit-api
+
+# ---------------------------------------------------------------------------
+# Stage 1: builder — resolve dependencies with uv, produce a standalone venv
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PROJECT_ENVIRONMENT=/opt/rlmkit-venv
+
+# uv is installed via the official standalone installer.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates build-essential \
+ && curl -LsSf https://astral.sh/uv/install.sh | sh \
+ && mv /root/.local/bin/uv /usr/local/bin/uv \
+ && apt-get purge -y curl build-essential \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/*
+
+# IMPORTANT: WORKDIR must be /app and the source must live at /app/src so the
+# editable-install .pth file produced below points at a path that exists in
+# the runtime stage (which also copies source to /app/src).
+WORKDIR /app
+
+# Copy only the metadata needed for dependency resolution first so the
+# dependency layer caches independently of source edits.
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ ./src/
+
+# Create the venv and install the project + all optional extras in one shot.
+# Editable install is what uv does by default; preserved deliberately so
+# _PROJECT_ROOT in server/routes/docs.py (which walks four parents up from
+# the module file) lands on /app in the runtime stage.
+RUN uv sync --frozen --extra all --no-dev
+
+# ---------------------------------------------------------------------------
+# Stage 2: runtime — copy the venv + source + docs, drop build tools
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/rlmkit-venv/bin:${PATH}" \
+    RLMKIT_HOST=0.0.0.0 \
+    RLMKIT_PORT=8000
+
+# Minimal runtime deps. libstdc++6 is present in slim-bookworm; no extras
+# required for the default sandbox (RestrictedPython). Teams using the
+# Docker sandbox adapter provide their own docker-in-docker or DinD
+# sidecar — that's out of scope for this image.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root runtime user. Home is /home/rlmkit; the ~/.rlmkit state
+# directory is pre-created and chowned so a fresh named-volume mount
+# (which Docker materializes root-owned by default) inherits correct
+# ownership on first write.
+RUN useradd --create-home --shell /bin/bash --uid 1001 rlmkit \
+ && mkdir -p /home/rlmkit/.rlmkit \
+ && chown -R rlmkit:rlmkit /home/rlmkit
+
+COPY --from=builder --chown=rlmkit:rlmkit /opt/rlmkit-venv /opt/rlmkit-venv
+# Source path MUST match the builder's /app/src so the editable-install
+# .pth in the venv resolves. Changing either side requires changing both.
+COPY --from=builder --chown=rlmkit:rlmkit /app/src /app/src
+COPY --from=builder --chown=rlmkit:rlmkit /app/pyproject.toml /app/README.md /app/
+# Learn tab reads docs/* at runtime via an allowlist in
+# server/routes/docs.py; it resolves _PROJECT_ROOT to /app and then
+# looks under /app/docs/. Ship the allowlisted content in the image
+# so Concepts / Cookbook / Troubleshooting work in containerized
+# deployments.
+COPY --chown=rlmkit:rlmkit docs/ /app/docs/
+
+WORKDIR /app
+USER rlmkit
+
+EXPOSE 8000
+
+# Healthcheck hits the existing GET /health endpoint.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request, sys; \
+urllib.request.urlopen('http://127.0.0.1:${RLMKIT_PORT}/health', timeout=3).read(); \
+sys.exit(0)" || exit 1
+
+# tini is PID 1 so the uvicorn process gets clean SIGTERM propagation on
+# `docker stop` — important for SQLite WAL checkpointing.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "-m", "rlmkit.server", "--host", "0.0.0.0", "--port", "8000"]
