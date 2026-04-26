@@ -97,7 +97,14 @@ jobs:
       - name: pip-audit vulnerability scan
         run: |
           # CVE-2026-4539 (pygments): no fix version published yet; ignored pending upstream release
-          uv run pip-audit --skip-editable --ignore-vuln CVE-2026-4539
+          # CVE-2026-3219 (pip): no fix version published yet; ignored pending upstream release
+          # CVE-2026-28684 (python-dotenv): set_key() symlink-follow. litellm 1.83.7 hard-pins
+          #   python-dotenv==1.0.1; we read .env via load_dotenv() only and never call set_key(),
+          #   so this CVE is not reachable through our code path.
+          uv run pip-audit --skip-editable \
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln CVE-2026-3219 \
+            --ignore-vuln CVE-2026-28684
 
   docker-sandbox:
     name: Docker Sandbox
