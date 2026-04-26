@@ -20,7 +20,8 @@ LLMs have fixed context windows. When your document is too large to fit in a sin
 
 RLMKit provides:
 
-- **Three execution modes** — Direct (full context), RLM (recursive code generation), and Compare (side-by-side benchmarking)
+- **Three execution modes** — Direct (full context), RAG (retrieval-augmented), and RLM (recursive code generation)
+- **Compare matrix** — runs any combination of the three modes across N providers in parallel, ranking by cost, latency, TTFT, cache hit rate, or LLM-judge score
 - **Auto mode** — selects Direct or RLM based on content size (< 8K tokens → Direct, ≥ 8K → RLM)
 - **100+ LLM providers** — via LiteLLM (OpenAI, Anthropic, Ollama, LM Studio, and more)
 - **Budget controls** — cap tokens, cost, steps, and time
@@ -50,7 +51,7 @@ RLMKit solves a specific class of problem. Knowing when it helps (and when it do
 
 **Workloads that don't benefit from code generation in the loop.** RLM's core mechanism is an LLM writing `Python` to explore content. For straightforward Q&A, short-text summarization, or classification, the recursive loop adds latency without adding value.
 
-**Pure retrieval over a static corpus.** If your primary need is _"search N documents, return relevant chunks"_,  a dedicated RAG pipeline (vector store + reranker) is simpler and faster. RLMKit includes a RAG mode, but it's not a replacement for purpose-built retrieval infrastructure at scale.
+**Massive production retrieval workloads.** RLMKit includes a RAG mode that's a good fit for embedded knowledge bases and Chat Provider workflows where retrieval beats context-window navigation. For very large retrieval workloads (millions of documents, sharded indexes), a dedicated RAG infrastructure (Qdrant / Weaviate / Pinecone + reranker) is the right tool — RLMKit's RAG is not built to compete at that scale.
 
 ## Deployment model & support boundary
 
@@ -121,9 +122,10 @@ result = interact(content, query, mode="compare")
 | Mode | Best For | How It Works |
 |------|----------|--------------|
 | `direct` | < 8K tokens | Full context in single LLM call |
-| `rlm` | Any size | LLM writes code to navigate content via `peek()`, `grep()`, `chunk()` |
-| `auto` | Any size | Selects `direct` (< 8K tokens) or `rlm` (≥ 8K tokens) automatically |
-| `compare` | Benchmarking | Runs RLM and Direct concurrently, returns metrics for both side by side |
+| `rag` | Static corpora, repeated retrieval | Chunk + embed + retrieve top-k, then LLM call with retrieved context |
+| `rlm` | Any size, especially >50K tokens | LLM writes code to navigate content via `peek()`, `grep()`, `chunk()` |
+| `auto` | Mixed / unknown sizes | Selects `direct` (< 8K) or `rlm` (≥ 8K) automatically |
+| `compare` | Benchmarking | Runs the other modes concurrently, returns metrics for each side by side |
 
 ### Configuration
 
