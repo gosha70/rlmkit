@@ -52,6 +52,26 @@ RLMKit solves a specific class of problem. Knowing when it helps (and when it do
 
 **Pure retrieval over a static corpus.** If your primary need is _"search N documents, return relevant chunks"_,  a dedicated RAG pipeline (vector store + reranker) is simpler and faster. RLMKit includes a RAG mode, but it's not a replacement for purpose-built retrieval infrastructure at scale.
 
+## Deployment model & support boundary
+
+RLMKit v1.1 targets **single-node self-hosted use** by developers, prompt engineers, and small teams. That is the supported surface.
+
+**Supported in v1.1:**
+
+- One backend process + one frontend process on a single machine (laptop, workstation, or a shared GPU host like DGX Spark).
+- Per-execution budgets (tokens, cost, time, steps) and per-provider connection testing.
+- Large documents end-to-end through `/api/chat` on a single user's session — the 8MB-class payloads described in [docs/hosts/dgx-spark.md](docs/hosts/dgx-spark.md) work today.
+- State persistence across restarts via `~/.rlmkit/` and the SQLite telemetry DB, with auto-migration on upgrade.
+
+**Explicitly out of scope in v1.1:**
+
+- **Shared multi-tenant service.** There is no per-user request queue, no tenant isolation, and no admission-control layer. Two users uploading 8MB documents simultaneously will both run; the inference backend (vLLM, Ollama, cloud API) is responsible for handling that load, not RLMKit.
+- **Automatic failover between inference backends.** If your configured provider goes offline, the run fails with a classified error; RLMKit does not silently retry against a different provider.
+- **Horizontal scale-out.** There is no clustering, no distributed telemetry, no cross-process queue (Redis/Celery).
+- **Enterprise deployment packaging** beyond the Dockerfiles + compose stack shipped here.
+
+If those are requirements, RLMKit v1.1 is not the right fit today; they are tracked as later milestones. For operational details — state paths, backup/restore, and upgrade behavior — see [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 ## Quick Start
 
 ### Installation
