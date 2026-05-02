@@ -91,7 +91,10 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --extra dev --extra server
+      # --extra ui pulls streamlit + gitpython into the audit surface so
+      # transitive CVEs in that extra are caught here (the test-backend job
+      # intentionally omits ui to keep the runtime lean).
+      - run: uv sync --extra dev --extra server --extra ui
       - name: Bandit security scan
         run: uv run bandit -r src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ -c pyproject.toml
       - name: pip-audit vulnerability scan
