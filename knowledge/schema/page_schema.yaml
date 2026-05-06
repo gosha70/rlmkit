@@ -1,0 +1,25 @@
+version: "1.0"
+description: Required frontmatter schema for every wiki page.
+
+required_fields:
+  - title
+  - slug
+  - type
+  - sources
+  - status
+  - created
+  - updated
+
+allowed_types:
+  - concept
+  - workflow
+  - incident
+  - decision
+  - playbook
+  - glossary
+  - overview
+
+allowed_status:
+  - draft
+  - active
+  - stale

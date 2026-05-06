@@ -59,6 +59,8 @@ MODE_RLM = "rlm"
 MODE_RAG = "rag"
 MODE_COMPARE = "compare"
 MODE_AUTO = "auto"
+MODE_WIKI = "wiki"
+MODE_WIKI_RLM = "wiki_rlm"
 
 # Modes that use RLM internally (RLM run config applies)
 MODES_RLM_INTERNAL = frozenset({MODE_RLM, MODE_AUTO, MODE_COMPARE})
