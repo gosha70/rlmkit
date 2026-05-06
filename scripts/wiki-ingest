@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# wiki-ingest — thin wrapper around `python -m rlmkit.wiki.cli ingest`.
+set -euo pipefail
+exec python3 -m rlmkit.wiki.cli ingest "$@"

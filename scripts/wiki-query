@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# wiki-query — thin wrapper around `python -m rlmkit.wiki.cli query`.
+# v1: this is programmatic-only; the wrapper exists for future symmetry.
+set -euo pipefail
+exec python3 -m rlmkit.wiki.cli query "$@"

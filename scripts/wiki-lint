@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# wiki-lint — thin wrapper around `python -m rlmkit.wiki.cli lint`.
+set -euo pipefail
+exec python3 -m rlmkit.wiki.cli lint "$@"
