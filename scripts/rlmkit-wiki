@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Copyright (c) EGOGE - All Rights Reserved.
+# This software may be used and distributed according to the terms of the MIT license.
+
+# Thin wrapper around `python -m rlmkit.cli.wiki` so the four
+# wiki verbs can be reached the same way as cct's ./scripts/wiki.
+
+set -euo pipefail
+exec python -m rlmkit.cli.wiki "$@"
