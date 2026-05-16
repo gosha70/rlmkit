@@ -10,6 +10,7 @@ from .evaluator import EvaluationResult, MultiStrategyEvaluator
 from .indexed_rag import IndexedRAGStrategy
 from .rag import RAGStrategy
 from .rlm_strategy import RLMStrategy
+from .wiki_strategy import WikiRLMStrategy, WikiStrategy
 
 __all__ = [
     "LLMStrategy",
@@ -22,4 +23,6 @@ __all__ = [
     "IndexedRAGStrategy",
     "MultiStrategyEvaluator",
     "EvaluationResult",
+    "WikiStrategy",
+    "WikiRLMStrategy",
 ]
