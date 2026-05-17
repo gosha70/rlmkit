@@ -19,9 +19,19 @@ For each release, the maintainer:
    cd frontend
    npm install
    npm run build:bundle             # produces frontend/out/
-   rm -rf ../src/rlmkit/_ui
-   mkdir -p ../src/rlmkit/_ui
-   cp -r out/* ../src/rlmkit/_ui/   # the wheel ships this directory
+
+   # Wipe the previous bundle contents but PRESERVE ../src/rlmkit/_ui/__init__.py.
+   # That file is what makes `rlmkit._ui` a discovered package under
+   # [tool.setuptools.packages.find] — without it, `rlmkit._ui` is not
+   # found, `"rlmkit._ui" = ["**/*"]` in package-data has nothing to
+   # attach to, and the wheel ships without the bundled UI even though
+   # the source tree looks correct locally.
+   find ../src/rlmkit/_ui -mindepth 1 -not -name __init__.py -delete
+   cp -r out/. ../src/rlmkit/_ui/   # the wheel ships this directory
+
+   # Verify the package marker survived and the bundle landed.
+   test -f ../src/rlmkit/_ui/__init__.py
+   test -f ../src/rlmkit/_ui/index.html
    ```
    `build:bundle` (not `build`) is the right script — `build` produces a Next.js server build (`.next/`), `build:bundle` sets `BUNDLE=1` and emits a static export under `frontend/out/`.
 3. Opens a release PR that bumps `pyproject.toml`, promotes the `[Unreleased]` section in `CHANGELOG.md` to a dated version header, and updates any docs whose user-facing copy changed.
