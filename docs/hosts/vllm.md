@@ -53,7 +53,26 @@ No API key is required. RLM Studio's Settings intentionally doesn't expose an AP
 
 Click **Test Connection** in Settings.
 
-## 6. Common errors
+## 6. Spark + Qwen3-Coder-Next specifics
+
+Running vLLM on an NVIDIA DGX Spark with a Qwen3-Coder-family model (the
+coding-grade model with tool calling) has its own tuned configuration
+and a small set of first-boot blockers that don't show up on standard
+x86 + Hopper deployments. Those are documented in a dedicated operator
+manual:
+
+- [`dgx-spark-vllm.md`](dgx-spark-vllm.md) — verified `python -m
+  vllm.entrypoints.openai.api_server` command for
+  `Qwen3-Coder-Next-NVFP4`, memory tuning table for 8K–128K context,
+  90-second smoke test, and a four-row troubleshooting matrix
+  (flashinfer JIT OOM, missing tool-call parser, undersized
+  `--max-model-len`, LiteLLM Responses-API misroute).
+
+For generic Spark setup that isn't Qwen3-Coder-specific — Ollama path,
+machine sanity checks, network topology — see
+[`dgx-spark.md`](dgx-spark.md). This doc (`vllm.md`) stays generic.
+
+## 7. Common errors
 
 - **CUDA out of memory** — reduce `--max-model-len`, use `--dtype float16`,
   or pick a smaller model.

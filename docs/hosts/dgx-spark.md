@@ -99,6 +99,15 @@ class. See §7 for the Ollama vs vLLM sizing rule of thumb.
 Only needed if you want the OpenAI-compatible serving surface. Skip to
 §5 if Ollama is enough for your workload.
 
+> For **Qwen3-Coder-family models specifically** (Qwen3-Coder-Next-NVFP4,
+> the coding-grade model with tool calling), see
+> [`dgx-spark-vllm.md`](dgx-spark-vllm.md) — it documents the verified
+> Spark configuration, the four common first-boot blockers (flashinfer
+> OOM, missing tool-call parser, undersized `--max-model-len`, LiteLLM
+> Responses-API misroute), and the 90-second smoke test. The sections
+> below cover generic vLLM-on-Spark setup; for the coder-model path,
+> use that doc instead.
+
 System packages and build toolchain:
 
 ```bash
