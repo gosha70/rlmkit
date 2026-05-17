@@ -75,7 +75,29 @@ If those are requirements, RLMKit v1.1 is not the right fit today; they are trac
 
 ## Quick Start
 
-### Installation
+### One-click — RLM Studio (the easiest path)
+
+```bash
+pip install "rlmkit[all]"
+rlmkit studio
+```
+
+That installs the package with all extras, starts the API server, mounts the bundled web UI, and opens [http://localhost:8000/studio](http://localhost:8000/studio) in your default browser. Chat, Dashboard, Traces, Compare, Learn, and Settings all run from a single process — no Node, no second terminal.
+
+To skip the browser auto-open: `rlmkit studio --no-browser`. To change the bind address: `rlmkit studio --host 0.0.0.0 --port 9000`.
+
+### One-click — self-hosted via Docker Compose
+
+```bash
+git clone https://github.com/gosha70/rlmkit.git
+cd rlmkit
+cp .env.example .env   # add at least one provider key
+docker compose up --build
+```
+
+Backend at [http://localhost:8000](http://localhost:8000), frontend at [http://localhost:3000](http://localhost:3000). State persists to the `rlmkit-data` named volume. See `docs/OPERATIONS.md` for the backup/restore procedure.
+
+### Library use (Python only, no UI)
 
 ```bash
 # Using uv (recommended)
@@ -84,8 +106,6 @@ uv sync --extra all
 # Using pip
 pip install -e ".[all]"
 ```
-
-### Usage
 
 ```python
 from rlmkit import interact

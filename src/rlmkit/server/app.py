@@ -12,11 +12,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import HealthResponse
+from rlmkit.ui_bundle import get_ui_directory
 from rlmkit.server.routes import (
     chat,
     chat_providers,
@@ -171,6 +173,50 @@ def create_app() -> FastAPI:
             status="ok",
             version=__version__,
             uptime_seconds=round(time.time() - state.start_time, 1),
+        )
+
+    # ---------------------------------------------------------------------
+    # Bundled Studio UI mount.
+    #
+    # When the Next.js static export has been built and copied into
+    # ``src/rlmkit/_ui/`` (either by the release-time build pipeline that
+    # produces the wheel, or by a local developer's ``npm run build``),
+    # we serve it from this same FastAPI process at ``/studio``. This is
+    # what makes ``rlmkit studio`` a single-process one-click experience.
+    #
+    # When the directory is not populated (which is the case in CI and
+    # in any source checkout without a frontend build), we skip the
+    # mount entirely and the server runs as an API-only process. The
+    # frontend dev server (``npm run dev`` on :3000) remains the
+    # supported flow for developers iterating on the UI.
+    #
+    # The mount is registered *after* all API routes so the API takes
+    # precedence over the static serve for ``/api/*`` paths.
+    # ---------------------------------------------------------------------
+    ui_dir = get_ui_directory()
+    if ui_dir is not None:
+        # Root path redirects to /studio so ``rlmkit studio`` users who
+        # type the bare host:port hit the UI without needing to know the
+        # mount prefix.
+        @app.get("/", include_in_schema=False)
+        async def _root_redirect() -> RedirectResponse:
+            return RedirectResponse(url="/studio")
+
+        # ``html=True`` makes StaticFiles serve ``index.html`` for
+        # directory paths (so ``/studio/dashboard/`` resolves to
+        # ``_ui/dashboard/index.html``). Next.js static export emits one
+        # ``index.html`` per route which is exactly this shape.
+        app.mount(
+            "/studio",
+            StaticFiles(directory=str(ui_dir), html=True),
+            name="studio",
+        )
+        logger.info("RLM Studio UI mounted at /studio (from %s)", ui_dir)
+    else:
+        logger.info(
+            "RLM Studio UI not bundled — running as API-only. "
+            "Run `npm run build` in frontend/ and copy out/ → src/rlmkit/_ui/ "
+            "to enable the bundled UI."
         )
 
     return app

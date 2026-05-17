@@ -84,9 +84,17 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/rlmkit"
-Repository = "https://github.com/your-org/rlmkit"
-Documentation = "https://github.com/your-org/rlmkit/blob/main/README.md"
+Homepage = "https://github.com/gosha70/rlmkit"
+Repository = "https://github.com/gosha70/rlmkit"
+Documentation = "https://github.com/gosha70/rlmkit/blob/main/README.md"
+
+[project.scripts]
+# Console script — `rlmkit studio` is the one-click entry point for RLM
+# Studio (FastAPI + bundled Next.js UI on a single port). See
+# `src/rlmkit/cli/main.py` for the dispatcher and
+# `doc_internal/release/steps/04-publish-and-distribute.md` for the
+# release-time build pipeline that populates `src/rlmkit/_ui/`.
+rlmkit = "rlmkit.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -94,6 +102,12 @@ where = ["src"]
 [tool.setuptools.package-data]
 rlmkit = ["rlmkit_config.default.yaml"]
 "rlmkit.prompts" = ["*.yaml", "*.yml", "*.json"]
+# Bundled Studio UI — populated at release time by the frontend static
+# export. The `_ui/__init__.py` placeholder is always present so the
+# package directory exists even in unbuilt source checkouts; everything
+# under `_ui/` (HTML, JS, CSS, fonts, images, the Next.js `_next/`
+# build manifest) ships in the wheel when the frontend has been built.
+"rlmkit._ui" = ["**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
