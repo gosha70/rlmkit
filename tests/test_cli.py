@@ -25,7 +25,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import pytest
 
 from rlmkit.cli import main as cli_main_module
-from rlmkit.cli.main import main
+from rlmkit.cli.main import _browse_host, main
 from rlmkit.ui_bundle import get_ui_directory, is_ui_bundled
 
 
@@ -121,3 +121,31 @@ def test_server_app_constructs_without_bundled_ui() -> None:
     broken.
     """
     from rlmkit.server.app import app  # noqa: F401 — import is the test.
+
+
+@pytest.mark.parametrize(
+    "bind_host,expected",
+    [
+        ("0.0.0.0", "127.0.0.1"),
+        ("::", "127.0.0.1"),
+        ("*", "127.0.0.1"),
+        ("", "127.0.0.1"),
+        ("127.0.0.1", "127.0.0.1"),
+        ("localhost", "localhost"),
+        ("192.168.1.100", "192.168.1.100"),
+        ("studio.internal.example", "studio.internal.example"),
+    ],
+)
+def test_browse_host_maps_wildcards_to_loopback(bind_host: str, expected: str) -> None:
+    """`_browse_host` substitutes a navigable loopback for wildcard
+    bind targets and preserves anything else verbatim.
+
+    The actual uvicorn bind continues to use the raw host so
+    ``rlmkit studio --host 0.0.0.0`` still binds the wildcard; this
+    rewrite only applies to the URL we print and auto-open in the
+    browser. Wildcard targets (``0.0.0.0``, ``::``) are not
+    consistently browseable across platforms — Linux usually routes
+    them to loopback, macOS is inconsistent, Windows tends to fail —
+    so we hand the browser a loopback URL.
+    """
+    assert _browse_host(bind_host) == expected

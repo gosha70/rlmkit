@@ -85,6 +85,22 @@ def _cmd_version() -> int:
     return 0
 
 
+_WILDCARD_BIND_HOSTS = frozenset({"0.0.0.0", "::", "*", ""})
+
+
+def _browse_host(host: str) -> str:
+    """Substitute a browseable loopback for wildcard bind hosts.
+
+    The actual uvicorn bind still uses ``host`` verbatim; this rewrites
+    only the URL that is printed and opened in the browser. Browsers do
+    not consistently navigate to ``0.0.0.0`` or ``[::]`` — those are
+    bind targets, not addressable hosts — so the advertised
+    ``rlmkit studio --host 0.0.0.0`` workflow needs a navigable URL
+    even though the bind is correct as written.
+    """
+    return "127.0.0.1" if host in _WILDCARD_BIND_HOSTS else host
+
+
 def _cmd_studio(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -114,10 +130,11 @@ def _cmd_studio(args: argparse.Namespace) -> int:
         )
         return 2
 
-    url = f"http://{args.host}:{args.port}/studio"
+    browse_host = _browse_host(args.host)
+    url = f"http://{browse_host}:{args.port}/studio"
     print(f"RLM Studio: {url}")
-    print(f"  API:        http://{args.host}:{args.port}/api")
-    print(f"  Health:     http://{args.host}:{args.port}/health")
+    print(f"  API:        http://{browse_host}:{args.port}/api")
+    print(f"  Health:     http://{browse_host}:{args.port}/health")
     print()
 
     if not args.no_browser:
