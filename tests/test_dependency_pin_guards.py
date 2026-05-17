@@ -1,9 +1,12 @@
-"""Regression guards tied to dependency-pin / pip-audit-ignore decisions.
+"""Regression guards tied to first-party assumptions about transitive deps.
 
-Each test here documents a security invariant whose validity depends on
-the current dependency graph. If the invariant is broken, the matching
-``--ignore-vuln`` flag in ``.github/workflows/ci.yml`` must be revisited
-before merging.
+Each test here documents a security invariant — typically of the form
+"no first-party code calls X" — that, if broken, would make the project
+reachable to a vulnerability in a transitive dependency. The guards stand
+on their own as defense-in-depth, independent of whether the matching CVE
+is currently fixed at the lock level or covered by a pip-audit ignore.
+If a guard fails, evaluate whether the new code path is safe against the
+underlying class of vulnerability before removing or relaxing it.
 """
 
 from __future__ import annotations
@@ -22,10 +25,14 @@ _DOTENV_SET_KEY_RE = re.compile(r"\b" + "set" + r"_key\s*\(")
 def test_no_dotenv_set_key_calls() -> None:
     """python-dotenv CVE-2026-28684 (set_key symlink-follow).
 
-    litellm 1.83.7 hard-pins python-dotenv==1.0.1, which is below the
-    1.2.2 fix. We ignore the CVE in pip-audit on the basis that no
-    first-party code calls ``set_key()``. This test fails if anyone
-    introduces such a call, forcing the ignore to be re-evaluated.
+    As of litellm 1.83.14 the lock resolves python-dotenv 1.2.2 (the
+    patched version), so the pip-audit ignore for CVE-2026-28684 was
+    removed in af85660. This guard is retained as defense-in-depth:
+    nothing prevents a future litellm release from re-pinning an
+    older python-dotenv, and as long as no first-party code calls
+    ``set_key()`` the symlink-follow path is unreachable regardless
+    of the transitive's version. This test fails if anyone introduces
+    a set_key() call, forcing re-evaluation of the assumption.
     """
     offenders: list[str] = []
     for root in SCAN_DIRS:
@@ -38,8 +45,10 @@ def test_no_dotenv_set_key_calls() -> None:
                     offenders.append(f"  {path.relative_to(REPO_ROOT)}:{line_no}: {line.strip()}")
     assert not offenders, (
         "Found dotenv.set_key( call(s) in first-party code.\n"
-        "python-dotenv CVE-2026-28684 is currently ignored in "
-        ".github/workflows/ci.yml on the basis that we never call "
-        "set_key(). Either remove the call, or remove the "
-        "--ignore-vuln CVE-2026-28684 flag and address the CVE.\n" + "\n".join(offenders)
+        "RLMKit's defense-in-depth invariant for python-dotenv "
+        "CVE-2026-28684 is that no first-party code calls set_key(), "
+        "so the symlink-follow path stays unreachable even if a "
+        "future litellm release regresses its python-dotenv pin. "
+        "Either remove the call, or remove this guard and accept "
+        "reliance on the lock pinning python-dotenv >= 1.2.2.\n" + "\n".join(offenders)
     )
