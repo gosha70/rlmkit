@@ -19,7 +19,6 @@ test" once that section lands.
 from __future__ import annotations
 
 import io
-import sys
 from contextlib import redirect_stderr, redirect_stdout
 
 import pytest
@@ -124,7 +123,7 @@ def test_server_app_constructs_without_bundled_ui() -> None:
 
 
 @pytest.mark.parametrize(
-    "bind_host,expected",
+    ("bind_host", "expected"),
     [
         ("0.0.0.0", "127.0.0.1"),
         ("::", "127.0.0.1"),

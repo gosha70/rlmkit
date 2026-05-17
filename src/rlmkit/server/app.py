@@ -18,7 +18,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from rlmkit.server.dependencies import get_state
 from rlmkit.server.models import HealthResponse
-from rlmkit.ui_bundle import get_ui_directory
 from rlmkit.server.routes import (
     chat,
     chat_providers,
@@ -37,6 +36,7 @@ from rlmkit.server.routes import (
     sessions,
     traces,
 )
+from rlmkit.ui_bundle import get_ui_directory
 
 # Snapshot keys already in the real process environment *before* load_dotenv.
 # This lets us distinguish user-set shell variables (must not be overridden)

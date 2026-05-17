@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 import webbrowser
-from typing import Sequence
+from collections.abc import Sequence
 
 from rlmkit import __version__
 from rlmkit.ui_bundle import get_ui_directory
