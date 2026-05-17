@@ -14,9 +14,21 @@ RLMKit releases are cut by the project maintainer following a manual playbook. T
 For each release, the maintainer:
 
 1. Confirms every CI gate passes on `master` and runs a manual test plan on a fresh checkout.
-2. Opens a release PR that bumps `pyproject.toml`, promotes the `[Unreleased]` section in `CHANGELOG.md` to a dated version header, and updates any docs whose user-facing copy changed.
-3. After merge, pushes an annotated tag `vX.Y.Z` to `master` and publishes a GitHub release with the wheel and sdist attached.
-4. Verifies the published artifacts install cleanly on Python 3.10, 3.11, and 3.12 from a fresh environment before announcing.
+2. Builds the bundled Studio UI so `rlmkit studio` ships a working one-click experience:
+   ```bash
+   cd frontend
+   npm install
+   npm run build:bundle             # produces frontend/out/
+   rm -rf ../src/rlmkit/_ui
+   mkdir -p ../src/rlmkit/_ui
+   cp -r out/* ../src/rlmkit/_ui/   # the wheel ships this directory
+   ```
+   `build:bundle` (not `build`) is the right script — `build` produces a Next.js server build (`.next/`), `build:bundle` sets `BUNDLE=1` and emits a static export under `frontend/out/`.
+3. Opens a release PR that bumps `pyproject.toml`, promotes the `[Unreleased]` section in `CHANGELOG.md` to a dated version header, and updates any docs whose user-facing copy changed.
+4. After merge, pushes an annotated tag `vX.Y.Z` to `master` and publishes a GitHub release with the wheel and sdist attached.
+5. Verifies the published artifacts install cleanly on Python 3.10, 3.11, and 3.12 from a fresh environment before announcing.
+
+Between releases, `src/rlmkit/_ui/` is intentionally empty (only the `__init__.py` placeholder is tracked) so the dev workflow stays clean. The `_ui/` payload is regenerated at every release cut.
 
 CI gates and the seven enforced jobs are defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 

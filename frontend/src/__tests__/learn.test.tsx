@@ -14,7 +14,7 @@
  */
 
 import { render, screen } from "@testing-library/react";
-import { describe, test, expect, vi } from "vitest";
+import { beforeEach, describe, test, expect, vi } from "vitest";
 import useSWR from "swr";
 import type { DiagnosticCheck, DiagnosticsResponse } from "@/lib/api";
 
@@ -35,16 +35,14 @@ vi.mock("next/navigation", async () => {
   );
   return {
     ...actual,
-    useParams: vi.fn(),
     useSearchParams: vi.fn(() => new URLSearchParams()),
   };
 });
 
-import { useParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import LearnPage from "@/app/learn/page";
 import CookbookPage from "@/app/learn/cookbook/page";
-import ProviderGuidePage from "@/app/learn/cookbook/[provider]/page";
 import TroubleshootPage from "@/app/learn/troubleshoot/page";
 import ConceptsPage from "@/app/learn/concepts/page";
 import { hasLearnErrorBadge } from "@/components/shared/sidebar";
@@ -79,7 +77,19 @@ import {
   topLevelHeadings,
 } from "@/components/learn/markdown-toc";
 
-const mockUseParams = vi.mocked(useParams);
+const mockUseSearchParams = vi.mocked(useSearchParams);
+
+// Reset useSearchParams between tests so a guide-branch test
+// (?provider=...) doesn't leak into a subsequent catalog-branch test.
+// The CookbookPage dispatcher routes on the search-param value; a
+// stale ?provider=X would render the GuideView (which calls
+// `extractHeadings`) instead of the CatalogView and crash tests that
+// don't stub the markdown payload.
+beforeEach(() => {
+  mockUseSearchParams.mockReturnValue(
+    new URLSearchParams() as ReturnType<typeof useSearchParams>,
+  );
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -379,7 +389,7 @@ describe("ProviderCard", () => {
     const link = screen.getByRole("link", {
       name: /Open OpenAI guide \(Moderate\)/,
     });
-    expect(link).toHaveAttribute("href", "/learn/cookbook/openai");
+    expect(link).toHaveAttribute("href", "/learn/cookbook?provider=openai");
   });
 });
 
@@ -430,7 +440,7 @@ describe("CookbookPage", () => {
       expect(matches).toHaveLength(1);
       expect(matches[0]).toHaveAttribute(
         "href",
-        `/learn/cookbook/${p.id}`,
+        `/learn/cookbook?provider=${encodeURIComponent(p.id)}`,
       );
     }
   });
@@ -516,7 +526,9 @@ describe("ProviderGuidePage", () => {
   };
 
   test("renders the guide for a known provider with TOC and markdown", () => {
-    mockUseParams.mockReturnValue({ provider: "ollama" });
+    mockUseSearchParams.mockReturnValue(
+      new URLSearchParams({ provider: "ollama" }) as ReturnType<typeof useSearchParams>,
+    );
     // LearnPage/Guide both call SWR — data will flow to both calls
     // because they share the same cache key via the mock's single
     // return value. Use a flexible default.
@@ -529,7 +541,7 @@ describe("ProviderGuidePage", () => {
       },
     );
 
-    render(<ProviderGuidePage />);
+    render(<CookbookPage />);
     expect(
       screen.getByRole("heading", { level: 2, name: "Ollama" }),
     ).toBeInTheDocument();
@@ -548,9 +560,11 @@ describe("ProviderGuidePage", () => {
   });
 
   test("Open in Settings link carries backend key + catalog defaults", () => {
-    mockUseParams.mockReturnValue({ provider: "ollama" });
+    mockUseSearchParams.mockReturnValue(
+      new URLSearchParams({ provider: "ollama" }) as ReturnType<typeof useSearchParams>,
+    );
     mockUseSWR.mockReturnValue({ data: sampleDoc } as ReturnType<typeof useSWR>);
-    render(<ProviderGuidePage />);
+    render(<CookbookPage />);
     const link = screen.getByRole("link", {
       name: "Open Ollama in Settings",
     });
@@ -563,9 +577,11 @@ describe("ProviderGuidePage", () => {
   });
 
   test("DGX Spark's Open in Settings uses vllm backend key without defaults", () => {
-    mockUseParams.mockReturnValue({ provider: "dgx-spark" });
+    mockUseSearchParams.mockReturnValue(
+      new URLSearchParams({ provider: "dgx-spark" }) as ReturnType<typeof useSearchParams>,
+    );
     mockUseSWR.mockReturnValue({ data: sampleDoc } as ReturnType<typeof useSWR>);
-    render(<ProviderGuidePage />);
+    render(<CookbookPage />);
     const link = screen.getByRole("link", {
       name: "Open DGX Spark in Settings",
     });
@@ -576,9 +592,11 @@ describe("ProviderGuidePage", () => {
   });
 
   test("unknown provider id shows an alert, not a crash", () => {
-    mockUseParams.mockReturnValue({ provider: "definitely-not-real" });
+    mockUseSearchParams.mockReturnValue(
+      new URLSearchParams({ provider: "definitely-not-real" }) as ReturnType<typeof useSearchParams>,
+    );
     mockUseSWR.mockReturnValue({ data: undefined } as ReturnType<typeof useSWR>);
-    render(<ProviderGuidePage />);
+    render(<CookbookPage />);
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent(/Provider not found/);
     expect(alert).toHaveTextContent(/definitely-not-real/);
@@ -590,11 +608,13 @@ describe("ProviderGuidePage", () => {
   });
 
   test("breadcrumb includes Back to Learn and Cookbook links", () => {
-    mockUseParams.mockReturnValue({ provider: "ollama" });
+    mockUseSearchParams.mockReturnValue(
+      new URLSearchParams({ provider: "ollama" }) as ReturnType<typeof useSearchParams>,
+    );
     mockUseSWR.mockReturnValue({
       data: { slug: "hosts-ollama", content: "## Install\n" },
     } as ReturnType<typeof useSWR>);
-    render(<ProviderGuidePage />);
+    render(<CookbookPage />);
     expect(
       screen.getByRole("link", { name: "Back to Learn" }),
     ).toHaveAttribute("href", "/learn");
@@ -1037,7 +1057,7 @@ describe("TroubleshootEntry card", () => {
     const cookbookLink = screen.getByRole("link", {
       name: /Cookbook: anthropic/,
     });
-    expect(cookbookLink).toHaveAttribute("href", "/learn/cookbook/anthropic");
+    expect(cookbookLink).toHaveAttribute("href", "/learn/cookbook?provider=anthropic");
     expect(screen.getByText("unknown/shape")).toBeInTheDocument();
   });
 

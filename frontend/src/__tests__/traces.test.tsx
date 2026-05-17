@@ -313,10 +313,11 @@ describe("TracesPage", () => {
   // Replay-in-Learn CTA (V2b step 7)
   //
   // Per NEXT.md §3d: the trailing button must route to
-  // /learn/replay/<id> via `router.push` without triggering the row's
-  // own "open trace detail" click handler. Both branches of the
-  // stopPropagation contract are asserted: the button itself navigates,
-  // and clicking the button does NOT load a trace for the row.
+  // /learn/replay?id=<id> via `router.push` without triggering the
+  // row's own "open trace detail" click handler. Both branches of
+  // the stopPropagation contract are asserted: the button itself
+  // navigates, and clicking the button does NOT load a trace for
+  // the row.
   // -------------------------------------------------------------------------
 
   test("renders Replay in Learn button per execution row", () => {
@@ -337,7 +338,7 @@ describe("TracesPage", () => {
     ).toBeInTheDocument();
   });
 
-  test("Replay in Learn click routes to /learn/replay/<id>", () => {
+  test("Replay in Learn click routes to /learn/replay?id=<id>", () => {
     mockRouterPush.mockClear();
     mockUseSWR.mockReturnValue({
       data: [makeExecution({ execution_id: "exec-42" })],
@@ -351,7 +352,7 @@ describe("TracesPage", () => {
     fireEvent.click(button);
 
     expect(mockRouterPush).toHaveBeenCalledTimes(1);
-    expect(mockRouterPush).toHaveBeenCalledWith("/learn/replay/exec-42?from=traces");
+    expect(mockRouterPush).toHaveBeenCalledWith("/learn/replay?id=exec-42&from=traces");
   });
 
   test("Replay in Learn click does not trigger the row's open-trace handler", () => {

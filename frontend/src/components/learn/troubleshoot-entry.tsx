@@ -102,13 +102,13 @@ function SeeAlsoLink({ target }: { target: string }) {
   // also be in the current Cookbook catalog. Otherwise a stale YAML
   // entry (e.g. "cookbook/groq" after the Groq removal in 5d1c29c) or
   // a typo would become a live link that lands on the "Provider not
-  // found" alert at /learn/cookbook/[id]. Fall through to plain text
-  // for any unknown id.
+  // found" alert at /learn/cookbook?provider=<id>. Fall through to
+  // plain text for any unknown id.
   if (cookbookMatch && getProviderById(cookbookMatch[1]) !== undefined) {
     const providerId = cookbookMatch[1];
     return (
       <Link
-        href={`/learn/cookbook/${providerId}`}
+        href={`/learn/cookbook?provider=${encodeURIComponent(providerId)}`}
         className="rounded border border-input bg-background px-2 py-0.5 hover:bg-muted"
       >
         Cookbook: {providerId}

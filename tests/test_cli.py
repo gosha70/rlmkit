@@ -101,7 +101,7 @@ def test_studio_without_bundled_ui_prints_helpful_message(
     # Match exact-case to keep the assertion honest; the CLI prints
     # "RLMKit: no bundled UI was found." and the dev workflow hints.
     assert "no bundled UI" in captured.err
-    assert "npm run build" in captured.err
+    assert "npm run build:bundle" in captured.err
     assert "python -m rlmkit.server" in captured.err
 
 

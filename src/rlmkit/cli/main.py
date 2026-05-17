@@ -103,7 +103,7 @@ def _cmd_studio(args: argparse.Namespace) -> int:
             "\n"
             "  2. Build the frontend locally:\n"
             "       cd frontend\n"
-            "       npm install && npm run build\n"
+            "       npm install && npm run build:bundle\n"
             "       # then copy frontend/out → src/rlmkit/_ui/\n"
             "\n"
             "  3. Or run the dev stack with the API and UI as separate\n"

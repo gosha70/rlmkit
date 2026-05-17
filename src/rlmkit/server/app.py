@@ -180,7 +180,7 @@ def create_app() -> FastAPI:
     #
     # When the Next.js static export has been built and copied into
     # ``src/rlmkit/_ui/`` (either by the release-time build pipeline that
-    # produces the wheel, or by a local developer's ``npm run build``),
+    # produces the wheel, or by a local developer's ``npm run build:bundle``),
     # we serve it from this same FastAPI process at ``/studio``. This is
     # what makes ``rlmkit studio`` a single-process one-click experience.
     #
@@ -215,7 +215,7 @@ def create_app() -> FastAPI:
     else:
         logger.info(
             "RLM Studio UI not bundled — running as API-only. "
-            "Run `npm run build` in frontend/ and copy out/ → src/rlmkit/_ui/ "
+            "Run `npm run build:bundle` in frontend/ and copy out/ → src/rlmkit/_ui/ "
             "to enable the bundled UI."
         )
 

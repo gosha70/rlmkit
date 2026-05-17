@@ -1,19 +1,44 @@
 "use client";
 
+/**
+ * Cookbook tab — provider catalog plus per-provider guides.
+ *
+ * Two views share this route, switched by the ``?provider=`` query
+ * param:
+ *
+ * * Without ``?provider=`` — the catalog landing page that groups all
+ *   Cookbook entries by category and renders one ``ProviderCard``
+ *   per provider.
+ * * With ``?provider=<id>`` — the per-provider guide page. Shows the
+ *   ``ProviderGuide`` for the matched provider, or an alert with a
+ *   back link when the id is unknown.
+ *
+ * The page uses a query param (and not a dynamic ``[provider]``
+ * segment) so the bundled-UI build (``npm run build:bundle``) can
+ * produce a static export. Dynamic-segment routes can't be enumerated
+ * at build time and would force a per-route server.
+ */
+
+import { Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
+
 import { AppShell } from "@/components/shared/app-shell";
 import { BackToLearn } from "@/components/learn/back-to-learn";
 import { DiagnosticsStrip } from "@/components/learn/diagnostics-strip";
 import { ProviderCard } from "@/components/learn/provider-card";
+import { ProviderGuide } from "@/components/learn/provider-guide";
 import {
   COOKBOOK_PROVIDERS,
   PROVIDER_GROUPS_IN_ORDER,
+  getProviderById,
   type CookbookProvider,
   type ProviderGroup,
 } from "@/components/learn/provider-catalog";
 import { getDiagnostics } from "@/lib/api";
 
-export default function CookbookPage() {
+function CatalogView() {
   const { data } = useSWR("learn-diagnostics", getDiagnostics, {
     refreshInterval: 30_000,
     dedupingInterval: 30_000,
@@ -62,6 +87,72 @@ export default function CookbookPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function GuideView({ providerId }: { providerId: string }) {
+  const provider = getProviderById(providerId);
+
+  const { data: diagnostics } = useSWR("learn-diagnostics", getDiagnostics, {
+    refreshInterval: 30_000,
+    dedupingInterval: 30_000,
+    errorRetryCount: 2,
+  });
+
+  return (
+    <AppShell>
+      <div className="mx-auto max-w-5xl px-6 py-8">
+        {/* Mini breadcrumb: Learn / Cookbook. "Back to Learn" is the
+            primary nav (consistent with other Learn sub-pages); the
+            Cookbook step sits next to it for one-click return to the
+            provider list. */}
+        <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <BackToLearn />
+          <span aria-hidden="true">/</span>
+          <Link
+            href="/learn/cookbook"
+            className="hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+          >
+            Cookbook
+          </Link>
+        </div>
+
+        <DiagnosticsStrip data={diagnostics ?? null} className="mb-6" />
+
+        {provider ? (
+          <ProviderGuide provider={provider} />
+        ) : (
+          <div
+            role="alert"
+            className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          >
+            <p className="font-medium">Provider not found</p>
+            <p className="mt-1 text-destructive/80">
+              {providerId
+                ? `No Cookbook guide exists for "${providerId}".`
+                : "No provider specified."}{" "}
+              <Link href="/learn/cookbook" className="underline">
+                Back to Cookbook
+              </Link>
+            </p>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}
+
+function CookbookPageInner() {
+  const searchParams = useSearchParams();
+  const providerId = searchParams.get("provider");
+  return providerId ? <GuideView providerId={providerId} /> : <CatalogView />;
+}
+
+export default function CookbookPage() {
+  return (
+    <Suspense>
+      <CookbookPageInner />
+    </Suspense>
   );
 }
 

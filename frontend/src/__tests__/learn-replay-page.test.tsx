@@ -2,7 +2,7 @@
  * Learn replay page tests — V2b step 6.
  *
  * Covers the three states NEXT.md §3c pins for the
- * `/learn/replay/[executionId]` route:
+ * `/learn/replay?id=<executionId>` route:
  *
  *   1. loading  — SWR has no data yet, no error
  *   2. error    — SWR errored (404 / network), alert + back link render
@@ -25,8 +25,7 @@ import type { LearnReplay } from "@/lib/api";
 // ---------------------------------------------------------------------------
 
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ executionId: "exec-123" }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams({ id: "exec-123" }),
 }));
 
 vi.mock("swr", () => ({ default: vi.fn() }));
@@ -43,7 +42,7 @@ vi.mock("@/components/learn/replay-walkthrough", () => ({
 }));
 
 import useSWR from "swr";
-import ReplayPage from "@/app/learn/replay/[executionId]/page";
+import ReplayPage from "@/app/learn/replay/page";
 
 const mockUseSWR = vi.mocked(useSWR);
 

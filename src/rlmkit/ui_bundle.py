@@ -1,7 +1,7 @@
 """Locate the bundled RLM Studio UI shipped inside the rlmkit wheel.
 
 When `rlmkit` is installed via PyPI (or via ``pip install -e .`` after
-``npm run build``), the Next.js static export lives under
+``npm run build:bundle``), the Next.js static export lives under
 ``src/rlmkit/_ui/``. The server mounts it at ``/studio`` and the CLI
 ``rlmkit studio`` command opens a browser to it.
 

@@ -7,7 +7,17 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 // Direct backend URL — bypasses the Next.js dev-server proxy for
 // long-running or large-body requests (file uploads, compare matrix).
 // CORS on the backend already allows http://localhost:3000.
-const BACKEND_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+//
+// In the bundled-UI build (NEXT_PUBLIC_BUNDLE=1, set by
+// `npm run build:bundle`), the static export is served by FastAPI on
+// the same origin and port as the API, so we force same-origin
+// relative URLs regardless of NEXT_PUBLIC_API_URL. This is what makes
+// `rlmkit studio --port 9000` work for uploads and the compare matrix
+// — without this gate the bundled UI would still talk to :8000.
+const BACKEND_BASE =
+  process.env.NEXT_PUBLIC_BUNDLE === "1"
+    ? ""
+    : process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
 // Types matching the backend Pydantic models

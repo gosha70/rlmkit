@@ -33,7 +33,7 @@ const DIFFICULTY_VARIANT: Record<
 export function ProviderCard({ provider }: ProviderCardProps) {
   return (
     <Link
-      href={`/learn/cookbook/${provider.id}`}
+      href={`/learn/cookbook?provider=${encodeURIComponent(provider.id)}`}
       aria-label={`Open ${provider.name} guide (${provider.difficulty})`}
       className={cn(
         "group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

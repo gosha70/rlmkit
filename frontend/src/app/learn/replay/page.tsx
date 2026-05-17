@@ -3,10 +3,17 @@
 /**
  * Trace-backed replay page — Learn tab V2b (NEXT.md §3f step 6).
  *
- * Loads a {@link LearnReplay} for ``executionId`` via SWR and renders
- * it through the shared {@link ReplayWalkthrough} widget — the same
- * one the Concepts page uses for the bundled replay. Loading / error /
- * ready states mirror Concepts so the two surfaces feel identical.
+ * Loads a {@link LearnReplay} for the execution id passed via the
+ * ``?id=`` query param and renders it through the shared
+ * {@link ReplayWalkthrough} widget — the same one the Concepts page
+ * uses for the bundled replay. Loading / error / ready states mirror
+ * Concepts so the two surfaces feel identical.
+ *
+ * The URL uses a query param (``/learn/replay?id=<executionId>``) and
+ * not a dynamic segment so the page is statically exportable for the
+ * bundled-UI build (``npm run build:bundle``). Dynamic-segment routes
+ * cannot be enumerated at build time and would force a per-route
+ * server.
  *
  * Unknown execution ids surface the standard 404 envelope from the
  * backend (``/api/replays/{id}`` raises a ``NOT_FOUND`` HTTPException
@@ -17,7 +24,7 @@
 
 import { Suspense } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 
 import { BackToLearn } from "@/components/learn/back-to-learn";
@@ -30,9 +37,8 @@ const FROM_TARGETS: Record<string, { href: string; label: string }> = {
 };
 
 function ReplayPageInner() {
-  const params = useParams<{ executionId: string }>();
   const searchParams = useSearchParams();
-  const executionId = params?.executionId ?? "";
+  const executionId = searchParams.get("id") ?? "";
   const from = searchParams.get("from");
   const backTarget = (from && FROM_TARGETS[from]) || undefined;
 
