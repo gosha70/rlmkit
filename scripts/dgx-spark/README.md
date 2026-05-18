@@ -7,7 +7,7 @@ Shell scripts for setting up the NVIDIA DGX Spark as a self-hosted inference bac
 | Path | Directory | API | RLMKit usage |
 |------|-----------|-----|--------------|
 | **Ollama** | `ollama/` | `http://<spark-ip>:11434` | `provider="ollama", model="<model>", api_base=...` |
-| **vLLM** | `vllm/` | `http://<spark-ip>:8000/v1` (OpenAI-compatible) | `provider="litellm", model="openai/<model>", api_base=...` |
+| **vLLM** | `vllm/` | `http://<spark-ip>:8000/v1` (OpenAI-compatible) | `provider="litellm", model="hosted_vllm/<model>", api_base=...` (LiteLLM ≥ 1.50 routes the generic `openai/` prefix through `/v1/responses`, which vLLM rejects on multi-turn — see `docs/hosts/dgx-spark-vllm.md` §7 Blocker #4) |
 
 ## Quick start
 
@@ -42,8 +42,12 @@ bash vllm/verify-vllm-api-dgx.sh <spark-ip> 8000 Qwen/Qwen2.5-7B-Instruct
 
 ```python
 from rlmkit import interact
+# hosted_vllm/ (not openai/) — LiteLLM ≥ 1.50 routes openai/<...> through
+# vLLM's /v1/responses, which rejects multi-turn input arrays. The
+# hosted_vllm/ provider pins to /v1/chat/completions. See
+# docs/hosts/dgx-spark-vllm.md §7 Blocker #4.
 r = interact(content, query, mode="rlm",
-             provider="litellm", model="openai/Qwen2.5-7B-Instruct",
+             provider="litellm", model="hosted_vllm/Qwen2.5-7B-Instruct",
              api_base="http://<spark-ip>:8000/v1")
 ```
 
