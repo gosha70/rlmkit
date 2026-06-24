@@ -47,7 +47,7 @@
     "node": ">=22"
   },
   "overrides": {
-    "undici": ">=7.28.0",
+    "undici": "^7.28.0",
     "js-yaml": ">=4.2.0",
     "@babel/core": ">=7.29.6",
     "esbuild": ">=0.28.1",
@@ -71,6 +71,6 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vite": "^7.3.5",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   }
 }

@@ -32,6 +32,7 @@ dependencies = [
     "aiohttp>=3.14.1",  # CVE-2026-22815, CVE-2026-34513..34520, CVE-2026-34525 (3.13.4); TLS hostname override ignored on HTTPS connection reuse (3.14.1); DigestAuth credentials forwarded on cross-origin redirect (3.14.1)
     "msgpack>=1.2.1",  # OOB read / crash on Unpacker reuse after a caught error (transitive via litellm)
     "tornado>=6.5.7",  # gzip bomb via unbound decompression (6.5.6); Authorization header forwarded on cross-origin redirect (6.5.6); per-request credentials leaked on CurlAsyncHTTPClient handle reuse (6.5.7) — transitive via litellm
+    "idna>=3.15",  # PYSEC-2026-215 fix (transitive via httpx/aiohttp/requests)
     "RestrictedPython>=7.0",
     "tenacity>=9.1.2",
     "pygments>=2.20.0",
@@ -53,7 +54,9 @@ dev = [
     "pre-commit>=3.7.0",
     "types-pyyaml>=6.0.12.20250915",
     "nest-asyncio>=1.6.0",
+    "pip>=26.1.2",  # PYSEC-2026-196 fix; pip is installed in the venv and scanned by pip-audit
     "pip-audit>=2.7.0",
+    "pyarrow>=23.0.1",  # PYSEC-2026-113 fix (transitive via litellm)
     "requests>=2.33.0",  # CVE-2026-25645 fix; transitive via pip-audit/tiktoken
 ]
 
@@ -61,7 +64,7 @@ server = [
     "fastapi>=0.138.0",  # >=0.138.0 drops starlette<1.0.0 upper-bound; required for starlette 1.x security fixes
     "starlette>=1.3.1",  # form() limits ignored DoS (HIGH, 1.3.1); StaticFiles SSRF via UNC paths on Windows (HIGH, 1.1.0); arbitrary HTTP method dispatch via getattr (MEDIUM, 1.1.0); URL hostname poisoning (LOW, 1.3.0)
     "uvicorn>=0.27.0",
-    "python-multipart>=0.0.27",  # CVE-2026-40347 fix; CVE-2026-42561 (DoS via unbounded multipart headers) fix in 0.0.27 — runtime-reachable via /api/files/upload
+    "python-multipart>=0.0.31",  # CVE-2026-40347 / CVE-2026-42561 (0.0.27); CVE-2026-53538/53539/53540 fixed in 0.0.30/0.0.31 — runtime-reachable via /api/files/upload
     "pypdf>=6.13.3",  # PDF text extraction; memory exhaustion via XMP metadata (6.12.1); FlateDecode inefficiency / form XObject memory (6.12.2); infinite loop in fonts and outline retrieval (6.13.0); missing stream length limits (6.13.3)
     "python-docx>=1.1.0",  # DOCX text extraction in /api/files/upload
     "lxml>=6.1.0",  # CVE-2026-41066 fix (transitive via python-docx)
