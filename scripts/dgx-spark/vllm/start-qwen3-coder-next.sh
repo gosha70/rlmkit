@@ -18,6 +18,9 @@
 #   VLLM_MAX_MODEL_LEN      default: 131072
 #   VLLM_GPU_UTIL           default: 0.72
 #   VLLM_PORT               default: 8000
+#   VLLM_TOOL_CALL_PARSER   default: qwen3_coder
+#   VLLM_MAX_NUM_BATCHED_TOKENS default: 8192
+#   VLLM_REASONING_PARSER   default: (unset — §3 passes no --reasoning-parser; see Blocker #2)
 #
 # This script does NOT install vLLM or build flashinfer — those steps
 # live in docs/hosts/dgx-spark.md §4. This script assumes both are
@@ -31,6 +34,9 @@ VLLM_SERVED_MODEL_NAME="${VLLM_SERVED_MODEL_NAME:-RedHatAI/Qwen3-Coder-Next-NVFP
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-131072}"
 VLLM_GPU_UTIL="${VLLM_GPU_UTIL:-0.72}"
 VLLM_PORT="${VLLM_PORT:-8000}"
+VLLM_TOOL_CALL_PARSER="${VLLM_TOOL_CALL_PARSER:-qwen3_coder}"
+VLLM_MAX_NUM_BATCHED_TOKENS="${VLLM_MAX_NUM_BATCHED_TOKENS:-8192}"
+VLLM_REASONING_PARSER="${VLLM_REASONING_PARSER:-}"
 
 # Sanity-check the venv exists before we touch the system.
 if [[ ! -f "$VLLM_VENV/bin/activate" ]]; then
@@ -67,17 +73,29 @@ echo "    served-model-name:    $VLLM_SERVED_MODEL_NAME"
 echo "    max-model-len:        $VLLM_MAX_MODEL_LEN"
 echo "    gpu-memory-util:      $VLLM_GPU_UTIL"
 echo "    port:                 $VLLM_PORT"
+echo "    tool-call-parser:     $VLLM_TOOL_CALL_PARSER"
+echo "    reasoning-parser:     ${VLLM_REASONING_PARSER:-(none)}"
 echo
 
-exec python -m vllm.entrypoints.openai.api_server \
-  --model "$VLLM_MODEL_PATH" \
-  --served-model-name "$VLLM_SERVED_MODEL_NAME" \
-  --enforce-eager \
-  --max-model-len "$VLLM_MAX_MODEL_LEN" \
-  --max-num-seqs 1 \
-  --max-num-batched-tokens 8192 \
-  --gpu-memory-utilization "$VLLM_GPU_UTIL" \
-  --enable-auto-tool-choice \
-  --tool-call-parser qwen3_coder \
-  --trust-remote-code \
-  --host 0.0.0.0 --port "$VLLM_PORT"
+VLLM_ARGS=(
+  --model "$VLLM_MODEL_PATH"
+  --served-model-name "$VLLM_SERVED_MODEL_NAME"
+  --enforce-eager
+  --max-model-len "$VLLM_MAX_MODEL_LEN"
+  --max-num-seqs 1
+  --max-num-batched-tokens "$VLLM_MAX_NUM_BATCHED_TOKENS"
+  --gpu-memory-utilization "$VLLM_GPU_UTIL"
+  --enable-auto-tool-choice
+  --tool-call-parser "$VLLM_TOOL_CALL_PARSER"
+  --trust-remote-code
+)
+
+# Verified config passes no --reasoning-parser at all (Blocker #2).
+# Only add the flag when explicitly requested.
+if [[ -n "$VLLM_REASONING_PARSER" ]]; then
+  VLLM_ARGS+=(--reasoning-parser "$VLLM_REASONING_PARSER")
+fi
+
+VLLM_ARGS+=(--host 0.0.0.0 --port "$VLLM_PORT")
+
+exec python -m vllm.entrypoints.openai.api_server "${VLLM_ARGS[@]}"

@@ -85,14 +85,17 @@ sudo ss -lntp | grep 11434
 ## 3. Pull a model
 
 ```bash
-ollama pull llama3.2
-ollama pull gpt-oss:20b
-ollama pull qwen2.5:14b
+ollama pull qwen3.6:35b-a3b    # current-generation MoE
+ollama pull qwen3.5:27b        # current-generation dense
+ollama pull llama3.2           # tiny — smoke tests only
 ollama list
 ```
 
-On Spark, quantized models (GGUF) fit comfortably up to the 14B–20B
-class. See §7 for the Ollama vs vLLM sizing rule of thumb.
+On Spark the binding constraint is a model's **weight footprint in
+GB**, not its parameter count: quantization changes bytes per
+parameter by up to 4x, so a parameter count alone tells you nothing
+about whether a model fits. See §7 for the GB-keyed bands and the
+Ollama vs vLLM sizing rule of thumb.
 
 ## 4. Install and start vLLM (alternative path)
 
@@ -208,7 +211,7 @@ See [hosts/README.md §3](README.md#3-what-rlm-studio-needs) for the general fie
 |----------|----------------------------------|
 | Backend  | `ollama`                         |
 | Base URL | `http://<dgx-spark-ip>:11434`    |
-| Model    | e.g. `qwen2.5:14b`, `llama3.2`   |
+| Model    | e.g. `qwen3.5:27b`, `llama3.2`   |
 
 ### vLLM path
 
@@ -253,7 +256,8 @@ refuse to start even when the dashboard looks fine.
 
 **Default gotcha.** Without `--gpu-memory-utilization`, vLLM reserves
 about 0.9 of what it sees. That is usually too aggressive on Spark.
-Start at 0.4 for 7B-class models, 0.7 for 32B-class.
+Start at 0.4 for 7B-class models, 0.7 for 32B-class (BF16 and
+unquantized — for quantized weights, size from the GB bands below).
 
 **Three failure patterns you will see:**
 
@@ -263,18 +267,40 @@ Start at 0.4 for 7B-class models, 0.7 for 32B-class.
    `--gpu-memory-utilization` or pin the KV cache (below).
 2. **Model loads, then no KV cache room left.** Seen with
    `Qwen/Qwen3-32B` at 0.4. Weights fit, cache does not. Raise
-   utilization *and* reduce `--max-model-len`.
+   utilization *and* reduce `--max-model-len`. This is measurable
+   rather than trial-and-error: vLLM prints the resulting KV-cache
+   token budget during boot (the exact wording varies by version —
+   look for the startup line naming the GPU KV cache size and a
+   token count). If that number is below your client's worst-case
+   `prompt + max_tokens`, requests will fail no matter how cleanly
+   the weights loaded. Large-weight MoE models make this worse than
+   the `Qwen3-32B` example above suggests: weights are only the
+   first claim on a shared pool.
 3. **Real OOM during weight load.** Seen with
    `Qwen/Qwen2.5-72B-Instruct`. In single-GPU BF16 without
    quantization, 70B-class is too large for Spark. Drop to a
    smaller model, or use Ollama with a quantized variant.
 
-**Practical ranking for this Spark setup:**
+**Practical ranking for this Spark setup — keyed on weights in GB:**
 
-- **Fits comfortably:** 7B–14B instruct models.
-- **Possible with tuning:** some 30B–32B models (raise utilization,
-  lower context, optionally pin KV cache).
-- **Not recommended here:** 70B–72B BF16 without quantization.
+- **<= 45 GB of weights — comfortable.** Fits alongside a large KV
+  cache. Verified example: `RedHatAI/Qwen3-Coder-Next-NVFP4`
+  (~44 GB NVFP4) at `--max-model-len 131072` with
+  `--gpu-memory-utilization 0.72` — see
+  [`dgx-spark-vllm.md`](dgx-spark-vllm.md) §3.
+- **45–90 GB of weights — possible with tuning and a reduced
+  context.** Raise utilization, lower `--max-model-len`, and expect
+  to re-derive both per model. Between 90 and 100 GB there is no
+  configuration reported either way — treat that range as untested.
+- **> 100 GB of weights — needs multi-node.** No single-Spark
+  configuration fits the weights plus a usable KV cache.
+
+Parameter count is the wrong unit here, and MoE sparsity is the
+second trap: `A10B` means 10 B *active* parameters, which reduces
+**compute** per token but **not KV cache**. KV is sized by total
+layers x KV heads x context, so a 122B-A10B model reserves KV as if
+every layer were dense. Over-provisioning `--max-model-len` on a
+large MoE model is the usual way this goes wrong.
 
 **When auto-profiling is unstable, pin the KV cache explicitly:**
 

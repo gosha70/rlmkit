@@ -47,6 +47,7 @@ CLAUDE.md
 /.agents
 AGENTS.md
 /.codex
-/specs
+/specs/*
+!/specs/dgx-spark-docs-refresh/
 /.git-rewrite
 .env.test
