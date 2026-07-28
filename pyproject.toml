@@ -33,6 +33,7 @@ dependencies = [
     "msgpack>=1.2.1",  # OOB read / crash on Unpacker reuse after a caught error (transitive via litellm)
     "tornado>=6.5.7",  # gzip bomb via unbound decompression (6.5.6); Authorization header forwarded on cross-origin redirect (6.5.6); per-request credentials leaked on CurlAsyncHTTPClient handle reuse (6.5.7) — transitive via litellm
     "idna>=3.15",  # PYSEC-2026-215 fix (transitive via httpx/aiohttp/requests)
+    "click>=8.3.3",  # PYSEC-2026-2132 fix (transitive via litellm/uvicorn/streamlit)
     "RestrictedPython>=7.0",
     "tenacity>=9.1.2",
     "pygments>=2.20.0",
@@ -72,7 +73,8 @@ server = [
 
 ui = [
     "streamlit>=1.55.0",  # CVE-2026-SSRF fix (NTLM credential exposure on Windows)
-    "gitpython>=3.1.49",  # GHSA-rpm5-65cw-6hj4, GHSA-x2qx-6953-8485 (3.1.47); CVE-2026-44244 (config_writer().set_value() RCE via core.hooksPath) fix in 3.1.49 — not reachable in RLMKit (transitive via streamlit only; no first-party imports)
+    "gitpython>=3.1.55",  # GHSA-rpm5-65cw-6hj4, GHSA-x2qx-6953-8485 (3.1.47); CVE-2026-44244 (config_writer().set_value() RCE via core.hooksPath) fix in 3.1.49; GHSA-2f96-g7mh-g2hx, GHSA-v396-v7q4-x2qj, GHSA-956x-8gvw-wg5v (3.1.51); GHSA-3rp5-jjmw-4wv2 (3.1.53); GHSA-fjr4-x663-mwxc, GHSA-6p8h-3wgx-97gf, GHSA-r9mr-m37c-5fr3 (3.1.54); GHSA-94p4-4cq8-9g67 (3.1.55) — not reachable in RLMKit (transitive via streamlit only; no first-party imports)
+    "pillow>=12.3.0",  # PYSEC-2026-2253..2257, PYSEC-2026-3451..3454, PYSEC-2026-3493..3496 fixed in 12.3.0 (transitive via streamlit)
     "plotly>=5.18.0",
     # External LLM providers
     "openai>=1.0.0",
