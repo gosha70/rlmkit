@@ -59,7 +59,7 @@ Flag-by-flag rationale:
 - **`--trust-remote-code`** — Qwen3-Coder uses custom `modeling_*.py`; required by Hugging Face's loader.
 - **`--host 0.0.0.0 --port 8000`** — bind on the LAN. Pair with a VPN, SSH tunnel, or trusted-LAN topology per [`hosts/README.md` §5](README.md#5-security--network-boundaries).
 
-A copy-paste runnable wrapper of this command lives at [`scripts/dgx-spark/vllm/start-qwen3-coder-next.sh`](../../scripts/dgx-spark/vllm/start-qwen3-coder-next.sh) (overridable via `VLLM_MODEL_PATH`, `VLLM_SERVED_MODEL_NAME`, `VLLM_MAX_MODEL_LEN`, `VLLM_GPU_UTIL`, `VLLM_PORT`, `VLLM_VENV`).
+A copy-paste runnable wrapper of this command lives at [`scripts/dgx-spark/vllm/start-qwen3-coder-next.sh`](../../scripts/dgx-spark/vllm/start-qwen3-coder-next.sh) (overridable via `VLLM_MODEL_PATH`, `VLLM_SERVED_MODEL_NAME`, `VLLM_MAX_MODEL_LEN`, `VLLM_GPU_UTIL`, `VLLM_PORT`, `VLLM_VENV`, `VLLM_TOOL_CALL_PARSER`, `VLLM_MAX_NUM_BATCHED_TOKENS`, and `VLLM_REASONING_PARSER` — the last defaults to unset, because the verified config above passes no `--reasoning-parser`; see Blocker #2).
 
 ## 4. First-boot expectations
 
