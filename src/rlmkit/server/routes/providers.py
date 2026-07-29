@@ -35,7 +35,9 @@ _LITELLM_PREFIXES: dict[str, str] = {
     "anthropic": "anthropic/",
     "ollama": "ollama/",
     "lmstudio": "openai/",  # LM Studio uses OpenAI-compatible API
-    "vllm": "openai/",  # vLLM uses OpenAI-compatible API
+    # hosted_vllm/, not openai/ — see docs/hosts/dgx-spark-vllm.md §7 Blocker #4.
+    # Must stay in sync with the tables in server/dependencies.py and api.py.
+    "vllm": "hosted_vllm/",
 }
 
 

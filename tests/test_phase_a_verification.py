@@ -286,3 +286,70 @@ class TestModelNamePrefixing:
 
     def test_lmstudio_uses_openai_prefix(self) -> None:
         assert AppState._litellm_model_name("lmstudio", "local-model") == "openai/local-model"
+
+    def test_vllm_uses_hosted_vllm_prefix(self) -> None:
+        """vLLM must use hosted_vllm/, not openai/.
+
+        With LiteLLM >= 1.50 an ``openai/*`` model on a vLLM upstream
+        auto-routes to ``/v1/responses``, which returns HTTP 400 on the second
+        turn of a multi-turn conversation (Blocker #4 in
+        ``docs/hosts/dgx-spark-vllm.md`` §7).
+        """
+        result = AppState._litellm_model_name("vllm", "RedHatAI/Qwen3-Coder-Next-NVFP4")
+        assert result == "hosted_vllm/RedHatAI/Qwen3-Coder-Next-NVFP4"
+        assert not result.startswith("openai/")
+
+    def test_vllm_hf_style_id_is_prefixed_once(self) -> None:
+        """A HuggingFace id contains a slash but is not already prefixed."""
+        assert (
+            AppState._litellm_model_name("vllm", "hosted_vllm/RedHatAI/Qwen3-Coder-Next-NVFP4")
+            == "hosted_vllm/RedHatAI/Qwen3-Coder-Next-NVFP4"
+        )
+
+    def test_vllm_prefix_agrees_across_all_three_tables(self) -> None:
+        """The prefix table is duplicated in three modules; they must not drift.
+
+        ``api.py`` serves ``interact()``, ``server/routes/providers.py`` serves
+        the Studio provider form and ``provider_tester``, and
+        ``server/dependencies.py`` serves the request dispatch path. A vLLM fix
+        applied to only one of them leaves the other paths broken.
+        """
+        from rlmkit.api import _PROVIDER_PREFIXES
+        from rlmkit.server.routes.providers import _LITELLM_PREFIXES
+
+        assert _PROVIDER_PREFIXES["vllm"] == "hosted_vllm/"
+        assert _LITELLM_PREFIXES["vllm"] == "hosted_vllm/"
+        assert AppState._litellm_model_name("vllm", "m") == "hosted_vllm/m"
+
+    def test_vllm_model_name_reaches_chat_completions_route(self) -> None:
+        """The Studio provider path must produce a hosted_vllm/ model string.
+
+        This is the regression guard for the Studio-side half of Blocker #4:
+        ``provider_tester`` and the provider form both route through
+        ``server/routes/providers._litellm_model_name``.
+        """
+        from rlmkit.server.routes.providers import _litellm_model_name
+
+        assert (
+            _litellm_model_name("vllm", "RedHatAI/Qwen3-Coder-Next-NVFP4")
+            == "hosted_vllm/RedHatAI/Qwen3-Coder-Next-NVFP4"
+        )
+
+    def test_vllm_model_string_resolves_to_hosted_vllm_route(self) -> None:
+        """LiteLLM must resolve our vLLM model string to the hosted_vllm provider.
+
+        This is the end of the chain Blocker #4 breaks: LiteLLM picks the
+        upstream route from the provider it infers. ``hosted_vllm`` pins to
+        ``/v1/chat/completions``; ``openai`` is auto-detected as the Responses
+        API and routed to ``/v1/responses``, which vLLM rejects on multi-turn.
+        Resolution is offline — no request is made.
+        """
+        from litellm import get_llm_provider
+
+        model_str = AppState._litellm_model_name("vllm", "RedHatAI/Qwen3-Coder-Next-NVFP4")
+        _, provider, _, _ = get_llm_provider(model=model_str, api_base="http://spark:8000/v1")
+
+        assert provider == "hosted_vllm", (
+            f"vLLM model string {model_str!r} resolved to provider {provider!r}; "
+            "'openai' would route multi-turn requests to /v1/responses (Blocker #4)"
+        )

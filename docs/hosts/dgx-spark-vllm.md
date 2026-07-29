@@ -172,12 +172,9 @@ r = interact(
 
 `provider="litellm"` is not in RLMKit's per-provider prefix table, so the model string passes through verbatim and LiteLLM sees the `hosted_vllm/` prefix it needs.
 
-### Wrong pattern — recreates Blocker #4
+### Equivalent pattern: the built-in `vllm` provider
 
 ```python
-# Wrong — RLMKit's built-in vllm provider prepends "openai/" to the
-# model string (see "Known limitation" below), and LiteLLM >= 1.50
-# then auto-routes openai/* through /v1/responses on a vLLM upstream.
 r = interact(
     content, query,
     provider="vllm", model="RedHatAI/Qwen3-Coder-Next-NVFP4",
@@ -185,23 +182,17 @@ r = interact(
 )
 ```
 
-### Known limitation: RLMKit's built-in `vllm` provider still hardcodes `openai/`
+RLMKit prepends `hosted_vllm/` for the `vllm` backend, so this reaches `/v1/chat/completions` like the explicit form above. This is also the path RLM Studio's **vllm** provider entry uses.
 
-RLMKit's built-in `vllm` backend — both `provider="vllm"` in `interact()` and the **vllm** entry in RLM Studio's LLM Provider form — currently hardcodes the LiteLLM prefix to `openai/` at three call sites:
+### Resolved: the built-in `vllm` provider no longer hardcodes `openai/`
 
-- `src/rlmkit/api.py` — `_PROVIDER_PREFIXES["vllm"] = "openai/"`
-- `src/rlmkit/server/routes/providers.py` — per-backend prefix table used by the Studio Provider form
-- `src/rlmkit/server/dependencies.py` — the equivalent table consumed by the request dispatch path
+Previously RLMKit's `vllm` backend prepended `openai/`, so an operator pointing the built-in provider — or RLM Studio's **vllm** entry — at this Spark setup would hit Blocker #4 once LiteLLM was ≥ 1.50, even with every flag in §3 correct. RLM Studio had no in-UI workaround.
 
-An operator who points the built-in `vllm` provider at this Spark setup will therefore still hit Blocker #4 once LiteLLM is ≥ 1.50, even though every flag in §3 is correct.
+Fixed: the prefix is now `hosted_vllm/` in all three tables — `src/rlmkit/api.py`, `src/rlmkit/server/routes/providers.py` (also consumed by `application/services/provider_tester.py`, the **Test Connection** path) and `src/rlmkit/server/dependencies.py`. `tests/test_phase_a_verification.py::TestModelNamePrefixing` asserts all three agree, so a future edit to one table cannot silently re-break the others.
 
-**Workarounds today:**
-- **Python API:** use the `provider="litellm"` pattern above.
-- **RLM Studio:** there is no in-UI workaround; the form's vllm backend goes through the affected code path. Use the Python API for Spark-hosted vLLM until the fix lands, or pin `litellm<1.50`.
+**If you are on an older RLMKit** that still prepends `openai/`, the workarounds are: use the `provider="litellm"` pattern above from the Python API, or pin `litellm<1.50`. RLM Studio has no workaround on those versions.
 
-**Fix (out of scope for this docs change):** flip the three table values from `"openai/"` to `"hosted_vllm/"` and add a regression test that asserts a vLLM multi-turn request lands on `/v1/chat/completions`. Tracked as a follow-up.
-
-**Corollary — this blocks RLM Studio, not every client.** The three call sites above are RLMKit's own prefix tables, so the limitation is scoped to requests that leave RLMKit through LiteLLM. A Claude Code client pointed at vLLM's native Anthropic-compatible endpoint (`--enable-anthropic-api`) takes LiteLLM out of the path entirely, and Blocker #4's cause is LiteLLM's route selection — so that path cannot hit it. Caveat: `--enable-anthropic-api` is version-dependent and is not used anywhere in this repo; verify it exists in your local build (`python -m vllm.entrypoints.openai.api_server --help | grep anthropic`) before relying on it. This narrows the tracked follow-up above and may lower its priority — it does not remove it, and nothing here changes the preceding sentence.
+**Corollary — Blocker #4 itself is unchanged.** The fix is to RLMKit's own prefix tables, so it only covers requests that leave RLMKit through LiteLLM. Blocker #4 remains a real LiteLLM route-selection property, and §9.2 still carries it over for any candidate model. A Claude Code client pointed at vLLM's native Anthropic-compatible endpoint (`--enable-anthropic-api`) takes LiteLLM out of the path entirely and so cannot hit it either. Caveat: `--enable-anthropic-api` is version-dependent and is not used anywhere in this repo; verify it exists in your local build (`python -m vllm.entrypoints.openai.api_server --help | grep anthropic`) before relying on it.
 
 ## 9. Candidate models (UNVERIFIED — 2026-07-27)
 

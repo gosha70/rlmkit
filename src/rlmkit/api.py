@@ -187,8 +187,10 @@ _PROVIDER_PREFIXES: dict[str, str] = {
     "anthropic": "anthropic/",
     "ollama": "ollama/",
     "lmstudio": "openai/",
-    # vLLM exposes an OpenAI-compatible API; LiteLLM routes openai/* to api_base
-    "vllm": "openai/",
+    # vLLM needs hosted_vllm/, not openai/: with LiteLLM >= 1.50 an openai/*
+    # model on a vLLM upstream auto-routes to /v1/responses, which breaks
+    # multi-turn agentic loops. See docs/hosts/dgx-spark-vllm.md §7 Blocker #4.
+    "vllm": "hosted_vllm/",
 }
 
 
