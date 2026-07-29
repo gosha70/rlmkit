@@ -1337,7 +1337,10 @@ class AppState:
             "anthropic": "anthropic/",
             "ollama": "ollama/",
             "lmstudio": "openai/",
-            "vllm": "openai/",
+            # hosted_vllm/, not openai/ — see docs/hosts/dgx-spark-vllm.md §7
+            # Blocker #4. Must stay in sync with the tables in
+            # server/routes/providers.py and api.py.
+            "vllm": "hosted_vllm/",
         }
         prefix = _prefixes.get(provider_key, "")
         if not prefix or model.startswith(prefix):
