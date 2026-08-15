@@ -23,6 +23,7 @@ from rlmkit.application.sandbox_vars import (
     MODE_RLM,
     RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
 )
+from rlmkit.branding import state_dir
 
 
 @dataclass
@@ -128,7 +129,7 @@ BUILTIN_PROFILES: list[RunProfile] = [
 # Persistence
 # ---------------------------------------------------------------------------
 
-_DEFAULT_PROFILES_PATH = Path.home() / ".rlmkit" / "profiles.json"
+_DEFAULT_PROFILES_PATH = state_dir() / "profiles.json"
 
 
 class RunProfileStore:
@@ -192,7 +193,7 @@ class RunProfileStore:
 # Custom system prompt persistence  (~/.rlmkit/system_prompt_custom.json)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_CUSTOM_PROMPTS_PATH = Path.home() / ".rlmkit" / "system_prompt_custom.json"
+_DEFAULT_CUSTOM_PROMPTS_PATH = state_dir() / "system_prompt_custom.json"
 
 
 def load_custom_prompts(path: Path | None = None) -> dict[str, str]:

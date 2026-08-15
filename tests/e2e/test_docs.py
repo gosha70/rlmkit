@@ -82,7 +82,9 @@ class TestDocsEndpoint:
     def test_docs_root_is_not_above_repo(self) -> None:
         # Sanity: resolved docs dir does not escape to the filesystem root.
         assert str(_DOCS_DIR.resolve()) != "/"
-        assert "rlmkit" in str(_DOCS_DIR.resolve()).lower()
+        # The docs dir must live directly under the repo root — identified by
+        # a marker file, not by the checkout directory's name.
+        assert (_DOCS_DIR.resolve().parent / "pyproject.toml").is_file()
 
 
 class TestDocsPathTraversalDefense:

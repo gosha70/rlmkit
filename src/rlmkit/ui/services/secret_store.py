@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, cast
 
+from rlmkit.branding import state_dir
 from rlmkit.ui.data.providers_catalog import get_env_var
 
 # ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ class EnvSecretStore(SecretStore):
 # 2. Local JSON file  (~/.rlmkit/api_keys.json, chmod 600)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_KEYS_PATH = Path.home() / ".rlmkit" / "api_keys.json"
+_DEFAULT_KEYS_PATH = state_dir() / "api_keys.json"
 
 
 class FileSecretStore(SecretStore):

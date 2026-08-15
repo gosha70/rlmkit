@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 from rlmkit.application.dto import RunConfigDTO
 from rlmkit.application.sandbox_vars import MODE_AUTO, MODE_DIRECT, MODE_RAG, MODE_RLM
+from rlmkit.branding import env, env_name, state_dir
 from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 from rlmkit.server.models import (
@@ -55,9 +56,10 @@ def _get_instance_api_key(llm_provider_id: str, backend: str) -> str | None:
 # Providers that default to zero retries (local servers; retries multiply hangs)
 _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio", "vllm"})
 
-# Config lives in ~/.rlmkit/ so the path is stable regardless of CWD.
-# Migrate from legacy .rlmkit_config.json in CWD on first run if present.
-_RLMKIT_DIR = Path.home() / ".rlmkit"
+# Config lives in the product state dir (see rlmkit.branding.state_dir) so
+# the path is stable regardless of CWD.  Migrate from legacy
+# .rlmkit_config.json in CWD on first run if present.
+_RLMKIT_DIR = state_dir()
 _CONFIG_FILE = _RLMKIT_DIR / "config.json"
 _SESSIONS_FILE = _RLMKIT_DIR / "sessions.json"
 _EVALUATIONS_FILE = _RLMKIT_DIR / "evaluations.json"
@@ -406,7 +408,7 @@ class AppState:
     _CYCLE_MAX_WORKERS: int = 5
     # Test-only override for the interval, in seconds (never documented to
     # users).  Set via monkeypatch.setenv in tests — see spec Open Q #3.
-    _INTERVAL_OVERRIDE_ENV: str = "RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE"
+    _INTERVAL_OVERRIDE_ENV: str = env_name("CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE")
 
     _connection_test_logger = logging.getLogger("rlmkit.server.connection_test_thread")
 
@@ -417,7 +419,7 @@ class AppState:
         tests can run cycles at sub-minute frequency without changing the
         user-facing minutes-based knob.
         """
-        override = os.environ.get(self._INTERVAL_OVERRIDE_ENV)
+        override = env("CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE")
         if override:
             try:
                 val = float(override)

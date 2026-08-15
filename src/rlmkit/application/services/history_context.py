@@ -31,6 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from rlmkit.branding import env, env_name
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -42,7 +44,7 @@ _HISTORY_CAP_MIN = 256 * 1024 * 1024  # 256 MB floor
 _HISTORY_CAP_MAX = 4 * 1024 * 1024 * 1024  # 4 GB ceiling
 _HISTORY_CAP_FRACTION = 0.055  # ~5.5% of total RAM
 _HISTORY_CAP_FALLBACK = 4 * 1024 * 1024 * 1024  # fallback if sysconf fails
-_HISTORY_CAP_ENV_VAR = "RLMKIT_HISTORY_MAX_BYTES"
+_HISTORY_CAP_ENV_VAR = env_name("HISTORY_MAX_BYTES")
 
 # Truncate any single user/assistant message in the in-prompt replay to
 # this many characters before token-counting.  Matches the legacy
@@ -348,7 +350,7 @@ def compute_history_cap_bytes() -> int:
     Override by setting the ``RLMKIT_HISTORY_MAX_BYTES`` environment
     variable to an integer byte count.
     """
-    override = os.environ.get(_HISTORY_CAP_ENV_VAR)
+    override = env("HISTORY_MAX_BYTES")
     if override:
         try:
             return max(1, int(override))

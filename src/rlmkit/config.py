@@ -4,12 +4,13 @@
 """Configuration management for RLMKit."""
 
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from rlmkit.branding import CONFIG_FILE_STEM, DIST_NAME, STATE_DIR_NAME, env
 
 from .llm.config import LLMConfig
 
@@ -302,12 +303,12 @@ class RLMConfig:
 
     # Default config file locations (in priority order)
     CONFIG_SEARCH_PATHS = [
-        "./rlmkit_config.yaml",
-        "./rlmkit_config.json",
-        "~/.rlmkit/config.yaml",
-        "~/.rlmkit/config.json",
-        "/etc/rlmkit/config.yaml",
-        "/etc/rlmkit/config.json",
+        f"./{CONFIG_FILE_STEM}.yaml",
+        f"./{CONFIG_FILE_STEM}.json",
+        f"~/{STATE_DIR_NAME}/config.yaml",
+        f"~/{STATE_DIR_NAME}/config.json",
+        f"/etc/{DIST_NAME}/config.yaml",
+        f"/etc/{DIST_NAME}/config.json",
     ]
 
     def __init__(
@@ -352,7 +353,7 @@ class RLMConfig:
             return cls._load_from_file(config_path)
 
         # Try environment variable
-        env_path = os.getenv("RLMKIT_CONFIG_PATH")
+        env_path = env("CONFIG_PATH")
         if env_path and Path(env_path).exists():
             return cls._load_from_file(env_path)
 

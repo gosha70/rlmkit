@@ -19,6 +19,7 @@ from rlmkit.application.sandbox_vars import (
     RLM_DEFAULT_WALL_CLOCK_BUDGET_SECONDS,
 )
 from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmkit.branding import state_dir
 from rlmkit.infrastructure.llm import AnthropicAdapter, OllamaAdapter, OpenAIAdapter
 from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
 from rlmkit.llm import get_llm_client
@@ -81,12 +82,11 @@ class ChatManager:
         Raises:
             ValueError: if no provider is configured or API key is missing
         """
-        from pathlib import Path
 
         from .llm_config_manager import LLMConfigManager
         from .secret_store import resolve_api_key
 
-        config_dir = Path.home() / ".rlmkit"
+        config_dir = state_dir()
         config_manager = LLMConfigManager(config_dir=config_dir)
 
         provider_config = None
@@ -616,11 +616,10 @@ class ChatManager:
             if provider_config.provider != "openai":
                 # Try to find an OpenAI provider key for embeddings
                 import os
-                from pathlib import Path
 
                 from .llm_config_manager import LLMConfigManager, load_env_file
 
-                mgr = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
+                mgr = LLMConfigManager(config_dir=state_dir())
                 openai_cfg = mgr.get_provider_config("openai")
                 if openai_cfg:
                     embedding_api_key = openai_cfg.api_key
@@ -770,11 +769,9 @@ class ChatManager:
         for slot in execution_plan.slots:
             # Auto-generate label if missing
             if not slot.label:
-                from pathlib import Path
-
                 from .llm_config_manager import LLMConfigManager
 
-                mgr = LLMConfigManager(config_dir=Path.home() / ".rlmkit")
+                mgr = LLMConfigManager(config_dir=state_dir())
                 cfg = mgr.get_provider_config(slot.provider_name)
                 model_name = cfg.model if cfg else slot.provider_name
                 mode_label = {MODE_RLM: "RLM", MODE_DIRECT: "Direct", MODE_RAG: "RAG"}[slot.mode]

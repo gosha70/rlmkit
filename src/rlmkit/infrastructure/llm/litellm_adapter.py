@@ -11,13 +11,13 @@ primary reasoning and a cheaper recursive_model for exploration subcalls.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from rlmkit.application.dto import LLMResponseDTO, StreamChunk
+from rlmkit.branding import env, env_name
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 # gate `complete_stream_async()` (Protocol signature change is
 # unconditional) or `complete_stream()` (always walks the shared
 # helper).
-_STREAMED_COMPLETE_ENV_VAR = "RLMKIT_STREAMED_COMPLETE"
+_STREAMED_COMPLETE_ENV_VAR = env_name("STREAMED_COMPLETE")
 
 
 def _streamed_complete_enabled() -> bool:
-    return os.getenv(_STREAMED_COMPLETE_ENV_VAR, "1") != "0"
+    return str(env("STREAMED_COMPLETE", "1")) != "0"
 
 
 @dataclass

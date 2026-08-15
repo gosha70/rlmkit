@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 import threading
 import time
@@ -17,6 +16,7 @@ import webbrowser
 from collections.abc import Sequence
 
 from rlmkit import __version__
+from rlmkit.branding import env, env_name
 from rlmkit.ui_bundle import get_ui_directory
 
 logger = logging.getLogger(__name__)
@@ -47,14 +47,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     studio.add_argument(
         "--host",
-        default=os.environ.get("RLMKIT_HOST", "127.0.0.1"),
-        help="Bind host (default: 127.0.0.1, env: RLMKIT_HOST)",
+        default=env("HOST", "127.0.0.1"),
+        help=f"Bind host (default: 127.0.0.1, env: {env_name('HOST')})",
     )
     studio.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("RLMKIT_PORT", "8000")),
-        help="Bind port (default: 8000, env: RLMKIT_PORT)",
+        default=int(env("PORT", "8000") or "8000"),
+        help=f"Bind port (default: 8000, env: {env_name('PORT')})",
     )
     studio.add_argument(
         "--no-browser",

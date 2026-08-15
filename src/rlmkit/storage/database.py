@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import cast
 
+from rlmkit.branding import state_dir
+
 _SCHEMA_VERSION = 1
 
 _SCHEMA_SQL = """\
@@ -81,8 +83,8 @@ CREATE INDEX IF NOT EXISTS idx_vectors_content_hash
 
 
 def get_default_db_path() -> Path:
-    """Return the default database path: ~/.rlmkit/conversations.db"""
-    return Path.home() / ".rlmkit" / "conversations.db"
+    """Return the default database path: ``<state dir>/conversations.db``."""
+    return Path(state_dir()) / "conversations.db"
 
 
 class Database:

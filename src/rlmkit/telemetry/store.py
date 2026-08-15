@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from rlmkit.branding import state_dir
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -204,13 +206,13 @@ class TelemetryStore:
 
     Args:
         db_path: Path to the SQLite database file.
-            Defaults to ``~/.rlmkit/telemetry.db``.
+            Defaults to ``<state dir>/telemetry.db``.
             Use ``":memory:"`` for tests.
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         if db_path is None:
-            db_path = Path.home() / ".rlmkit" / "telemetry.db"
+            db_path = state_dir() / "telemetry.db"
         self._db_path = str(db_path)
         self._conn: sqlite3.Connection | None = None
         # Serializes all reads and writes so the store is safe to use from

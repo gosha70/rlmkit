@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from rlmkit.branding import state_dir
+
 from .models import LLMProviderConfig
 
 
@@ -60,7 +62,7 @@ class LLMConfigManager:
 
     def __init__(self, config_dir: Path | None = None):
         if config_dir is None:
-            config_dir = Path.home() / ".rlmkit"
+            config_dir = state_dir()
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True, mode=0o700)
         self._configs: dict[str, LLMProviderConfig] = {}

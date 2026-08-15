@@ -19,9 +19,10 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import os
 
 import uvicorn
+
+from rlmkit.branding import env, env_name
 
 _parser = argparse.ArgumentParser(
     prog="python -m rlmkit.server",
@@ -29,14 +30,14 @@ _parser = argparse.ArgumentParser(
 )
 _parser.add_argument(
     "--host",
-    default=os.environ.get("RLMKIT_HOST", "127.0.0.1"),
-    help="Bind host (default: 127.0.0.1, env: RLMKIT_HOST)",
+    default=env("HOST", "127.0.0.1"),
+    help=f"Bind host (default: 127.0.0.1, env: {env_name('HOST')})",
 )
 _parser.add_argument(
     "--port",
     type=int,
-    default=int(os.environ.get("RLMKIT_PORT", "8000")),
-    help="Bind port (default: 8000, env: RLMKIT_PORT)",
+    default=int(env("PORT", "8000") or "8000"),
+    help=f"Bind port (default: 8000, env: {env_name('PORT')})",
 )
 _parser.add_argument(
     "--reload",
