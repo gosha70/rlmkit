@@ -49,5 +49,8 @@ AGENTS.md
 /.codex
 /specs/*
 !/specs/dgx-spark-docs-refresh/
+!/specs/rebrand-rlm-studio/
+!/specs/interop-official-rlm/
+!/specs/benchmarks-v1/
 /.git-rewrite
 .env.test
