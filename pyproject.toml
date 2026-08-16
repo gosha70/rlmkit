@@ -37,6 +37,7 @@ dependencies = [
     "RestrictedPython>=7.0",
     "tenacity>=9.1.2",
     "pygments>=2.20.0",
+    "requests>=2.33.0",  # CVE-2026-25645 fix; imported by rlmstudio.llm.ollama_client (direct provider="ollama" path) — explicit, not just transitive via tiktoken
 ]
 
 [project.optional-dependencies]
@@ -58,10 +59,11 @@ dev = [
     "pip>=26.1.2",  # PYSEC-2026-196 fix; pip is installed in the venv and scanned by pip-audit
     "pip-audit>=2.7.0",
     "pyarrow>=23.0.1",  # PYSEC-2026-113 fix (transitive via litellm)
-    "requests>=2.33.0",  # CVE-2026-25645 fix; transitive via pip-audit/tiktoken
 ]
 
-server = [
+# `studio` = everything the FastAPI backend + bundled UI need. This is the
+# extra a user installs: `pip install "rlm-studio[studio]" && rlm-studio studio`.
+studio = [
     "fastapi>=0.138.0",  # >=0.138.0 drops starlette<1.0.0 upper-bound; required for starlette 1.x security fixes
     "starlette>=1.3.1",  # form() limits ignored DoS (HIGH, 1.3.1); StaticFiles SSRF via UNC paths on Windows (HIGH, 1.1.0); arbitrary HTTP method dispatch via getattr (MEDIUM, 1.1.0); URL hostname poisoning (LOW, 1.3.0)
     "uvicorn>=0.27.0",
@@ -71,24 +73,29 @@ server = [
     "lxml>=6.1.0",  # CVE-2026-41066 fix (transitive via python-docx)
 ]
 
-ui = [
-    "streamlit>=1.55.0",  # CVE-2026-SSRF fix (NTLM credential exposure on Windows)
-    "gitpython>=3.1.58",  # GHSA-jm78-9fvv-mhgr (3.1.58); GHSA-rpm5-65cw-6hj4, GHSA-x2qx-6953-8485 (3.1.47); CVE-2026-44244 (config_writer().set_value() RCE via core.hooksPath) fix in 3.1.49; GHSA-2f96-g7mh-g2hx, GHSA-v396-v7q4-x2qj, GHSA-956x-8gvw-wg5v (3.1.51); GHSA-3rp5-jjmw-4wv2 (3.1.53); GHSA-fjr4-x663-mwxc, GHSA-6p8h-3wgx-97gf, GHSA-r9mr-m37c-5fr3 (3.1.54); GHSA-94p4-4cq8-9g67 (3.1.55) — not reachable in RLMKit (transitive via streamlit only; no first-party imports)
-    "pillow>=12.3.0",  # PYSEC-2026-2253..2257, PYSEC-2026-3451..3454, PYSEC-2026-3493..3496 fixed in 12.3.0 (transitive via streamlit)
-    "plotly>=5.18.0",
-    # External LLM providers
-    "openai>=1.0.0",
-    "anthropic>=0.7.0",
-    "ollama>=0.1.0",
-    "requests>=2.31.0",  # For HTTP-based providers (LM Studio)
+# Backward-compat alias for the pre-rename `server` extra (one release).
+server = [
+    "rlm-studio[studio]",
 ]
+
+# Direct-provider SDKs for the legacy non-LiteLLM clients
+# (rlmstudio.llm.{openai,anthropic,ollama}_client / provider= on the public
+# client). `openai` is already a hard dependency of litellm and the Ollama
+# client uses `requests` (base dep), so only anthropic needs an explicit pin.
+providers = [
+    "anthropic>=0.7.0",
+]
+
+# Optional engines for the Compare matrix (see specs/interop-official-rlm).
+# Intentionally empty until the official-RLM engine lands.
+interop = []
 
 eval = [
     "openai>=1.0.0",  # For embeddings + generation
 ]
 
 all = [
-    "rlm-studio[dev,server,ui,eval]",
+    "rlm-studio[studio,providers,eval,interop]",
 ]
 
 [project.urls]
@@ -178,20 +185,7 @@ module = "tests.*"
 disallow_untyped_defs = false
 
 [tool.coverage.run]
-omit = [
-    # These files call Streamlit APIs (st.*, switch_page, session_state) and
-    # require a live Streamlit runtime to import. The `ui` extra is not
-    # installed in the dev+server test environment, so they cannot be measured
-    # here. To cover them: uv sync --extra ui && pytest --cov ...
-    #
-    # Pure-Python modules under ui/ (data/, services/, utils/, file_processor)
-    # are NOT omitted — they are imported by the server layer and are measured.
-    "src/rlmstudio/ui/app.py",
-    "src/rlmstudio/ui/charts.py",
-    "src/rlmstudio/ui/session.py",
-    "src/rlmstudio/ui/pages/*",
-    "src/rlmstudio/ui/components/*",
-]
+omit = []
 
 [tool.bandit]
 exclude_dirs = ["tests", "poc", "notebooks"]

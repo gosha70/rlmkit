@@ -1,15 +1,11 @@
 # Copyright (c) EGOGE - All Rights Reserved.
 # This software may be used and distributed according to the terms of the MIT license.
 
-"""User interface components for RLMKit.
+"""Shared UI-facing services and data for RLM Studio.
 
-This package provides:
-- Streamlit web interface for interactive testing
-- File upload and processing utilities
-- Chart and visualization components
-- Results display and export functionality
+Historical note: this package once hosted a Streamlit prototype. That UI
+was removed in favour of the Next.js RLM Studio front-end (``frontend/``,
+served by FastAPI); what remains here is pure-Python code the server
+depends on — ``services/`` (secret / profile stores, chat manager,
+analytics) and ``data/`` (the provider catalog).
 """
-
-from rlmstudio.ui.file_processor import FileProcessor, process_file
-
-__all__ = ["FileProcessor", "process_file"]

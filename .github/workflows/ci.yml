@@ -48,7 +48,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --extra dev --extra server
+      - run: uv sync --extra dev --extra studio
       - name: Run tests with coverage (non-UI runtime; ui/* excluded — see pyproject.toml)
         # --runslow includes spawn-heavy tests like TestTopLevelScriptEntrypoint
         # which are gated by default for local dev speed but MUST run in CI.
@@ -91,10 +91,9 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      # --extra ui pulls streamlit + gitpython into the audit surface so
-      # transitive CVEs in that extra are caught here (the test-backend job
-      # intentionally omits ui to keep the runtime lean).
-      - run: uv sync --extra dev --extra server --extra ui
+      # Audit the full user-facing surface (`all` = studio + eval + interop)
+      # plus the dev toolchain.
+      - run: uv sync --extra dev --extra all
       - name: Bandit security scan
         run: uv run bandit -r src/rlmstudio/server/ src/rlmstudio/application/ src/rlmstudio/domain/ src/rlmstudio/infrastructure/ -c pyproject.toml
       - name: pip-audit vulnerability scan
@@ -119,6 +118,6 @@ jobs:
       - uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      - run: uv sync --extra server
+      - run: uv sync --extra studio
       - name: Verify package imports
         run: uv run python -c "from rlmstudio.server.app import app; print('Server OK')"
