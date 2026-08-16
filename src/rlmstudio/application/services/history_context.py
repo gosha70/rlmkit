@@ -347,7 +347,7 @@ def compute_history_cap_bytes() -> int:
     of "almost-infinite" chat memory without letting the subprocess
     round-trip become a scalability problem.
 
-    Override by setting the ``RLMKIT_HISTORY_MAX_BYTES`` environment
+    Override by setting the ``RLM_STUDIO_HISTORY_MAX_BYTES`` environment
     variable to an integer byte count.
     """
     override = env("HISTORY_MAX_BYTES")

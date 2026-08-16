@@ -108,7 +108,7 @@ rlm-studio = "rlmstudio.cli.main:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-rlmstudio = ["rlmkit_config.default.yaml"]
+rlmstudio = ["rlm_studio_config.default.yaml"]
 "rlmstudio.prompts" = ["*.yaml", "*.yml", "*.json"]
 # Bundled Studio UI — populated at release time by the frontend static
 # export. The `_ui/__init__.py` placeholder is always present so the

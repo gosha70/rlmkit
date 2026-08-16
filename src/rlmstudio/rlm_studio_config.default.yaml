@@ -1,9 +1,10 @@
-# RLMKit Configuration Example
+# RLM Studio Configuration Example
 # Copy this file to one of the following locations and customize:
-#   - ./rlmkit_config.yaml (project directory)
-#   - ~/.rlmkit/config.yaml (user home)
-#   - /etc/rlmkit/config.yaml (system-wide)
-# Or set RLMKIT_CONFIG_PATH environment variable
+#   - ./rlm_studio_config.yaml (project directory)
+#   - ~/.rlm-studio/config.yaml (user home)
+#   - /etc/rlm-studio/config.yaml (system-wide)
+# Or set the RLM_STUDIO_CONFIG_PATH environment variable
+# (legacy names ./rlmkit_config.yaml, ~/.rlmkit/, RLMKIT_CONFIG_PATH are still honoured for one release)
 
 # Security Configuration
 security:

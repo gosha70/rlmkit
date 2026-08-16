@@ -284,11 +284,11 @@ class TestExportJsonl:
         assert metadata["max_iterations"] == len(lines) - 1  # == 1 here
         assert metadata["environment_type"] == "subprocess"
         # Non-standard extras are allowed (upstream ignores unknown fields)
-        assert metadata["rlmkit_query"] == "test query"
-        assert metadata["rlmkit_total_tokens"] == 100
+        assert metadata["rlm_studio_query"] == "test query"
+        assert metadata["rlm_studio_total_tokens"] == 100
         # The raw step count is still available as an extra, for
         # cross-referencing with the telemetry store.
-        assert metadata["rlmkit_raw_steps_count"] == 1
+        assert metadata["rlm_studio_raw_steps_count"] == 1
 
     def test_iteration_line_shape(self, store: TelemetryStore) -> None:
         """Each iteration line must have the upstream RLMIteration fields."""
@@ -386,7 +386,7 @@ class TestExportJsonl:
         # guard for the "metadata says 3, body has 2" inconsistency.
         metadata = json.loads(lines[0])
         assert metadata["max_iterations"] == 2
-        assert metadata["rlmkit_raw_steps_count"] == 3
+        assert metadata["rlm_studio_raw_steps_count"] == 3
 
         iter0 = json.loads(lines[1])
         # Iter 0 should have 2 code blocks: one from inspect (empty result),

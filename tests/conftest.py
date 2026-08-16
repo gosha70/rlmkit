@@ -43,3 +43,18 @@ def pytest_collection_modifyitems(
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip_slow)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Isolate every test process from the developer's real state directory.
+
+    ``rlmstudio.branding.state_dir()`` honours ``RLM_STUDIO_DIR``; pointing
+    it at a per-session temp dir before any ``rlmstudio`` module is imported
+    guarantees the suite never reads, writes, or migrates ``~/.rlm-studio``
+    / ``~/.rlmkit``.  Tests that need the *default* resolution monkeypatch
+    the variable away themselves.
+    """
+    import os
+    import tempfile
+
+    os.environ.setdefault("RLM_STUDIO_DIR", tempfile.mkdtemp(prefix="rlm-studio-test-state-"))

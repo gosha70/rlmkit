@@ -47,9 +47,9 @@ def _mock_probe(provider: LLMProviderConfig, timeout_s: float) -> ProviderTestRe
 def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppState:
     """Real AppState with disk persistence redirected to tmp_path."""
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr(dependencies, "_RLMKIT_DIR", tmp_path)
+    monkeypatch.setattr(dependencies, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(dependencies, "_CONFIG_FILE", config_path)
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
     state = AppState(load_from_disk=False)
     yield state
     state._stop_connection_testing()

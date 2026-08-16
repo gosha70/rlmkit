@@ -242,7 +242,7 @@ def _persist_api_key(provider_name: str, api_key: str) -> None:
 
     Prefers the OS keyring (encrypted, no plain-text file) when the
     ``keyring`` package is installed; falls back to the JSON file store
-    (~/.rlmkit/api_keys.json, chmod 600).  Both backends also inject the
+    (<state dir>/api_keys.json, chmod 600).  Both backends also inject the
     key into ``os.environ`` so the current process can use it immediately.
     """
     if KeyringSecretStore.is_available():
@@ -260,7 +260,7 @@ async def save_provider(
     """Save provider configuration and persist the API key via SecretStore.
 
     Uses the OS keyring when available; falls back to the JSON file store
-    (~/.rlmkit/api_keys.json).  Also persists runtime_settings and enabled
+    (<state dir>/api_keys.json).  Also persists runtime_settings and enabled
     state in AppState.config.
     """
     entry = PROVIDERS_BY_KEY.get(provider_name)

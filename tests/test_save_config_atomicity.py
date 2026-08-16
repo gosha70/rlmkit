@@ -25,7 +25,7 @@ from rlmstudio.server.dependencies import AppState
 def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect _CONFIG_FILE to a temp location so tests never touch ~/.rlmkit."""
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr(dependencies, "_RLMKIT_DIR", tmp_path)
+    monkeypatch.setattr(dependencies, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(dependencies, "_CONFIG_FILE", config_path)
     return config_path
 

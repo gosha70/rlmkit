@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from rlmstudio.branding import PRODUCT_NAME
+from rlmstudio.branding import PRODUCT_NAME, migrate_legacy_state
 from rlmstudio.server.dependencies import get_state
 from rlmstudio.server.models import HealthResponse
 from rlmstudio.server.routes import (
@@ -90,9 +90,12 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-        # Startup: nothing to do here — AppState constructs lazily via
-        # get_state().  The background connection-test thread starts
+        # Startup: this is the one place the legacy state directory is
+        # copied forward (explicit boot boundary — never on import, in
+        # tests, or in `version`).  AppState itself constructs lazily via
+        # get_state(); the background connection-test thread starts
         # automatically in AppState.__init__ if configured.
+        migrate_legacy_state()
         yield
         # Shutdown: stop the scheduled-connection-testing thread before
         # process teardown.  Daemon threads die with the process

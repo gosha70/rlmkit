@@ -35,25 +35,37 @@ CLI_NAME = "rlm-studio"
 
 # --- Environment variables --------------------------------------------------
 
-ENV_PREFIX = "RLMKIT_"
+ENV_PREFIX = "RLM_STUDIO_"
 """Canonical prefix for every environment variable the product reads."""
 
-LEGACY_ENV_PREFIXES: tuple[str, ...] = ()
+LEGACY_ENV_PREFIXES: tuple[str, ...] = ("RLMKIT_",)
 """Older prefixes still honoured (with a one-time deprecation warning)."""
 
 # --- On-disk state ----------------------------------------------------------
 
-STATE_DIR_NAME = ".rlmkit"
+STATE_DIR_NAME = ".rlm-studio"
 """Directory under ``$HOME`` that holds config, secrets and telemetry."""
 
-LEGACY_STATE_DIR_NAMES: tuple[str, ...] = ()
+LEGACY_STATE_DIR_NAMES: tuple[str, ...] = (".rlmkit",)
 """Older state-directory names; contents are copied forward on first boot."""
 
 STATE_DIR_ENV_SUFFIX = "DIR"
 """``<ENV_PREFIX>DIR`` overrides the state directory location."""
 
-CONFIG_FILE_STEM = "rlmkit_config"
+CONFIG_FILE_STEM = "rlm_studio_config"
 """Base name of the CWD-local config file (``./<stem>.yaml`` / ``.json``)."""
+
+LEGACY_CONFIG_FILE_STEMS: tuple[str, ...] = ("rlmkit_config",)
+"""Older CWD-local config stems, searched after the canonical one."""
+
+KEYRING_SERVICE = "rlm-studio"
+"""Service name under which provider API keys are stored in the OS keyring."""
+
+LEGACY_KEYRING_SERVICES: tuple[str, ...] = ("rlmkit",)
+"""Older keyring service names; read as a fallback and re-saved under the new one."""
+
+SANDBOX_IMAGE_NAME = "rlm-studio-sandbox"
+"""Default Docker image tag for the sandbox (built from docker/Dockerfile.sandbox)."""
 
 
 # --- Environment access -----------------------------------------------------
@@ -64,7 +76,7 @@ _warned_legacy_env: set[str] = set()
 def env_name(suffix: str) -> str:
     """Return the canonical environment-variable name for ``suffix``.
 
-    ``env_name("PORT")`` → ``"RLMKIT_PORT"`` (whatever the current prefix is).
+    ``env_name("PORT")`` → ``"RLM_STUDIO_PORT"`` (whatever the current prefix is).
     """
     return f"{ENV_PREFIX}{suffix}"
 
@@ -96,40 +108,46 @@ def env(suffix: str, default: str | None = None) -> str | None:
 
 # --- State directory --------------------------------------------------------
 
-_migration_attempted: set[Path] = set()
 
-
-def state_dir(*, create: bool = False) -> Path:
-    """Return the product's state directory.
+def state_dir() -> Path:
+    """Return the product's state directory. **Pure**: no filesystem access.
 
     Resolution order:
 
     1. ``<ENV_PREFIX>DIR`` (or a legacy-prefixed equivalent) if set.
     2. ``$HOME/<STATE_DIR_NAME>``.
 
-    When the canonical directory does not exist yet but a legacy-named one
-    does, the legacy contents are **copied** (never moved or deleted) into the
-    canonical location the first time this function is called in a process.
-    Pass ``create=True`` to ``mkdir -p`` the resolved directory.
+    Nothing is created or copied here — callers ``mkdir`` when they write,
+    and the one-time legacy migration is a separate, explicit step
+    (:func:`migrate_legacy_state`) that only real application boot paths
+    call.  Importing a module, running tests, ``rlm-studio version`` or
+    using the library passively must never mutate the filesystem.
     """
     override = env(STATE_DIR_ENV_SUFFIX)
     if override:
-        target = Path(override).expanduser()
-    else:
-        target = Path.home() / STATE_DIR_NAME
-        _migrate_legacy_state(target)
-    if create:
-        target.mkdir(parents=True, exist_ok=True)
-    return target
+        return Path(override).expanduser()
+    return Path.home() / STATE_DIR_NAME
 
 
-def _migrate_legacy_state(target: Path) -> None:
-    """Copy a legacy state directory forward into ``target`` once per process."""
-    if target in _migration_attempted:
-        return
-    _migration_attempted.add(target)
+def migrate_legacy_state() -> Path | None:
+    """Copy a legacy state directory forward into :func:`state_dir` once.
+
+    Intended to be called from application boot paths only (server
+    lifespan startup — which covers ``rlm-studio studio``,
+    ``python -m rlmstudio.server``, uvicorn and Docker).  It is a no-op
+    when the canonical directory already exists, when the location is
+    overridden via ``<ENV_PREFIX>DIR``, or when no legacy directory is
+    present.  Legacy contents are **copied**, never moved or deleted.
+
+    Returns:
+        The legacy directory that was copied, or ``None`` if nothing was
+        migrated.
+    """
+    if env(STATE_DIR_ENV_SUFFIX):
+        return None
+    target = state_dir()
     if target.exists():
-        return
+        return None
     for legacy_name in LEGACY_STATE_DIR_NAMES:
         legacy_dir = target.parent / legacy_name
         if not legacy_dir.is_dir():
@@ -138,11 +156,12 @@ def _migrate_legacy_state(target: Path) -> None:
             shutil.copytree(legacy_dir, target, dirs_exist_ok=True)
         except OSError as exc:  # pragma: no cover - defensive; surfaced in logs
             logger.warning("Could not copy legacy state from %s to %s: %s", legacy_dir, target, exc)
-            return
+            return None
         logger.info(
             "Copied %s state from %s to %s (the old directory was left untouched)",
             PRODUCT_NAME,
             legacy_dir,
             target,
         )
-        return
+        return legacy_dir
+    return None

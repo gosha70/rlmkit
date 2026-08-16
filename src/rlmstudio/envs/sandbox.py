@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from rlmstudio.branding import SANDBOX_IMAGE_NAME
 from rlmstudio.config import SecurityConfig
 from rlmstudio.core.errors import ExecutionError, SecurityError
 
@@ -201,7 +202,7 @@ class DockerExecutor:
     - Non-root user execution
 
     Attributes:
-        image_name: Docker image to use (default: rlmkit-sandbox)
+        image_name: Docker image to use (default: ``SANDBOX_IMAGE_NAME``)
         memory_limit: Memory limit (e.g., "512m", "1g")
         cpu_limit: CPU limit (e.g., "1" for 1 core)
         timeout: Execution timeout in seconds
@@ -210,7 +211,7 @@ class DockerExecutor:
 
     def __init__(
         self,
-        image_name: str = "rlmkit-sandbox",
+        image_name: str = SANDBOX_IMAGE_NAME,
         memory_limit: str = "512m",
         cpu_limit: str = "1",
         timeout: int = 30,

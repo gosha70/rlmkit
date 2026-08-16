@@ -342,7 +342,7 @@ class LiteLLMAdapter:
     def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Generate a completion using LiteLLM.
 
-        When ``RLMKIT_STREAMED_COMPLETE`` is set and not "0" (the
+        When ``RLM_STUDIO_STREAMED_COMPLETE`` is set and not "0" (the
         default), the call is issued with ``stream=True`` under the
         hood so that TTFT and decode_ms can be measured; the iterator
         is accumulated into a single DTO. When the flag is "0", the
@@ -540,7 +540,7 @@ class LiteLLMAdapter:
     async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
         """Async completion using ``litellm.acompletion``.
 
-        When ``RLMKIT_STREAMED_COMPLETE`` is set and not "0" (the
+        When ``RLM_STUDIO_STREAMED_COMPLETE`` is set and not "0" (the
         default), the call is issued with ``stream=True`` so that TTFT
         and decode_ms can be measured; the async iterator is
         accumulated into a single DTO. When the flag is "0", the

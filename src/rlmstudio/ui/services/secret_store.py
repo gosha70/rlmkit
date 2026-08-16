@@ -5,7 +5,7 @@ SecretStore — Centralized API key persistence with explicit storage policy.
 
 Three implementations:
   - EnvSecretStore:     reads from environment variables only (never writes)
-  - FileSecretStore:    reads/writes ~/.rlmkit/api_keys.json  (chmod 600)
+  - FileSecretStore:    reads/writes <state dir>/api_keys.json  (chmod 600)
   - KeyringSecretStore: uses the `keyring` library (optional dependency)
 """
 
@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, cast
 
-from rlmstudio.branding import state_dir
+from rlmstudio.branding import KEYRING_SERVICE, LEGACY_KEYRING_SERVICES, state_dir
 from rlmstudio.ui.data.providers_catalog import get_env_var
 
 # ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ class EnvSecretStore(SecretStore):
 
 
 # ---------------------------------------------------------------------------
-# 2. Local JSON file  (~/.rlmkit/api_keys.json, chmod 600)
+# 2. Local JSON file  (<state dir>/api_keys.json, chmod 600)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_KEYS_PATH = state_dir() / "api_keys.json"
@@ -137,7 +137,7 @@ class FileSecretStore(SecretStore):
 # 3. System keyring (optional dependency)
 # ---------------------------------------------------------------------------
 
-_KEYRING_SERVICE = "rlmstudio"
+_KEYRING_SERVICE = KEYRING_SERVICE
 
 
 class KeyringSecretStore(SecretStore):
@@ -159,7 +159,16 @@ class KeyringSecretStore(SecretStore):
         import keyring
 
         result = keyring.get_password(_KEYRING_SERVICE, provider)
-        return str(result) if result is not None else None
+        if result is not None:
+            return str(result)
+        # Fall back to keys saved under an older service name and migrate
+        # them forward so the next read hits the canonical service.
+        for legacy_service in LEGACY_KEYRING_SERVICES:
+            legacy = keyring.get_password(legacy_service, provider)
+            if legacy is not None:
+                keyring.set_password(_KEYRING_SERVICE, provider, str(legacy))
+                return str(legacy)
+        return None
 
     def set(self, provider: str, key: str) -> None:
         import keyring

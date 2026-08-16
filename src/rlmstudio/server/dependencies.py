@@ -59,11 +59,11 @@ _LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "lmstudio", "vllm"})
 # Config lives in the product state dir (see rlmstudio.branding.state_dir) so
 # the path is stable regardless of CWD.  Migrate from legacy
 # .rlmkit_config.json in CWD on first run if present.
-_RLMKIT_DIR = state_dir()
-_CONFIG_FILE = _RLMKIT_DIR / "config.json"
-_SESSIONS_FILE = _RLMKIT_DIR / "sessions.json"
-_EVALUATIONS_FILE = _RLMKIT_DIR / "evaluations.json"
-_FILES_FILE = _RLMKIT_DIR / "files.json"
+_STATE_DIR = state_dir()
+_CONFIG_FILE = _STATE_DIR / "config.json"
+_SESSIONS_FILE = _STATE_DIR / "sessions.json"
+_EVALUATIONS_FILE = _STATE_DIR / "evaluations.json"
+_FILES_FILE = _STATE_DIR / "files.json"
 _LEGACY_CONFIG_FILE = Path(".rlmkit_config.json")
 _LEGACY_SESSIONS_FILE = Path(".rlmkit_sessions.json")
 _LEGACY_EVALUATIONS_FILE = Path(".rlmkit_evaluations.json")
@@ -168,14 +168,14 @@ class AppState:
     def _load_config(self) -> None:
         """Load persisted config from disk if available.
 
-        Checks ~/.rlmkit/config.json first.  If absent, migrates from the
+        Checks <state dir>/config.json first.  If absent, migrates from the
         legacy CWD-relative .rlmkit_config.json (created by older versions).
         """
         config_path = _CONFIG_FILE
         if not config_path.exists() and _LEGACY_CONFIG_FILE.exists():
             # Migrate: copy legacy file to the new home-dir location and remove it
             try:
-                _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+                _STATE_DIR.mkdir(parents=True, exist_ok=True)
                 config_path.write_text(_LEGACY_CONFIG_FILE.read_text())
                 _LEGACY_CONFIG_FILE.unlink()
                 logger.info("Migrated config from %s to %s", _LEGACY_CONFIG_FILE, config_path)
@@ -1039,7 +1039,7 @@ class AppState:
     def _save_config_locked(self) -> None:
         """Do the actual write. MUST be called with ``_config_lock`` held."""
         try:
-            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+            _STATE_DIR.mkdir(parents=True, exist_ok=True)
             config_dump = self.config.model_dump()
             # Filter out ephemeral CPs from the persisted chat_providers list.
             config_dump["chat_providers"] = [
@@ -1116,7 +1116,7 @@ class AppState:
         sessions_path = _SESSIONS_FILE
         if not sessions_path.exists() and _LEGACY_SESSIONS_FILE.exists():
             try:
-                _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+                _STATE_DIR.mkdir(parents=True, exist_ok=True)
                 sessions_path.write_text(_LEGACY_SESSIONS_FILE.read_text())
                 _LEGACY_SESSIONS_FILE.unlink()
                 logger.info("Migrated sessions from %s to %s", _LEGACY_SESSIONS_FILE, sessions_path)
@@ -1144,7 +1144,7 @@ class AppState:
     def save_sessions(self) -> None:
         """Persist sessions to disk (most recent N only)."""
         try:
-            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+            _STATE_DIR.mkdir(parents=True, exist_ok=True)
             # Sort by updated_at descending and cap
             sorted_sessions = sorted(
                 self.sessions.values(),
@@ -1205,7 +1205,7 @@ class AppState:
         so the on-disk JSON never grows unbounded on long-running servers.
         """
         try:
-            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+            _STATE_DIR.mkdir(parents=True, exist_ok=True)
             sorted_files = sorted(
                 self.files.values(),
                 key=lambda f: f.created_at,
@@ -1243,7 +1243,7 @@ class AppState:
         evals_path = _EVALUATIONS_FILE
         if not evals_path.exists() and _LEGACY_EVALUATIONS_FILE.exists():
             try:
-                _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+                _STATE_DIR.mkdir(parents=True, exist_ok=True)
                 evals_path.write_text(_LEGACY_EVALUATIONS_FILE.read_text())
                 _LEGACY_EVALUATIONS_FILE.unlink()
                 logger.info(
@@ -1270,7 +1270,7 @@ class AppState:
     def save_evaluations(self) -> None:
         """Persist evaluations to disk."""
         try:
-            _RLMKIT_DIR.mkdir(parents=True, exist_ok=True)
+            _STATE_DIR.mkdir(parents=True, exist_ok=True)
             _EVALUATIONS_FILE.write_text(json.dumps(self.evaluations, indent=2, default=str))
         except Exception as exc:
             logger.warning("Failed to save evaluations: %s", exc)

@@ -672,15 +672,15 @@ class TelemetryStore:
             # Non-standard extras — the visualizer's parseJSONL ignores
             # unknown fields, and keeping them lets us round-trip without
             # losing telemetry context.
-            "rlmkit_query": detail.query,
-            "rlmkit_success": detail.success,
-            "rlmkit_total_tokens": detail.total_tokens,
-            "rlmkit_total_cost": detail.total_cost,
-            "rlmkit_elapsed_seconds": detail.elapsed_seconds,
+            "rlm_studio_query": detail.query,
+            "rlm_studio_success": detail.success,
+            "rlm_studio_total_tokens": detail.total_tokens,
+            "rlm_studio_total_cost": detail.total_cost,
+            "rlm_studio_elapsed_seconds": detail.elapsed_seconds,
             # The raw (pre-grouping) step count is still useful for
             # cross-referencing against the telemetry store, so keep it
             # as a non-standard extra.
-            "rlmkit_raw_steps_count": detail.steps_count,
+            "rlm_studio_raw_steps_count": detail.steps_count,
         }
         lines.append(json.dumps(metadata))
 

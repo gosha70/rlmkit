@@ -10,7 +10,13 @@ from typing import Any
 
 import yaml
 
-from rlmstudio.branding import CONFIG_FILE_STEM, DIST_NAME, STATE_DIR_NAME, env
+from rlmstudio.branding import (
+    CONFIG_FILE_STEM,
+    DIST_NAME,
+    LEGACY_CONFIG_FILE_STEMS,
+    STATE_DIR_NAME,
+    env,
+)
 
 from .llm.config import LLMConfig
 
@@ -305,6 +311,7 @@ class RLMConfig:
     CONFIG_SEARCH_PATHS = [
         f"./{CONFIG_FILE_STEM}.yaml",
         f"./{CONFIG_FILE_STEM}.json",
+        *[f"./{stem}.{ext}" for stem in LEGACY_CONFIG_FILE_STEMS for ext in ("yaml", "json")],
         f"~/{STATE_DIR_NAME}/config.yaml",
         f"~/{STATE_DIR_NAME}/config.json",
         f"/etc/{DIST_NAME}/config.yaml",
@@ -339,7 +346,7 @@ class RLMConfig:
 
         Search order:
         1. Explicit config_path parameter
-        2. RLMKIT_CONFIG_PATH environment variable
+        2. RLM_STUDIO_CONFIG_PATH environment variable (legacy RLMKIT_CONFIG_PATH honoured)
         3. Default search paths (project, user home, system)
 
         Args:

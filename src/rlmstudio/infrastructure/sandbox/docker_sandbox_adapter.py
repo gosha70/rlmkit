@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from rlmstudio.application.dto import ExecutionResultDTO
+from rlmstudio.branding import SANDBOX_IMAGE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class DockerSandboxAdapter:
 
     def __init__(
         self,
-        image_name: str = "rlmkit-sandbox",
+        image_name: str = SANDBOX_IMAGE_NAME,
         memory_limit: str = "512m",
         cpu_limit: str = "1",
         timeout: int = 30,

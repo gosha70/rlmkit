@@ -11,7 +11,7 @@ the spec invariants from doc_internal/specs/scheduled-connection-testing.md:
   provider.
 - Thread dies cleanly via _stop_connection_testing.
 
-Uses the RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE env var so
+Uses the RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE env var so
 cycles happen at ~0.3s instead of the minutes-based user-facing knob.
 Always set via monkeypatch.setenv to avoid pytest-xdist cross-worker
 contamination (spec Open Q #3).
@@ -43,7 +43,7 @@ def _result(status: str) -> ProviderTestResult:
 @pytest.fixture
 def fast_cycle_state(monkeypatch: pytest.MonkeyPatch) -> AppState:
     """AppState with a ~0.3s background cycle and three mock providers."""
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
     state = AppState(load_from_disk=False)
     state.config.llm_providers = [
         LLMProviderConfig(
@@ -140,7 +140,7 @@ def test_stop_during_running_cycle_discards_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stopping mid-cycle drops in-flight results rather than persisting them."""
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.2")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.2")
     state = AppState(load_from_disk=False)
     state.config.llm_providers = [
         LLMProviderConfig(
@@ -194,7 +194,7 @@ def test_config_interval_change_restarts_thread(
 ) -> None:
     """Changing the interval via restart_connection_testing rebinds the
     thread to the new interval.  The old thread must be fully joined."""
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
     state = AppState(load_from_disk=False)
     state.save_config = lambda: None  # type: ignore[assignment]
     try:
@@ -223,7 +223,7 @@ def test_adding_provider_mid_run_is_picked_up_next_cycle(
     without it, a server that boots with zero providers would never test
     anyone.
     """
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
     state = AppState(load_from_disk=False)
     state.save_config = lambda: None  # type: ignore[assignment]
     tested_ids: list[str] = []

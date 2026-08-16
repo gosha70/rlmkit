@@ -17,7 +17,7 @@ class SQLiteStorageAdapter:
 
     Args:
         db_path: Path to the SQLite database file. If None, uses the
-            default path (~/.rlmkit/conversations.db).
+            default path (``<state dir>/conversations.db``, i.e. ~/.rlm-studio/).
     """
 
     def __init__(self, db_path: str | None = None) -> None:

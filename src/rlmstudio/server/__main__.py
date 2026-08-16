@@ -12,8 +12,8 @@ Usage::
     uv run python -m rlmstudio.server --host 0.0.0.0 --port 9000 --reload
 
     # env vars (overridden by CLI flags if both are given)
-    RLMKIT_PORT=8080 uv run python -m rlmstudio.server
-    RLMKIT_HOST=0.0.0.0 RLMKIT_PORT=9000 uv run python -m rlmstudio.server --reload
+    RLM_STUDIO_PORT=8080 uv run python -m rlmstudio.server
+    RLM_STUDIO_HOST=0.0.0.0 RLM_STUDIO_PORT=9000 uv run python -m rlmstudio.server --reload
 """
 
 from __future__ import annotations

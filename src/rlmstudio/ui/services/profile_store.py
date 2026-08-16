@@ -6,7 +6,7 @@ RunProfile & RunProfileStore — named configuration profiles.
 A RunProfile captures "how I want the system to behave":
   execution strategy, sampling params, RLM budget, RAG params, etc.
 
-Profiles are persisted as a JSON array in ``~/.rlmkit/profiles.json``.
+Profiles are persisted as a JSON array in ``<state dir>/profiles.json``.
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ class RunProfileStore:
 
 
 # ---------------------------------------------------------------------------
-# Custom system prompt persistence  (~/.rlmkit/system_prompt_custom.json)
+# Custom system prompt persistence  (<state dir>/system_prompt_custom.json)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_CUSTOM_PROMPTS_PATH = state_dir() / "system_prompt_custom.json"

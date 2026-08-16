@@ -263,7 +263,7 @@ class TestRLMConfig:
             config1.save(str(config_path))
 
             # Set environment variable
-            os.environ["RLMKIT_CONFIG_PATH"] = str(config_path)
+            os.environ["RLM_STUDIO_CONFIG_PATH"] = str(config_path)
 
             try:
                 # Load should use env variable
@@ -271,7 +271,7 @@ class TestRLMConfig:
                 assert config2.execution.max_output_chars == 99999
             finally:
                 # Clean up
-                del os.environ["RLMKIT_CONFIG_PATH"]
+                del os.environ["RLM_STUDIO_CONFIG_PATH"]
 
 
 class TestConfigIntegration:

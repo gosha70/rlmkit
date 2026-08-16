@@ -129,8 +129,8 @@ class TestCompleteTTFT:
 
     @patch("litellm.completion")
     def test_complete_flag_off_falls_back_to_non_streaming(self, mock_completion, monkeypatch):
-        """Panic lever: RLMKIT_STREAMED_COMPLETE=0 skips streaming; ttft_ms is None."""
-        monkeypatch.setenv("RLMKIT_STREAMED_COMPLETE", "0")
+        """Panic lever: RLM_STUDIO_STREAMED_COMPLETE=0 skips streaming; ttft_ms is None."""
+        monkeypatch.setenv("RLM_STUDIO_STREAMED_COMPLETE", "0")
 
         # Non-streaming mock: plain object with .choices/.usage/.model.
         mock_completion.return_value = SimpleNamespace(
