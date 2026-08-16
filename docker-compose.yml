@@ -82,7 +82,7 @@ services:
         # go to this URL — which is the host's localhost, not the
         # container network — because the browser is on the host.
         NEXT_PUBLIC_API_URL: http://localhost:8000
-        NEXT_PUBLIC_RLMKIT_PERF_UI: ${NEXT_PUBLIC_RLMKIT_PERF_UI:-}
+        NEXT_PUBLIC_RLM_STUDIO_PERF_UI: ${NEXT_PUBLIC_RLM_STUDIO_PERF_UI:-}
     image: rlm-studio-frontend:local
     container_name: rlm-studio-frontend
     restart: unless-stopped

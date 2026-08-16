@@ -4,7 +4,7 @@
  *
  * `id` is the URL slug used at /learn/cookbook/[id] and is also the
  * suffix of the doc slug (always `hosts-${id}` — see the backend
- * allowlist in src/rlmkit/server/routes/docs.py).
+ * allowlist in src/rlmstudio/server/routes/docs.py).
  *
  * `backendKey` is the value the Settings LLM-Provider form uses for
  * its `backend` field. For most providers this equals `id`; DGX Spark
@@ -91,7 +91,7 @@ export const COOKBOOK_PROVIDERS: ReadonlyArray<CookbookProvider> = [
     defaultModel: "claude-sonnet-4-6",
   },
   // Groq intentionally omitted: the app's provider catalog
-  // (src/rlmkit/ui/data/providers_catalog.py) does not currently
+  // (src/rlmstudio/ui/data/providers_catalog.py) does not currently
   // support a `groq` backend, so a Cookbook entry for it would send
   // users to a path that /api/llm-providers can't complete. Add back
   // once a Groq ProviderEntry ships.

@@ -1495,7 +1495,7 @@ function SettingsPageInner() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  How often RLMKit should auto-test LLM Provider connections. When enabled,
+                  How often RLM Studio should auto-test LLM Provider connections. When enabled,
                   a background task probes each provider at this interval and updates its
                   status. Set to <strong>0</strong> to disable auto-testing (manual testing
                   via the Test button still works).

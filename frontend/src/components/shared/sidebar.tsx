@@ -19,6 +19,7 @@ import {
   Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PRODUCT_NAME } from "@/lib/branding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -123,13 +124,13 @@ export function Sidebar({
         <div className="flex items-center gap-2">
           <Image
             src="/logo.png"
-            alt="RLMKit"
+            alt={PRODUCT_NAME}
             width={28}
             height={28}
             className="shrink-0 rounded-full"
             style={{ width: "auto", height: "auto" }}
           />
-          {!collapsed && <span className="text-sm font-semibold">RLMKit</span>}
+          {!collapsed && <span className="text-sm font-semibold">{PRODUCT_NAME}</span>}
         </div>
         <Button
           variant="ghost"

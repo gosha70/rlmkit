@@ -1,5 +1,5 @@
 /**
- * Typed API client for the RLMKit backend.
+ * Typed API client for the RLM Studio backend.
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -12,7 +12,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 // `npm run build:bundle`), the static export is served by FastAPI on
 // the same origin and port as the API, so we force same-origin
 // relative URLs regardless of NEXT_PUBLIC_API_URL. This is what makes
-// `rlmkit studio --port 9000` work for uploads and the compare matrix
+// `rlm-studio studio --port 9000` work for uploads and the compare matrix
 // — without this gate the bundled UI would still talk to :8000.
 const BACKEND_BASE =
   process.env.NEXT_PUBLIC_BUNDLE === "1"
