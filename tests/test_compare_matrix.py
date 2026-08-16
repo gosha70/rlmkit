@@ -10,10 +10,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import AppState, get_state, reset_state
-from rlmkit.server.models import (
+from rlmstudio.application.dto import LLMResponseDTO
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import AppState, get_state, reset_state
+from rlmstudio.server.models import (
     ChatProviderConfig,
     LLMProviderConfig,
     RuntimeSettings,

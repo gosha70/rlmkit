@@ -2,8 +2,8 @@
 
 import pytest
 
-from rlmkit import RLM, BudgetExceeded, BudgetLimits, BudgetTracker, MockLLMClient, RLMConfig
-from rlmkit.config import ExecutionConfig
+from rlmstudio import RLM, BudgetExceeded, BudgetLimits, BudgetTracker, MockLLMClient, RLMConfig
+from rlmstudio.config import ExecutionConfig
 
 
 class TestSubcallBasics:

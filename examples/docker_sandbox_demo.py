@@ -4,7 +4,7 @@ Docker Sandbox Demo (Bet 5 - Enterprise Security)
 Demonstrates isolated code execution using Docker containers for maximum security.
 """
 
-from rlmkit.envs.sandbox import DockerExecutor
+from rlmstudio.envs.sandbox import DockerExecutor
 
 
 def demo_basic_execution():

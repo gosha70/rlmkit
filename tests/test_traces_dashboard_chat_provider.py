@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import ExecutionRecord, SessionRecord, get_state, reset_state
-from rlmkit.server.models import MetricsResponse, ProviderSummary, TraceResponse
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import ExecutionRecord, SessionRecord, get_state, reset_state
+from rlmstudio.server.models import MetricsResponse, ProviderSummary, TraceResponse
 
 # ---------------------------------------------------------------------------
 # Fixtures

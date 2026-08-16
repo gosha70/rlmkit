@@ -1,0 +1,60 @@
+"""System prompt management endpoints."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+
+from rlmstudio.server.dependencies import AppState, get_state
+from rlmstudio.server.models import SystemPrompts, SystemPromptTemplate
+from rlmstudio.ui.services.profile_store import (
+    SYSTEM_PROMPT_TEMPLATES,
+    reload_system_prompt_templates,
+)
+
+router = APIRouter()
+
+
+@router.get("/api/system-prompts")
+async def get_system_prompts(
+    state: AppState = Depends(get_state),
+) -> SystemPrompts:
+    """Get current active system prompts (per-mode)."""
+    return state.system_prompts
+
+
+@router.put("/api/system-prompts")
+async def update_system_prompts(
+    req: SystemPrompts,
+    state: AppState = Depends(get_state),
+) -> SystemPrompts:
+    """Update system prompts (per-mode)."""
+    state.system_prompts = req
+    state.save_config()
+    return state.system_prompts
+
+
+@router.get("/api/system-prompts/templates")
+async def list_templates() -> list[SystemPromptTemplate]:
+    """List built-in system prompt templates."""
+    result = []
+    for name, data in SYSTEM_PROMPT_TEMPLATES.items():
+        prompts = {k: v for k, v in data.items() if k != "description"}
+        result.append(
+            SystemPromptTemplate(
+                name=name,
+                description=data.get("description", ""),
+                prompts=prompts,
+            )
+        )
+    return result
+
+
+@router.post("/api/system-prompts/templates/reload")
+async def reload_templates() -> dict[str, int]:
+    """Re-read system_prompt_templates.json from disk without restarting.
+
+    Returns the number of templates loaded so the caller can confirm the
+    reload took effect.
+    """
+    fresh = reload_system_prompt_templates()
+    return {"reloaded": len(fresh)}

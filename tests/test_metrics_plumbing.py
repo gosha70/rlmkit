@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from rlmkit.application.services.outcome_classifier import OutcomeCategory
-from rlmkit.server.routes.metrics import (
+from rlmstudio.application.services.outcome_classifier import OutcomeCategory
+from rlmstudio.server.routes.metrics import (
     _point_from_message,
     _point_from_telemetry,
     _resolve_outcome,
     _RunPoint,
 )
-from rlmkit.telemetry.store import RunSummary
+from rlmstudio.telemetry.store import RunSummary
 
 
 def _make_run_summary(outcome_category: str | None) -> RunSummary:

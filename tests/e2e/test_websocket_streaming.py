@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import SessionRecord, get_state, reset_state
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import SessionRecord, get_state, reset_state
 
 pytestmark = pytest.mark.e2e
 

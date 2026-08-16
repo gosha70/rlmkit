@@ -1,6 +1,6 @@
 """Tests for SQLite Database connection manager."""
 
-from rlmkit.storage.database import _SCHEMA_VERSION, Database, get_default_db_path
+from rlmstudio.storage.database import _SCHEMA_VERSION, Database, get_default_db_path
 
 
 class TestGetDefaultDbPath:

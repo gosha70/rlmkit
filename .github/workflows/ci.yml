@@ -24,9 +24,9 @@ jobs:
           version: "latest"
       - run: uv sync --extra dev
       - name: Ruff check
-        run: uv run ruff check src/rlmkit/ tests/
+        run: uv run ruff check src/rlmstudio/ tests/
       - name: Ruff format check
-        run: uv run ruff format --check src/rlmkit/ tests/
+        run: uv run ruff format --check src/rlmstudio/ tests/
 
   typecheck:
     name: Type Check
@@ -38,7 +38,7 @@ jobs:
           version: "latest"
       - run: uv sync --extra dev
       - name: Mypy
-        run: uv run mypy src/rlmkit/ --ignore-missing-imports
+        run: uv run mypy src/rlmstudio/ --ignore-missing-imports
 
   test-backend:
     name: Backend Tests
@@ -53,7 +53,7 @@ jobs:
         # --runslow includes spawn-heavy tests like TestTopLevelScriptEntrypoint
         # which are gated by default for local dev speed but MUST run in CI.
         # -n auto from pyproject.toml [tool.pytest.ini_options] addopts parallelizes.
-        run: uv run pytest tests/ --runslow --cov=rlmkit --cov-report=term-missing --cov-report=xml --cov-fail-under=80 -q
+        run: uv run pytest tests/ --runslow --cov=rlmstudio --cov-report=term-missing --cov-report=xml --cov-fail-under=80 -q
       - name: Upload coverage to Codecov
         if: always()
         uses: codecov/codecov-action@v4
@@ -96,7 +96,7 @@ jobs:
       # intentionally omits ui to keep the runtime lean).
       - run: uv sync --extra dev --extra server --extra ui
       - name: Bandit security scan
-        run: uv run bandit -r src/rlmkit/server/ src/rlmkit/application/ src/rlmkit/domain/ src/rlmkit/infrastructure/ -c pyproject.toml
+        run: uv run bandit -r src/rlmstudio/server/ src/rlmstudio/application/ src/rlmstudio/domain/ src/rlmstudio/infrastructure/ -c pyproject.toml
       - name: pip-audit vulnerability scan
         run: uv run pip-audit --skip-editable
 
@@ -121,4 +121,4 @@ jobs:
           version: "latest"
       - run: uv sync --extra server
       - name: Verify package imports
-        run: uv run python -c "from rlmkit.server.app import app; print('Server OK')"
+        run: uv run python -c "from rlmstudio.server.app import app; print('Server OK')"

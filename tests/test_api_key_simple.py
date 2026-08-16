@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 def test_load_env_file():
     """Test the load_env_file function."""
     # Import the module directly
-    from rlmkit.ui.services.llm_config_manager import load_env_file
+    from rlmstudio.ui.services.llm_config_manager import load_env_file
 
     # Create a temporary .env file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
@@ -51,7 +51,7 @@ def test_load_env_file():
 
 def test_update_env_file():
     """Test the update_env_file function."""
-    from rlmkit.ui.services.llm_config_manager import load_env_file, update_env_file
+    from rlmstudio.ui.services.llm_config_manager import load_env_file, update_env_file
 
     # Create a temporary .env file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
@@ -90,7 +90,7 @@ def test_integration():
     print("4. Chat manager tries to use the API key")
     print()
 
-    from rlmkit.ui.services.llm_config_manager import load_env_file, update_env_file
+    from rlmstudio.ui.services.llm_config_manager import load_env_file, update_env_file
 
     # Create a test .env file
     env_path = Path(".env.test")

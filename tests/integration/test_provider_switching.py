@@ -7,9 +7,9 @@ not leak state.
 
 import pytest
 
-from rlmkit import RLM, MockLLMClient
-from rlmkit.core.model_config import ModelConfig, ModelMetrics
-from rlmkit.strategies.direct import DirectStrategy
+from rlmstudio import RLM, MockLLMClient
+from rlmstudio.core.model_config import ModelConfig, ModelMetrics
+from rlmstudio.strategies.direct import DirectStrategy
 
 pytestmark = pytest.mark.integration
 

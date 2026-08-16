@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from rlmkit.application.dto import RunResultDTO
-from rlmkit.server.routes.compare_matrix import (
+from rlmstudio.application.dto import RunResultDTO
+from rlmstudio.server.routes.compare_matrix import (
     CompareMatrixSlotResponse,
     _slot_perf_aggregates,
 )

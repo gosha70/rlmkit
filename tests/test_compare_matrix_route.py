@@ -10,13 +10,13 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+from rlmstudio.application.dto import LLMResponseDTO
+from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
     LiteLLMEmbeddingAdapter,
 )
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import AppState, get_state, reset_state
-from rlmkit.server.models import ChatProviderConfig, RuntimeSettings
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import AppState, get_state, reset_state
+from rlmstudio.server.models import ChatProviderConfig, RuntimeSettings
 
 # ---------------------------------------------------------------------------
 # Fake LLM adapter with LiteLLMAdapter-compatible surface
@@ -473,7 +473,7 @@ class TestRAGKeyResolution:
         client: TestClient,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from rlmkit.server.dependencies import LLMProviderConfig
+        from rlmstudio.server.dependencies import LLMProviderConfig
 
         state = get_state()
 
@@ -515,7 +515,7 @@ class TestRAGKeyResolution:
             real_init(self, *args, **kwargs)
 
         monkeypatch.setattr(
-            "rlmkit.server.routes.llm_providers._get_api_key",
+            "rlmstudio.server.routes.llm_providers._get_api_key",
             _fake_get_api_key,
         )
         monkeypatch.setattr(LiteLLMEmbeddingAdapter, "__init__", _spy_init)
@@ -558,7 +558,7 @@ class TestPerSlotRLMSettings:
     def test_rlm_slot_gets_chat_provider_rlm_settings(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from rlmkit.application.use_cases import run_matrix_comparison as uc_mod
+        from rlmstudio.application.use_cases import run_matrix_comparison as uc_mod
 
         state = get_state()
 
@@ -620,7 +620,7 @@ class TestPerSlotRLMSettings:
     ) -> None:
         """A direct slot's config should be the base run_config, not the
         RLM knobs — we only apply the RLM-specific settings when mode='rlm'."""
-        from rlmkit.application.use_cases import run_matrix_comparison as uc_mod
+        from rlmstudio.application.use_cases import run_matrix_comparison as uc_mod
 
         state = get_state()
         cp = _make_chat_provider("Direct-CP")
@@ -701,8 +701,8 @@ class TestMatrixThenFollowUpChat:
     def test_follow_up_chat_uses_matrix_history(self, client: TestClient) -> None:
         import asyncio
 
-        from rlmkit.server.dependencies import ExecutionRecord
-        from rlmkit.server.routes.chat import _run_execution
+        from rlmstudio.server.dependencies import ExecutionRecord
+        from rlmstudio.server.routes.chat import _run_execution
 
         state = get_state()
 

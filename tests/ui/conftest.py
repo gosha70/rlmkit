@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from rlmkit.llm.base import LLMResponse
-from rlmkit.ui.services import ExecutionMetrics, Response
-from rlmkit.ui.services.models import LLMProviderConfig
+from rlmstudio.llm.base import LLMResponse
+from rlmstudio.ui.services import ExecutionMetrics, Response
+from rlmstudio.ui.services.models import LLMProviderConfig
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ def make_fake_direct_result() -> dict:
 @pytest.fixture
 def mock_execute_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     """Monkeypatch _execute_rlm and _execute_direct on ChatManager to return fake results."""
-    from rlmkit.ui.services.chat_manager import ChatManager
+    from rlmstudio.ui.services.chat_manager import ChatManager
 
     async def fake_rlm(self: object, *args: object, **kwargs: object) -> dict:
         return make_fake_rlm_result()

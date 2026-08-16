@@ -9,7 +9,7 @@ Key Concept:
 - Sub-agents (cheap model): Information gathering, exploration subcalls
 """
 
-from rlmkit.core import ModelConfig, ModelMetrics
+from rlmstudio.core import ModelConfig, ModelMetrics
 
 
 def example_1_cost_optimized_openai():
@@ -146,8 +146,8 @@ def usage_in_practice():
     print("""
 # In practice, you would use it like this:
 
-from rlmkit import interact
-from rlmkit.core import ModelConfig
+from rlmstudio import interact
+from rlmstudio.core import ModelConfig
 
 # Cost-optimized configuration
 models = ModelConfig.cost_optimized("openai")

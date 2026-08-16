@@ -13,12 +13,12 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.dto import LLMResponseDTO, StreamChunk
-from rlmkit.infrastructure.llm.anthropic_adapter import AnthropicAdapter
-from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
-from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
-from rlmkit.infrastructure.llm.ollama_adapter import OllamaAdapter
-from rlmkit.infrastructure.llm.openai_adapter import OpenAIAdapter
+from rlmstudio.application.dto import LLMResponseDTO, StreamChunk
+from rlmstudio.infrastructure.llm.anthropic_adapter import AnthropicAdapter
+from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+from rlmstudio.infrastructure.llm.mock_adapter import MockLLMAdapter
+from rlmstudio.infrastructure.llm.ollama_adapter import OllamaAdapter
+from rlmstudio.infrastructure.llm.openai_adapter import OpenAIAdapter
 
 
 class _StubClient:

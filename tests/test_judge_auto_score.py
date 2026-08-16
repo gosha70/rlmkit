@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from rlmkit.server.judge import AUTO_SCORE_BUDGET_PARTIAL, AUTO_SCORE_FAILURE, JudgeService
+from rlmstudio.server.judge import AUTO_SCORE_BUDGET_PARTIAL, AUTO_SCORE_FAILURE, JudgeService
 
 
 class _FakeTelemetry:

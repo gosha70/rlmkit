@@ -6,7 +6,7 @@ These tests verify correctness, immutability, and serialization behaviour.
 
 import pytest
 
-from rlmkit.domain.entities import (
+from rlmstudio.domain.entities import (
     BudgetConfig,
     BudgetState,
     ExecutionTrace,
@@ -14,13 +14,13 @@ from rlmkit.domain.entities import (
     Response,
     TraceStep,
 )
-from rlmkit.domain.events import (
+from rlmstudio.domain.events import (
     BudgetExceeded,
     ExecutionCompleted,
     ExecutionStarted,
     StepCompleted,
 )
-from rlmkit.domain.exceptions import (
+from rlmstudio.domain.exceptions import (
     BudgetExceededError,
     ConfigurationError,
     DomainError,
@@ -28,7 +28,7 @@ from rlmkit.domain.exceptions import (
     ParseFailedError,
     SecurityViolationError,
 )
-from rlmkit.domain.value_objects import (
+from rlmstudio.domain.value_objects import (
     Cost,
     ModelId,
     ProviderId,

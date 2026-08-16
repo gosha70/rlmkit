@@ -10,7 +10,7 @@ from pathlib import Path
 
 def test_env_loading() -> None:
     """Test that .env file is properly loaded."""
-    from rlmkit.ui.services.llm_config_manager import load_env_file, update_env_file
+    from rlmstudio.ui.services.llm_config_manager import load_env_file, update_env_file
 
     # Create a temporary .env file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
@@ -59,7 +59,7 @@ def test_config_loading() -> None:
     import json
     import tempfile
 
-    from rlmkit.ui.services.llm_config_manager import LLMConfigManager
+    from rlmstudio.ui.services.llm_config_manager import LLMConfigManager
 
     # Create temporary config directory
     with tempfile.TemporaryDirectory() as tmpdir:

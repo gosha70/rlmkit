@@ -31,8 +31,8 @@ except ModuleNotFoundError:
 # Setup path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from rlmkit.ui.services.chat_manager import ChatManager
-from rlmkit.ui.services.models import Response
+from rlmstudio.ui.services.chat_manager import ChatManager
+from rlmstudio.ui.services.models import Response
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_chat_integration():
     # Test 2: Config manager access
     print("\n[2/5] Testing LLMConfigManager access...")
     try:
-        from rlmkit.ui.services.llm_config_manager import LLMConfigManager
+        from rlmstudio.ui.services.llm_config_manager import LLMConfigManager
 
         config_manager = LLMConfigManager()
         providers = config_manager.list_providers()
@@ -76,7 +76,7 @@ async def test_chat_integration():
     # Test 3: Model data structures
     print("\n[3/5] Testing data models...")
     try:
-        from rlmkit.ui.services.models import ChatMessage
+        from rlmstudio.ui.services.models import ChatMessage
 
         response = Response(content="Test response", stop_reason="end_turn")
         assert response.content == "Test response"
@@ -118,17 +118,17 @@ async def test_chat_integration():
     print("\n[5/5] Testing component imports...")
     try:
         # These imports should work if files are created correctly
-        from rlmkit.ui.pages.configuration import render_configuration_page  # noqa: F401
+        from rlmstudio.ui.pages.configuration import render_configuration_page  # noqa: F401
 
         print("    ✅ Configuration page imports")
 
         # Chat page doesn't export functions, but file should exist
-        from rlmkit.ui.components import chat_message  # noqa: F401
+        from rlmstudio.ui.components import chat_message  # noqa: F401
 
         print("    ✅ Chat message component imports")
 
         # Check if 01_chat.py exists
-        chat_page_path = Path(__file__).parent / "src" / "rlmkit" / "ui" / "pages" / "01_chat.py"
+        chat_page_path = Path(__file__).parent / "src" / "rlmstudio" / "ui" / "pages" / "01_chat.py"
         if chat_page_path.exists():
             print("    ✅ Chat page file exists")
         else:

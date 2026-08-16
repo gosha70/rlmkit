@@ -15,9 +15,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.dependencies import get_state
-from rlmkit.server.models import LLMProviderConfig, ProviderConfig
-from rlmkit.server.routes import llm_providers as llm_providers_mod
+from rlmstudio.server.dependencies import get_state
+from rlmstudio.server.models import LLMProviderConfig, ProviderConfig
+from rlmstudio.server.routes import llm_providers as llm_providers_mod
 
 pytestmark = [pytest.mark.e2e]
 

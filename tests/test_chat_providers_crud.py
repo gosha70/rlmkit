@@ -25,9 +25,9 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import get_state, reset_state
-from rlmkit.server.models import (
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import get_state, reset_state
+from rlmstudio.server.models import (
     ChatRequest,
     ChatResponse,
     ProviderConfig,
@@ -35,7 +35,7 @@ from rlmkit.server.models import (
     SessionDetail,
     SessionMessage,
 )
-from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
+from rlmstudio.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -919,7 +919,7 @@ class TestConversationMemoryField:
         ``~/.rlmkit/config.json`` exists on disk.  Pydantic fills the
         default; no migration script required.
         """
-        from rlmkit.server.models import ChatProviderConfig
+        from rlmstudio.server.models import ChatProviderConfig
 
         legacy_payload = {
             "id": "legacy-cp",
@@ -938,7 +938,7 @@ class TestConversationMemoryField:
         value, which is the actual contract ``AppState.save_config()``
         relies on.
         """
-        from rlmkit.server.models import ChatProviderConfig
+        from rlmstudio.server.models import ChatProviderConfig
 
         original = ChatProviderConfig(
             id="cp-1",
@@ -958,7 +958,7 @@ class TestConversationMemoryField:
 
     def test_fraction_boundary_values_accepted(self) -> None:
         """0.0 and 0.9 are both inclusive boundaries."""
-        from rlmkit.server.models import ChatProviderConfig
+        from rlmstudio.server.models import ChatProviderConfig
 
         zero = ChatProviderConfig(
             id="cp-0",
@@ -981,7 +981,7 @@ class TestConversationMemoryField:
     ) -> None:
         """RLM mode + small context window → response includes warning."""
         # Set the LLM Provider's context_window to something tiny
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         lp = state.get_llm_provider(created_llm_provider["id"])
@@ -1005,7 +1005,7 @@ class TestConversationMemoryField:
         self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """Direct mode + small context window → no warning."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         lp = state.get_llm_provider(created_llm_provider["id"])
@@ -1027,7 +1027,7 @@ class TestConversationMemoryField:
         self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """Unknown context window → no warning (can't validate)."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         lp = state.get_llm_provider(created_llm_provider["id"])
@@ -1049,7 +1049,7 @@ class TestConversationMemoryField:
         self, client: TestClient, created_llm_provider: dict[str, Any]
     ) -> None:
         """RLM mode + large context window → no warning."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         lp = state.get_llm_provider(created_llm_provider["id"])
@@ -1071,7 +1071,7 @@ class TestConversationMemoryField:
         self, client: TestClient, created_provider: dict[str, Any]
     ) -> None:
         """Updating execution_mode to rlm + small context → warning on update."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         cp = state.get_chat_provider(created_provider["id"])

@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`rlmkit.application.services.provider_tester`.
+"""Unit tests for :mod:`rlmstudio.application.services.provider_tester`.
 
 Per the spec (doc_internal/specs/scheduled-connection-testing.md §Prerequisite
 refactor), these tests pin the timeout-enforcement contract that the
@@ -18,11 +18,11 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.services.provider_tester import (
+from rlmstudio.application.services.provider_tester import (
     ProviderTestResult,
     test_provider,
 )
-from rlmkit.server.models import LLMProviderConfig
+from rlmstudio.server.models import LLMProviderConfig
 
 # --------------------------------------------------------------------------
 # Fixtures

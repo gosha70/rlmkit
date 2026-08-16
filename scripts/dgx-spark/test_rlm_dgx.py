@@ -22,8 +22,8 @@ import urllib.error
 from collections.abc import Callable
 from typing import Any
 
-from rlmkit import interact
-from rlmkit.api import InteractResult
+from rlmstudio import interact
+from rlmstudio.api import InteractResult
 
 # -- Config ------------------------------------------------------------------
 

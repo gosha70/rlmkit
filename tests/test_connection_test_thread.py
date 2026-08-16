@@ -25,9 +25,9 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.services.provider_tester import ProviderTestResult
-from rlmkit.server.dependencies import AppState
-from rlmkit.server.models import LLMProviderConfig
+from rlmstudio.application.services.provider_tester import ProviderTestResult
+from rlmstudio.server.dependencies import AppState
+from rlmstudio.server.models import LLMProviderConfig
 
 # --------------------------------------------------------------------------
 # Helpers
@@ -267,7 +267,7 @@ def test_single_provider_exception_does_not_kill_cycle(state: AppState) -> None:
         return _connected_result()
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_real_test,
     ):
         state._run_test_cycle()
@@ -316,7 +316,7 @@ def test_stale_result_discarded_when_provider_edited_mid_cycle(
     edit_thread.start()
     try:
         with patch(
-            "rlmkit.application.services.provider_tester.test_provider",
+            "rlmstudio.application.services.provider_tester.test_provider",
             side_effect=_slow_probe,
         ):
             state._run_test_cycle()
@@ -343,7 +343,7 @@ def test_deleted_provider_result_dropped(state: AppState) -> None:
         return _offline_result()
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_probe_and_delete,
     ):
         state._run_test_cycle()
@@ -393,8 +393,8 @@ def test_shutdown_hook_joins_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from fastapi.testclient import TestClient
 
-    from rlmkit.server.app import create_app
-    from rlmkit.server.dependencies import get_state, reset_state
+    from rlmstudio.server.app import create_app
+    from rlmstudio.server.dependencies import get_state, reset_state
 
     monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "30")
     reset_state()

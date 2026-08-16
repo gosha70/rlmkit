@@ -15,10 +15,10 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import reset_state
-from rlmkit.server.models import RunProfile
-from rlmkit.server.routes.chat import _resolve_profile_prompt
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import reset_state
+from rlmstudio.server.models import RunProfile
+from rlmstudio.server.routes.chat import _resolve_profile_prompt
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -119,13 +119,13 @@ class TestResolveProfilePrompt:
         """If the template exists but doesn't have the requested mode key."""
         mock_templates = {"TestTemplate": {"rlm": "only rlm"}}
         with patch(
-            "rlmkit.server.routes.chat.SYSTEM_PROMPT_TEMPLATES",
+            "rlmstudio.server.routes.chat.SYSTEM_PROMPT_TEMPLATES",
             mock_templates,
             create=True,
         ):
             # Patch the import inside the function
             with patch(
-                "rlmkit.ui.services.profile_store.SYSTEM_PROMPT_TEMPLATES",
+                "rlmstudio.ui.services.profile_store.SYSTEM_PROMPT_TEMPLATES",
                 mock_templates,
             ):
                 profile = _make_profile(prompt_template_name="TestTemplate")

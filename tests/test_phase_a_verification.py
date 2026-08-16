@@ -8,9 +8,9 @@ from __future__ import annotations
 import pytest
 from starlette.testclient import TestClient
 
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import AppState, reset_state
-from rlmkit.server.models import ProviderConfig, RuntimeSettings
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import AppState, reset_state
+from rlmstudio.server.models import ProviderConfig, RuntimeSettings
 
 
 @pytest.fixture(autouse=True)
@@ -185,7 +185,7 @@ class TestRuntimeSettingsApplied:
 
     def test_chat_provider_adapter_uses_resolved_settings(self) -> None:
         """create_llm_adapter_for_chat_provider() applies profile runtime settings."""
-        from rlmkit.server.models import ChatProviderConfig
+        from rlmstudio.server.models import ChatProviderConfig
 
         state = AppState(load_from_disk=False)
         cp = ChatProviderConfig(
@@ -215,7 +215,7 @@ class TestRuntimeSettingsApplied:
 class TestCostCalculation:
     def test_compute_cost_uses_get_completion_cost(self) -> None:
         """_compute_cost prefers get_completion_cost() over get_pricing()."""
-        from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+        from rlmstudio.application.use_cases.run_direct import RunDirectUseCase
 
         class FakeLLM:
             def get_completion_cost(self, input_tokens: int, output_tokens: int) -> float:
@@ -231,7 +231,7 @@ class TestCostCalculation:
 
     def test_compute_cost_falls_back_to_get_pricing(self) -> None:
         """_compute_cost falls back to get_pricing() if get_completion_cost is missing."""
-        from rlmkit.application.use_cases.run_direct import RunDirectUseCase
+        from rlmstudio.application.use_cases.run_direct import RunDirectUseCase
 
         class FakeLLM:
             def get_pricing(self) -> dict[str, float]:
@@ -244,7 +244,7 @@ class TestCostCalculation:
 
     def test_get_completion_cost_logs_on_failure(self) -> None:
         """get_completion_cost logs at debug level when model not found."""
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="nonexistent/fake-model-xyz")
         # Should not raise, should return 0.0
@@ -253,7 +253,7 @@ class TestCostCalculation:
 
     def test_get_pricing_strips_prefix(self) -> None:
         """get_pricing tries both prefixed and stripped model names."""
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="anthropic/claude-sonnet-4-5-20250929")
         pricing = adapter.get_pricing()
@@ -314,8 +314,8 @@ class TestModelNamePrefixing:
         ``server/dependencies.py`` serves the request dispatch path. A vLLM fix
         applied to only one of them leaves the other paths broken.
         """
-        from rlmkit.api import _PROVIDER_PREFIXES
-        from rlmkit.server.routes.providers import _LITELLM_PREFIXES
+        from rlmstudio.api import _PROVIDER_PREFIXES
+        from rlmstudio.server.routes.providers import _LITELLM_PREFIXES
 
         assert _PROVIDER_PREFIXES["vllm"] == "hosted_vllm/"
         assert _LITELLM_PREFIXES["vllm"] == "hosted_vllm/"
@@ -328,7 +328,7 @@ class TestModelNamePrefixing:
         ``provider_tester`` and the provider form both route through
         ``server/routes/providers._litellm_model_name``.
         """
-        from rlmkit.server.routes.providers import _litellm_model_name
+        from rlmstudio.server.routes.providers import _litellm_model_name
 
         assert (
             _litellm_model_name("vllm", "RedHatAI/Qwen3-Coder-Next-NVFP4")

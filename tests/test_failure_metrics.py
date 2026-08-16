@@ -6,9 +6,9 @@ import time
 
 from starlette.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import SessionRecord, get_state, reset_state
-from rlmkit.server.routes.metrics import (
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import SessionRecord, get_state, reset_state
+from rlmstudio.server.routes.metrics import (
     _build_failure_response,
     _build_metrics_response,
     _point_from_telemetry,

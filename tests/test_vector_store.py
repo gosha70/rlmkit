@@ -2,8 +2,8 @@
 
 import pytest
 
-from rlmkit.storage.database import Database
-from rlmkit.storage.vector_store import VectorStore
+from rlmstudio.storage.database import Database
+from rlmstudio.storage.vector_store import VectorStore
 
 
 @pytest.fixture

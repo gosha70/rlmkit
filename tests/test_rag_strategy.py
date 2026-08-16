@@ -4,9 +4,9 @@ import math
 
 import pytest
 
-from rlmkit import MockLLMClient
-from rlmkit.strategies.base import LLMStrategy
-from rlmkit.strategies.rag import RAGStrategy
+from rlmstudio import MockLLMClient
+from rlmstudio.strategies.base import LLMStrategy
+from rlmstudio.strategies.rag import RAGStrategy
 
 # ---------------------------------------------------------------------------
 # Helpers

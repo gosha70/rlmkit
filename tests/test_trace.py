@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from rlmkit.core.trace import (
+from rlmstudio.core.trace import (
     ExecutionTrace,
     TraceStep,
     load_trace_from_json,

@@ -7,7 +7,7 @@ two-step post-canonicalization shape (AC-13b).
 
 from __future__ import annotations
 
-from rlmkit.server.routes._helpers import (
+from rlmstudio.server.routes._helpers import (
     _materialize_trace,
     _translate_raw_trace_entry,
 )

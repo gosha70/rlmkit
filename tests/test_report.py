@@ -6,10 +6,10 @@ from io import StringIO
 
 import pytest
 
-from rlmkit.benchmark.dataset import BenchmarkCase, BenchmarkDataset
-from rlmkit.benchmark.report import BenchmarkReport, _pct_delta
-from rlmkit.benchmark.runner import BenchmarkRun, BenchmarkRunner
-from rlmkit.strategies.base import StrategyResult
+from rlmstudio.benchmark.dataset import BenchmarkCase, BenchmarkDataset
+from rlmstudio.benchmark.report import BenchmarkReport, _pct_delta
+from rlmstudio.benchmark.runner import BenchmarkRun, BenchmarkRunner
+from rlmstudio.strategies.base import StrategyResult
 
 # ---------------------------------------------------------------------------
 # Helpers

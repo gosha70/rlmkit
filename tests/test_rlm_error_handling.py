@@ -6,9 +6,9 @@ a FINAL answer based on what it *thinks* the code should produce,
 rather than acknowledging the execution failure.
 """
 
-from rlmkit.config import ExecutionConfig, RLMConfig
-from rlmkit.core.rlm import RLM
-from rlmkit.llm import MockLLMClient
+from rlmstudio.config import ExecutionConfig, RLMConfig
+from rlmstudio.core.rlm import RLM
+from rlmstudio.llm import MockLLMClient
 
 
 def test_error_then_final_answer():

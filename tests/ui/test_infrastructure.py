@@ -8,8 +8,8 @@ from datetime import datetime
 
 import pytest
 
-from rlmkit.application.dto import RunConfigDTO, RunResultDTO
-from rlmkit.ui.services import (
+from rlmstudio.application.dto import RunConfigDTO, RunResultDTO
+from rlmstudio.ui.services import (
     ChatManager,
     ChatMessage,
     ComparisonMetrics,
@@ -21,7 +21,7 @@ from rlmkit.ui.services import (
     Response,
     SessionMetrics,
 )
-from rlmkit.ui.services.profile_store import resolve_system_prompt
+from rlmstudio.ui.services.profile_store import resolve_system_prompt
 
 
 class TestDataModels:
@@ -463,15 +463,15 @@ class TestChatManagerDirectExecution:
             lambda self, provider_name=None, api_key=None: (fake_provider_config, "sk-test"),
         )
         monkeypatch.setattr(
-            "rlmkit.ui.services.chat_manager.get_llm_client",
+            "rlmstudio.ui.services.chat_manager.get_llm_client",
             lambda **kwargs: FakeLegacyClient(),
         )
         monkeypatch.setattr(
-            "rlmkit.ui.services.chat_manager.create_sandbox",
+            "rlmstudio.ui.services.chat_manager.create_sandbox",
             lambda: object(),
         )
         monkeypatch.setattr(
-            "rlmkit.ui.services.chat_manager.RunRLMUseCase",
+            "rlmstudio.ui.services.chat_manager.RunRLMUseCase",
             FakeRunRLMUseCase,
         )
 

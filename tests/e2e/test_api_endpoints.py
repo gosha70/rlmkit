@@ -11,7 +11,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.dependencies import get_state
+from rlmstudio.server.dependencies import get_state
 
 pytestmark = [pytest.mark.e2e]
 

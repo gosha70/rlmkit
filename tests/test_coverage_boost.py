@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import (
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import (
     AppState,
     SessionRecord,
     _get_instance_api_key,
@@ -67,8 +67,10 @@ class TestGetInstanceApiKey:
         mock_store.get.return_value = "stored-api-key-123"
 
         with (
-            patch("rlmkit.server.dependencies.KeyringSecretStore.is_available", return_value=True),
-            patch("rlmkit.server.dependencies.KeyringSecretStore", return_value=mock_store),
+            patch(
+                "rlmstudio.server.dependencies.KeyringSecretStore.is_available", return_value=True
+            ),
+            patch("rlmstudio.server.dependencies.KeyringSecretStore", return_value=mock_store),
         ):
             result = _get_instance_api_key("lp-uuid-1", "openai")
 
@@ -82,8 +84,10 @@ class TestGetInstanceApiKey:
         mock_store.get.return_value = None  # Nothing in store
 
         with (
-            patch("rlmkit.server.dependencies.KeyringSecretStore.is_available", return_value=True),
-            patch("rlmkit.server.dependencies.KeyringSecretStore", return_value=mock_store),
+            patch(
+                "rlmstudio.server.dependencies.KeyringSecretStore.is_available", return_value=True
+            ),
+            patch("rlmstudio.server.dependencies.KeyringSecretStore", return_value=mock_store),
         ):
             result = _get_instance_api_key("lp-uuid-2", "openai")
 
@@ -95,8 +99,10 @@ class TestGetInstanceApiKey:
         mock_store.get.return_value = None
 
         with (
-            patch("rlmkit.server.dependencies.KeyringSecretStore.is_available", return_value=False),
-            patch("rlmkit.server.dependencies.FileSecretStore", return_value=mock_store),
+            patch(
+                "rlmstudio.server.dependencies.KeyringSecretStore.is_available", return_value=False
+            ),
+            patch("rlmstudio.server.dependencies.FileSecretStore", return_value=mock_store),
         ):
             result = _get_instance_api_key("lp-uuid-3", "unknown-backend-xyz")
 
@@ -108,8 +114,10 @@ class TestGetInstanceApiKey:
         mock_store.get.return_value = "file-stored-key"
 
         with (
-            patch("rlmkit.server.dependencies.KeyringSecretStore.is_available", return_value=False),
-            patch("rlmkit.server.dependencies.FileSecretStore", return_value=mock_store),
+            patch(
+                "rlmstudio.server.dependencies.KeyringSecretStore.is_available", return_value=False
+            ),
+            patch("rlmstudio.server.dependencies.FileSecretStore", return_value=mock_store),
         ):
             result = _get_instance_api_key("lp-uuid-4", "anthropic")
 
@@ -255,8 +263,8 @@ class TestQualityEngineRecommendation:
 
     def test_judge_score_beats_combined_score(self) -> None:
         """Provider with higher judge_avg_score wins over higher combined_score."""
-        from rlmkit.server.models import ProviderQualityScore
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.models import ProviderQualityScore
+        from rlmstudio.server.quality import QualityEngine
 
         engine = QualityEngine()
         scores = {
@@ -278,8 +286,8 @@ class TestQualityEngineRecommendation:
         assert "judge score" in reason
 
     def test_returns_none_when_no_data(self) -> None:
-        from rlmkit.server.models import ProviderQualityScore
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.models import ProviderQualityScore
+        from rlmstudio.server.quality import QualityEngine
 
         engine = QualityEngine()
         scores = {
@@ -294,7 +302,7 @@ class TestQualityEngineRecommendation:
         assert provider_id is None
 
     def test_returns_none_when_empty_scores(self) -> None:
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.quality import QualityEngine
 
         engine = QualityEngine()
         provider_id, reason = engine.get_recommendation({})
@@ -303,8 +311,8 @@ class TestQualityEngineRecommendation:
 
     def test_winner_by_judge_score_only(self) -> None:
         """When only judge scores exist (no combined score data), winner is highest judge."""
-        from rlmkit.server.models import ProviderQualityScore
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.models import ProviderQualityScore
+        from rlmstudio.server.quality import QualityEngine
 
         engine = QualityEngine()
         scores = {
@@ -326,8 +334,8 @@ class TestQualityEngineRecommendation:
 
     def test_combined_score_as_tiebreaker(self) -> None:
         """When judge scores are equal, combined_score breaks the tie."""
-        from rlmkit.server.models import ProviderQualityScore
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.models import ProviderQualityScore
+        from rlmstudio.server.quality import QualityEngine
 
         engine = QualityEngine()
         scores = {
@@ -356,7 +364,7 @@ class TestQualityEngineRecommendation:
 class TestRestrictedSandboxPToolRebinding:
     def test_set_P_rebinds_peek(self) -> None:
         """After set_variable('P', content), peek() is rebound to that content."""
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         sb = RestrictedSandboxAdapter()
         content = "hello world"
@@ -369,7 +377,7 @@ class TestRestrictedSandboxPToolRebinding:
 
     def test_set_P_rebinds_grep(self) -> None:
         """After set_variable('P', content), grep() searches within that content."""
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         sb = RestrictedSandboxAdapter()
         content = "line one\nline two\nline three"
@@ -381,7 +389,7 @@ class TestRestrictedSandboxPToolRebinding:
 
     def test_set_P_rebinds_chunk(self) -> None:
         """After set_variable('P', content), chunk() splits that content."""
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         sb = RestrictedSandboxAdapter()
         content = "word " * 100
@@ -393,7 +401,7 @@ class TestRestrictedSandboxPToolRebinding:
 
     def test_set_P_rebinds_select(self) -> None:
         """After set_variable('P', content), select() slices that content."""
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         sb = RestrictedSandboxAdapter()
         content = "abcdefghij"
@@ -406,7 +414,7 @@ class TestRestrictedSandboxPToolRebinding:
 
     def test_set_non_P_does_not_rebind_tools(self) -> None:
         """set_variable with a name other than 'P' does not touch globals."""
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         sb = RestrictedSandboxAdapter()
         original_peek = sb._globals["peek"]
@@ -415,7 +423,7 @@ class TestRestrictedSandboxPToolRebinding:
 
     def test_P_variable_accessible_in_code(self) -> None:
         """After set_variable('P', ...), the variable P is usable in executed code."""
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         sb = RestrictedSandboxAdapter()
         sb.set_variable("P", "test content here")
@@ -444,7 +452,7 @@ class TestJudgeServiceScoring:
         """Return an AppState with a fake judge Chat Provider."""
         from datetime import datetime, timezone
 
-        from rlmkit.server.models import ChatProviderConfig, LLMProviderConfig
+        from rlmstudio.server.models import ChatProviderConfig, LLMProviderConfig
 
         state = AppState(load_from_disk=False)
         state.save_config = lambda: None  # type: ignore[assignment]
@@ -479,7 +487,7 @@ class TestJudgeServiceScoring:
         """Inject a session + execution context for testing."""
         now = datetime.now(timezone.utc)
         if session_id not in state.sessions:
-            from rlmkit.server.dependencies import SessionRecord
+            from rlmstudio.server.dependencies import SessionRecord
 
             state.sessions[session_id] = SessionRecord(
                 id=session_id, name="Test", created_at=now, updated_at=now
@@ -501,8 +509,8 @@ class TestJudgeServiceScoring:
         """score_pointwise calls the judge adapter and returns a JudgeScore."""
         from unittest.mock import AsyncMock
 
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
-        from rlmkit.server.judge import JudgeService
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.server.judge import JudgeService
 
         state = self._make_judge_state()
         self._add_execution(state, "sess-j", "exec-j1")
@@ -535,7 +543,7 @@ class TestJudgeServiceScoring:
         """score_pointwise falls back to default scores on parse failure."""
         from unittest.mock import AsyncMock
 
-        from rlmkit.server.judge import JudgeService
+        from rlmstudio.server.judge import JudgeService
 
         state = self._make_judge_state()
         self._add_execution(state, "sess-j2", "exec-j2")
@@ -556,7 +564,7 @@ class TestJudgeServiceScoring:
     @pytest.mark.asyncio
     async def test_compare_pairwise_returns_winner(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """compare_pairwise debiases and returns final winner."""
-        from rlmkit.server.judge import JudgeService
+        from rlmstudio.server.judge import JudgeService
 
         state = self._make_judge_state()
         self._add_execution(state, "sess-j3", "exec-pa", cp_id="cp-pa")
@@ -593,7 +601,7 @@ class TestJudgeServiceScoring:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """When runs disagree, final_winner is 'tie'."""
-        from rlmkit.server.judge import JudgeService
+        from rlmstudio.server.judge import JudgeService
 
         state = self._make_judge_state()
         self._add_execution(state, "sess-j4", "exec-pc", cp_id="cp-pc")
@@ -630,7 +638,7 @@ class TestTriggerJudgeEndpoint:
         """Configure state with a judge chat provider."""
         from datetime import datetime, timezone
 
-        from rlmkit.server.models import ChatProviderConfig, LLMProviderConfig
+        from rlmstudio.server.models import ChatProviderConfig, LLMProviderConfig
 
         now = datetime.now(timezone.utc)
         lp = LLMProviderConfig(
@@ -673,14 +681,14 @@ class TestTriggerJudgeEndpoint:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """trigger_judge runs pointwise scoring and returns results."""
-        from rlmkit.server.models import JudgeScore
+        from rlmstudio.server.models import JudgeScore
 
         state = get_state()
         self._setup_judge_provider(state)
 
         # Add session with messages so resolve_execution_context works
         now = datetime.now(timezone.utc)
-        from rlmkit.server.dependencies import SessionRecord
+        from rlmstudio.server.dependencies import SessionRecord
 
         state.sessions["sess-tj"] = SessionRecord(
             id="sess-tj", name="TJ", created_at=now, updated_at=now
@@ -716,7 +724,7 @@ class TestTriggerJudgeEndpoint:
 
         _captured_score = fake_score
 
-        import rlmkit.server.judge as judge_module
+        import rlmstudio.server.judge as judge_module
 
         class _FakeJudgeService:
             def __init__(self, _state: Any) -> None:
@@ -748,7 +756,7 @@ class TestTriggerJudgeEndpoint:
         state = get_state()
         self._setup_judge_provider(state)
 
-        import rlmkit.server.judge as judge_module
+        import rlmstudio.server.judge as judge_module
 
         class _FailingJudgeService:
             def __init__(self, _state: Any) -> None:
@@ -787,8 +795,8 @@ class TestQualityEngineComputeScores:
 
     def test_cost_and_speed_branches_covered(self) -> None:
         """Verify cost/speed score branches run (all_costs/all_speeds > 0)."""
-        from rlmkit.server.dependencies import AppState, ExecutionRecord, SessionRecord
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.dependencies import AppState, ExecutionRecord, SessionRecord
+        from rlmstudio.server.quality import QualityEngine
 
         state = AppState(load_from_disk=False)
         state.save_config = lambda: None  # type: ignore[assignment]
@@ -853,8 +861,8 @@ class TestQualityEngineComputeScores:
 
     def test_no_data_combined_score_is_zero(self) -> None:
         """When a provider has no data at all, combined_score stays 0."""
-        from rlmkit.server.dependencies import AppState, ExecutionRecord
-        from rlmkit.server.quality import QualityEngine
+        from rlmstudio.server.dependencies import AppState, ExecutionRecord
+        from rlmstudio.server.quality import QualityEngine
 
         state = AppState(load_from_disk=False)
         state.save_config = lambda: None  # type: ignore[assignment]

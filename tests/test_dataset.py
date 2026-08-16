@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from rlmkit.benchmark.dataset import (
+from rlmstudio.benchmark.dataset import (
     BenchmarkCase,
     BenchmarkDataset,
     load_dataset,

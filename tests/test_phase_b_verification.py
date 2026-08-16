@@ -12,8 +12,8 @@ from unittest.mock import patch
 import pytest
 from starlette.testclient import TestClient
 
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import AppState, ExecutionRecord, reset_state
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import AppState, ExecutionRecord, reset_state
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +71,7 @@ class TestTraceTokenMetrics:
 
     def test_trace_result_includes_token_breakdown(self, client: TestClient) -> None:
         """GET /api/traces/{id} includes input_tokens, output_tokens, total_cost in result."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         exec_id = self._create_execution_with_result(state)
@@ -87,7 +87,7 @@ class TestTraceTokenMetrics:
 
     def test_trace_budget_still_has_totals(self, client: TestClient) -> None:
         """Budget fields are still populated for backward compatibility."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         exec_id = self._create_execution_with_result(state)
@@ -101,7 +101,7 @@ class TestTraceTokenMetrics:
 
     def test_trace_result_defaults_to_zero(self, client: TestClient) -> None:
         """Missing token data defaults to 0, not None."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         session = state.get_or_create_session()
@@ -132,7 +132,7 @@ class TestTraceTokenMetrics:
 class TestDashboardMetrics:
     def test_metrics_aggregates_by_provider(self, client: TestClient) -> None:
         """Metrics endpoint populates by_provider from the telemetry store."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         session = state.get_or_create_session()
@@ -181,7 +181,7 @@ class TestDashboardMetrics:
 
     def test_metrics_aggregates_by_chat_provider(self, client: TestClient) -> None:
         """Metrics endpoint populates by_chat_provider from the telemetry store."""
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         session = state.get_or_create_session()
@@ -255,7 +255,7 @@ class TestSessionPersistence:
         assert len(state2.sessions) == 0
 
         # Simulate loading from disk
-        with patch("rlmkit.server.dependencies._SESSIONS_FILE") as mock_file:
+        with patch("rlmstudio.server.dependencies._SESSIONS_FILE") as mock_file:
             mock_file.exists.return_value = True
             mock_file.read_text.return_value = json.dumps(serialized, default=str)
             state2._load_sessions()
@@ -270,7 +270,7 @@ class TestSessionPersistence:
         """_run_execution error path calls save_sessions() so errors persist."""
         import inspect
 
-        from rlmkit.server.routes import chat
+        from rlmstudio.server.routes import chat
 
         source = inspect.getsource(chat._run_execution)
         except_idx = source.rfind("except Exception")
@@ -284,7 +284,7 @@ class TestSessionPersistence:
         """_ws_execute error path calls save_sessions() so WS errors persist."""
         import inspect
 
-        from rlmkit.server.routes import chat
+        from rlmstudio.server.routes import chat
 
         source = inspect.getsource(chat.websocket_chat)
         # Find the _ws_execute inner function's except block
@@ -316,10 +316,10 @@ class TestFilePersistence:
         a restart."""
         from unittest.mock import patch
 
-        from rlmkit.server.dependencies import AppState, FileRecord
+        from rlmstudio.server.dependencies import AppState, FileRecord
 
         files_path = tmp_path / "files.json"  # type: ignore[operator]
-        with patch("rlmkit.server.dependencies._FILES_FILE", files_path):
+        with patch("rlmstudio.server.dependencies._FILES_FILE", files_path):
             # Producer: upload a file, persist.
             src = AppState(load_from_disk=False)
             now = datetime.now(timezone.utc)
@@ -355,7 +355,7 @@ class TestFilePersistence:
         survives an immediate restart (the actual bug the user reported)."""
         from unittest.mock import patch
 
-        from rlmkit.server.dependencies import AppState, get_state
+        from rlmstudio.server.dependencies import AppState, get_state
 
         # reset_state() stubs save_files = lambda: None on the singleton to
         # avoid polluting the user's ~/.rlmkit/ during test runs.  For this
@@ -364,7 +364,7 @@ class TestFilePersistence:
         state.save_files = AppState.save_files.__get__(state, AppState)  # type: ignore[method-assign]
 
         files_path = tmp_path / "files.json"  # type: ignore[operator]
-        with patch("rlmkit.server.dependencies._FILES_FILE", files_path):
+        with patch("rlmstudio.server.dependencies._FILES_FILE", files_path):
             resp = client.post(
                 "/api/files/upload",
                 files={"file": ("doc.txt", b"Hello world", "text/plain")},
@@ -386,14 +386,14 @@ class TestFilePersistence:
         be resolved for a chat request."""
         from unittest.mock import patch
 
-        from rlmkit.server.dependencies import AppState, get_state
+        from rlmstudio.server.dependencies import AppState, get_state
 
         # Restore the real save_files on the singleton (reset_state stubs it).
         state = get_state()
         state.save_files = AppState.save_files.__get__(state, AppState)  # type: ignore[method-assign]
 
         files_path = tmp_path / "files.json"  # type: ignore[operator]
-        with patch("rlmkit.server.dependencies._FILES_FILE", files_path):
+        with patch("rlmstudio.server.dependencies._FILES_FILE", files_path):
             # Step 1: upload a file (the real upload path persists it).
             upload_resp = client.post(
                 "/api/files/upload",

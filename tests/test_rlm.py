@@ -2,7 +2,7 @@
 
 import pytest
 
-from rlmkit import RLM, BudgetExceeded, MockLLMClient, RLMConfig
+from rlmstudio import RLM, BudgetExceeded, MockLLMClient, RLMConfig
 
 
 class TestBasicRLMExecution:

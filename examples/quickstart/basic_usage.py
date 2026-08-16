@@ -8,7 +8,7 @@ This demonstrates the three main interaction modes:
 4. Auto - Automatically chooses the best mode
 """
 
-from rlmkit import interact
+from rlmstudio import interact
 
 # Sample content for demonstrations
 SHORT_CONTENT = """
@@ -32,10 +32,10 @@ arbitrarily large contexts by treating the prompt as an external environment.
 - **Auto Mode**: Automatically selects the best strategy
 
 ## Installation
-pip install rlmkit
+pip install rlmstudio
 
 ## Quick Start
-from rlmkit import interact
+from rlmstudio import interact
 result = interact("your content", "your query")
 print(result.answer)
 
@@ -154,7 +154,7 @@ def example_5_simple_completion() -> None:
     print("Example 5: Simple complete() Function")
     print("=" * 70)
 
-    from rlmkit import complete
+    from rlmstudio import complete
 
     # Just get the answer string
     answer = complete(content=SHORT_CONTENT, query="List the interaction modes", mode="direct")

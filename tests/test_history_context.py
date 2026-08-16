@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from rlmkit.application.services.history_context import (
+from rlmstudio.application.services.history_context import (
     HistoryAssemblyResult,
     HistoryTurn,
     assemble_inprompt_history_within_budget,

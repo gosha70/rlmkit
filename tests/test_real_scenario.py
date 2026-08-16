@@ -12,9 +12,9 @@ Before fix: Step 6 FINAL would be accepted (WRONG!)
 After fix: Step 6 FINAL should be rejected (CORRECT!)
 """
 
-from rlmkit.config import ExecutionConfig, RLMConfig
-from rlmkit.core.rlm import RLM
-from rlmkit.llm import MockLLMClient
+from rlmstudio.config import ExecutionConfig, RLMConfig
+from rlmstudio.core.rlm import RLM
+from rlmstudio.llm import MockLLMClient
 
 
 def test_user_scenario():

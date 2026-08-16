@@ -8,15 +8,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rlmkit.domain.exceptions import (
+from rlmstudio.domain.exceptions import (
     BudgetExceededError,
     ConfigurationError,
     DomainError,
     ExecutionFailedError,
     SecurityViolationError,
 )
-from rlmkit.public.client import RLMKitClient
-from rlmkit.public.errors import (
+from rlmstudio.public.client import RLMKitClient
+from rlmstudio.public.errors import (
     BudgetError,
     ConfigError,
     ProviderError,
@@ -24,7 +24,7 @@ from rlmkit.public.errors import (
     SandboxError,
     wrap_domain_error,
 )
-from rlmkit.public.types import PublicRunResult
+from rlmstudio.public.types import PublicRunResult
 
 # RLMKitClient is intentionally deprecated; these tests verify the deprecated
 # API still works correctly. Suppress the expected deprecation warning.
@@ -66,7 +66,7 @@ class TestRLMKitClientConstruction:
 
     def test_sandbox_default_is_local(self) -> None:
         client = RLMKitClient()
-        from rlmkit.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
 
         assert isinstance(client._sandbox, LocalSandboxAdapter)
 
@@ -260,8 +260,8 @@ class TestPublicErrors:
 class TestClientDefaultModels:
     """Assert that RLMKitClient legacy provider defaults stay aligned with api.py."""
 
-    @patch("rlmkit.llm.anthropic_client.ClaudeClient", create=True)
-    @patch("rlmkit.infrastructure.llm.anthropic_adapter.AnthropicAdapter", create=True)
+    @patch("rlmstudio.llm.anthropic_client.ClaudeClient", create=True)
+    @patch("rlmstudio.infrastructure.llm.anthropic_adapter.AnthropicAdapter", create=True)
     def test_anthropic_default_model(
         self,
         _adapter_cls: MagicMock,  # noqa: PT019

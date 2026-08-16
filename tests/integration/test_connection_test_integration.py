@@ -26,9 +26,9 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.services.provider_tester import ProviderTestResult
-from rlmkit.server.dependencies import AppState
-from rlmkit.server.models import LLMProviderConfig
+from rlmstudio.application.services.provider_tester import ProviderTestResult
+from rlmstudio.server.dependencies import AppState
+from rlmstudio.server.models import LLMProviderConfig
 
 
 def _result(status: str) -> ProviderTestResult:
@@ -100,7 +100,7 @@ def test_three_providers_converge_over_multiple_cycles(
     )
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_mock_probe,
     ):
         fast_cycle_state._start_connection_testing()
@@ -166,7 +166,7 @@ def test_stop_during_running_cycle_discards_results(
 
     try:
         with patch(
-            "rlmkit.application.services.provider_tester.test_provider",
+            "rlmstudio.application.services.provider_tester.test_provider",
             side_effect=_slow_probe,
         ):
             state._start_connection_testing()
@@ -234,7 +234,7 @@ def test_adding_provider_mid_run_is_picked_up_next_cycle(
 
     try:
         with patch(
-            "rlmkit.application.services.provider_tester.test_provider",
+            "rlmstudio.application.services.provider_tester.test_provider",
             side_effect=_track,
         ):
             state._start_connection_testing()

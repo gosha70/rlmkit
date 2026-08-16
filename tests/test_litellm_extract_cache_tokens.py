@@ -14,7 +14,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from rlmkit.infrastructure.llm.litellm_adapter import (
+from rlmstudio.infrastructure.llm.litellm_adapter import (
     LiteLLMAdapter,
     _extract_cache_tokens,
 )

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from rlmkit.telemetry.store import _SCHEMA_SQL, TelemetryStore
+from rlmstudio.telemetry.store import _SCHEMA_SQL, TelemetryStore
 
 _V2_STEP_COLUMNS = {
     "prompt_tokens",

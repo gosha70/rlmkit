@@ -3,18 +3,18 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rlmkit"
+name = "rlm-studio"
 version = "1.0.0"
-description = "Recursive Language Model (RLM) toolkit for managing large context through code generation"
+description = "RLM Studio — a workbench to measure whether Recursive Language Models beat Direct/RAG on your data, with any provider"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "RLMKit Contributors"}
+    {name = "RLM Studio Contributors"}
 ]
-keywords = ["llm", "rlm", "recursive", "context", "large-context", "code-generation"]
+keywords = ["llm", "rlm", "rlm-studio", "recursive", "context", "large-context", "code-generation", "evaluation", "benchmark", "rag"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -88,34 +88,34 @@ eval = [
 ]
 
 all = [
-    "rlmkit[dev,server,ui,eval]",
+    "rlm-studio[dev,server,ui,eval]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/gosha70/rlmkit"
-Repository = "https://github.com/gosha70/rlmkit"
-Documentation = "https://github.com/gosha70/rlmkit/blob/main/README.md"
+Homepage = "https://github.com/gosha70/rlm-studio"
+Repository = "https://github.com/gosha70/rlm-studio"
+Documentation = "https://github.com/gosha70/rlm-studio/blob/master/README.md"
 
 [project.scripts]
-# Console script — `rlmkit studio` is the one-click entry point for RLM
+# Console script — `rlm-studio studio` is the one-click entry point for RLM
 # Studio (FastAPI + bundled Next.js UI on a single port). See
-# `src/rlmkit/cli/main.py` for the dispatcher and
+# `src/rlmstudio/cli/main.py` for the dispatcher and
 # `doc_internal/release/steps/04-publish-and-distribute.md` for the
-# release-time build pipeline that populates `src/rlmkit/_ui/`.
-rlmkit = "rlmkit.cli.main:main"
+# release-time build pipeline that populates `src/rlmstudio/_ui/`.
+rlm-studio = "rlmstudio.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-rlmkit = ["rlmkit_config.default.yaml"]
-"rlmkit.prompts" = ["*.yaml", "*.yml", "*.json"]
+rlmstudio = ["rlmkit_config.default.yaml"]
+"rlmstudio.prompts" = ["*.yaml", "*.yml", "*.json"]
 # Bundled Studio UI — populated at release time by the frontend static
 # export. The `_ui/__init__.py` placeholder is always present so the
 # package directory exists even in unbuilt source checkouts; everything
 # under `_ui/` (HTML, JS, CSS, fonts, images, the Next.js `_next/`
 # build manifest) ships in the wheel when the frontend has been built.
-"rlmkit._ui" = ["**/*"]
+"rlmstudio._ui" = ["**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -158,7 +158,7 @@ ignore = ["E501"]  # Line length (formatter handles)
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["N802", "N803", "N806", "PT011"]  # Tests: allow naming conventions, broad pytest.raises
-"src/rlmkit/server/routes/*" = ["B008", "PT028"]  # Depends() in FastAPI route defaults; PT028: route functions named test_* are not pytest tests
+"src/rlmstudio/server/routes/*" = ["B008", "PT028"]  # Depends() in FastAPI route defaults; PT028: route functions named test_* are not pytest tests
 
 [tool.mypy]
 python_version = "3.10"
@@ -172,7 +172,7 @@ ignore_missing_imports = true
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-# Tests are not checked by CI mypy (which runs only on src/rlmkit/).
+# Tests are not checked by CI mypy (which runs only on src/rlmstudio/).
 # Relax annotations requirement to match that scope.
 module = "tests.*"
 disallow_untyped_defs = false
@@ -186,11 +186,11 @@ omit = [
     #
     # Pure-Python modules under ui/ (data/, services/, utils/, file_processor)
     # are NOT omitted — they are imported by the server layer and are measured.
-    "src/rlmkit/ui/app.py",
-    "src/rlmkit/ui/charts.py",
-    "src/rlmkit/ui/session.py",
-    "src/rlmkit/ui/pages/*",
-    "src/rlmkit/ui/components/*",
+    "src/rlmstudio/ui/app.py",
+    "src/rlmstudio/ui/charts.py",
+    "src/rlmstudio/ui/session.py",
+    "src/rlmstudio/ui/pages/*",
+    "src/rlmstudio/ui/components/*",
 ]
 
 [tool.bandit]

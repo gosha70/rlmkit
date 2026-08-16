@@ -23,7 +23,7 @@ then via :class:`LiteLLMAdapter` (the RLMKit wrapper). Prints
 
 Requirements:
     OPENAI_API_KEY env var (falls back to the RLMKit secret store if
-    set there — see rlmkit/llm/openai_client.py).
+    set there — see rlmstudio/llm/openai_client.py).
 
 Usage:
     uv run python scripts/verify_openai_cache.py
@@ -122,7 +122,7 @@ def run_litellm_direct() -> tuple[int, int, int]:
 
 async def run_rlmkit_adapter() -> tuple[int, int, int]:
     """Hit OpenAI twice via LiteLLMAdapter. Same shape of result."""
-    from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+    from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
     adapter = LiteLLMAdapter(model="gpt-4o", max_tokens=50)
     messages = _build_messages()

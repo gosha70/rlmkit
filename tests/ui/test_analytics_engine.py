@@ -4,8 +4,8 @@
 
 import pytest
 
-from rlmkit.ui.services.analytics_engine import AnalyticsEngine
-from rlmkit.ui.services.models import ExecutionMetrics
+from rlmstudio.ui.services.analytics_engine import AnalyticsEngine
+from rlmstudio.ui.services.models import ExecutionMetrics
 
 # ---------------------------------------------------------------------------
 # Helpers

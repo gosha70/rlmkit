@@ -12,8 +12,8 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import get_state, reset_state
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import get_state, reset_state
 
 pytestmark = pytest.mark.e2e
 
@@ -47,7 +47,7 @@ def _seed_execution(
 ) -> None:
     """Inject an execution directly into AppState so the e2e trace
     endpoint has real data to render, without needing a live LLM."""
-    from rlmkit.server.dependencies import ExecutionRecord
+    from rlmstudio.server.dependencies import ExecutionRecord
 
     state = get_state()
     state.executions[execution_id] = ExecutionRecord(
@@ -110,7 +110,7 @@ class TestTraceResponseShape:
         the fix this returned zeros for every new field because
         ``record_step`` dropped them.
         """
-        from rlmkit.server.dependencies import get_state
+        from rlmstudio.server.dependencies import get_state
 
         state = get_state()
         # Remove any in-memory execution for this id so the traces route

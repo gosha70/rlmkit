@@ -6,7 +6,7 @@ properties) and AC-23 (TraceStep.from_dict classmethod).
 
 from __future__ import annotations
 
-from rlmkit.domain.entities import ExecutionTrace, TraceStep
+from rlmstudio.domain.entities import ExecutionTrace, TraceStep
 
 
 class TestTraceStepNewFields:

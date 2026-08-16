@@ -6,8 +6,8 @@ corresponding port Protocol classes (LLMPort, SandboxPort, etc.).
 
 import pytest
 
-from rlmkit.application.dto import ExecutionResultDTO, LLMResponseDTO
-from rlmkit.application.ports.llm_port import LLMPort
+from rlmstudio.application.dto import ExecutionResultDTO, LLMResponseDTO
+from rlmstudio.application.ports.llm_port import LLMPort
 
 # ---------------------------------------------------------------------------
 # MockLLMAdapter compliance
@@ -27,7 +27,7 @@ class TestMockLLMAdapterCompliance:
     """Verify MockLLMAdapter satisfies LLMPort structurally."""
 
     def _make_adapter(self):
-        from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
+        from rlmstudio.infrastructure.llm.mock_adapter import MockLLMAdapter
 
         return MockLLMAdapter(["test response"])
 
@@ -69,7 +69,7 @@ class TestMockLLMAdapterCompliance:
         assert adapter.call_history[0] == msgs
 
     def test_responses_cycle(self):
-        from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
+        from rlmstudio.infrastructure.llm.mock_adapter import MockLLMAdapter
 
         adapter = MockLLMAdapter(["first", "second"])
         r1 = adapter.complete([{"role": "user", "content": "1"}])
@@ -81,7 +81,7 @@ class TestMockLLMAdapterCompliance:
         assert r3.content == "second"
 
     def test_reset(self):
-        from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
+        from rlmstudio.infrastructure.llm.mock_adapter import MockLLMAdapter
 
         adapter = MockLLMAdapter(["a", "b"])
         adapter.complete([{"role": "user", "content": "x"}])
@@ -91,7 +91,7 @@ class TestMockLLMAdapterCompliance:
         assert len(adapter.call_history) == 1
 
     def test_requires_at_least_one_response(self):
-        from rlmkit.infrastructure.llm.mock_adapter import MockLLMAdapter
+        from rlmstudio.infrastructure.llm.mock_adapter import MockLLMAdapter
 
         with pytest.raises(ValueError):
             MockLLMAdapter([])
@@ -106,13 +106,13 @@ class TestLiteLLMAdapterCompliance:
     """Verify LiteLLMAdapter structurally satisfies LLMPort."""
 
     def test_isinstance_llm_port(self):
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="gpt-4o")
         assert isinstance(adapter, LLMPort)
 
     def test_has_required_methods(self):
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter()
         assert callable(getattr(adapter, "complete", None))
@@ -130,7 +130,7 @@ class TestLocalSandboxAdapterCompliance:
     """Verify LocalSandboxAdapter satisfies SandboxPort structurally."""
 
     def _make_adapter(self):
-        from rlmkit.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.local_sandbox import LocalSandboxAdapter
 
         return LocalSandboxAdapter()
 
@@ -178,7 +178,7 @@ class TestRestrictedSandboxAdapterCompliance:
     """Verify RestrictedSandboxAdapter satisfies SandboxPort structurally."""
 
     def _make_adapter(self):
-        from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+        from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
         return RestrictedSandboxAdapter()
 
@@ -217,19 +217,19 @@ class TestSandboxFactory:
     """Verify create_sandbox returns SandboxPort-compliant objects."""
 
     def test_local_sandbox_has_sandbox_port_methods(self):
-        from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+        from rlmstudio.infrastructure.sandbox.sandbox_factory import create_sandbox
 
         sb = create_sandbox(sandbox_type="local")
         assert _has_port_methods(sb, _SANDBOX_PORT_METHODS)
 
     def test_restricted_sandbox_has_sandbox_port_methods(self):
-        from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+        from rlmstudio.infrastructure.sandbox.sandbox_factory import create_sandbox
 
         sb = create_sandbox(sandbox_type="restricted")
         assert _has_port_methods(sb, _SANDBOX_PORT_METHODS)
 
     def test_unknown_sandbox_raises(self):
-        from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+        from rlmstudio.infrastructure.sandbox.sandbox_factory import create_sandbox
 
         with pytest.raises(ValueError, match="Unknown sandbox type"):
             create_sandbox(sandbox_type="nonexistent")
@@ -263,13 +263,13 @@ class TestDTOs:
         assert dto.success is False
 
     def test_run_result_dto_total_tokens(self):
-        from rlmkit.application.dto import RunResultDTO
+        from rlmstudio.application.dto import RunResultDTO
 
         dto = RunResultDTO(input_tokens=100, output_tokens=50)
         assert dto.total_tokens == 150
 
     def test_run_config_dto_defaults(self):
-        from rlmkit.application.dto import RunConfigDTO
+        from rlmstudio.application.dto import RunConfigDTO
 
         cfg = RunConfigDTO()
         assert cfg.mode == "auto"

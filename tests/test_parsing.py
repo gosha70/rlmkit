@@ -1,6 +1,6 @@
 """Tests for parsing utilities."""
 
-from rlmkit.core.parsing import (
+from rlmstudio.core.parsing import (
     ParsedResponse,
     extract_final_answer,
     extract_final_var,

@@ -2,9 +2,9 @@
 
 import threading
 
-from rlmkit.config import ExecutionConfig, RLMConfig
-from rlmkit.core.rlm import RLM
-from rlmkit.llm import MockLLMClient
+from rlmstudio.config import ExecutionConfig, RLMConfig
+from rlmstudio.core.rlm import RLM
+from rlmstudio.llm import MockLLMClient
 
 
 def test_variable_persistence():

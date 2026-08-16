@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Quick test to verify v2.0 JSON parser works"""
 
-from rlmkit.config import ExecutionConfig, RLMConfig
-from rlmkit.core.rlm import RLM
-from rlmkit.llm import MockLLMClient
+from rlmstudio.config import ExecutionConfig, RLMConfig
+from rlmstudio.core.rlm import RLM
+from rlmstudio.llm import MockLLMClient
 
 print("Testing v2.0 JSON Parser")
 print("=" * 60)

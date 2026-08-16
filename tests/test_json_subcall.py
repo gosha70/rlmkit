@@ -7,8 +7,8 @@ via the JSON action protocol.
 
 import pytest
 
-from rlmkit import RLM, RLMConfig
-from rlmkit.llm import MockLLMClient
+from rlmstudio import RLM, RLMConfig
+from rlmstudio.llm import MockLLMClient
 
 
 class TestJSONSubcallAction:

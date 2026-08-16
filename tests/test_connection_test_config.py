@@ -20,11 +20,11 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.application.services.provider_tester import ProviderTestResult
-from rlmkit.server import dependencies
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import AppState, reset_state
-from rlmkit.server.models import (
+from rlmstudio.application.services.provider_tester import ProviderTestResult
+from rlmstudio.server import dependencies
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import AppState, reset_state
+from rlmstudio.server.models import (
     ConfigResponse,
     ConfigUpdateRequest,
     LLMProviderConfig,

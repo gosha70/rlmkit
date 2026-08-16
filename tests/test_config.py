@@ -4,7 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from rlmkit.config import (
+from rlmstudio.config import (
     ExecutionConfig,
     MonitoringConfig,
     RLMConfig,
@@ -279,7 +279,7 @@ class TestConfigIntegration:
 
     def test_security_config_with_sandbox(self):
         """Test that SecurityConfig works with sandbox."""
-        from rlmkit.envs.sandbox import RestrictedBuiltins, SafeImporter
+        from rlmstudio.envs.sandbox import RestrictedBuiltins, SafeImporter
 
         # Create custom config
         config = SecurityConfig()

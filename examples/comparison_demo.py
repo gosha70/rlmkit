@@ -5,7 +5,7 @@ Usage:
     OPENAI_API_KEY=sk-... python examples/comparison_demo.py
 """
 
-from rlmkit import interact
+from rlmstudio import interact
 
 CONTENT = (
     """

@@ -10,16 +10,16 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import (
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import (
     ExecutionRecord,
     FileRecord,
     SessionRecord,
     get_state,
     reset_state,
 )
-from rlmkit.server.routes.chat import _resolve_file_content
-from rlmkit.server.routes.files import _clean_pdf_text
+from rlmstudio.server.routes.chat import _resolve_file_content
+from rlmstudio.server.routes.files import _clean_pdf_text
 
 
 @pytest.fixture(autouse=True)
@@ -330,7 +330,7 @@ class TestFileUpload:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Files exceeding the size cap are rejected with 413."""
-        import rlmkit.server.routes.files as files_mod
+        import rlmstudio.server.routes.files as files_mod
 
         monkeypatch.setattr(files_mod, "_MAX_FILE_SIZE", 5)
         resp = client.post(
@@ -817,7 +817,7 @@ class TestSessionPersistence:
         self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Sessions saved to disk are loaded back on startup."""
-        import rlmkit.server.dependencies as deps
+        import rlmstudio.server.dependencies as deps
 
         sessions_file = tmp_path / "sessions.json"  # type: ignore[operator]
         monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
@@ -861,7 +861,7 @@ class TestSessionPersistence:
 
     def test_session_cap(self, tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
         """Only the most recent N sessions are persisted."""
-        import rlmkit.server.dependencies as deps
+        import rlmstudio.server.dependencies as deps
 
         sessions_file = tmp_path / "sessions.json"  # type: ignore[operator]
         monkeypatch.setattr(deps, "_SESSIONS_FILE", sessions_file)
@@ -892,7 +892,7 @@ class TestSessionPersistence:
 
     def test_corrupt_sessions_file(self, tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
         """Corrupt sessions file is handled gracefully."""
-        import rlmkit.server.dependencies as deps
+        import rlmstudio.server.dependencies as deps
 
         sessions_file = tmp_path / "sessions.json"  # type: ignore[operator]
         sessions_file.write_text("not valid json{{{")  # type: ignore[union-attr]
@@ -1299,8 +1299,8 @@ class TestTrajectoryLogging:
     """Test that trajectory JSONL files are saved when configured."""
 
     def test_save_trajectory_writes_jsonl(self, tmp_path: object) -> None:
-        from rlmkit.application.dto import RunResultDTO
-        from rlmkit.server.routes.chat import _save_trajectory
+        from rlmstudio.application.dto import RunResultDTO
+        from rlmstudio.server.routes.chat import _save_trajectory
 
         execution = ExecutionRecord(
             execution_id="exec-1",
@@ -1516,7 +1516,7 @@ class TestNumRetriesAdapterCreation:
         from unittest.mock import patch
 
         state = get_state()
-        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+        with patch("rlmstudio.server.dependencies.LiteLLMAdapter") as mock_cls:
             mock_cls.return_value = object()
             state.config.active_provider = "ollama"
             state.config.active_model = "llama3.2"
@@ -1528,7 +1528,7 @@ class TestNumRetriesAdapterCreation:
         from unittest.mock import patch
 
         state = get_state()
-        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+        with patch("rlmstudio.server.dependencies.LiteLLMAdapter") as mock_cls:
             mock_cls.return_value = object()
             state.config.active_provider = "openai"
             state.config.active_model = "gpt-4o"
@@ -1540,7 +1540,7 @@ class TestNumRetriesAdapterCreation:
         from unittest.mock import patch
 
         state = get_state()
-        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+        with patch("rlmstudio.server.dependencies.LiteLLMAdapter") as mock_cls:
             mock_cls.return_value = object()
             state.config.active_provider = "openai"
             state.config.active_model = "gpt-4o"
@@ -1551,7 +1551,7 @@ class TestNumRetriesAdapterCreation:
     def test_chat_provider_config_num_retries_used(self) -> None:
         from unittest.mock import patch
 
-        from rlmkit.server.models import ChatProviderConfig, RuntimeSettings
+        from rlmstudio.server.models import ChatProviderConfig, RuntimeSettings
 
         state = get_state()
         cp = ChatProviderConfig(
@@ -1564,7 +1564,7 @@ class TestNumRetriesAdapterCreation:
         )
         state.config.chat_providers = [cp]
 
-        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+        with patch("rlmstudio.server.dependencies.LiteLLMAdapter") as mock_cls:
             mock_cls.return_value = object()
             state.create_llm_adapter_for_chat_provider("cp-test")
         _, kwargs = mock_cls.call_args
@@ -1573,7 +1573,7 @@ class TestNumRetriesAdapterCreation:
     def test_per_request_num_retries_beats_chat_provider_config(self) -> None:
         from unittest.mock import patch
 
-        from rlmkit.server.models import ChatProviderConfig, RuntimeSettings
+        from rlmstudio.server.models import ChatProviderConfig, RuntimeSettings
 
         state = get_state()
         cp = ChatProviderConfig(
@@ -1586,7 +1586,7 @@ class TestNumRetriesAdapterCreation:
         )
         state.config.chat_providers = [cp]
 
-        with patch("rlmkit.server.dependencies.LiteLLMAdapter") as mock_cls:
+        with patch("rlmstudio.server.dependencies.LiteLLMAdapter") as mock_cls:
             mock_cls.return_value = object()
             state.create_llm_adapter_for_chat_provider("cp-test2", num_retries=7)
         _, kwargs = mock_cls.call_args
@@ -1715,7 +1715,7 @@ class TestPublicAPIShim:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from rlmkit.public import PublicInteractResult  # noqa: F401
+            from rlmstudio.public import PublicInteractResult  # noqa: F401
 
             assert len(w) >= 1
             dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
@@ -1727,6 +1727,6 @@ class TestPublicAPIShim:
 
         import pytest
 
-        pub = importlib.import_module("rlmkit.public")
+        pub = importlib.import_module("rlmstudio.public")
         with pytest.raises(AttributeError):
             _ = pub.NonExistentName

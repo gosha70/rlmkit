@@ -1,4 +1,4 @@
-"""Tests for ``rlmkit.branding`` — the single source of product identity.
+"""Tests for ``rlmstudio.branding`` — the single source of product identity.
 
 These exercise the env-var and state-dir accessors, including the legacy
 fallback machinery that a future rename relies on.  Legacy tuples are empty
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from rlmkit import branding
+from rlmstudio import branding
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ class TestEnv:
     ) -> None:
         monkeypatch.setattr(branding, "LEGACY_ENV_PREFIXES", ("LEGACYX_",))
         monkeypatch.setenv("LEGACYX_PORT", "9000")
-        with caplog.at_level(logging.WARNING, logger="rlmkit.branding"):
+        with caplog.at_level(logging.WARNING, logger="rlmstudio.branding"):
             assert branding.env("PORT") == "9000"
             assert branding.env("PORT") == "9000"
         warnings = [r for r in caplog.records if "deprecated" in r.getMessage()]
@@ -56,7 +56,7 @@ class TestEnv:
         monkeypatch.setattr(branding, "LEGACY_ENV_PREFIXES", ("LEGACYX_",))
         monkeypatch.setenv("LEGACYX_PORT", "9000")
         monkeypatch.setenv(branding.env_name("PORT"), "8123")
-        with caplog.at_level(logging.WARNING, logger="rlmkit.branding"):
+        with caplog.at_level(logging.WARNING, logger="rlmstudio.branding"):
             assert branding.env("PORT") == "8123"
         assert not [r for r in caplog.records if "deprecated" in r.getMessage()]
 
@@ -89,7 +89,7 @@ class TestStateDir:
         (legacy / "config.json").write_text("{}")
         (legacy / "sub" / "telemetry.db").write_bytes(b"db")
 
-        with caplog.at_level(logging.INFO, logger="rlmkit.branding"):
+        with caplog.at_level(logging.INFO, logger="rlmstudio.branding"):
             target = branding.state_dir()
 
         assert target == tmp_path / branding.STATE_DIR_NAME

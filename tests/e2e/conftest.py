@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import reset_state
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import reset_state
 
 # ---------------------------------------------------------------------------
 # Client and state management

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from rlmkit.application.sandbox_vars import (
+from rlmstudio.application.sandbox_vars import (
     EXTRA_KEY_HISTORY_MESSAGES,
     EXTRA_KEY_HISTORY_VARIABLE,
     HISTORY_PATH_DISABLED,
@@ -14,7 +14,7 @@ from rlmkit.application.sandbox_vars import (
     HISTORY_PATH_INPROMPT,
     HISTORY_PATH_REPL_VARIABLE,
 )
-from rlmkit.server.routes.chat import _prepare_history_context
+from rlmstudio.server.routes.chat import _prepare_history_context
 
 
 class FakeAdapter:
@@ -380,7 +380,7 @@ class TestSystemPromptContainsHistoryParagraph:
     """Pin that the RLM system prompt tells the model about the `history` variable."""
 
     def test_rlm_system_prompt_mentions_history(self) -> None:
-        from rlmkit.prompts import format_system_prompt
+        from rlmstudio.prompts import format_system_prompt
 
         prompt = format_system_prompt(prompt_length=1000)
         assert "history" in prompt
@@ -394,14 +394,14 @@ class TestSystemPromptContainsHistoryParagraph:
 
         import yaml
 
-        pkg = pkg_resources.files("rlmkit.prompts")
+        pkg = pkg_resources.files("rlmstudio.prompts")
         raw = (pkg / "system_prompt_v2_0.yaml").read_text(encoding="utf-8")
         data = yaml.safe_load(raw)
         assert data["version"] == "2.1"
 
     def test_history_paragraph_warns_against_tool_use(self) -> None:
         """The prompt must warn not to pass history to peek/grep/outline_file."""
-        from rlmkit.prompts import format_system_prompt
+        from rlmstudio.prompts import format_system_prompt
 
         prompt = format_system_prompt(prompt_length=1000)
         assert "Do NOT pass" in prompt

@@ -27,10 +27,10 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.services.provider_tester import ProviderTestResult
-from rlmkit.server import dependencies
-from rlmkit.server.dependencies import AppState
-from rlmkit.server.models import LLMProviderConfig
+from rlmstudio.application.services.provider_tester import ProviderTestResult
+from rlmstudio.server import dependencies
+from rlmstudio.server.dependencies import AppState
+from rlmstudio.server.models import LLMProviderConfig
 
 
 def _mock_probe(provider: LLMProviderConfig, timeout_s: float) -> ProviderTestResult:
@@ -151,7 +151,7 @@ def test_concurrent_crud_and_cycles_do_not_corrupt_config(
             foreground_done.set()
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_mock_probe,
     ):
         state._start_connection_testing()

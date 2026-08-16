@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.dto import LLMResponseDTO, StreamChunk
-from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+from rlmstudio.application.dto import LLMResponseDTO, StreamChunk
+from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
 
 def _chunk(content: str | None, *, finish_reason: str | None = None, usage=None, model="gpt-4o"):
@@ -101,7 +101,7 @@ class TestCompleteTTFT:
 
         adapter = LiteLLMAdapter(model="gpt-4o")
         with patch(
-            "rlmkit.infrastructure.llm.litellm_adapter.time.monotonic",
+            "rlmstudio.infrastructure.llm.litellm_adapter.time.monotonic",
             lambda: next(times),
         ):
             result = adapter.complete([{"role": "user", "content": "?"}])
