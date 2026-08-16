@@ -45,7 +45,7 @@ _DOCS_ALLOWLIST: dict[str, str] = {
     "rlm-concepts": "rlm-concepts.md",
     "rlm-prompt-tuning": "rlm-prompt-tuning.md",
     "rlm-studio-guide": "rlm-studio-guide.md",
-    "rlmkit-design-document": "RLMKit_Design_Document.md",
+    "rlm-studio-design-document": "RLM_Studio_Design_Document.md",
     "lessons-from-ai-copilots": "lessons-from-ai-copilots.md",
     # Cookbook provider guides. Slug uses flat "hosts-<name>" form so
     # the slug regex ^[a-z0-9-]+$ stays simple; the filename resolves

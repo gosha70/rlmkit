@@ -203,7 +203,7 @@ cases:
         if not sample.exists():
             pytest.skip("sample_benchmark.yaml not found")
         ds = load_dataset(str(sample))
-        assert ds.name == "RLMKit Sample Benchmark"
+        assert ds.name == "RLM Studio Sample Benchmark"
         assert len(ds) >= 7
 
 

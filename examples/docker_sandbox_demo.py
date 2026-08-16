@@ -156,7 +156,7 @@ def demo_comparison():
     print("=" * 60)
 
     print("""
-RLMKit provides multiple security levels:
+RLM Studio provides multiple security levels:
 
 1. **Restricted Builtins** (Default)
    - Limited Python builtins
@@ -188,7 +188,7 @@ When restricted builtins are enough:
 
 
 if __name__ == "__main__":
-    print("\n🔒 RLMKit Docker Sandbox Demo\n")
+    print("\n🔒 RLM Studio Docker Sandbox Demo\n")
 
     demo_basic_execution()
     demo_security_isolation()

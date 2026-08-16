@@ -1,15 +1,15 @@
-# RLMKit Manual Integration Test Plan
+# RLM Studio Manual Integration Test Plan
 
 **Version:** 1.0
 **Date:** February 8, 2026
 **Owner:** QA Lead
-**Scope:** End-to-end manual validation of RLMKit features
+**Scope:** End-to-end manual validation of RLM Studio features
 
 ---
 
 ## Overview
 
-This document defines manual integration test cases for RLMKit. Each test case is
+This document defines manual integration test cases for RLM Studio. Each test case is
 assigned a priority level:
 
 - **P0 (Critical Path)** -- Must pass for any release. Blocks deployment.
@@ -22,14 +22,14 @@ assigned a priority level:
 
 ### TC-001: First-Time Setup and Provider Configuration
 **Priority:** P0
-**Preconditions:** Clean environment, no prior RLMKit configuration.
+**Preconditions:** Clean environment, no prior RLM Studio configuration.
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Clone the repository and run `pip install -e ".[all]"` | Installation succeeds without errors |
-| 2 | Run `python -c "import rlmkit; print(rlmkit.__version__)"` | Prints version string (e.g. `1.0.0`) |
+| 2 | Run `python -c "import rlmstudio; print(rlmstudio.__version__)"` | Prints version string (e.g. `1.0.0`) |
 | 3 | Set `OPENAI_API_KEY` environment variable to a valid key | Variable is set |
-| 4 | Run `python -c "from rlmkit.llm import auto_detect_provider; print(auto_detect_provider())"` | Prints `openai` |
+| 4 | Run `python -c "from rlmstudio.llm import auto_detect_provider; print(auto_detect_provider())"` | Prints `openai` |
 | 5 | Run `pytest tests/ -x --timeout=60` | All existing tests pass |
 
 **Pass Criteria:** All steps succeed. Provider auto-detection returns the correct provider.
@@ -362,7 +362,7 @@ assigned a priority level:
 - Auto-flip to `offline` never happens on a single transient failure (threshold N=2).
 - `offline → connected` happens on a single success.
 - Setting interval=0 halts auto-testing; manual test still functions.
-- No `.config.*.tmp` files accumulate in `~/.rlmkit/` after many cycles.
+- No `.config.*.tmp` files accumulate in `~/.rlm-studio/` after many cycles.
 
 **Notes:**
 - Tail the server log to verify INFO lines: `connection test thread started`,

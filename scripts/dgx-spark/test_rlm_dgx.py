@@ -1,4 +1,4 @@
-"""Manual smoke test: RLMKit against Ollama and/or vLLM on DGX Spark.
+"""Manual smoke test: RLM Studio against Ollama and/or vLLM on DGX Spark.
 
 Both backends are probed at startup. Tests for an unavailable backend are
 skipped automatically — no need to stop the script.

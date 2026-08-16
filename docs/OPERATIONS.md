@@ -1,46 +1,46 @@
 # Operations Guide
 
-This doc covers what operators of a single-node RLMKit deployment need to
+This doc covers what operators of a single-node RLM Studio deployment need to
 know: where state lives on disk, how to back it up, how upgrades work,
-and what workloads RLMKit v1.1 does and does not support.
+and what workloads RLM Studio v1.0 does and does not support.
 
 For install and run instructions, see the [README](../README.md). For
 per-provider setup, see [docs/hosts/](hosts/).
 
 ---
 
-## 1. What RLMKit v1.1 is (and is not)
+## 1. What RLM Studio v1.0 is (and is not)
 
-RLMKit v1.1 is a **single-node self-hosted** product. One backend process,
+RLM Studio v1.0 is a **single-node self-hosted** product. One backend process,
 one frontend process, one user or one small team sharing that single
 backend. The [README § Deployment model & support boundary](../README.md#deployment-model--support-boundary)
 lists what is supported and what is out of scope.
 
-**The one sentence summary:** v1.1 is the right fit for developers,
+**The one sentence summary:** v1.0 is the right fit for developers,
 prompt engineers, and small teams running on their own machine or on a
 shared workstation. It is not a multi-tenant service, and concurrent
 large-document workloads from different users are unsupported in v1.1.
 
 **Why this matters for ops:** two operators uploading 8MB documents to
-the same backend at the same time will both execute; RLMKit does not
-queue them. The inference backend behind RLMKit (vLLM, Ollama, cloud API)
-handles that concurrency, not RLMKit itself. If that inference backend
+the same backend at the same time will both execute; RLM Studio does not
+queue them. The inference backend behind RLM Studio (vLLM, Ollama, cloud API)
+handles that concurrency, not RLM Studio itself. If that inference backend
 saturates, both runs will slow or fail. If you need hard isolation
-between users, run separate RLMKit backends — one per user or team —
+between users, run separate RLM Studio backends — one per user or team —
 behind a reverse proxy.
 
 ---
 
 ## 2. Where state lives
 
-Every piece of mutable state RLMKit writes lives under `~/.rlmkit/` on
+Every piece of mutable state RLM Studio writes lives under `~/.rlm-studio/` on
 the backend host, with one exception (API keys may live in the OS
 keyring — see §2.5).
 
 ### 2.1 Filesystem layout
 
 ```
-~/.rlmkit/
+~/.rlm-studio/
 ├── config.json          # Chat providers, profiles, budget, prompts, theme
 ├── sessions.json        # Chat sessions (conversation history per session)
 ├── evaluations.json     # LLM-as-judge scores and pairwise comparisons
@@ -53,15 +53,53 @@ On older installs you may also see these legacy files in the working
 directory (CWD-relative):
 
 ```
-./.rlmkit_config.json          # auto-migrated to ~/.rlmkit/config.json on first launch
-./.rlmkit_sessions.json        # auto-migrated to ~/.rlmkit/sessions.json
-./.rlmkit_evaluations.json     # auto-migrated to ~/.rlmkit/evaluations.json
+./.rlmkit_config.json          # auto-migrated to ~/.rlm-studio/config.json on first launch
+./.rlmkit_sessions.json        # auto-migrated to ~/.rlm-studio/sessions.json
+./.rlmkit_evaluations.json     # auto-migrated to ~/.rlm-studio/evaluations.json
 ```
 
 The migration is one-way: after the first successful move, the legacy
 files are deleted. If you want to keep the old path for some reason,
-symlink `~/.rlmkit/<file>` to wherever you prefer before the first
+symlink `~/.rlm-studio/<file>` to wherever you prefer before the first
 launch.
+
+### 2.1a Upgrading from RLMKit (`~/.rlmkit/`)
+
+RLM Studio was previously published as **RLMKit**, which kept its state in
+`~/.rlmkit/`. On the **first server boot** (`rlm-studio studio`,
+`python -m rlmstudio.server`, uvicorn, or the Docker image) after the
+upgrade, if `~/.rlm-studio/` does not exist yet and `~/.rlmkit/` does, the
+whole legacy directory is **copied** to `~/.rlm-studio/` and one INFO line
+is logged. Nothing is moved or deleted; `~/.rlmkit/` stays as-is and can be
+removed by hand once you are happy with the new install. The copy is a
+one-time cost proportional to the size of `telemetry.db`.
+
+The copy runs only at server startup — never on `import rlmstudio`, in the
+test suite, on `rlm-studio version`, or when `RLM_STUDIO_DIR` points the
+state directory elsewhere.
+
+Related one-cycle compatibility shims:
+
+- Environment variables: the canonical prefix is `RLM_STUDIO_*`
+  (`RLM_STUDIO_HOST`, `RLM_STUDIO_PORT`, `RLM_STUDIO_CONFIG_PATH`,
+  `RLM_STUDIO_DIR`, `RLM_STUDIO_HISTORY_MAX_BYTES`,
+  `RLM_STUDIO_STREAMED_COMPLETE`, …). The old `RLMKIT_*` names are still
+  read as a fallback and log a one-time deprecation warning naming the
+  new variable; they will be dropped in the next minor release.
+- Config file: `./rlm_studio_config.{yaml,json}` is searched first, then
+  the legacy `./rlmkit_config.{yaml,json}`, then `~/.rlm-studio/config.*`
+  and `/etc/rlm-studio/config.*`.
+- OS keyring: provider keys are stored under the service name
+  `rlm-studio`; keys saved by RLMKit under `rlmkit` are read as a fallback
+  and re-saved under the new service name on first use.
+- Docker Compose: the named volume is now `rlm-studio-data`, mounted at
+  `/home/rlmstudio/.rlm-studio`. Copy the old `rlmkit-data` volume once
+  before the first `up` (recipe in the `docker-compose.yml` header).
+- Frontend `localStorage`: the chat page migrates its `rlmkit_*` keys to
+  `rlm_studio_*` on first load.
+- Python: `import rlmstudio` replaces `import rlmkit`; the distribution is
+  `rlm-studio`. There is no `rlmkit` shim on PyPI — that name belongs to an
+  unrelated project.
 
 ### 2.2 `config.json`
 
@@ -85,7 +123,7 @@ Compare page's judge-score ranking.
 
 ### 2.5 `api_keys.json` (fallback) and the OS keyring
 
-On startup RLMKit probes for an OS keyring via the [`keyring`](https://pypi.org/project/keyring/)
+On startup RLM Studio probes for an OS keyring via the [`keyring`](https://pypi.org/project/keyring/)
 library:
 
 - **macOS:** Keychain.
@@ -93,9 +131,9 @@ library:
 - **Linux:** Secret Service (GNOME Keyring, KWallet).
 
 If a keyring is available, **API keys persisted through Settings go into
-the keyring**, and `~/.rlmkit/api_keys.json` is never written. If no
-keyring is available (most headless Linux servers, CI runners), RLMKit
-falls back to a `chmod 600` JSON file at `~/.rlmkit/api_keys.json`.
+the keyring**, and `~/.rlm-studio/api_keys.json` is never written. If no
+keyring is available (most headless Linux servers, CI runners), RLM Studio
+falls back to a `chmod 600` JSON file at `~/.rlm-studio/api_keys.json`.
 
 Precedence on startup, highest wins:
 
@@ -106,14 +144,14 @@ Precedence on startup, highest wins:
 An existing env var always wins. This is intentional — ops teams
 deploying via systemd, Kubernetes, Docker Compose, etc. typically inject
 secrets via the environment, and those should override anything
-RLMKit's Settings UI wrote.
+RLM Studio's Settings UI wrote.
 
 ### 2.6 `telemetry.db`
 
 SQLite database holding every run, step, provider call, and rating.
-Default path: `~/.rlmkit/telemetry.db`. Enabled by default; disable it
+Default path: `~/.rlm-studio/telemetry.db`. Enabled by default; disable it
 by creating an in-memory `SQLiteStorageAdapter` programmatically (see
-`src/rlmkit/telemetry/store.py`).
+`src/rlmstudio/telemetry/store.py`).
 
 Size grows with usage — roughly 1–5 KB per RLM step, 0.5–1 KB per
 direct call. A year of moderate use (hundreds of runs per week) stays
@@ -128,20 +166,20 @@ version as of v1.1 is `2`. See §4 for upgrade behavior.
 
 ### 3.1 What to back up
 
-The single directory `~/.rlmkit/` captures everything except API keys
+The single directory `~/.rlm-studio/` captures everything except API keys
 held in the OS keyring. For a complete backup:
 
 ```bash
 # Stop the backend first — SQLite WAL checkpoints cleanly on a clean exit.
-systemctl stop rlmkit        # or: docker compose down, or Ctrl-C the process
+systemctl stop rlm-studio        # or: docker compose down, or Ctrl-C the process
 
 # Tarball the directory
-tar -czf rlmkit-backup-$(date +%F).tar.gz -C "$HOME" .rlmkit/
+tar -czf rlm-studio-backup-$(date +%F).tar.gz -C "$HOME" .rlm-studio/
 
 # If you use the OS keyring for API keys, export those separately —
-# keyring content is not in ~/.rlmkit/. On macOS:
-#   security export -k ~/Library/Keychains/login.keychain-db -o rlmkit-keys.p12
-# On Linux Secret Service: use `secret-tool search rlmkit` and save the output.
+# keyring content is not in ~/.rlm-studio/. On macOS:
+#   security export -k ~/Library/Keychains/login.keychain-db -o rlm-studio-keys.p12
+# On Linux Secret Service: use `secret-tool search rlm-studio` and save the output.
 ```
 
 A weekly cron job with a one-week retention is adequate for the
@@ -152,13 +190,13 @@ long-running experiments, move to daily.
 
 ```bash
 # Backend must be stopped before restore.
-systemctl stop rlmkit
-rm -rf ~/.rlmkit/
-tar -xzf rlmkit-backup-2026-04-24.tar.gz -C "$HOME"
-systemctl start rlmkit
+systemctl stop rlm-studio
+rm -rf ~/.rlm-studio/
+tar -xzf rlm-studio-backup-2026-04-24.tar.gz -C "$HOME"
+systemctl start rlm-studio
 ```
 
-On first launch after restore, RLMKit re-reads `config.json`,
+On first launch after restore, RLM Studio re-reads `config.json`,
 `sessions.json`, `evaluations.json`, and the SQLite DB. If the backup
 was taken from an older version that used schema v1, the v2 migration
 runs automatically on first launch — see §4.
@@ -182,10 +220,16 @@ single-node v1.1, that's the recovery-time objective.
 
 ## 4. Upgrade behavior
 
+> Version numbers in this section (`v1.0.x`, `v1.1`) refer to the
+> pre-public **RLMKit** lineage — in particular the telemetry schema step
+> from version 1 to 2. The first public RLM Studio release carries that
+> schema forward unchanged; the RLMKit → RLM Studio path itself is
+> described in §2.1a.
+
 ### 4.1 SQLite schema auto-migration
 
-RLMKit uses `PRAGMA user_version` as the schema-version store. The
-`_MIGRATIONS` dict in `src/rlmkit/telemetry/store.py` is the source of
+RLM Studio uses `PRAGMA user_version` as the schema-version store. The
+`_MIGRATIONS` dict in `src/rlmstudio/telemetry/store.py` is the source of
 truth for every post-v1 schema change.
 
 **Upgrading from v1.0.x to v1.1.0:**
@@ -246,7 +290,7 @@ The things that grow unboundedly with use are:
   reclaim:
 
   ```bash
-  sqlite3 ~/.rlmkit/telemetry.db "VACUUM;"
+  sqlite3 ~/.rlm-studio/telemetry.db "VACUUM;"
   ```
 
   Safe to run while the backend is stopped; do not run during active
@@ -255,8 +299,8 @@ The things that grow unboundedly with use are:
 - `sessions.json`. Delete sessions from the Chat sidebar to trim.
   The file is rewritten atomically on every save.
 
-- Application logs. RLMKit writes to stderr by default; if you redirect
-  to a file (systemd `StandardOutput=append:/var/log/rlmkit.log`, etc.),
+- Application logs. RLM Studio writes to stderr by default; if you redirect
+  to a file (systemd `StandardOutput=append:/var/log/rlmstudio.log`, etc.),
   rotate it with `logrotate` or equivalent.
 
 For a single-node v1.1 deployment a yearly `VACUUM` + ad-hoc session
@@ -291,18 +335,18 @@ docker compose up --build
 
 Backend is then reachable on `http://localhost:8000`, frontend on
 `http://localhost:3000`. State persists to the
-`rlmkit-data` named volume (mapped to `/home/rlmkit/.rlmkit` inside the
+`rlm-studio-data` named volume (mapped to `/home/rlmstudio/.rlm-studio` inside the
 backend container) — back it up the same way as a bare-metal deployment
 (§3), e.g.:
 
 ```bash
-docker run --rm -v rlmkit-data:/data -v "$PWD:/backup" alpine \
-  tar -czf /backup/rlmkit-backup-$(date +%F).tar.gz -C /data .
+docker run --rm -v rlm-studio-data:/data -v "$PWD:/backup" alpine \
+  tar -czf /backup/rlm-studio-backup-$(date +%F).tar.gz -C /data .
 ```
 
 ---
 
-## 8. Known limitations (v1.1)
+## 8. Known limitations (v1.0)
 
 Carried over from the CHANGELOG:
 
@@ -317,7 +361,7 @@ Carried over from the CHANGELOG:
   different provider.
 - **No cross-process queue.** Concurrent heavy workloads rely on the
   inference backend's own queuing (vLLM has prefix-caching and KV-cache
-  eviction; Ollama serializes). RLMKit does not add an application-
+  eviction; Ollama serializes). RLM Studio does not add an application-
   level queue in v1.1.
 
 These items are tracked as separate milestones, not v1.1 issues.

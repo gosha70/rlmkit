@@ -31,7 +31,7 @@ Studio below.
 
 ## 2a. Deployment topology
 
-The intended pattern is **RLMKit on your dev laptop + the LLM on the
+The intended pattern is **RLM Studio on your dev laptop + the LLM on the
 Spark**. The laptop runs the backend (:8000) and frontend (:3000);
 the Spark runs Ollama (:11434) or vLLM (:8000). RLM Studio is
 configured with a Base URL of `http://<dgx-spark-ip>:<port>` and
@@ -42,7 +42,7 @@ End-to-end health check for this topology:
 ```bash
 # From the laptop, once the Spark-side server is up
 curl http://<dgx-spark-ip>:11434/api/tags                    # Ollama reachable?
-curl http://localhost:8000/health | python3 -m json.tool      # RLMKit backend up?
+curl http://localhost:8000/health | python3 -m json.tool      # RLM Studio backend up?
 ```
 
 Both curls should return 200s before you try a Test Connection from
@@ -189,7 +189,7 @@ docker run -d \
 
 Open <http://localhost:3001> and pick the model you pulled in §3. If
 it responds, your Spark-side inference stack is sound — any failure
-after this point is on the RLMKit side of the boundary.
+after this point is on the RLM Studio side of the boundary.
 
 ## 4b. Prefix caching is the biggest RLM win on Spark
 

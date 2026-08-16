@@ -1,6 +1,6 @@
-# Contributing to RLMKit
+# Contributing to RLM Studio
 
-Thank you for your interest in contributing to RLMKit! This guide will help you get started.
+Thank you for your interest in contributing to RLM Studio! This guide will help you get started.
 
 ## Getting Started
 
@@ -15,8 +15,8 @@ Thank you for your interest in contributing to RLMKit! This guide will help you 
 
 ```bash
 # Clone the repository
-git clone https://github.com/gosha70/rlmkit.git
-cd rlmkit
+git clone https://github.com/gosha70/rlm-studio.git
+cd rlm-studio
 
 # Install Python dependencies
 uv sync
@@ -36,7 +36,7 @@ cd frontend && npm install && npm test
 
 ```bash
 # Terminal 1: backend API
-uv run python -m rlmkit.server --reload
+uv run python -m rlmstudio.server --reload
 
 # Terminal 2: frontend
 cd frontend && npm run dev
@@ -50,14 +50,14 @@ See `CLAUDE.md` for the full set of project conventions. Summary:
 
 ### Architecture
 
-- RLMKit uses Clean Architecture. The dependency rule is non-negotiable: `domain` → `application` → `infrastructure` / `server`. Inner layers never import from outer.
+- RLM Studio uses Clean Architecture. The dependency rule is non-negotiable: `domain` → `application` → `infrastructure` / `server`. Inner layers never import from outer.
 - Ports (`LLMPort`, `SandboxPort`, `StoragePort`, `EmbeddingPort`) are `@runtime_checkable` Protocols. Use structural checks (`hasattr`, `callable`), not `isinstance(x, Protocol)`.
 - All LLM calls go through `LLMPort` (primary adapter: `LiteLLMAdapter`). No direct SDK imports outside `infrastructure/llm/`.
 - All sandbox executions go through `SandboxPort` — choose from Local, Subprocess, Restricted, Docker.
 
 ### Prompts
 
-- All prompts live as versioned YAML files in `src/rlmkit/prompts/`. Never inline system-prompt or rubric strings in code.
+- All prompts live as versioned YAML files in `src/rlmstudio/prompts/`. Never inline system-prompt or rubric strings in code.
 
 ### LLM Calls
 
@@ -77,7 +77,7 @@ See `CLAUDE.md` for the full set of project conventions. Summary:
 
 ### Reporting Bugs
 
-Use the [Bug Report](https://github.com/gosha70/rlmkit/issues/new?template=bug_report.md) issue template. Include:
+Use the [Bug Report](https://github.com/gosha70/rlm-studio/issues/new?template=bug_report.md) issue template. Include:
 
 - Steps to reproduce
 - Expected vs. actual behavior
@@ -85,7 +85,7 @@ Use the [Bug Report](https://github.com/gosha70/rlmkit/issues/new?template=bug_r
 
 ### Suggesting Features
 
-Use the [Feature Request](https://github.com/gosha70/rlmkit/issues/new?template=feature_request.md) issue template.
+Use the [Feature Request](https://github.com/gosha70/rlm-studio/issues/new?template=feature_request.md) issue template.
 
 ### Submitting Pull Requests
 
@@ -112,14 +112,14 @@ Use the [Feature Request](https://github.com/gosha70/rlmkit/issues/new?template=
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/rlmkit/domain/` | Entities, value objects, ports — zero external deps |
-| `src/rlmkit/application/` | Use cases, services, constants |
-| `src/rlmkit/infrastructure/` | Adapters (LiteLLM, sandbox, storage, embeddings) |
-| `src/rlmkit/server/` | FastAPI app, routes, Pydantic models, AppState |
-| `src/rlmkit/core/` | Original RLM controller loop |
-| `src/rlmkit/envs/` | Execution environments (`DockerExecutor`, `PyReplEnv`) |
-| `src/rlmkit/llm/` | Provider registration and auto-detection |
-| `src/rlmkit/prompts/` | Versioned YAML prompt templates |
+| `src/rlmstudio/domain/` | Entities, value objects, ports — zero external deps |
+| `src/rlmstudio/application/` | Use cases, services, constants |
+| `src/rlmstudio/infrastructure/` | Adapters (LiteLLM, sandbox, storage, embeddings) |
+| `src/rlmstudio/server/` | FastAPI app, routes, Pydantic models, AppState |
+| `src/rlmstudio/core/` | Original RLM controller loop |
+| `src/rlmstudio/envs/` | Execution environments (`DockerExecutor`, `PyReplEnv`) |
+| `src/rlmstudio/llm/` | Provider registration and auto-detection |
+| `src/rlmstudio/prompts/` | Versioned YAML prompt templates |
 | `tests/` | Backend test suite |
 | `frontend/` | Next.js + React + shadcn/ui UI |
 | `docs/` | User-facing docs (`rlm-concepts`, `rlm-studio-guide`, `hosts/`, `troubleshoot.yaml`) |

@@ -1,10 +1,10 @@
 # DGX Spark Setup Scripts
 
-Shell scripts for setting up the NVIDIA DGX Spark as a self-hosted inference backend for RLMKit.
+Shell scripts for setting up the NVIDIA DGX Spark as a self-hosted inference backend for RLM Studio.
 
 ## Two paths
 
-| Path | Directory | API | RLMKit usage |
+| Path | Directory | API | RLM Studio usage |
 |------|-----------|-----|--------------|
 | **Ollama** | `ollama/` | `http://<spark-ip>:11434` | `provider="ollama", model="<model>", api_base=...` |
 | **vLLM** | `vllm/` | `http://<spark-ip>:8000/v1` (OpenAI-compatible) | `provider="litellm", model="hosted_vllm/<model>", api_base=...` (LiteLLM ≥ 1.50 routes the generic `openai/` prefix through `/v1/responses`, which vLLM rejects on multi-turn — see `docs/hosts/dgx-spark-vllm.md` §7 Blocker #4) |
@@ -23,7 +23,7 @@ curl http://<spark-ip>:11434/api/tags
 ```
 
 ```python
-from rlmkit import interact
+from rlmstudio import interact
 r = interact(content, query, mode="rlm",
              provider="ollama", model="gpt-oss:20b",
              api_base="http://<spark-ip>:11434")
@@ -41,7 +41,7 @@ bash vllm/verify-vllm-api-dgx.sh <spark-ip> 8000 Qwen/Qwen2.5-7B-Instruct
 ```
 
 ```python
-from rlmkit import interact
+from rlmstudio import interact
 # hosted_vllm/ (not openai/) — LiteLLM ≥ 1.50 routes openai/<...> through
 # vLLM's /v1/responses, which rejects multi-turn input arrays. The
 # hosted_vllm/ provider pins to /v1/chat/completions. See
@@ -53,7 +53,7 @@ r = interact(content, query, mode="rlm",
 
 ## When to use which
 
-- **Ollama**: easier setup, good for models already in `ollama pull` format, direct RLMKit `provider="ollama"` support.
+- **Ollama**: easier setup, good for models already in `ollama pull` format, direct RLM Studio `provider="ollama"` support.
 - **vLLM**: OpenAI-compatible API, better throughput for large models, required for HuggingFace models not packaged for Ollama.
 
 ## ⚠ Run only one backend at a time

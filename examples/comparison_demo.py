@@ -82,7 +82,7 @@ def run_comparison(query: str) -> None:
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("RLMKit Comparison Demo — RLM vs Direct")
+    print("RLM Studio Comparison Demo — RLM vs Direct")
     print("=" * 60)
     print()
     run_comparison("What are the key contributions of the RLM paper?")

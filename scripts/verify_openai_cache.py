@@ -5,24 +5,24 @@ producing a deterministic scenario where OpenAI's automatic
 ``prompt_tokens_details.cached_tokens`` is guaranteed to be > 0.
 
 Runs two back-to-back completions with an identical ~2200-token
-prompt, first via LiteLLM directly (the library RLMKit uses) and
-then via :class:`LiteLLMAdapter` (the RLMKit wrapper). Prints
+prompt, first via LiteLLM directly (the library RLM Studio uses) and
+then via :class:`LiteLLMAdapter` (the RLM Studio wrapper). Prints
 ``cached_tokens`` from each. This isolates three scenarios:
 
-1. LiteLLM direct: cached>0, RLMKit adapter: cached>0
+1. LiteLLM direct: cached>0, RLM Studio adapter: cached>0
      → pipeline works end-to-end. Any "Cached=0" you see in the UI
        is prompt-drift in the calling code, not a telemetry bug.
 
-2. LiteLLM direct: cached>0, RLMKit adapter: cached=0
+2. LiteLLM direct: cached>0, RLM Studio adapter: cached=0
      → bug inside the adapter or _extract_cache_tokens.
 
-3. LiteLLM direct: cached=0, RLMKit adapter: cached=0
-     → OpenAI isn't caching for this account/workload. Nothing RLMKit
+3. LiteLLM direct: cached=0, RLM Studio adapter: cached=0
+     → OpenAI isn't caching for this account/workload. Nothing RLM Studio
        can do until OpenAI sees the prompt again in a cacheable
        configuration.
 
 Requirements:
-    OPENAI_API_KEY env var (falls back to the RLMKit secret store if
+    OPENAI_API_KEY env var (falls back to the RLM Studio secret store if
     set there — see rlmstudio/llm/openai_client.py).
 
 Usage:
@@ -120,7 +120,7 @@ def run_litellm_direct() -> tuple[int, int, int]:
     return pt2, c1, c2
 
 
-async def run_rlmkit_adapter() -> tuple[int, int, int]:
+async def run_rlmstudio_adapter() -> tuple[int, int, int]:
     """Hit OpenAI twice via LiteLLMAdapter. Same shape of result."""
     from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
@@ -162,12 +162,12 @@ def main() -> int:
 
     print()
     print("=" * 60)
-    print("B. RLMKit LiteLLMAdapter (does our wrapper propagate it?)")
+    print("B. RLM Studio LiteLLMAdapter (does our wrapper propagate it?)")
     print("=" * 60)
     try:
-        pt_rlm, c1_rlm, c2_rlm = asyncio.run(run_rlmkit_adapter())
+        pt_rlm, c1_rlm, c2_rlm = asyncio.run(run_rlmstudio_adapter())
     except Exception as exc:
-        print(f"❌ RLMKit adapter failed: {exc}")
+        print(f"❌ RLM Studio adapter failed: {exc}")
         return 4
 
     print()
@@ -178,19 +178,19 @@ def main() -> int:
         print(
             f"✅ End-to-end cache observability works.\n"
             f"   Direct litellm turn 2 cached={c2_direct}\n"
-            f"   RLMKit adapter turn 2 cached={c2_rlm}"
+            f"   RLM Studio adapter turn 2 cached={c2_rlm}"
         )
         return 0
     if c2_direct > 0 and c2_rlm == 0:
         print(
-            f"❌ Adapter bug: litellm saw cached={c2_direct} but RLMKit returned 0.\n"
+            f"❌ Adapter bug: litellm saw cached={c2_direct} but RLM Studio returned 0.\n"
             f"   _extract_cache_tokens or _observe_chunk is dropping it."
         )
         return 10
     if c2_direct == 0:
         print(
             f"⚠️  OpenAI did not cache this request for this account.\n"
-            f"   Both direct litellm and RLMKit saw cached=0.\n"
+            f"   Both direct litellm and RLM Studio saw cached=0.\n"
             f"   Possible causes:\n"
             f"     - First-ever request of this exact prefix to this org\n"
             f"       (OpenAI requires a prior call within ~5-10 min)\n"

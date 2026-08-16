@@ -1,5 +1,5 @@
 """
-Basic usage examples for RLMKit's unified interact() API.
+Basic usage examples for RLM Studio's unified interact() API.
 
 This demonstrates the three main interaction modes:
 1. Direct - Full context in one call
@@ -12,17 +12,17 @@ from rlmstudio import interact
 
 # Sample content for demonstrations
 SHORT_CONTENT = """
-RLMKit is a Python toolkit for building LLM-based systems that can handle
+RLM Studio is a Python toolkit for building LLM-based systems that can handle
 arbitrarily large contexts through code generation and recursive exploration.
 It provides three interaction modes: Direct, RAG, and RLM.
 """
 
 MEDIUM_CONTENT = (
     """
-# RLMKit Documentation
+# RLM Studio Documentation
 
 ## Introduction
-RLMKit is a Recursive Language Model toolkit that enables LLMs to handle
+RLM Studio is a Recursive Language Model toolkit that enables LLMs to handle
 arbitrarily large contexts by treating the prompt as an external environment.
 
 ## Features
@@ -65,7 +65,7 @@ def example_1_direct_mode() -> None:
 
     result = interact(
         content=SHORT_CONTENT,
-        query="What is RLMKit?",
+        query="What is RLM Studio?",
         mode="direct",
         provider="openai",
         model="gpt-4o-mini",  # Using mini for cost savings
@@ -87,7 +87,7 @@ def example_2_direct_mode_large() -> None:
 
     result = interact(
         content=MEDIUM_CONTENT,
-        query="What are the main features of RLMKit?",
+        query="What are the main features of RLM Studio?",
         mode="direct",
         provider="openai",
         model="gpt-4o-mini",
@@ -109,7 +109,7 @@ def example_3_rlm_mode() -> None:
 
     result = interact(
         content=MEDIUM_CONTENT,
-        query="How do I install and use RLMKit?",
+        query="How do I install and use RLM Studio?",
         mode="rlm",
         provider="openai",
         model="gpt-4o-mini",
@@ -126,7 +126,7 @@ def example_3_rlm_mode() -> None:
 
 
 def example_4_auto_mode() -> None:
-    """Example 4: Auto mode - let RLMKit choose."""
+    """Example 4: Auto mode - let RLM Studio choose."""
     print("\n" + "=" * 70)
     print("Example 4: Auto Mode (Automatic Selection)")
     print("=" * 70)
@@ -134,8 +134,8 @@ def example_4_auto_mode() -> None:
     # Will automatically choose based on content size
     result = interact(
         content=SHORT_CONTENT,
-        query="What modes does RLMKit support?",
-        mode="auto",  # Let RLMKit decide
+        query="What modes does RLM Studio support?",
+        mode="auto",  # Let RLM Studio decide
         provider="openai",
         model="gpt-4o-mini",
         verbose=True,
@@ -183,7 +183,7 @@ def example_6_error_handling() -> None:
 
 if __name__ == "__main__":
     print("\n" + "=" * 70)
-    print("RLMKit Unified API Examples")
+    print("RLM Studio Unified API Examples")
     print("=" * 70)
     print("\nNote: These examples require OPENAI_API_KEY environment variable")
     print("Set it with: export OPENAI_API_KEY=sk-...")
@@ -206,7 +206,7 @@ if __name__ == "__main__":
 
     except ImportError as e:
         print(f"\n Import Error: {e}")
-        print("Make sure to install RLMKit and dependencies:")
+        print("Make sure to install RLM Studio and dependencies:")
         print("  pip install -e '.[dev]'")
 
     except Exception as e:

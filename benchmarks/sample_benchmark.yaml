@@ -1,9 +1,9 @@
-name: "RLMKit Sample Benchmark"
+name: "RLM Studio Sample Benchmark"
 description: "A small benchmark dataset for testing strategy evaluation across different content types and difficulties."
 
 metadata:
   version: "1.0"
-  created_by: "rlmkit"
+  created_by: "rlm-studio"
 
 cases:
   - id: "factual_short_1"

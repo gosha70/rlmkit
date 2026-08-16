@@ -173,7 +173,7 @@ print(f"Cost: ${result.metrics['total_cost']:.4f}")
 
 
 if __name__ == "__main__":
-    print("\n🚀 RLMKit Multi-Model Cost Optimization Examples\n")
+    print("\n🚀 RLM Studio Multi-Model Cost Optimization Examples\n")
 
     example_1_cost_optimized_openai()
     example_2_cross_provider_mixed()

@@ -1,5 +1,5 @@
   
-# **RLMKit Design Document**
+# **RLM Studio Design Document**
 
 LLM ↔ RLM (REPL) Interaction Architecture
 
@@ -9,7 +9,7 @@ April 2026  |  Auto-generated from codebase analysis
 
 # **1\. Executive Summary**
 
-RLMKit implements a Recursive Language Model (RLM) framework that enables LLMs to explore arbitrarily large documents through iterative code execution in a sandboxed REPL. Unlike single-shot RAG or direct prompting, the RLM approach lets the model decide what to read next, re-inspect content, and iteratively build understanding before committing a final answer.
+RLM Studio implements a Recursive Language Model (RLM) framework that enables LLMs to explore arbitrarily large documents through iterative code execution in a sandboxed REPL. Unlike single-shot RAG or direct prompting, the RLM approach lets the model decide what to read next, re-inspect content, and iteratively build understanding before committing a final answer.
 
 The system uses a deterministic JSON action protocol (v2.0) where the LLM outputs exactly one structured JSON object per turn. The runtime parses that object, dispatches the requested tool, feeds the result back as a conversation message, and repeats until the model emits a terminal action or a circuit breaker fires.
 
@@ -43,7 +43,7 @@ This document maps the exact interaction between the LLM and the RLM runtime, ca
 
 # **3\. The RLM REPL Loop — Core Business Logic**
 
-The REPL (Read-Eval-Print Loop) is the heart of RLMKit. It orchestrates a multi-turn conversation between the LLM and a restricted Python sandbox, allowing the model to iteratively explore document content.
+The REPL (Read-Eval-Print Loop) is the heart of RLM Studio. It orchestrates a multi-turn conversation between the LLM and a restricted Python sandbox, allowing the model to iteratively explore document content.
 
 ## **3.1 Initialization**
 
@@ -395,7 +395,7 @@ The sandbox executes synchronously. Long-running tool calls (e.g., regex grep on
 
 # **10\. Code Reference Index**
 
-Complete index of files and line ranges referenced in this document, rooted at src/rlmkit/:
+Complete index of files and line ranges referenced in this document, rooted at src/rlmstudio/:
 
 | File | Lines | Contains |
 | :---- | :---- | :---- |

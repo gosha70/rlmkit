@@ -27,5 +27,5 @@ To pull a model into the integrated container:
 
 Recommendation:
   Use this mode only for a self-contained demo.
-  For apps and RLMKit, prefer host Ollama + OLLAMA_BASE_URL.
+  For apps and RLM Studio, prefer host Ollama + OLLAMA_BASE_URL.
 EOM

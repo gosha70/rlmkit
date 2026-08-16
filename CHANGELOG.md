@@ -1,9 +1,57 @@
 # Changelog
 
-All notable changes to RLMKit are documented here.
+All notable changes to RLM Studio (formerly RLMKit) are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+
+### Rebrand: RLMKit → RLM Studio
+
+- **BREAKING:** the project is now **RLM Studio**. PyPI distribution
+  `rlm-studio` (the `rlmkit` name on PyPI belongs to an unrelated
+  project — there is no shim), import package `rlmstudio` (was
+  `rlmkit`), console script `rlm-studio` (was `rlmkit`; subcommands
+  `studio` / `version` unchanged), GitHub repository
+  `gosha70/rlm-studio`.
+  **Migration:** replace `import rlmkit` → `import rlmstudio`,
+  `rlmkit studio` → `rlm-studio studio`, and install with
+  `pip install "rlm-studio[all]"` (or `[studio]` for the API + UI only).
+- **BREAKING (one-release compatibility):** environment variables use
+  the `RLM_STUDIO_*` prefix; every `RLMKIT_*` name is still honoured with
+  a one-time deprecation warning. State lives in `~/.rlm-studio/`
+  (override `RLM_STUDIO_DIR`); on the first *server boot* after upgrading,
+  an existing `~/.rlmkit/` is copied — never moved or deleted — to
+  `~/.rlm-studio/`. The copy runs only from the FastAPI startup path
+  (`rlm-studio studio`, `python -m rlmstudio.server`, uvicorn, Docker),
+  never on import, in tests, or on `rlm-studio version`.
+  Also: `./rlm_studio_config.{yaml,json}` searched before the legacy
+  `./rlmkit_config.*`; OS-keyring service `rlm-studio` with read-fallback
+  to `rlmkit` (keys are re-saved under the new name); Docker Compose
+  volume `rlm-studio-data` (one-off copy recipe from `rlmkit-data` in the
+  compose header); frontend `localStorage` keys `rlm_studio_*` migrated
+  from `rlmkit_*` on first load; `NEXT_PUBLIC_RLM_STUDIO_PERF_UI` with
+  the legacy `NEXT_PUBLIC_RLMKIT_PERF_UI` honoured; telemetry JSONL export
+  extras keys renamed `rlmkit_*` → `rlm_studio_*`; default sandbox image
+  `rlm-studio-sandbox`.
+- **BREAKING:** the legacy Streamlit prototype (`ui` extra) is removed
+  in favour of the Next.js Studio UI. `pip install "rlm-studio[all]"` no
+  longer installs the dev toolchain. Extras are now `studio` (API + UI;
+  `server` kept as an alias for one release), `providers` (direct
+  provider SDKs — currently `anthropic`; `openai` is satisfied through
+  the base `litellm` dependency, and the Ollama client uses `requests`,
+  which is now an explicit base dependency), `eval`, `interop`
+  (placeholder), `dev`; `all = studio + providers + eval + interop`.
+- Product identity is centralised in `rlmstudio.branding` (Python) and
+  `frontend/src/lib/branding.ts` (TypeScript).
+- Docs: `docs/RLMKit_Design_Document.md` → `docs/RLM_Studio_Design_Document.md`
+  (Learn slug `rlm-studio-design-document`), logo
+  `docs/RLM_Studio_Logo.png`; README repositioned around the workbench
+  ("does RLM beat Direct/RAG on your data, with your model?") with paper
+  and official-repo attribution; `docs/OPERATIONS.md` §2.1a documents the
+  upgrade path.
+- Housekeeping: `debug_parsing.py` removed; `cryptography>=50.0.0`,
+  `aiohttp>=3.14.3`, `pypdf>=6.15.0`, `gitpython>=3.1.58` floors
+  (pip-audit clean); coverage omit list emptied.
 
 ### Prefill / decode telemetry
 

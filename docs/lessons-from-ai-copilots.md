@@ -6,7 +6,7 @@ Building products on top of LLMs — and using LLM-based coding assistants to bu
 them — feels a lot like working with a brilliant collaborator who occasionally
 gets concussed. Most of the time it's magic. Occasionally it walks into a wall
 and takes your work with it. This is a short write-up of two concrete incidents
-from a single debugging session on an open-source project called RLMKit, and the
+from a single debugging session on an open-source project called RLM Studio, and the
 product-level lessons each one left behind.
 
 ## Lesson 1: You have to understand how your LLM reacts to your prompts
