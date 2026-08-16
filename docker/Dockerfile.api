@@ -1,32 +1,32 @@
 # syntax=docker/dockerfile:1.7
 
-# RLMKit API server — multi-stage build.
+# RLM Studio API server — multi-stage build.
 #
 # Stage 1 (builder) uses `uv` to resolve + install locked dependencies
-# into a standalone virtualenv at /opt/rlmkit-venv, with rlmkit itself
+# into a standalone virtualenv at /opt/rlm-studio-venv, with rlm-studio itself
 # installed in editable mode pointing at /app/src. Stage 2 (runtime)
 # copies the venv + the same /app/src layout + /app/docs, running on a
 # slim Python 3.12 base.
 #
 # Why the paths match between builder and runtime: uv installs the
 # project editable by default, so the venv contains an
-# __editable__.rlmkit-*.pth file pointing at the source tree at the
+# __editable__.rlm_studio-*.pth file pointing at the source tree at the
 # path it was at during install. If the runtime stage put the source
 # anywhere else, python would import the project against a path that
 # doesn't exist and the backend wouldn't start. Both stages therefore
 # use /app/src. Additionally, server/routes/docs.py resolves
 # _PROJECT_ROOT via Path(__file__).resolve().parents[4] — with the
-# source at /app/src/rlmkit/server/routes/docs.py, that evaluates to
+# source at /app/src/rlmstudio/server/routes/docs.py, that evaluates to
 # /app, so the Learn tab's docs/ tree must also live at /app/docs/.
 #
 # Build:
-#   docker build -f docker/Dockerfile.api -t rlmkit-api .
+#   docker build -f docker/Dockerfile.api -t rlm-studio-api .
 #
 # Run (see docker-compose.yml for the recommended invocation):
 #   docker run --rm -p 8000:8000 \
 #     -e OPENAI_API_KEY=... \
-#     -v rlmkit-data:/home/rlmkit/.rlmkit \
-#     rlmkit-api
+#     -v rlm-studio-data:/home/rlmstudio/.rlm-studio \
+#     rlm-studio-api
 
 # ---------------------------------------------------------------------------
 # Stage 1: builder — resolve dependencies with uv, produce a standalone venv
@@ -38,7 +38,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PROJECT_ENVIRONMENT=/opt/rlmkit-venv
+    UV_PROJECT_ENVIRONMENT=/opt/rlm-studio-venv
 
 # uv is installed via the official standalone installer.
 RUN apt-get update \
@@ -72,9 +72,9 @@ FROM python:3.12-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/rlmkit-venv/bin:${PATH}" \
-    RLMKIT_HOST=0.0.0.0 \
-    RLMKIT_PORT=8000
+    PATH="/opt/rlm-studio-venv/bin:${PATH}" \
+    RLM_STUDIO_HOST=0.0.0.0 \
+    RLM_STUDIO_PORT=8000
 
 # Minimal runtime deps. libstdc++6 is present in slim-bookworm; no extras
 # required for the default sandbox (RestrictedPython). Teams using the
@@ -84,38 +84,38 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends tini \
  && rm -rf /var/lib/apt/lists/*
 
-# Non-root runtime user. Home is /home/rlmkit; the ~/.rlmkit state
+# Non-root runtime user. Home is /home/rlmstudio; the ~/.rlm-studio state
 # directory is pre-created and chowned so a fresh named-volume mount
 # (which Docker materializes root-owned by default) inherits correct
 # ownership on first write.
-RUN useradd --create-home --shell /bin/bash --uid 1001 rlmkit \
- && mkdir -p /home/rlmkit/.rlmkit \
- && chown -R rlmkit:rlmkit /home/rlmkit
+RUN useradd --create-home --shell /bin/bash --uid 1001 rlmstudio \
+ && mkdir -p /home/rlmstudio/.rlm-studio \
+ && chown -R rlmstudio:rlmstudio /home/rlmstudio
 
-COPY --from=builder --chown=rlmkit:rlmkit /opt/rlmkit-venv /opt/rlmkit-venv
+COPY --from=builder --chown=rlmstudio:rlmstudio /opt/rlm-studio-venv /opt/rlm-studio-venv
 # Source path MUST match the builder's /app/src so the editable-install
 # .pth in the venv resolves. Changing either side requires changing both.
-COPY --from=builder --chown=rlmkit:rlmkit /app/src /app/src
-COPY --from=builder --chown=rlmkit:rlmkit /app/pyproject.toml /app/README.md /app/
+COPY --from=builder --chown=rlmstudio:rlmstudio /app/src /app/src
+COPY --from=builder --chown=rlmstudio:rlmstudio /app/pyproject.toml /app/README.md /app/
 # Learn tab reads docs/* at runtime via an allowlist in
 # server/routes/docs.py; it resolves _PROJECT_ROOT to /app and then
 # looks under /app/docs/. Ship the allowlisted content in the image
 # so Concepts / Cookbook / Troubleshooting work in containerized
 # deployments.
-COPY --chown=rlmkit:rlmkit docs/ /app/docs/
+COPY --chown=rlmstudio:rlmstudio docs/ /app/docs/
 
 WORKDIR /app
-USER rlmkit
+USER rlmstudio
 
 EXPOSE 8000
 
 # Healthcheck hits the existing GET /health endpoint.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request, sys; \
-urllib.request.urlopen('http://127.0.0.1:${RLMKIT_PORT}/health', timeout=3).read(); \
+urllib.request.urlopen('http://127.0.0.1:${RLM_STUDIO_PORT}/health', timeout=3).read(); \
 sys.exit(0)" || exit 1
 
 # tini is PID 1 so the uvicorn process gets clean SIGTERM propagation on
 # `docker stop` — important for SQLite WAL checkpointing.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["python", "-m", "rlmkit.server", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "rlmstudio.server", "--host", "0.0.0.0", "--port", "8000"]

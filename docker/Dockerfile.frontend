@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# RLMKit frontend — Next.js 16 production image.
+# RLM Studio frontend — Next.js 16 production image.
 #
 # Stage 1 installs deps, stage 2 builds, stage 3 ships the runtime.
 # The Next.js app proxies `/api`, `/health`, and `/ws` to the backend
@@ -9,12 +9,12 @@
 # cross-container traffic (e.g. http://backend:8000).
 #
 # Build:
-#   docker build -f docker/Dockerfile.frontend -t rlmkit-frontend .
+#   docker build -f docker/Dockerfile.frontend -t rlm-studio-frontend .
 #
 # Run:
 #   docker run --rm -p 3000:3000 \
 #     -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
-#     rlmkit-frontend
+#     rlm-studio-frontend
 
 # ---------------------------------------------------------------------------
 # Stage 1: deps — install node_modules from lockfile (cached independently)

@@ -1,4 +1,4 @@
-# RLMKit Docker Sandbox
+# RLM Studio Docker Sandbox
 
 Docker-based isolated execution environment for RLM code execution.
 
@@ -8,13 +8,13 @@ Docker-based isolated execution environment for RLM code execution.
 
 ```bash
 cd docker
-docker build -t rlmkit-sandbox -f Dockerfile.sandbox .
+docker build -t rlm-studio-sandbox -f Dockerfile.sandbox .
 ```
 
-### Use with RLMKit
+### Use with RLM Studio
 
 ```python
-from rlmkit.envs.sandbox import DockerExecutor
+from rlmstudio.envs.sandbox import DockerExecutor
 
 # Check if Docker is available
 if DockerExecutor.is_available():
@@ -46,7 +46,7 @@ else:
 
 ```python
 executor = DockerExecutor(
-    image_name="rlmkit-sandbox",
+    image_name="rlm-studio-sandbox",
     memory_limit="512m",  # Adjust as needed
     cpu_limit="1",  # Number of CPUs
     timeout=30,  # Seconds

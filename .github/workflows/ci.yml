@@ -105,9 +105,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build sandbox image
-        run: docker build -t rlmkit-sandbox -f docker/Dockerfile.sandbox docker/
+        run: docker build -t rlm-studio-sandbox -f docker/Dockerfile.sandbox docker/
       - name: Smoke test sandbox image
-        run: docker run --rm --network=none rlmkit-sandbox python3 -c "print('sandbox OK')"
+        run: docker run --rm --network=none rlm-studio-sandbox python3 -c "print('sandbox OK')"
 
   build:
     name: Build Check
