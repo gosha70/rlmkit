@@ -33,7 +33,10 @@ jobs:
         # migration, CHANGELOG history, specs), but no code, doc, or config may
         # still import / invoke the old module path.
         run: |
-          if git grep -nE '(from|import) rlmkit\b|\brlmkit\.(server|cli|api|application|infrastructure|domain|llm|prompts|core|envs|ui|storage|telemetry|branding|config)\b|-m rlmkit\b|python -m rlmkit' -- . ':!CHANGELOG.md' ':!specs/' ':!doc_internal/' ':!.github/workflows/ci.yml'; then
+          # Portable ERE — no \b (unsupported by BSD grep, so a local run on
+          # macOS would silently pass while GNU grep on CI fails).
+          W='([^A-Za-z0-9_]|$)'
+          if git grep -nE "(from|import) rlmkit${W}|(^|[^A-Za-z0-9_])rlmkit\.(server|cli|api|application|infrastructure|domain|llm|prompts|core|envs|ui|storage|telemetry|branding|config)${W}|-m rlmkit${W}" -- . ':!CHANGELOG.md' ':!specs/' ':!doc_internal/' ':!.github/workflows/ci.yml'; then
             echo '::error::Legacy rlmkit module paths found (see above)'; exit 1
           fi
           echo 'OK: no legacy rlmkit module paths'

@@ -39,7 +39,7 @@ You are analyzing {prompt_length:,} characters of text.
 
 ### Load default versioned template:
 ```python
-from rlmkit import get_default_system_prompt, format_system_prompt
+from rlmstudio import get_default_system_prompt, format_system_prompt
 
 # Get template v1.0
 template = get_default_system_prompt("1.0")
@@ -60,7 +60,7 @@ prompt = format_system_prompt(
 ### Load from custom file:
 ```python
 from pathlib import Path
-from rlmkit.prompts.templates import load_prompt_from_file
+from rlmstudio.prompts.templates import load_prompt_from_file
 
 template = load_prompt_from_file(Path("my_custom_prompt.txt"))
 prompt = format_system_prompt(template=template, prompt_length=5000)

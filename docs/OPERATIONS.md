@@ -97,7 +97,7 @@ Related one-cycle compatibility shims:
   before the first `up` (recipe in the `docker-compose.yml` header).
 - Frontend `localStorage`: the chat page migrates its `rlmkit_*` keys to
   `rlm_studio_*` on first load.
-- Python: `import rlmstudio` replaces `import rlmkit`; the distribution is
+- Python: the import package is now `rlmstudio` (the old `rlmkit` package name is gone); the distribution is
   `rlm-studio`. There is no `rlmkit` shim on PyPI — that name belongs to an
   unrelated project.
 
