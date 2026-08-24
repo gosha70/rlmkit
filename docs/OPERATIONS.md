@@ -346,6 +346,32 @@ docker run --rm -v rlm-studio-data:/data -v "$PWD:/backup" alpine \
 
 ---
 
+### 7.1 Two different backend addresses
+
+Under Compose the browser and the frontend *container* reach the backend at
+different addresses, and the frontend needs both:
+
+| Variable | Used by | Value in the shipped compose stack |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | the **browser** (inlined into the client bundle at build time) | `http://localhost:8000` — the published port on your host |
+| `INTERNAL_API_URL` | the **Next server**: rewrites and the judge route handler | `http://backend:8000` — the compose network |
+
+`NEXT_PUBLIC_*` values are inlined by Next at build time, so they cannot be
+overridden at runtime; that is why the server-side address is a separate,
+non-public variable. If you change the service name or port in
+`docker-compose.yml`, change `INTERNAL_API_URL` with it.
+
+### 7.2 Pointing the stack at a model server on your host
+
+A provider endpoint of `http://localhost:11434` refers to the *backend
+container*, not your machine. To use an Ollama or LM Studio instance running
+on the host, set the endpoint to `http://host.docker.internal:11434` — either
+in Settings → LLM Providers (field: **endpoint**) or by exporting
+`OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL` / `VLLM_BASE_URL` in the compose
+`.env` before `docker compose up`. Note the env vars seed auto-detection for
+the Python API; the Studio UI resolves the endpoint saved in Settings, so
+prefer setting it there.
+
 ## 8. Known limitations (v1.0)
 
 Carried over from the CHANGELOG:

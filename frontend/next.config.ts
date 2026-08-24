@@ -27,7 +27,17 @@ const nextConfig: NextConfig = isBundle
     }
   : {
       async rewrites() {
-        const backend = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        // INTERNAL_API_URL is the address the *Next server* uses to reach the
+        // backend, which is not always the address the *browser* uses. Under
+        // Docker Compose the browser talks to http://localhost:8000 (published
+        // port) while this process must use http://backend:8000 (compose
+        // network). NEXT_PUBLIC_* cannot express that difference: Next inlines
+        // those at build time, so a runtime override is silently ignored and
+        // the container ends up proxying to itself (ECONNREFUSED 127.0.0.1:8000).
+        const backend =
+          process.env.INTERNAL_API_URL ||
+          process.env.NEXT_PUBLIC_API_URL ||
+          "http://localhost:8000";
         return [
           { source: "/api/:path*", destination: `${backend}/api/:path*` },
           { source: "/health", destination: `${backend}/health` },
