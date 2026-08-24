@@ -22,7 +22,7 @@ import argparse
 
 import uvicorn
 
-from rlmstudio.branding import PRODUCT_NAME, env, env_name
+from rlmstudio.branding import DEFAULT_HOST, DEFAULT_PORT, PRODUCT_NAME, env, env_name
 
 _parser = argparse.ArgumentParser(
     prog="python -m rlmstudio.server",
@@ -30,14 +30,14 @@ _parser = argparse.ArgumentParser(
 )
 _parser.add_argument(
     "--host",
-    default=env("HOST", "127.0.0.1"),
-    help=f"Bind host (default: 127.0.0.1, env: {env_name('HOST')})",
+    default=env("HOST", DEFAULT_HOST),
+    help=f"Bind host (default: {DEFAULT_HOST}, env: {env_name('HOST')})",
 )
 _parser.add_argument(
     "--port",
     type=int,
-    default=int(env("PORT", "8000") or "8000"),
-    help=f"Bind port (default: 8000, env: {env_name('PORT')})",
+    default=int(env("PORT", str(DEFAULT_PORT)) or DEFAULT_PORT),
+    help=f"Bind port (default: {DEFAULT_PORT}, env: {env_name('PORT')})",
 )
 _parser.add_argument(
     "--reload",

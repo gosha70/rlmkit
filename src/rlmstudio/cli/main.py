@@ -16,7 +16,16 @@ import webbrowser
 from collections.abc import Sequence
 
 from rlmstudio import __version__
-from rlmstudio.branding import CLI_NAME, DIST_NAME, PACKAGE_NAME, PRODUCT_NAME, env, env_name
+from rlmstudio.branding import (
+    CLI_NAME,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DIST_NAME,
+    PACKAGE_NAME,
+    PRODUCT_NAME,
+    env,
+    env_name,
+)
 from rlmstudio.ui_bundle import get_ui_directory
 
 logger = logging.getLogger(__name__)
@@ -47,14 +56,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     studio.add_argument(
         "--host",
-        default=env("HOST", "127.0.0.1"),
-        help=f"Bind host (default: 127.0.0.1, env: {env_name('HOST')})",
+        default=env("HOST", DEFAULT_HOST),
+        help=f"Bind host (default: {DEFAULT_HOST}, env: {env_name('HOST')})",
     )
     studio.add_argument(
         "--port",
         type=int,
-        default=int(env("PORT", "8000") or "8000"),
-        help=f"Bind port (default: 8000, env: {env_name('PORT')})",
+        default=int(env("PORT", str(DEFAULT_PORT)) or DEFAULT_PORT),
+        help=f"Bind port (default: {DEFAULT_PORT}, env: {env_name('PORT')})",
     )
     studio.add_argument(
         "--no-browser",
