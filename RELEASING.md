@@ -35,7 +35,29 @@ For each release, the maintainer:
    ```
    `build:bundle` (not `build`) is the right script — `build` produces a Next.js server build (`.next/`), `build:bundle` sets `BUNDLE=1` and emits a static export under `frontend/out/`.
 3. Opens a release PR that bumps `pyproject.toml`, promotes the `[Unreleased]` section in `CHANGELOG.md` to a dated version header, and updates any docs whose user-facing copy changed.
-4. After merge, pushes an annotated tag `vX.Y.Z` to `master`. That tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which rebuilds the bundle + wheel + sdist, smoke-installs the wheel, publishes to **PyPI** via a trusted publisher (OIDC — no tokens in the repo), pushes the sandbox image to `ghcr.io/gosha70/rlm-studio-sandbox:<version>` (+ `latest`), and attaches `dist/` to the workflow run. A pre-release tag `vX.Y.Z-rc.N` publishes to **TestPyPI** instead (bump `pyproject.toml` to `X.Y.ZrcN` if you need more than one rc — an index refuses to overwrite a version). The maintainer then publishes the GitHub release page by hand with the same wheel and sdist attached.
+4. After merge, pushes an annotated tag `vX.Y.Z` to `master`. That tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which rebuilds the bundle + wheel + sdist, smoke-installs the wheel, publishes to **PyPI** via a trusted publisher (OIDC — no tokens in the repo), pushes the sandbox image to `ghcr.io/gosha70/rlm-studio-sandbox:<version>` (+ `latest`), and attaches `dist/` to the workflow run. A pre-release tag `vX.Y.Z-rc.N` publishes to **TestPyPI** instead. The maintainer then publishes the GitHub release page by hand with the same wheel and sdist attached.
+### Release-candidate flow
+
+The uploaded artifact's version comes from `pyproject.toml`, **not** from the
+tag, so the two must agree — `release.yml` refuses the tag otherwise (exact
+match after normalising `v1.0.0-rc.1` → `1.0.0rc1`), and re-verifies the built
+wheel's filename after `uv build`. A package index never lets a version be
+re-uploaded, so a mismatch would silently burn the real release number on a
+release-candidate run.
+
+```
+# release candidate
+pyproject.toml: version = "1.0.0rc1"   →  git tag v1.0.0-rc.1   →  TestPyPI
+pip install -i https://test.pypi.org/simple/ \
+    --extra-index-url https://pypi.org/simple "rlm-studio[studio]==1.0.0rc1"
+
+# the release itself (in the release PR)
+pyproject.toml: version = "1.0.0"      →  git tag v1.0.0        →  PyPI
+```
+
+Each further candidate needs its own version (`1.0.0rc2`, …); TestPyPI will
+reject a re-upload of one it already has.
+
 5. Verifies the published artifacts install cleanly on Python 3.11, 3.12, and 3.13 from a fresh environment before announcing (CI's `wheel-smoke` job already does this on every push, including booting `rlm-studio studio` against the bundled UI).
 
 Between releases, `src/rlmstudio/_ui/` is intentionally empty (only the `__init__.py` placeholder is tracked) so the dev workflow stays clean. The `_ui/` payload is regenerated at every release cut.

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
+import rlmstudio
 from rlmstudio.server.app import create_app
 from rlmstudio.server.dependencies import (
     ExecutionRecord,
@@ -47,7 +48,9 @@ class TestHealthCheck:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["version"] == "1.0.0"
+        # Assert the invariant (endpoint reports the installed package
+        # version), not a literal — otherwise every release bump breaks a test.
+        assert data["version"] == rlmstudio.__version__
         assert "uptime_seconds" in data
 
 
