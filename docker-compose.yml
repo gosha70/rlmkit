@@ -82,15 +82,22 @@ services:
         # go to this URL — which is the host's localhost, not the
         # container network — because the browser is on the host.
         NEXT_PUBLIC_API_URL: http://localhost:8000
+        # Address THIS container uses to reach the backend (compose network),
+        # as opposed to the browser's localhost above. Passed at build time so
+        # it is baked into the rewrite manifest, and again at runtime below so
+        # route handlers pick it up.
+        INTERNAL_API_URL: http://backend:8000
         NEXT_PUBLIC_RLM_STUDIO_PERF_UI: ${NEXT_PUBLIC_RLM_STUDIO_PERF_UI:-}
     image: rlm-studio-frontend:local
     container_name: rlm-studio-frontend
     restart: unless-stopped
     environment:
-      # Next.js server-side rewrites (see frontend/next.config.ts) run
-      # inside this container and call the backend via the compose
-      # network, not via the host.
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      # Server-side only: the Next rewrites and the judge route handler run
+      # inside this container and must use the compose network, not the
+      # host's localhost. This CANNOT be expressed with NEXT_PUBLIC_* —
+      # Next inlines those at build time, so a runtime value is ignored and
+      # the container proxies to itself (ECONNREFUSED 127.0.0.1:8000).
+      INTERNAL_API_URL: http://backend:8000
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
