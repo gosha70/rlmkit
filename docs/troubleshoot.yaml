@@ -1,7 +1,7 @@
 # Troubleshoot entries rendered by the Learn tab.
 #
 # Served as JSON at GET /api/docs/troubleshoot (see
-# src/rlmkit/server/routes/docs.py). The frontend filters across
+# src/rlmstudio/server/routes/docs.py). The frontend filters across
 # title, symptom, and cause client-side — no server-side search.
 #
 # Entry shape (matches the spec §5 Troubleshoot Entry Shape):

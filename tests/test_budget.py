@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from rlmkit import BudgetExceeded
-from rlmkit.core.budget import (
+from rlmstudio import BudgetExceeded
+from rlmstudio.core.budget import (
     BudgetLimits,
     BudgetTracker,
     CostTracker,

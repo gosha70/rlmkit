@@ -1,4 +1,4 @@
-# RLMKit Test Strategy
+# RLM Studio Test Strategy
 
 **Version:** 1.0
 **Date:** February 8, 2026
@@ -120,12 +120,12 @@ jobs:
   test-unit:
     steps:
       - pytest tests/ -m "not integration and not e2e and not live"
-        --cov=rlmkit --cov-fail-under=90
+        --cov=rlmstudio --cov-fail-under=90
 
   test-integration:
     steps:
       - pytest tests/integration/ -m integration
-        --cov=rlmkit --cov-append
+        --cov=rlmstudio --cov-append
 
   test-live:
     # Only on main branch, with secrets

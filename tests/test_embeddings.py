@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from rlmkit.strategies.embeddings import EmbeddingProvider, OpenAIEmbedder
+from rlmstudio.strategies.embeddings import EmbeddingProvider, OpenAIEmbedder
 
 
 class MockEmbedder:

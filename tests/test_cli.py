@@ -1,16 +1,16 @@
-"""Smoke tests for the ``rlmkit`` console script.
+"""Smoke tests for the ``rlm-studio`` console script.
 
 These tests deliberately do NOT boot a real uvicorn server. They cover:
 
 * The CLI module imports cleanly.
-* ``rlmkit version`` exits 0 and prints a version string.
-* ``rlmkit studio --help`` exits 0 and lists the documented flags.
+* ``rlmstudio version`` exits 0 and prints a version string.
+* ``rlm-studio studio --help`` exits 0 and lists the documented flags.
 * The bundled-UI helper returns the right value for the current source
   tree state (``None`` when ``_ui/`` is empty in the dev checkout).
 * The FastAPI app still constructs without a bundled UI (regression
   guard for the conditional mount added in ``server/app.py``).
 
-The end-to-end "``rlmkit studio`` actually serves the UI" test belongs
+The end-to-end "``rlm-studio studio`` actually serves the UI" test belongs
 in the manual release plan, not in pytest. See
 ``doc_internal/release/steps/01-pre-cut-gates.md`` § "One-click smoke
 test" once that section lands.
@@ -23,9 +23,9 @@ from contextlib import redirect_stderr, redirect_stdout
 
 import pytest
 
-from rlmkit.cli import main as cli_main_module
-from rlmkit.cli.main import _browse_host, main
-from rlmkit.ui_bundle import get_ui_directory, is_ui_bundled
+from rlmstudio.cli import main as cli_main_module
+from rlmstudio.cli.main import _browse_host, main
+from rlmstudio.ui_bundle import get_ui_directory, is_ui_bundled
 
 
 def test_cli_module_imports() -> None:
@@ -37,11 +37,11 @@ def test_version_command_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["version"])
     captured = capsys.readouterr()
     assert rc == 0
-    assert captured.out.startswith("rlmkit ")
+    assert captured.out.startswith("rlm-studio ")
 
 
 def test_studio_help_exits_zero() -> None:
-    """`rlmkit studio --help` should print usage and exit 0.
+    """`rlm-studio studio --help` should print usage and exit 0.
 
     argparse exits via SystemExit, not return; catch it explicitly.
     """
@@ -78,14 +78,14 @@ def test_studio_without_bundled_ui_prints_helpful_message(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """When the bundled UI is missing, `rlmkit studio` must:
+    """When the bundled UI is missing, `rlm-studio studio` must:
 
     * exit non-zero (not crash uvicorn)
     * print actionable guidance pointing at the dev workflow
     * NOT attempt to start uvicorn
     """
     # Force the UI lookup to return None regardless of the actual state.
-    monkeypatch.setattr("rlmkit.cli.main.get_ui_directory", lambda: None)
+    monkeypatch.setattr("rlmstudio.cli.main.get_ui_directory", lambda: None)
 
     # Sentinel that fails the test if uvicorn.run is invoked.
     def _fail(*_args: object, **_kwargs: object) -> None:
@@ -98,10 +98,10 @@ def test_studio_without_bundled_ui_prints_helpful_message(
 
     assert rc != 0
     # Match exact-case to keep the assertion honest; the CLI prints
-    # "RLMKit: no bundled UI was found." and the dev workflow hints.
+    # "RLM Studio: no bundled UI was found." and the dev workflow hints.
     assert "no bundled UI" in captured.err
     assert "npm run build:bundle" in captured.err
-    assert "python -m rlmkit.server" in captured.err
+    assert "python -m rlmstudio.server" in captured.err
 
 
 def test_ui_bundle_helpers_consistent() -> None:
@@ -111,15 +111,15 @@ def test_ui_bundle_helpers_consistent() -> None:
 
 def test_server_app_constructs_without_bundled_ui() -> None:
     """Regression guard: the FastAPI app must import cleanly when
-    ``src/rlmkit/_ui/`` is empty (no ``index.html``), which is the
+    ``src/rlmstudio/_ui/`` is empty (no ``index.html``), which is the
     state of every source checkout that has not run the frontend build.
 
     If this test fails, the conditional mount in
-    ``rlmkit.server.app.create_app`` is regressed and the API-only
-    workflow (`python -m rlmkit.server` + `npm run dev` on :3000) is
+    ``rlmstudio.server.app.create_app`` is regressed and the API-only
+    workflow (`python -m rlmstudio.server` + `npm run dev` on :3000) is
     broken.
     """
-    from rlmkit.server.app import app  # noqa: F401 — import is the test.
+    from rlmstudio.server.app import app  # noqa: F401 — import is the test.
 
 
 @pytest.mark.parametrize(
@@ -140,7 +140,7 @@ def test_browse_host_maps_wildcards_to_loopback(bind_host: str, expected: str) -
     bind targets and preserves anything else verbatim.
 
     The actual uvicorn bind continues to use the raw host so
-    ``rlmkit studio --host 0.0.0.0`` still binds the wildcard; this
+    ``rlm-studio studio --host 0.0.0.0`` still binds the wildcard; this
     rewrite only applies to the URL we print and auto-open in the
     browser. Wildcard targets (``0.0.0.0``, ``::``) are not
     consistently browseable across platforms — Linux usually routes

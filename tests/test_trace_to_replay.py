@@ -18,12 +18,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from rlmkit.application.services.trace_to_replay import (
+from rlmstudio.application.services.trace_to_replay import (
     CONVERTOR_VERSION,
     REPLAY_STEP_CAP,
     trace_to_replay,
 )
-from rlmkit.server.models import (
+from rlmstudio.server.models import (
     TraceBudget,
     TraceResponse,
     TraceResult,
@@ -566,7 +566,7 @@ class TestReplayMetricsTelemetryZeros:
     telemetry."""
 
     def test_measured_zero_cached_tokens_is_preserved(self) -> None:
-        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+        from rlmstudio.application.services.trace_to_replay import _metrics_from_step
 
         step = TraceStep(
             index=0,
@@ -590,7 +590,7 @@ class TestReplayMetricsTelemetryZeros:
     def test_measured_zero_decode_ms_is_preserved(self) -> None:
         """Single-chunk provider → TTFT == total_ms → decode_ms=0 by
         adapter contract. That zero is a real signal, not absence."""
-        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+        from rlmstudio.application.services.trace_to_replay import _metrics_from_step
 
         step = TraceStep(
             index=0,
@@ -612,7 +612,7 @@ class TestReplayMetricsTelemetryZeros:
         """When a step has no prefill/decode signal at all (ttft_ms is
         None and all three ints are 0), the four new fields are
         omitted rather than lied about with zeros."""
-        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+        from rlmstudio.application.services.trace_to_replay import _metrics_from_step
 
         step = TraceStep(
             index=0,
@@ -636,7 +636,7 @@ class TestReplayMetricsTelemetryZeros:
     def test_all_absent_step_returns_none(self) -> None:
         """With zero traditional metrics AND no prefill/decode signal,
         the step has no metrics to show — return None."""
-        from rlmkit.application.services.trace_to_replay import _metrics_from_step
+        from rlmstudio.application.services.trace_to_replay import _metrics_from_step
 
         step = TraceStep(index=0, action_type="inspect")
         assert _metrics_from_step(step) is None

@@ -1,6 +1,6 @@
 """Tests for PyReplEnv execution environment."""
 
-from rlmkit.envs import PyReplEnv
+from rlmstudio.envs import PyReplEnv
 
 
 class TestBasicExecution:

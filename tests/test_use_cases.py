@@ -8,19 +8,19 @@ import asyncio
 from collections.abc import Iterator
 from typing import Any
 
-from rlmkit.application.dto import (
+from rlmstudio.application.dto import (
     ExecutionResultDTO,
     LLMResponseDTO,
     RunConfigDTO,
     RunResultDTO,
 )
-from rlmkit.application.use_cases.run_comparison import (
+from rlmstudio.application.use_cases.run_comparison import (
     ComparisonResultDTO,
     RunComparisonUseCase,
 )
-from rlmkit.application.use_cases.run_direct import RunDirectUseCase
-from rlmkit.application.use_cases.run_rag import RunRAGUseCase
-from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmstudio.application.use_cases.run_direct import RunDirectUseCase
+from rlmstudio.application.use_cases.run_rag import RunRAGUseCase
+from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
 # ---------------------------------------------------------------------------
 # Mock adapters for port interfaces
@@ -85,7 +85,15 @@ class FakeSandbox:
         if name == "P" and isinstance(value, str):
             from functools import partial
 
-            from rlmkit.tools import chunk, grep, grep_file, outline_file, peek, peek_file, select
+            from rlmstudio.tools import (
+                chunk,
+                grep,
+                grep_file,
+                outline_file,
+                peek,
+                peek_file,
+                select,
+            )
 
             self._namespace["peek"] = partial(peek, value)
             self._namespace["peek_file"] = partial(peek_file, value)
@@ -1259,7 +1267,7 @@ class TestJsonProtocolParsing:
 
     def test_json_inspect_grep_generates_code(self):
         """JSON inspect/grep action is converted to executable Python code."""
-        from rlmkit.core.parsing import ParsedResponse
+        from rlmstudio.core.parsing import ParsedResponse
 
         llm = FakeLLM([])  # unused; we call the method directly
         sandbox = FakeSandbox()
@@ -1374,7 +1382,7 @@ class TestExtractFirstJsonObject:
     """Direct tests for extract_first_json_object parser hardening."""
 
     def test_markdown_fence_stripped(self):
-        from rlmkit.core.actions import extract_first_json_object
+        from rlmstudio.core.actions import extract_first_json_object
 
         text = '```json\n{"type": "final", "answer": "hello"}\n```'
         result = extract_first_json_object(text)
@@ -1383,7 +1391,7 @@ class TestExtractFirstJsonObject:
         assert result["answer"] == "hello"
 
     def test_invalid_escape_sanitized(self):
-        from rlmkit.core.actions import extract_first_json_object
+        from rlmstudio.core.actions import extract_first_json_object
 
         # \[ is invalid JSON but common in grep patterns from small models
         text = '{"type": "inspect", "tool": "grep", "args": {"pattern": "\\[File 2:"}}'
@@ -1393,7 +1401,7 @@ class TestExtractFirstJsonObject:
         assert result["args"]["pattern"] == "\\[File 2:"
 
     def test_valid_json_unchanged(self):
-        from rlmkit.core.actions import extract_first_json_object
+        from rlmstudio.core.actions import extract_first_json_object
 
         text = '{"type": "final", "answer": "done"}'
         result = extract_first_json_object(text)
@@ -1402,7 +1410,7 @@ class TestExtractFirstJsonObject:
 
     def test_trailing_extra_brace_ignored(self):
         """Extra }} after valid JSON should not cause rejection."""
-        from rlmkit.core.actions import extract_first_json_object
+        from rlmstudio.core.actions import extract_first_json_object
 
         text = '{"type": "final", "answer": "hello"}}'
         result = extract_first_json_object(text)
@@ -1411,7 +1419,7 @@ class TestExtractFirstJsonObject:
 
     def test_trailing_prose_still_rejected(self):
         """JSON followed by real prose should still be rejected."""
-        from rlmkit.core.actions import ParseError, extract_first_json_object
+        from rlmstudio.core.actions import ParseError, extract_first_json_object
 
         text = '{"type": "final", "answer": "hello"} Here is more explanation.'
         raised = False
@@ -1826,7 +1834,7 @@ class TestLiteLLMEmbeddingAdapter:
         return SimpleNamespace(data=data, usage=usage)
 
     def test_embed_batch_returns_vectors(self, monkeypatch):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1839,7 +1847,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert result == vectors
 
     def test_embed_delegates_to_embed_batch(self, monkeypatch):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1852,7 +1860,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert result == [1.0, 2.0]
 
     def test_total_tokens_accumulates(self, monkeypatch):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1870,7 +1878,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert call_count[0] == 2
 
     def test_total_cost_uses_pricing_table(self, monkeypatch):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1884,7 +1892,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert abs(adapter.total_cost - 0.020) < 1e-9
 
     def test_unknown_model_zero_cost(self, monkeypatch):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1898,7 +1906,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert adapter.total_cost == 0.0
 
     def test_model_property(self):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1906,7 +1914,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert adapter.model == "text-embedding-3-large"
 
     def test_dimension_from_known_table(self):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1914,7 +1922,7 @@ class TestLiteLLMEmbeddingAdapter:
         assert adapter.dimension == 1536
 
     def test_dimension_inferred_from_response(self, monkeypatch):
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1929,7 +1937,7 @@ class TestLiteLLMEmbeddingAdapter:
         """Adapter does not crash when response has no usage attribute."""
         from types import SimpleNamespace
 
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1945,7 +1953,7 @@ class TestLiteLLMEmbeddingAdapter:
 
     def test_api_key_and_base_forwarded(self, monkeypatch):
         """api_key and api_base are passed through to litellm."""
-        from rlmkit.infrastructure.embedding.litellm_embedding_adapter import (
+        from rlmstudio.infrastructure.embedding.litellm_embedding_adapter import (
             LiteLLMEmbeddingAdapter,
         )
 
@@ -1974,7 +1982,7 @@ class TestRunRAGCostAccounting:
 
     def test_cost_combines_embedding_and_llm(self):
         """total_cost = embed_cost + llm_completion_cost."""
-        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+        from rlmstudio.application.use_cases.run_rag import RunRAGUseCase
 
         class PricedLLM(FakeLLM):
             def get_pricing(self):
@@ -2002,7 +2010,7 @@ class TestRunRAGCostAccounting:
 
     def test_cost_zero_when_both_free(self):
         """No cost when embedder reports 0 and LLM has no pricing."""
-        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+        from rlmstudio.application.use_cases.run_rag import RunRAGUseCase
 
         result = RunRAGUseCase(FakeLLM(["answer"]), FakeEmbedder(), FakeStorage()).execute(
             "content", "query"
@@ -2011,7 +2019,7 @@ class TestRunRAGCostAccounting:
 
     def test_embedding_tokens_added_to_input_tokens(self):
         """embed tokens are folded into RunResultDTO.input_tokens."""
-        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+        from rlmstudio.application.use_cases.run_rag import RunRAGUseCase
 
         class EmbedderWith500Tokens(FakeEmbedder):
             @property
@@ -2030,7 +2038,7 @@ class TestRunRAGCostAccounting:
 
     def test_get_pricing_exception_falls_back_to_zero_llm_cost(self):
         """If get_pricing() raises, llm_cost is silently set to 0."""
-        from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+        from rlmstudio.application.use_cases.run_rag import RunRAGUseCase
 
         class BrokenPricingLLM(FakeLLM):
             def get_pricing(self):
@@ -2052,7 +2060,7 @@ class TestHumanizeRAGError:
     """Ensure each error-classification branch in _humanize_rag_error is exercised."""
 
     def _humanize(self, msg: str) -> str:
-        from rlmkit.application.use_cases.run_rag import _humanize_rag_error
+        from rlmstudio.application.use_cases.run_rag import _humanize_rag_error
 
         return str(_humanize_rag_error(Exception(msg)))
 

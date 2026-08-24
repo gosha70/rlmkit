@@ -11,7 +11,7 @@ Covers the invariants from doc_internal/specs/scheduled-connection-testing.md:
 - Single provider raising does not kill the cycle.
 - save_config is batched (once per cycle, not once per provider).
 
-All tests use the RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE env var
+All tests use the RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE env var
 via ``monkeypatch.setenv`` so they can run cycles at sub-second frequency
 without touching the minutes-based user-facing knob.
 """
@@ -25,9 +25,9 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.services.provider_tester import ProviderTestResult
-from rlmkit.server.dependencies import AppState
-from rlmkit.server.models import LLMProviderConfig
+from rlmstudio.application.services.provider_tester import ProviderTestResult
+from rlmstudio.server.dependencies import AppState
+from rlmstudio.server.models import LLMProviderConfig
 
 # --------------------------------------------------------------------------
 # Helpers
@@ -103,14 +103,14 @@ def test_interval_zero_does_not_start_thread(state: AppState) -> None:
 
 
 def test_interval_positive_starts_thread(state: AppState, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
     state._start_connection_testing()
     assert state._connection_test_thread is not None
     assert state._connection_test_thread.is_alive()
 
 
 def test_stop_joins_with_2s_timeout(state: AppState, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
     state._start_connection_testing()
     thread = state._connection_test_thread
     assert thread is not None
@@ -125,7 +125,7 @@ def test_stop_joins_with_2s_timeout(state: AppState, monkeypatch: pytest.MonkeyP
 
 
 def test_restart_picks_up_new_interval(state: AppState, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
     state._start_connection_testing()
     first_thread = state._connection_test_thread
     assert first_thread is not None
@@ -140,11 +140,11 @@ def test_restart_picks_up_new_interval(state: AppState, monkeypatch: pytest.Monk
 def test_restart_with_interval_zero_stops_thread(
     state: AppState, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "10")
     state._start_connection_testing()
     assert state._connection_test_thread is not None
 
-    monkeypatch.delenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE")
+    monkeypatch.delenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE")
     # interval_minutes is 0 by default → no thread
     state.restart_connection_testing()
     assert state._connection_test_thread is None
@@ -162,7 +162,7 @@ def test_first_cycle_begins_after_interval_not_immediately(
 
     lp = _make_lp()
     state.config.llm_providers = [lp]
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "5")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "5")
     with patch.object(AppState, "_safe_test", _fake_safe_test):
         state._start_connection_testing()
         # Give the thread a moment to start and enter sleep.
@@ -267,7 +267,7 @@ def test_single_provider_exception_does_not_kill_cycle(state: AppState) -> None:
         return _connected_result()
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_real_test,
     ):
         state._run_test_cycle()
@@ -316,7 +316,7 @@ def test_stale_result_discarded_when_provider_edited_mid_cycle(
     edit_thread.start()
     try:
         with patch(
-            "rlmkit.application.services.provider_tester.test_provider",
+            "rlmstudio.application.services.provider_tester.test_provider",
             side_effect=_slow_probe,
         ):
             state._run_test_cycle()
@@ -343,7 +343,7 @@ def test_deleted_provider_result_dropped(state: AppState) -> None:
         return _offline_result()
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_probe_and_delete,
     ):
         state._run_test_cycle()
@@ -393,10 +393,10 @@ def test_shutdown_hook_joins_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from fastapi.testclient import TestClient
 
-    from rlmkit.server.app import create_app
-    from rlmkit.server.dependencies import get_state, reset_state
+    from rlmstudio.server.app import create_app
+    from rlmstudio.server.dependencies import get_state, reset_state
 
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "30")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "30")
     reset_state()
     app = create_app()
 
@@ -429,7 +429,7 @@ def test_first_cycle_sleeps_before_testing(
     def _track_cycle(self: AppState) -> None:
         run_cycle_called.set()
 
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.5")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.5")
     with patch.object(threading.Event, "wait", _tracking_wait):
         with patch.object(AppState, "_run_test_cycle", _track_cycle):
             state._start_connection_testing()

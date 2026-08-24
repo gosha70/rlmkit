@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { AppShell } from "@/components/shared/app-shell";
+import { PERF_UI_ENABLED } from "@/lib/branding";
 import { Timeline } from "@/components/trace/timeline";
 import { TraceTree } from "@/components/trace/trace-tree";
 import { StepDetail } from "@/components/trace/step-detail";
@@ -28,8 +29,6 @@ import {
   type TraceResponse,
   type TraceStep,
 } from "@/lib/api";
-
-const PERF_UI_ENABLED: boolean = process.env.NEXT_PUBLIC_RLMKIT_PERF_UI === "1";
 
 interface TraceDetailPanelProps {
   trace: TraceResponse;

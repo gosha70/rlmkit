@@ -6,7 +6,7 @@ This doc is the Qwen3-Coder-Next-NVFP4 companion to [`dgx-spark.md`](dgx-spark.m
 
 ## 1. When to use this doc
 
-You want a coding-grade model self-hosted on a DGX Spark, accessible via an OpenAI-compatible API with tool calling enabled, callable from RLMKit or any agent client (claude-code, Cline, raw OpenAI SDK). The verified setup runs `RedHatAI/Qwen3-Coder-Next-NVFP4` and matches Sonnet-class behaviour on multi-turn agentic tool loops (see `aider-polyglot` notes at the end).
+You want a coding-grade model self-hosted on a DGX Spark, accessible via an OpenAI-compatible API with tool calling enabled, callable from RLM Studio or any agent client (claude-code, Cline, raw OpenAI SDK). The verified setup runs `RedHatAI/Qwen3-Coder-Next-NVFP4` and matches Sonnet-class behaviour on multi-turn agentic tool loops (see `aider-polyglot` notes at the end).
 
 If you want a simpler local setup (smaller models, no tool calling, Ollama instead of vLLM), use [`dgx-spark.md`](dgx-spark.md) §3. If you want generic vLLM with no Spark-specific guidance, use [`vllm.md`](vllm.md).
 
@@ -151,7 +151,7 @@ Every blocker below was hit during the 2026-05-17 debug session. The symptom str
 | 3 | All requests return HTTP 400 in <1 second with `This model's maximum context length is N tokens. However, you requested M output tokens and your prompt contains K characters` where M + estimated_prompt_tokens > N | vLLM enforces `prompt_tokens + max_tokens <= max_model_len` strictly. Agent clients like claude-code ship a large request envelope (system prompt + tool schemas + skills metadata, often ~30–40K tokens) on every call. With default `max_tokens=32000`, total context floor is ~70K | Raise `--max-model-len` to at least `measured_envelope + max_output_tokens + safety_margin`. For claude-code as the client, this is ~131072. For thinner clients (raw OpenAI SDK, single-shot completions), 32768 may suffice. The verified config uses 131072 | `curl -s http://<host>:8000/v1/models \| jq '.data[0].max_model_len'` — compare against expected agent client's worst-case `(prompt + max_tokens)` |
 | 4 | A multi-turn agentic conversation crashes mid-loop with HTTP 400 + `OpenAIException` + `212 validation errors: {'type': 'string_type', 'loc': ('body', 'input', 'str'), 'msg': 'Input should be a valid string'}` and the offending payload contains `{'type': 'input_text', 'text': ...}` and `{'type': 'message', 'role': ..., 'content': [...]}` blocks | LiteLLM ≥ 1.50 auto-detects vLLM's `/v1/responses` (OpenAI Responses API) endpoint and routes the generic `openai/` provider through it. vLLM's Responses API implementation rejects LiteLLM's multi-turn input-array shape. The model itself is fine; the route is wrong | In the LiteLLM proxy config, change the `model` field from `openai/<name>` to `hosted_vllm/<name>`. The `hosted_vllm/` provider is LiteLLM's purpose-built vLLM adapter and pins to `/v1/chat/completions` deterministically. Fallback: pin `litellm<1.50` | After the fix, tail the vLLM access log during a multi-turn request: every line must read `POST /v1/chat/completions HTTP/1.1 200`. Any `POST /v1/responses` line means the route fix didn't take effect |
 
-## 8. Using this server from RLMKit (via LiteLLM)
+## 8. Using this server from RLM Studio (via LiteLLM)
 
 The model string passed into LiteLLM determines which vLLM endpoint LiteLLM hits. With LiteLLM ≥ 1.50, the `hosted_vllm/` provider prefix pins to `/v1/chat/completions`; the generic `openai/` prefix is auto-detected as the OpenAI Responses API and routed via `/v1/responses`, which vLLM rejects on multi-turn (Blocker #4).
 
@@ -160,7 +160,7 @@ The model string passed into LiteLLM determines which vLLM endpoint LiteLLM hits
 Use the LiteLLM passthrough path and pass the fully-qualified model string yourself:
 
 ```python
-from rlmkit import interact
+from rlmstudio import interact
 
 r = interact(
     content, query, mode="rlm",
@@ -170,7 +170,7 @@ r = interact(
 )
 ```
 
-`provider="litellm"` is not in RLMKit's per-provider prefix table, so the model string passes through verbatim and LiteLLM sees the `hosted_vllm/` prefix it needs.
+`provider="litellm"` is not in RLM Studio's per-provider prefix table, so the model string passes through verbatim and LiteLLM sees the `hosted_vllm/` prefix it needs.
 
 ### Equivalent pattern: the built-in `vllm` provider
 
@@ -182,17 +182,17 @@ r = interact(
 )
 ```
 
-RLMKit prepends `hosted_vllm/` for the `vllm` backend, so this reaches `/v1/chat/completions` like the explicit form above. This is also the path RLM Studio's **vllm** provider entry uses.
+RLM Studio prepends `hosted_vllm/` for the `vllm` backend, so this reaches `/v1/chat/completions` like the explicit form above. This is also the path RLM Studio's **vllm** provider entry uses.
 
 ### Resolved: the built-in `vllm` provider no longer hardcodes `openai/`
 
-Previously RLMKit's `vllm` backend prepended `openai/`, so an operator pointing the built-in provider — or RLM Studio's **vllm** entry — at this Spark setup would hit Blocker #4 once LiteLLM was ≥ 1.50, even with every flag in §3 correct. RLM Studio had no in-UI workaround.
+Previously RLM Studio's `vllm` backend prepended `openai/`, so an operator pointing the built-in provider — or RLM Studio's **vllm** entry — at this Spark setup would hit Blocker #4 once LiteLLM was ≥ 1.50, even with every flag in §3 correct. RLM Studio had no in-UI workaround.
 
-Fixed: the prefix is now `hosted_vllm/` in all three tables — `src/rlmkit/api.py`, `src/rlmkit/server/routes/providers.py` (also consumed by `application/services/provider_tester.py`, the **Test Connection** path) and `src/rlmkit/server/dependencies.py`. `tests/test_phase_a_verification.py::TestModelNamePrefixing` asserts all three agree, so a future edit to one table cannot silently re-break the others.
+Fixed: the prefix is now `hosted_vllm/` in all three tables — `src/rlmstudio/api.py`, `src/rlmstudio/server/routes/providers.py` (also consumed by `application/services/provider_tester.py`, the **Test Connection** path) and `src/rlmstudio/server/dependencies.py`. `tests/test_phase_a_verification.py::TestModelNamePrefixing` asserts all three agree, so a future edit to one table cannot silently re-break the others.
 
-**If you are on an older RLMKit** that still prepends `openai/`, the workarounds are: use the `provider="litellm"` pattern above from the Python API, or pin `litellm<1.50`. RLM Studio has no workaround on those versions.
+**If you are on an older RLM Studio** that still prepends `openai/`, the workarounds are: use the `provider="litellm"` pattern above from the Python API, or pin `litellm<1.50`. RLM Studio has no workaround on those versions.
 
-**Corollary — Blocker #4 itself is unchanged.** The fix is to RLMKit's own prefix tables, so it only covers requests that leave RLMKit through LiteLLM. Blocker #4 remains a real LiteLLM route-selection property, and §9.2 still carries it over for any candidate model. A Claude Code client pointed at vLLM's native Anthropic-compatible endpoint (`--enable-anthropic-api`) takes LiteLLM out of the path entirely and so cannot hit it either. Caveat: `--enable-anthropic-api` is version-dependent and is not used anywhere in this repo; verify it exists in your local build (`python -m vllm.entrypoints.openai.api_server --help | grep anthropic`) before relying on it.
+**Corollary — Blocker #4 itself is unchanged.** The fix is to RLM Studio's own prefix tables, so it only covers requests that leave RLM Studio through LiteLLM. Blocker #4 remains a real LiteLLM route-selection property, and §9.2 still carries it over for any candidate model. A Claude Code client pointed at vLLM's native Anthropic-compatible endpoint (`--enable-anthropic-api`) takes LiteLLM out of the path entirely and so cannot hit it either. Caveat: `--enable-anthropic-api` is version-dependent and is not used anywhere in this repo; verify it exists in your local build (`python -m vllm.entrypoints.openai.api_server --help | grep anthropic`) before relying on it.
 
 ## 9. Candidate models (UNVERIFIED — 2026-07-27)
 

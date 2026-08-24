@@ -38,6 +38,14 @@ import {
   type JudgeScoreData,
   type TraceStep,
 } from "@/lib/api";
+import {
+  STORAGE_KEY_ACTIVE_SESSION,
+  STORAGE_KEY_CHAT_PROVIDER_ORDER,
+  STORAGE_KEY_FILES_DRAFT,
+  STORAGE_KEY_SELECTED_CHAT_PROVIDERS,
+  migrateLegacyStorageKeys,
+  storageKeyFilesForSession,
+} from "@/lib/branding";
 
 interface ChatTurn {
   id: string;
@@ -84,11 +92,14 @@ export default function ChatPage() {
 
   useEffect(() => {
     try {
-      const sid = localStorage.getItem("rlmkit_active_session");
+      migrateLegacyStorageKeys();
+    } catch {}
+    try {
+      const sid = localStorage.getItem(STORAGE_KEY_ACTIVE_SESSION);
       if (sid) setSessionId(sid);
     } catch {}
     try {
-      const saved = localStorage.getItem("rlmkit_selected_chat_providers");
+      const saved = localStorage.getItem(STORAGE_KEY_SELECTED_CHAT_PROVIDERS);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -98,7 +109,7 @@ export default function ChatPage() {
       }
     } catch {}
     try {
-      const saved = localStorage.getItem("rlmkit-cp-order");
+      const saved = localStorage.getItem(STORAGE_KEY_CHAT_PROVIDER_ORDER);
       if (saved) setChatProviderOrder(JSON.parse(saved));
     } catch {}
     setHydrated(true);
@@ -143,9 +154,9 @@ export default function ChatPage() {
   // Persist active session to localStorage
   useEffect(() => {
     if (sessionId) {
-      localStorage.setItem("rlmkit_active_session", sessionId);
+      localStorage.setItem(STORAGE_KEY_ACTIVE_SESSION, sessionId);
     } else {
-      localStorage.removeItem("rlmkit_active_session");
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
     }
   }, [sessionId]);
 
@@ -153,19 +164,19 @@ export default function ChatPage() {
   // to avoid overwriting the saved selection with the initial empty array).
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("rlmkit_selected_chat_providers", JSON.stringify(selectedChatProviderIds));
+    localStorage.setItem(STORAGE_KEY_SELECTED_CHAT_PROVIDERS, JSON.stringify(selectedChatProviderIds));
   }, [selectedChatProviderIds, hydrated]);
 
   // Persist chip order (only after hydration)
   useEffect(() => {
     if (!hydrated) return;
-    localStorage.setItem("rlmkit-cp-order", JSON.stringify(chatProviderOrder));
+    localStorage.setItem(STORAGE_KEY_CHAT_PROVIDER_ORDER, JSON.stringify(chatProviderOrder));
   }, [chatProviderOrder, hydrated]);
 
   // Hydrate uploaded files from localStorage.
   // Uses session-keyed storage when a session exists, or a "draft" key
   // for uploads that happen before the first message creates a session.
-  const filesStorageKey = sessionId ? `rlmkit_files_${sessionId}` : "rlmkit_files_draft";
+  const filesStorageKey = sessionId ? storageKeyFilesForSession(sessionId) : STORAGE_KEY_FILES_DRAFT;
 
   useEffect(() => {
     if (!hydrated) return;
@@ -185,8 +196,8 @@ export default function ChatPage() {
         }
       }
       // If no files for the current session, check for orphaned drafts
-      if (filesStorageKey !== "rlmkit_files_draft") {
-        const draft = localStorage.getItem("rlmkit_files_draft");
+      if (filesStorageKey !== STORAGE_KEY_FILES_DRAFT) {
+        const draft = localStorage.getItem(STORAGE_KEY_FILES_DRAFT);
         if (draft) {
           const parsed = JSON.parse(draft) as FileUploadResponse[];
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -213,10 +224,10 @@ export default function ChatPage() {
   const prevSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (sessionId && !prevSessionIdRef.current) {
-      const draft = localStorage.getItem("rlmkit_files_draft");
+      const draft = localStorage.getItem(STORAGE_KEY_FILES_DRAFT);
       if (draft) {
-        localStorage.setItem(`rlmkit_files_${sessionId}`, draft);
-        localStorage.removeItem("rlmkit_files_draft");
+        localStorage.setItem(storageKeyFilesForSession(sessionId), draft);
+        localStorage.removeItem(STORAGE_KEY_FILES_DRAFT);
       }
     }
     prevSessionIdRef.current = sessionId;
@@ -953,7 +964,7 @@ export default function ChatPage() {
   const handleNewSession = useCallback(() => {
     cancelAllPollers();
     // Clear draft files (not session-keyed files — those stay for reselection).
-    localStorage.removeItem("rlmkit_files_draft");
+    localStorage.removeItem(STORAGE_KEY_FILES_DRAFT);
     setSessionId(null);
     setTurns([]);
     setUploadedFiles([]);

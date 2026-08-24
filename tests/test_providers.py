@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from rlmkit.llm.base import BaseLLMProvider, LLMResponse
-from rlmkit.llm.mock_client import MockLLMClient
+from rlmstudio.llm.base import BaseLLMProvider, LLMResponse
+from rlmstudio.llm.mock_client import MockLLMClient
 
 
 class TestLLMResponse:
@@ -244,7 +244,7 @@ class TestOpenAIClientMocked:
         """Test OpenAI client requires API key."""
         import os
 
-        from rlmkit.llm.openai_client import OpenAIClient
+        from rlmstudio.llm.openai_client import OpenAIClient
 
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("OPENAI_API_KEY", None)
@@ -255,15 +255,15 @@ class TestOpenAIClientMocked:
 
     def test_accepts_api_key_parameter(self, mock_openai):
         """Test OpenAI client accepts API key as parameter."""
-        with patch("rlmkit.llm.openai_client.os.getenv", return_value=None):
-            from rlmkit.llm.openai_client import OpenAIClient
+        with patch("rlmstudio.llm.openai_client.os.getenv", return_value=None):
+            from rlmstudio.llm.openai_client import OpenAIClient
 
             client = OpenAIClient(model="gpt-4", api_key="test-key")
             assert client.api_key == "test-key"
 
     def test_model_selection(self, mock_openai):
         """Test OpenAI client model selection."""
-        from rlmkit.llm.openai_client import OpenAIClient
+        from rlmstudio.llm.openai_client import OpenAIClient
 
         client = OpenAIClient(model="gpt-3.5-turbo", api_key="test")
         assert client.model == "gpt-3.5-turbo"
@@ -292,7 +292,7 @@ class TestOpenAIClientMocked:
         self, mock_openai
     ):
         """Context-limit errors should trigger one retry with a reduced output budget."""
-        from rlmkit.llm.openai_client import OpenAIClient
+        from rlmstudio.llm.openai_client import OpenAIClient
 
         client = OpenAIClient(
             model="qwen",
@@ -318,7 +318,7 @@ class TestOpenAIClientMocked:
 
     def test_complete_proactively_clamps_max_tokens_after_context_limit_learned(self, mock_openai):
         """Once a context limit is known, later calls should clamp output tokens proactively."""
-        from rlmkit.llm.openai_client import OpenAIClient
+        from rlmstudio.llm.openai_client import OpenAIClient
 
         client = OpenAIClient(
             model="qwen",
@@ -348,7 +348,7 @@ class TestClaudeClientMocked:
 
     def test_requires_api_key(self, mock_anthropic):
         """Test Claude client requires API key."""
-        from rlmkit.llm.anthropic_client import ClaudeClient
+        from rlmstudio.llm.anthropic_client import ClaudeClient
 
         with patch.dict("os.environ", {}, clear=False):
             # Ensure no leaked ANTHROPIC_API_KEY from other tests
@@ -362,22 +362,22 @@ class TestClaudeClientMocked:
 
     def test_accepts_api_key_parameter(self, mock_anthropic):
         """Test Claude client accepts API key as parameter."""
-        with patch("rlmkit.llm.anthropic_client.os.getenv", return_value=None):
-            from rlmkit.llm.anthropic_client import ClaudeClient
+        with patch("rlmstudio.llm.anthropic_client.os.getenv", return_value=None):
+            from rlmstudio.llm.anthropic_client import ClaudeClient
 
             client = ClaudeClient(model="claude-3-sonnet-20240229", api_key="test-key")
             assert client.api_key == "test-key"
 
     def test_model_selection(self, mock_anthropic):
         """Test Claude client model selection."""
-        from rlmkit.llm.anthropic_client import ClaudeClient
+        from rlmstudio.llm.anthropic_client import ClaudeClient
 
         client = ClaudeClient(model="claude-3-opus-20240229", api_key="test")
         assert client.model == "claude-3-opus-20240229"
 
     def test_default_max_tokens(self, mock_anthropic):
         """Test Claude client sets default max_tokens."""
-        from rlmkit.llm.anthropic_client import ClaudeClient
+        from rlmstudio.llm.anthropic_client import ClaudeClient
 
         client = ClaudeClient(api_key="test")
         assert client.max_tokens == 4096  # Claude requires max_tokens
@@ -390,9 +390,9 @@ class TestOllamaClientMocked:
         """Test Ollama client handles connection failures."""
         import requests
 
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
-        with patch("rlmkit.llm.ollama_client.requests.get") as mock_get:
+        with patch("rlmstudio.llm.ollama_client.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
             with pytest.raises(ConnectionError) as exc:
@@ -402,23 +402,23 @@ class TestOllamaClientMocked:
 
     def test_model_selection(self):
         """Test Ollama client model selection."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
-        with patch("rlmkit.llm.ollama_client.requests.get"):
+        with patch("rlmstudio.llm.ollama_client.requests.get"):
             client = OllamaClient(model="mistral")
             assert client.model == "mistral"
 
     def test_base_url_configuration(self):
         """Test Ollama client custom base URL."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
-        with patch("rlmkit.llm.ollama_client.requests.get"):
+        with patch("rlmstudio.llm.ollama_client.requests.get"):
             client = OllamaClient(model="llama2", base_url="http://custom-server:11434")
             assert "custom-server" in client.base_url
 
     def test_complete_success(self):
         """Test successful completion."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -427,8 +427,8 @@ class TestOllamaClientMocked:
         }
         mock_response.raise_for_status = Mock()
 
-        with patch("rlmkit.llm.ollama_client.requests.get"):
-            with patch("rlmkit.llm.ollama_client.requests.post", return_value=mock_response):
+        with patch("rlmstudio.llm.ollama_client.requests.get"):
+            with patch("rlmstudio.llm.ollama_client.requests.post", return_value=mock_response):
                 client = OllamaClient(model="llama2")
                 result = client.complete([{"role": "user", "content": "Hi"}])
 
@@ -436,7 +436,7 @@ class TestOllamaClientMocked:
 
     def test_complete_with_metadata(self):
         """Test completion with metadata."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -449,8 +449,8 @@ class TestOllamaClientMocked:
         }
         mock_response.raise_for_status = Mock()
 
-        with patch("rlmkit.llm.ollama_client.requests.get"):
-            with patch("rlmkit.llm.ollama_client.requests.post", return_value=mock_response):
+        with patch("rlmstudio.llm.ollama_client.requests.get"):
+            with patch("rlmstudio.llm.ollama_client.requests.post", return_value=mock_response):
                 client = OllamaClient(model="llama2")
                 result = client.complete_with_metadata([{"role": "user", "content": "Hi"}])
 
@@ -461,7 +461,7 @@ class TestOllamaClientMocked:
 
     def test_list_models(self):
         """Test listing available models."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
         mock_response = Mock()
         mock_response.json.return_value = {
@@ -469,7 +469,7 @@ class TestOllamaClientMocked:
         }
         mock_response.raise_for_status = Mock()
 
-        with patch("rlmkit.llm.ollama_client.requests.get", return_value=mock_response):
+        with patch("rlmstudio.llm.ollama_client.requests.get", return_value=mock_response):
             client = OllamaClient(model="llama2")
             models = client.list_models()
 
@@ -481,10 +481,10 @@ class TestOllamaClientMocked:
         """Test timeout handling."""
         import requests
 
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
-        with patch("rlmkit.llm.ollama_client.requests.get"):
-            with patch("rlmkit.llm.ollama_client.requests.post") as mock_post:
+        with patch("rlmstudio.llm.ollama_client.requests.get"):
+            with patch("rlmstudio.llm.ollama_client.requests.post") as mock_post:
                 mock_post.side_effect = requests.exceptions.Timeout()
 
                 client = OllamaClient(model="llama2")
@@ -506,7 +506,7 @@ class TestLMStudioClient:
 
     def test_default_configuration(self, mock_openai):
         """Test LM Studio client default configuration."""
-        from rlmkit.llm.lmstudio_client import LMStudioClient
+        from rlmstudio.llm.lmstudio_client import LMStudioClient
 
         client = LMStudioClient(model="local-model")
 
@@ -516,7 +516,7 @@ class TestLMStudioClient:
 
     def test_custom_base_url(self, mock_openai):
         """Test LM Studio client with custom base URL."""
-        from rlmkit.llm.lmstudio_client import LMStudioClient
+        from rlmstudio.llm.lmstudio_client import LMStudioClient
 
         client = LMStudioClient(model="llama-2", base_url="http://custom-host:5000/v1")
 
@@ -524,7 +524,7 @@ class TestLMStudioClient:
 
     def test_zero_cost(self, mock_openai):
         """Test LM Studio has zero cost (local)."""
-        from rlmkit.llm.lmstudio_client import LMStudioClient
+        from rlmstudio.llm.lmstudio_client import LMStudioClient
 
         client = LMStudioClient(model="local-model")
         cost = client.calculate_cost(1000, 500)
@@ -543,7 +543,7 @@ class TestvLLMClient:
 
     def test_default_configuration(self, mock_openai):
         """Test vLLM client default configuration."""
-        from rlmkit.llm.vllm_client import vLLMClient
+        from rlmstudio.llm.vllm_client import vLLMClient
 
         client = vLLMClient(model="meta-llama/Llama-2-7b-hf")
 
@@ -553,7 +553,7 @@ class TestvLLMClient:
 
     def test_custom_base_url(self, mock_openai):
         """Test vLLM client with custom base URL."""
-        from rlmkit.llm.vllm_client import vLLMClient
+        from rlmstudio.llm.vllm_client import vLLMClient
 
         client = vLLMClient(model="mistralai/Mistral-7B-v0.1", base_url="http://gpu-server:9000/v1")
 
@@ -561,7 +561,7 @@ class TestvLLMClient:
 
     def test_zero_cost_by_default(self, mock_openai):
         """Test vLLM has zero cost by default (self-hosted)."""
-        from rlmkit.llm.vllm_client import vLLMClient
+        from rlmstudio.llm.vllm_client import vLLMClient
 
         client = vLLMClient(model="meta-llama/Llama-2-7b-hf")
         cost = client.calculate_cost(1000, 500)
@@ -574,7 +574,7 @@ class TestProviderImports:
 
     def test_base_imports_always_available(self):
         """Test base classes are always available."""
-        from rlmkit import BaseLLMProvider, LLMResponse, MockLLMClient
+        from rlmstudio import BaseLLMProvider, LLMResponse, MockLLMClient
 
         assert BaseLLMProvider is not None
         assert LLMResponse is not None
@@ -584,7 +584,7 @@ class TestProviderImports:
         """Test OpenAI import fails gracefully without package."""
         # OpenAI might not be installed in test environment
         try:
-            from rlmkit import OpenAIClient
+            from rlmstudio import OpenAIClient
 
             # If it imports, that's fine
             assert OpenAIClient is not None or OpenAIClient is None
@@ -596,7 +596,7 @@ class TestProviderImports:
         """Test Claude import fails gracefully without package."""
         # Anthropic might not be installed in test environment
         try:
-            from rlmkit import ClaudeClient
+            from rlmstudio import ClaudeClient
 
             # If it imports, that's fine
             assert ClaudeClient is not None or ClaudeClient is None
@@ -608,7 +608,7 @@ class TestProviderImports:
         """Test Ollama import fails gracefully without package."""
         # requests might not be installed in test environment
         try:
-            from rlmkit import OllamaClient
+            from rlmstudio import OllamaClient
 
             # If it imports, that's fine
             assert OllamaClient is not None or OllamaClient is None

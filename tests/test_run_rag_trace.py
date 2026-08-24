@@ -10,14 +10,14 @@ spec's v1.5 split.
 
 from __future__ import annotations
 
-from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO
-from rlmkit.application.sandbox_vars import (
+from rlmstudio.application.dto import LLMResponseDTO, RunConfigDTO
+from rlmstudio.application.sandbox_vars import (
     TRACE_KEY_ELAPSED_SECONDS,
     TRACE_KEY_INPUT_TOKENS,
     TRACE_KEY_OUTPUT_TOKENS,
     TRACE_KEY_ROLE,
 )
-from rlmkit.application.use_cases.run_rag import RunRAGUseCase
+from rlmstudio.application.use_cases.run_rag import RunRAGUseCase
 
 
 class _FakeLLM:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from rlmkit.benchmark.dataset import (
+from rlmstudio.benchmark.dataset import (
     BenchmarkCase,
     BenchmarkDataset,
     load_dataset,
@@ -203,7 +203,7 @@ cases:
         if not sample.exists():
             pytest.skip("sample_benchmark.yaml not found")
         ds = load_dataset(str(sample))
-        assert ds.name == "RLMKit Sample Benchmark"
+        assert ds.name == "RLM Studio Sample Benchmark"
         assert len(ds) >= 7
 
 

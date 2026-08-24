@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or improvement for RLMKit
+about: Suggest a new feature or improvement for RLM Studio
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
@@ -20,11 +20,11 @@ Describe any alternative solutions or features you've considered.
 
 ## Component Area
 
-Which part of RLMKit does this relate to?
+Which part of RLM Studio does this relate to?
 
-- [ ] Core / Execution Environment (`src/rlmkit/envs/`)
-- [ ] LLM Providers (`src/rlmkit/llm/`)
-- [ ] Controller Loop (`src/rlmkit/controller/`)
+- [ ] Core / Execution Environment (`src/rlmstudio/envs/`)
+- [ ] LLM Providers (`src/rlmstudio/llm/`)
+- [ ] Controller Loop (`src/rlmstudio/controller/`)
 - [ ] RAG Pipeline
 - [ ] Knowledge Graph
 - [ ] UI (Streamlit / React)

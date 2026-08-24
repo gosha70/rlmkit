@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from rlmkit.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxAdapter
+from rlmstudio.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxAdapter
 
 
 @pytest.fixture
@@ -197,7 +197,9 @@ class TestToolFunctions:
 
     def test_tools_without_content(self, sandbox: SubprocessSandboxAdapter) -> None:
         # Tools should still be importable; they just need content arg explicitly
-        result = sandbox.execute("from rlmkit.tools.content import peek\nprint(peek('abc', 0, 2))")
+        result = sandbox.execute(
+            "from rlmstudio.tools.content import peek\nprint(peek('abc', 0, 2))"
+        )
         assert result.success
         assert "ab" in result.stdout
 
@@ -318,22 +320,22 @@ class TestServerSandboxSelection:
     def test_restricted_type_passes_through(self) -> None:
         from unittest.mock import patch
 
-        from rlmkit.server.dependencies import AppState
+        from rlmstudio.server.dependencies import AppState
 
         state = AppState(load_from_disk=False)
         state.config.sandbox.type = "restricted"
-        with patch("rlmkit.server.dependencies.create_sandbox") as mock_create:
+        with patch("rlmstudio.server.dependencies.create_sandbox") as mock_create:
             state.create_sandbox()
             mock_create.assert_called_once_with(sandbox_type="restricted")
 
     def test_local_type_becomes_subprocess(self) -> None:
         from unittest.mock import patch
 
-        from rlmkit.server.dependencies import AppState
+        from rlmstudio.server.dependencies import AppState
 
         state = AppState(load_from_disk=False)
         state.config.sandbox.type = "local"
-        with patch("rlmkit.server.dependencies.create_sandbox") as mock_create:
+        with patch("rlmstudio.server.dependencies.create_sandbox") as mock_create:
             state.create_sandbox()
             mock_create.assert_called_once_with(sandbox_type="subprocess")
 
@@ -380,7 +382,7 @@ class TestSafeMode:
 
     def test_factory_forwards_safe_mode(self) -> None:
         """Factory passes safe_mode through to SubprocessSandboxAdapter."""
-        from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+        from rlmstudio.infrastructure.sandbox.sandbox_factory import create_sandbox
 
         sb = create_sandbox(sandbox_type="subprocess", safe_mode=True)
         result = sb.execute("import os")
@@ -425,7 +427,7 @@ class TestTopLevelScriptEntrypoint:
     """
 
     _SANDBOX_IMPORT = (
-        "from rlmkit.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxAdapter"
+        "from rlmstudio.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxAdapter"
     )
 
     def _run_script(

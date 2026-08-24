@@ -1,4 +1,4 @@
-"""Tests for rlmkit.compare_matrix() and compare_matrix_async()."""
+"""Tests for rlmstudio.compare_matrix() and compare_matrix_async()."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit import (
+from rlmstudio import (
     MatrixCompareResult,
     MatrixSlotResult,
     compare_matrix,
     compare_matrix_async,
 )
-from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.application.use_cases.run_matrix_comparison import (
+from rlmstudio.application.dto import LLMResponseDTO
+from rlmstudio.application.use_cases.run_matrix_comparison import (
     RunMatrixComparisonUseCase,
 )
 
@@ -28,7 +28,7 @@ from rlmkit.application.use_cases.run_matrix_comparison import (
 class _FakeLLM:
     """LiteLLMAdapter-compatible fake keyed by model name.
 
-    When ``rlmkit.api.LiteLLMAdapter`` is patched to return this class,
+    When ``rlmstudio.api.LiteLLMAdapter`` is patched to return this class,
     each slot's adapter can be distinguished by the model name in the
     response, so tests can assert per-slot routing.
     """
@@ -167,7 +167,7 @@ class TestValidation:
         with pytest.raises(ValueError, match="Too many slots"):
             compare_matrix("doc", "q", over, modes=["direct"])
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_invalid_ranking_metric_raises_before_execution(self, mock_adapter: Any) -> None:
         """A bad ``ranking_metric`` must fail *before* any slot executes,
         so a typo can't burn tokens/money across the whole matrix."""
@@ -181,7 +181,7 @@ class TestValidation:
         # Critical assertion: no LiteLLMAdapter was ever constructed.
         mock_adapter.assert_not_called()
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_valid_ranking_metrics_accepted(self, mock_adapter: Any) -> None:
         """All documented ranking metrics pass validation."""
         for metric in ("cost", "tokens", "latency", "answer_per_cost"):
@@ -194,7 +194,7 @@ class TestValidation:
             )
             assert result.ranking_metric == metric
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_malformed_spec_fails_before_execution(self, mock_adapter: Any) -> None:
         """A malformed provider spec in the middle of the list must fail
         before any adapter is built, not partway through execution."""
@@ -213,7 +213,7 @@ class TestValidation:
 
 
 class TestSyncExecution:
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_single_provider_direct(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -232,7 +232,7 @@ class TestSyncExecution:
         assert result.comparison_group_id  # non-empty UUID
         assert result.ranking == [0]
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_cartesian_product(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -248,7 +248,7 @@ class TestSyncExecution:
         answers = {s.answer for s in result.slots}
         assert len(answers) == 2
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_preserves_input_order(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -264,13 +264,13 @@ class TestSyncExecution:
             "llama3.2",
         ]
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_default_modes_is_direct(self, mock_adapter: Any) -> None:
         result = compare_matrix("doc", "q", ["openai/gpt-4o"])
         assert len(result.slots) == 1
         assert result.slots[0].mode == "direct"
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_slot_labels_include_provider_model_mode(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -287,7 +287,7 @@ class TestSyncExecution:
 
 
 class TestResultHelpers:
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_get_slot_by_id(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -298,7 +298,7 @@ class TestResultHelpers:
         assert result.get_slot(slot.slot_id) is slot
         assert result.get_slot("not-a-real-id") is None
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_best_returns_top_ranked(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -313,7 +313,7 @@ class TestResultHelpers:
         empty = MatrixCompareResult(comparison_group_id="g1")
         assert empty.best is None
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_raising_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_raising_adapter_factory)
     def test_best_returns_none_when_all_slots_fail(self, mock_adapter: Any) -> None:
         """``best`` must return ``None`` when every slot failed, even though
         ``ranking`` still contains entries (failed slots are placed last)."""
@@ -329,7 +329,7 @@ class TestResultHelpers:
         assert len(result.ranking) == 2
         assert result.best is None
 
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_best_skips_failed_leading_slot(self, mock_adapter: Any) -> None:
         """When some slots succeed and some fail, ``best`` returns the
         top-ranked *successful* slot."""
@@ -352,7 +352,7 @@ class TestResultHelpers:
         assert result.best.success is True
         assert result.best.provider == "anthropic"
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_slot_result_is_public_type(self, mock_adapter: Any) -> None:
         result = compare_matrix("doc", "q", ["openai/gpt-4o"])
         assert isinstance(result.slots[0], MatrixSlotResult)
@@ -398,7 +398,7 @@ class TestRanking:
             "ollama/llama3.2": 1.0,
         }
         with patch(
-            "rlmkit.api.LiteLLMAdapter",
+            "rlmstudio.api.LiteLLMAdapter",
             side_effect=self._adapter_with_costs(cost_map),
         ):
             result = compare_matrix(
@@ -421,7 +421,7 @@ class TestRanking:
         assert ranked_providers == ["ollama", "anthropic", "openai"]
         assert result.ranking_metric == "cost"
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_rank_by_tokens(self, mock_adapter: Any) -> None:
         result = compare_matrix(
             "doc",
@@ -440,11 +440,11 @@ class TestRanking:
 
 
 class TestPerSlotConfig:
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_each_slot_gets_independent_config(self, mock_adapter: Any) -> None:
         """Per-slot MatrixSlotDTO.config must not share an `extra` dict
         across slots (one slot's RAG collection must not leak to another)."""
-        from rlmkit.api import _build_matrix_slots
+        from rlmstudio.api import _build_matrix_slots
 
         slots = _build_matrix_slots(
             ["openai/gpt-4o", "anthropic/claude"],
@@ -463,9 +463,9 @@ class TestPerSlotConfig:
         ids = {id(s.config.extra) for s in slots if s.config is not None}
         assert len(ids) == len(slots)
 
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_max_steps_applied_to_slot_config(self, mock_adapter: Any) -> None:
-        from rlmkit.api import _build_matrix_slots
+        from rlmstudio.api import _build_matrix_slots
 
         slots = _build_matrix_slots(
             ["openai/gpt-4o"],
@@ -491,7 +491,7 @@ class TestPerSlotConfig:
 
 class TestProviderSpecParsing:
     def test_simple_spec(self) -> None:
-        from rlmkit.api import _parse_provider_spec
+        from rlmstudio.api import _parse_provider_spec
 
         assert _parse_provider_spec("openai/gpt-4o") == ("openai", "gpt-4o")
         assert _parse_provider_spec("anthropic/claude-sonnet-4-6") == (
@@ -500,7 +500,7 @@ class TestProviderSpecParsing:
         )
 
     def test_partition_on_first_slash(self) -> None:
-        from rlmkit.api import _parse_provider_spec
+        from rlmstudio.api import _parse_provider_spec
 
         # The split is on the first slash, so HuggingFace-style model IDs
         # with embedded slashes are preserved in the model portion.
@@ -509,7 +509,7 @@ class TestProviderSpecParsing:
         assert model == "Qwen/Qwen2.5-7B-Instruct"
 
     def test_non_string_raises(self) -> None:
-        from rlmkit.api import _parse_provider_spec
+        from rlmstudio.api import _parse_provider_spec
 
         with pytest.raises(ValueError, match="Provider spec must be"):
             _parse_provider_spec(123)  # type: ignore[arg-type]
@@ -521,7 +521,7 @@ class TestProviderSpecParsing:
 
 
 class TestAsyncExecution:
-    @patch("rlmkit.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
+    @patch("rlmstudio.api.LiteLLMAdapter", side_effect=_fake_adapter_factory)
     def test_compare_matrix_async_returns_same_shape(self, mock_adapter: Any) -> None:
         result = asyncio.run(
             compare_matrix_async(

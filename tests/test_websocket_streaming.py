@@ -9,9 +9,9 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.application.dto import LLMResponseDTO, StreamChunk
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import get_state, reset_state
+from rlmstudio.application.dto import LLMResponseDTO, StreamChunk
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import get_state, reset_state
 
 # ---------------------------------------------------------------------------
 # Fixtures

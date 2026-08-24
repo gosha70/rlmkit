@@ -2,7 +2,7 @@
 
 import pytest
 
-from rlmkit import RLM, BudgetLimits, MockLLMClient, RLMConfig
+from rlmstudio import RLM, BudgetLimits, MockLLMClient, RLMConfig
 
 # ---------------------------------------------------------------------------
 # Mock LLM client fixtures
@@ -175,4 +175,4 @@ def rlm_multistep_instance(mock_llm_multistep, rlm_config_strict):
 @pytest.fixture
 def temp_db(tmp_path):
     """Temporary SQLite database path inside pytest's tmp_path."""
-    return tmp_path / "test_rlmkit.db"
+    return tmp_path / "test_rlmstudio.db"

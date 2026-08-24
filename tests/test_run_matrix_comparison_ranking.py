@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from rlmkit.application.dto import RunResultDTO
-from rlmkit.application.use_cases.run_matrix_comparison import (
+from rlmstudio.application.dto import RunResultDTO
+from rlmstudio.application.use_cases.run_matrix_comparison import (
     MatrixSlotResultDTO,
     RunMatrixComparisonUseCase,
 )

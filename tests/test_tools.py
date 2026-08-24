@@ -2,7 +2,7 @@
 
 import re
 
-from rlmkit.envs import PyReplEnv
+from rlmstudio.envs import PyReplEnv
 
 # Sample content for testing
 SAMPLE_TEXT = """Line 1: Introduction to the document

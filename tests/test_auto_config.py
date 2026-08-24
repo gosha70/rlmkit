@@ -6,7 +6,7 @@ This tests the Bet 2 implementation - auto-detection of providers from environme
 
 import pytest
 
-from rlmkit.llm.auto import (
+from rlmstudio.llm.auto import (
     ConfigurationError,
     auto_detect_provider,
     get_default_client_config,
@@ -202,13 +202,16 @@ class TestInteractAutoConfig:
         """Test that interact() auto-detects provider when not specified."""
         from unittest.mock import patch as _patch
 
-        from rlmkit.api import interact
-        from rlmkit.application.dto import RunResultDTO
+        from rlmstudio.api import interact
+        from rlmstudio.application.dto import RunResultDTO
 
         fake = RunResultDTO(answer="Test answer", mode_used="direct", success=True)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
 
-        with _patch("rlmkit.api.RunDirectUseCase") as mock_uc, _patch("rlmkit.api.LiteLLMAdapter"):
+        with (
+            _patch("rlmstudio.api.RunDirectUseCase") as mock_uc,
+            _patch("rlmstudio.api.LiteLLMAdapter"),
+        ):
             mock_uc.return_value.execute.return_value = fake
             result = interact("Test content", "Test query", mode="direct")
 
@@ -216,7 +219,7 @@ class TestInteractAutoConfig:
 
     def test_interact_raises_error_with_no_provider(self, monkeypatch):
         """Test that interact() raises ValueError when no provider available."""
-        from rlmkit.api import interact
+        from rlmstudio.api import interact
 
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

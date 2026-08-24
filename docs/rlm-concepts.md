@@ -1,6 +1,6 @@
-# RLM: Concepts, Original Research, and What RLMKit Adds
+# RLM: Concepts, Original Research, and What RLM Studio Adds
 
-This document explains the Recursive Language Model (RLM) paradigm — its motivation, core mechanisms, and published results — and then describes how RLMKit extends and productionizes the original research.
+This document explains the Recursive Language Model (RLM) paradigm — its motivation, core mechanisms, and published results — and then describes how RLM Studio extends and productionizes the original research.
 
 ---
 
@@ -157,13 +157,13 @@ The reference implementation is a research artifact — excellent for reproducin
 
 ---
 
-## 9. What RLMKit Adds
+## 9. What RLM Studio Adds
 
-RLMKit is an independent, production-oriented reimplementation that extends the research in several directions:
+RLM Studio is an independent, production-oriented reimplementation that extends the research in several directions:
 
 ### 9.1 Clean Architecture
 
-The reference implementation is a flat research codebase. RLMKit applies Clean Architecture (domain → application → infrastructure) with strict dependency inversion:
+The reference implementation is a flat research codebase. RLM Studio applies Clean Architecture (domain → application → infrastructure) with strict dependency inversion:
 
 ```
 domain/         # Entities, value objects, port Protocols — zero external deps
@@ -177,11 +177,11 @@ This makes individual components testable in isolation and swappable without tou
 
 ### 9.2 Provider Abstraction via LiteLLM
 
-The reference impl has 5 hand-written provider clients. RLMKit uses a single `LiteLLMAdapter` that covers **100+ providers** (any model LiteLLM supports) without custom client code. Switching from GPT-4o to Claude to Llama is a one-line config change.
+The reference impl has 5 hand-written provider clients. RLM Studio uses a single `LiteLLMAdapter` that covers **100+ providers** (any model LiteLLM supports) without custom client code. Switching from GPT-4o to Claude to Llama is a one-line config change.
 
 ### 9.3 Multi-Strategy Execution
 
-RLMKit adds strategies the original paper does not implement:
+RLM Studio adds strategies the original paper does not implement:
 
 | Mode | Description |
 |------|-------------|
@@ -193,12 +193,12 @@ RLMKit adds strategies the original paper does not implement:
 
 ### 9.4 Security-First Sandbox
 
-The reference impl defaults to in-process `exec()`. RLMKit's default sandbox uses **RestrictedPython** — a compile-time AST transform that blocks dangerous operations (file I/O, network, subprocess, OS access) without requiring Docker. A Docker adapter is also provided for higher isolation requirements.
+The reference impl defaults to in-process `exec()`. RLM Studio's default sandbox uses **RestrictedPython** — a compile-time AST transform that blocks dangerous operations (file I/O, network, subprocess, OS access) without requiring Docker. A Docker adapter is also provided for higher isolation requirements.
 
 ### 9.5 Unified Public API
 
 ```python
-from rlmkit import interact
+from rlmstudio import interact
 
 result = interact(
     content=document,
@@ -222,7 +222,7 @@ A single function call selects the right strategy, runs it, and returns a typed 
 
 ### 9.6 RLM Studio — Web UI for Experiments
 
-The reference impl includes a lightweight trajectory visualizer. RLMKit ships a full production web application (Next.js 16 + React 19 + shadcn/ui):
+The reference impl includes a lightweight trajectory visualizer. RLM Studio ships a full production web application (Next.js 16 + React 19 + shadcn/ui):
 
 | Feature | RLM Studio |
 |---------|-----------|
@@ -236,7 +236,7 @@ The reference impl includes a lightweight trajectory visualizer. RLMKit ships a 
 
 ### 9.7 Persistence and Session Management
 
-RLMKit adds SQLite-backed conversation storage via the `StoragePort` abstraction:
+RLM Studio adds SQLite-backed conversation storage via the `StoragePort` abstraction:
 - Sessions persist across restarts
 - Full execution traces stored and retrievable
 - Conversations searchable by session ID
@@ -249,7 +249,7 @@ The `server/` layer exposes both REST and WebSocket endpoints. `interact_async()
 
 ## 10. Limitations and Open Work
 
-Items from the paper not yet addressed in RLMKit, or areas for future development:
+Items from the paper not yet addressed in RLM Studio, or areas for future development:
 
 | Item | Status |
 |------|--------|

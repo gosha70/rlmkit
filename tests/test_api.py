@@ -1,4 +1,4 @@
-"""Tests for the unified interact() API (src/rlmkit/api.py).
+"""Tests for the unified interact() API (src/rlmstudio/api.py).
 
 Uses monkeypatching to avoid real LLM calls while exercising the full
 dispatch logic: auto mode selection, provider resolution, and use-case
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from rlmkit.api import (
+from rlmstudio.api import (
     InteractResult,
     _auto_detect_provider,
     _determine_auto_mode,
@@ -22,7 +22,7 @@ from rlmkit.api import (
     interact,
     interact_async,
 )
-from rlmkit.application.dto import RunResultDTO
+from rlmstudio.application.dto import RunResultDTO
 
 # ---------------------------------------------------------------------------
 # _estimate_tokens / _determine_auto_mode
@@ -132,8 +132,8 @@ class TestInteract:
         with pytest.raises(ValueError, match="No LLM provider configured"):
             interact("content", "question")
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_direct_mode(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="direct", provider="openai")
@@ -144,9 +144,9 @@ class TestInteract:
         assert result.metrics["total_tokens"] == 15
         mock_uc_cls.return_value.execute.assert_called_once()
 
-    @patch("rlmkit.api.RunRLMUseCase")
-    @patch("rlmkit.api.create_sandbox")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunRLMUseCase")
+    @patch("rlmstudio.api.create_sandbox")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_rlm_mode(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
         rlm_result = RunResultDTO(
             answer="RLM answer",
@@ -163,8 +163,8 @@ class TestInteract:
         assert result.answer == "RLM answer"
         mock_sandbox_fn.assert_called_once()
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_auto_mode_selects_direct_for_short(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("short", "question", mode="auto", provider="openai")
@@ -174,8 +174,8 @@ class TestInteract:
         with pytest.raises(ValueError, match="Invalid mode"):
             interact("content", "question", mode="invalid", provider="openai")  # type: ignore[arg-type]
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_metrics_populated(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="direct", provider="openai")
@@ -187,8 +187,8 @@ class TestInteract:
         assert "execution_time" in result.metrics
         assert "steps" in result.metrics
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_raw_result_is_run_result_dto(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="direct", provider="openai")
@@ -196,8 +196,8 @@ class TestInteract:
         assert isinstance(result.raw_result, RunResultDTO)
         assert result.answer == result.raw_result.answer
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_verbose_prints(self, mock_adapter_cls, mock_uc_cls, capsys):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="auto", provider="openai", verbose=True)
@@ -207,8 +207,8 @@ class TestInteract:
         assert "Setup" in captured.out
         assert "Complete" in captured.out
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_auto_detect_from_env(self, mock_adapter_cls, mock_uc_cls, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -218,15 +218,15 @@ class TestInteract:
         result = interact("content", "question", mode="direct")
         assert result.answer == "Test answer"
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_interact_result_str(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="direct", provider="openai")
         assert str(result) == "Test answer"
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_interact_result_to_dict(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         result = interact("content", "question", mode="direct", provider="openai")
@@ -242,8 +242,8 @@ class TestInteract:
 
 
 class TestComplete:
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_returns_string(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         answer = complete("content", "question", provider="openai", mode="direct")
@@ -268,8 +268,8 @@ class TestDefaultModels:
 
 
 class TestApiBaseAndTimeout:
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_api_base_passed_to_adapter(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact(
@@ -283,8 +283,8 @@ class TestApiBaseAndTimeout:
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["api_base"] == "http://localhost:11434"
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_timeout_passed_to_adapter(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact(
@@ -297,8 +297,8 @@ class TestApiBaseAndTimeout:
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["timeout"] == 30.0
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_default_timeout(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="openai")
@@ -313,8 +313,8 @@ class TestApiBaseAndTimeout:
 
 class TestInteractAsync:
     @pytest.mark.asyncio
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     async def test_async_direct_mode(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
         result = await interact_async(
@@ -329,9 +329,9 @@ class TestInteractAsync:
         mock_uc_cls.return_value.execute_async.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("rlmkit.api.RunRLMUseCase")
-    @patch("rlmkit.api.create_sandbox")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunRLMUseCase")
+    @patch("rlmstudio.api.create_sandbox")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     async def test_async_rlm_mode(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
         rlm_result = RunResultDTO(
             answer="Async RLM",
@@ -361,48 +361,48 @@ class TestInteractAsync:
 class TestNumRetries:
     """num_retries is passed to LiteLLMAdapter with correct defaults."""
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_cloud_provider_defaults_to_2(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="openai")
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["num_retries"] == 2
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_ollama_defaults_to_0(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="ollama", model="llama3.2")
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["num_retries"] == 0
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_lmstudio_defaults_to_0(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="lmstudio", model="lmstudio/model")
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["num_retries"] == 0
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_explicit_num_retries_overrides_default(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="openai", num_retries=5)
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["num_retries"] == 5
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_num_retries_zero_disables_retries(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="openai", num_retries=0)
         _, kwargs = mock_adapter_cls.call_args
         assert kwargs["num_retries"] == 0
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_explicit_overrides_local_provider_default(self, mock_adapter_cls, mock_uc_cls):
         """Explicit num_retries=3 beats the ollama default of 0."""
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
@@ -418,8 +418,8 @@ class TestNumRetries:
         assert kwargs["num_retries"] == 3
 
     @pytest.mark.asyncio
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     async def test_async_cloud_defaults_to_2(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
         await interact_async("content", "question", mode="direct", provider="openai")
@@ -427,8 +427,8 @@ class TestNumRetries:
         assert kwargs["num_retries"] == 2
 
     @pytest.mark.asyncio
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     async def test_async_ollama_defaults_to_0(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
         await interact_async(
@@ -443,8 +443,8 @@ class TestNumRetries:
             await interact_async("", "question")
 
     @pytest.mark.asyncio
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     async def test_async_api_base_and_timeout(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
         await interact_async(
@@ -463,8 +463,8 @@ class TestNumRetries:
 
 class TestCompleteAsync:
     @pytest.mark.asyncio
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     async def test_returns_string(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute_async = AsyncMock(return_value=_FAKE_RESULT)
         answer = await complete_async(
@@ -483,11 +483,11 @@ class TestCompleteAsync:
 
 
 class TestCompareMode:
-    @patch("rlmkit.api.RunComparisonUseCase")
-    @patch("rlmkit.api.create_sandbox")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunComparisonUseCase")
+    @patch("rlmstudio.api.create_sandbox")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_compare_mode_returns_result(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
-        from rlmkit.application.use_cases.run_comparison import ComparisonResultDTO
+        from rlmstudio.application.use_cases.run_comparison import ComparisonResultDTO
 
         cmp = ComparisonResultDTO(
             results={
@@ -512,11 +512,11 @@ class TestCompareMode:
         assert "rlm" in result.metrics["comparison"]
         mock_sandbox_fn.assert_called_once()
 
-    @patch("rlmkit.api.RunComparisonUseCase")
-    @patch("rlmkit.api.create_sandbox")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunComparisonUseCase")
+    @patch("rlmstudio.api.create_sandbox")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_compare_aggregates_tokens(self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls):
-        from rlmkit.application.use_cases.run_comparison import ComparisonResultDTO
+        from rlmstudio.application.use_cases.run_comparison import ComparisonResultDTO
 
         cmp = ComparisonResultDTO(
             results={
@@ -552,8 +552,8 @@ class TestCompareMode:
 
 
 class TestTwoModelParams:
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_root_model_passed_to_adapter(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact(
@@ -568,8 +568,8 @@ class TestTwoModelParams:
         assert kwargs["root_model"] == "gpt-4o"
         assert kwargs["recursive_model"] == "gpt-4o-mini"
 
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_none_by_default(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact("content", "question", mode="direct", provider="openai")
@@ -587,7 +587,7 @@ class TestRLMKitClientDeprecation:
     def test_emits_deprecation_warning(self):
         import warnings
 
-        from rlmkit.public import RLMKitClient
+        from rlmstudio.public import RLMKitClient
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
@@ -603,10 +603,10 @@ class TestRLMKitClientDeprecation:
 
 
 class TestExplicitRagMode:
-    @patch("rlmkit.api.SQLiteStorageAdapter")
-    @patch("rlmkit.api.LiteLLMEmbeddingAdapter")
-    @patch("rlmkit.api.RunRAGUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.SQLiteStorageAdapter")
+    @patch("rlmstudio.api.LiteLLMEmbeddingAdapter")
+    @patch("rlmstudio.api.RunRAGUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_rag_mode_openai_returns_result(
         self, mock_adapter_cls, mock_uc_cls, mock_embedder_cls, mock_storage_cls
     ):
@@ -615,7 +615,7 @@ class TestExplicitRagMode:
         assert result.mode_used == "rag"
         assert result.answer == "Test answer"
 
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_rag_non_openai_no_embedding_key_raises(self, mock_adapter_cls):
         """Non-OpenAI provider without OPENAI_API_KEY must raise ValueError."""
         import os
@@ -627,10 +627,10 @@ class TestExplicitRagMode:
                     "content", "question", mode="rag", provider="anthropic", api_key="sk-ant-key"
                 )
 
-    @patch("rlmkit.api.SQLiteStorageAdapter")
-    @patch("rlmkit.api.LiteLLMEmbeddingAdapter")
-    @patch("rlmkit.api.RunRAGUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.SQLiteStorageAdapter")
+    @patch("rlmstudio.api.LiteLLMEmbeddingAdapter")
+    @patch("rlmstudio.api.RunRAGUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_rag_non_openai_explicit_embedding_key_works(
         self, mock_adapter_cls, mock_uc_cls, mock_embedder_cls, mock_storage_cls
     ):
@@ -655,13 +655,13 @@ class TestExplicitRagMode:
 
 
 class TestCompareFailedRlmFallback:
-    @patch("rlmkit.api.RunComparisonUseCase")
-    @patch("rlmkit.api.create_sandbox")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunComparisonUseCase")
+    @patch("rlmstudio.api.create_sandbox")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_prefers_successful_direct_over_failed_rlm(
         self, mock_adapter_cls, mock_sandbox_fn, mock_uc_cls
     ):
-        from rlmkit.application.use_cases.run_comparison import ComparisonResultDTO
+        from rlmstudio.application.use_cases.run_comparison import ComparisonResultDTO
 
         cmp = ComparisonResultDTO(
             results={
@@ -692,7 +692,7 @@ class TestPublicInteractResultAlias:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from rlmkit.public.types import PublicInteractResult  # noqa: F811
+            from rlmstudio.public.types import PublicInteractResult  # noqa: F811
 
             assert len(w) >= 1
             assert any(
@@ -701,7 +701,7 @@ class TestPublicInteractResultAlias:
                 for x in w
             )
             # It should resolve to InteractResult
-            from rlmkit.api import InteractResult
+            from rlmstudio.api import InteractResult
 
             assert PublicInteractResult is InteractResult
 
@@ -712,8 +712,8 @@ class TestPublicInteractResultAlias:
 
 
 class TestTwoModelNormalization:
-    @patch("rlmkit.api.RunDirectUseCase")
-    @patch("rlmkit.api.LiteLLMAdapter")
+    @patch("rlmstudio.api.RunDirectUseCase")
+    @patch("rlmstudio.api.LiteLLMAdapter")
     def test_anthropic_root_model_gets_prefix(self, mock_adapter_cls, mock_uc_cls):
         mock_uc_cls.return_value.execute.return_value = _FAKE_RESULT
         interact(

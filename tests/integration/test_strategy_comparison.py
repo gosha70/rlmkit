@@ -6,11 +6,11 @@ auto-mode selection logic end-to-end with mock LLM clients.
 
 import pytest
 
-from rlmkit import MockLLMClient
-from rlmkit.api import _determine_auto_mode, _estimate_tokens
-from rlmkit.strategies.direct import DirectStrategy
-from rlmkit.strategies.evaluator import MultiStrategyEvaluator
-from rlmkit.strategies.rlm_strategy import RLMStrategy
+from rlmstudio import MockLLMClient
+from rlmstudio.api import _determine_auto_mode, _estimate_tokens
+from rlmstudio.strategies.direct import DirectStrategy
+from rlmstudio.strategies.evaluator import MultiStrategyEvaluator
+from rlmstudio.strategies.rlm_strategy import RLMStrategy
 
 pytestmark = pytest.mark.integration
 

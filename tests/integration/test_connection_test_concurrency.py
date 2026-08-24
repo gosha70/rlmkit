@@ -27,10 +27,10 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.services.provider_tester import ProviderTestResult
-from rlmkit.server import dependencies
-from rlmkit.server.dependencies import AppState
-from rlmkit.server.models import LLMProviderConfig
+from rlmstudio.application.services.provider_tester import ProviderTestResult
+from rlmstudio.server import dependencies
+from rlmstudio.server.dependencies import AppState
+from rlmstudio.server.models import LLMProviderConfig
 
 
 def _mock_probe(provider: LLMProviderConfig, timeout_s: float) -> ProviderTestResult:
@@ -47,9 +47,9 @@ def _mock_probe(provider: LLMProviderConfig, timeout_s: float) -> ProviderTestRe
 def isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppState:
     """Real AppState with disk persistence redirected to tmp_path."""
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr(dependencies, "_RLMKIT_DIR", tmp_path)
+    monkeypatch.setattr(dependencies, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(dependencies, "_CONFIG_FILE", config_path)
-    monkeypatch.setenv("RLMKIT_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
+    monkeypatch.setenv("RLM_STUDIO_CONNECTION_TEST_INTERVAL_SECONDS_OVERRIDE", "0.3")
     state = AppState(load_from_disk=False)
     yield state
     state._stop_connection_testing()
@@ -151,7 +151,7 @@ def test_concurrent_crud_and_cycles_do_not_corrupt_config(
             foreground_done.set()
 
     with patch(
-        "rlmkit.application.services.provider_tester.test_provider",
+        "rlmstudio.application.services.provider_tester.test_provider",
         side_effect=_mock_probe,
     ):
         state._start_connection_testing()

@@ -39,6 +39,7 @@ import {
 } from "recharts";
 
 import { AppShell } from "@/components/shared/app-shell";
+import { PERF_UI_ENABLED } from "@/lib/branding";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -111,9 +112,8 @@ const RANKING_METRICS: {
 ];
 
 // Phase 5 — "Performance shape" ranking options. Hidden behind
-// `RLMKIT_PERF_UI=1` so we can flip the set on after QA. Matches
-// `process.env.NEXT_PUBLIC_RLMKIT_PERF_UI` at build time (plain env
-// lookup so no runtime config plumbing is needed). When off, the
+// `NEXT_PUBLIC_RLM_STUDIO_PERF_UI=1` (see lib/branding.ts; the legacy
+// RLMKIT name is honoured for one release) at build time. When off, the
 // backend still accepts these values — the frontend just doesn't
 // surface them in the dropdown.
 const PERF_RANKING_METRICS: typeof RANKING_METRICS = [
@@ -133,9 +133,6 @@ const PERF_RANKING_METRICS: typeof RANKING_METRICS = [
     help: "Fraction of prompt tokens served from the provider's prefix cache",
   },
 ];
-
-const PERF_UI_ENABLED: boolean =
-  process.env.NEXT_PUBLIC_RLMKIT_PERF_UI === "1";
 
 const VISIBLE_RANKING_METRICS: typeof RANKING_METRICS = PERF_UI_ENABLED
   ? [...RANKING_METRICS, ...PERF_RANKING_METRICS]

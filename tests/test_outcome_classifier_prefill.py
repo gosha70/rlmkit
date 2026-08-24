@@ -7,11 +7,11 @@ accepts the optional `trace` arg; when None, back-compat behavior.
 
 from __future__ import annotations
 
-from rlmkit.application.services.outcome_classifier import (
+from rlmstudio.application.services.outcome_classifier import (
     OutcomeCategory,
     classify_execution_outcome,
 )
-from rlmkit.domain.entities import ExecutionTrace, TraceStep
+from rlmstudio.domain.entities import ExecutionTrace, TraceStep
 
 
 def _prefill_dominated_step(*, ttft_ms: int, duration_s: float) -> TraceStep:

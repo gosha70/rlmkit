@@ -1,7 +1,7 @@
 /**
  * Shared constants — single source of truth for mode identifiers,
  * backend keys, and related groupings.  Mirrors the Python-side
- * constants in `src/rlmkit/application/sandbox_vars.py`.
+ * constants in `src/rlmstudio/application/sandbox_vars.py`.
  */
 
 // ---------------------------------------------------------------------------

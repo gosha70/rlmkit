@@ -1,10 +1,10 @@
 # RLM Studio Guide
 
-RLM Studio is a web application for experimenting with, tuning, and monitoring RLMKit. It lets you compare how different LLM providers and execution modes (Direct, RLM, RAG) handle the same queries — side by side, with full cost and performance metrics.
+RLM Studio is a web application for experimenting with, tuning, and monitoring RLM Studio. It lets you compare how different LLM providers and execution modes (Direct, RLM, RAG) handle the same queries — side by side, with full cost and performance metrics.
 
 ## Prerequisites
 
-- Python 3.10+ with `uv`
+- Python 3.11+ with `uv`
 - Node.js 22+
 - At least one LLM provider API key (OpenAI, Anthropic) or a local model (Ollama, LM Studio)
 
@@ -12,7 +12,7 @@ RLM Studio is a web application for experimenting with, tuning, and monitoring R
 
 ```bash
 # Terminal 1: Backend API
-uv run python -m rlmkit.server --reload
+uv run python -m rlmstudio.server --reload
 
 # Terminal 2: Frontend
 cd frontend && npm run dev
@@ -165,7 +165,7 @@ Customize the system prompts used for each execution mode:
 
 You can also apply **prompt templates** — predefined prompt sets that you can load and customize.
 
-For safe RLM customization patterns and multi-document anti-patterns, see [rlm-prompt-tuning.md](/Users/gosha/dev/repo/rlmkit/docs/rlm-prompt-tuning.md).
+For safe RLM customization patterns and multi-document anti-patterns, see [rlm-prompt-tuning.md](rlm-prompt-tuning.md).
 
 ### Appearance
 
@@ -400,11 +400,11 @@ The default scoring path is **pointwise** — the judge scores one answer at a t
 
 `overall_score = mean(dimension_scores)`, rounded to 2 decimals and clamped to `[1.0, 5.0]`.
 
-The rubric prompts live in `src/rlmkit/prompts/judge_pointwise.yaml`; edit there to tune anchors.
+The rubric prompts live in `src/rlmstudio/prompts/judge_pointwise.yaml`; edit there to tune anchors.
 
 ### Pairwise rubric
 
-For head-to-head comparisons, the judge can score two answers against each other on the same five dimensions, plus a winner: `a`, `b`, or `tie`. The prompts live in `src/rlmkit/prompts/judge_pairwise.yaml`.
+For head-to-head comparisons, the judge can score two answers against each other on the same five dimensions, plus a winner: `a`, `b`, or `tie`. The prompts live in `src/rlmstudio/prompts/judge_pairwise.yaml`.
 
 ### Auto-scoring non-usable outcomes
 
@@ -472,7 +472,7 @@ This keeps `judge_score` sortable across a mix of successes and failures without
 The backend defaults to port 8000. To change it:
 
 ```bash
-RLMKIT_PORT=8002 uv run python -m rlmkit.server --reload
+RLM_STUDIO_PORT=8002 uv run python -m rlmstudio.server --reload
 ```
 
 Then set the frontend to point at the new port. Create or edit `frontend/.env.local`:

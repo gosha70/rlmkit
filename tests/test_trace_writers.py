@@ -1,6 +1,6 @@
 """AC-29 — CI guard enforcing assistant-role trace writer completeness.
 
-AST-walks ``src/rlmkit/application/use_cases/`` for every dict literal
+AST-walks ``src/rlmstudio/application/use_cases/`` for every dict literal
 that contains ``TRACE_KEY_ROLE: "assistant"`` and asserts each one also
 populates the four prefill/decode telemetry keys (``ttft_ms``,
 ``decode_ms``, ``cached_tokens``, ``cache_write_tokens``), OR carries
@@ -18,7 +18,11 @@ import ast
 import pathlib
 
 _USE_CASES_DIR = (
-    pathlib.Path(__file__).resolve().parent.parent / "src" / "rlmkit" / "application" / "use_cases"
+    pathlib.Path(__file__).resolve().parent.parent
+    / "src"
+    / "rlmstudio"
+    / "application"
+    / "use_cases"
 )
 
 _REQUIRED_KEYS = frozenset({"ttft_ms", "decode_ms", "cached_tokens", "cache_write_tokens"})
@@ -97,7 +101,7 @@ def _has_nearby_exempt_comment(source_lines: list[str], line_no: int, radius: in
 
 def test_every_assistant_site_populates_new_keys() -> None:
     """Every ``TRACE_KEY_ROLE: "assistant"`` dict literal in
-    ``src/rlmkit/application/use_cases/`` either carries the four
+    ``src/rlmstudio/application/use_cases/`` either carries the four
     prefill/decode telemetry keys OR an adjacent
     ``# telemetry-exempt: <reason>`` comment.
     """

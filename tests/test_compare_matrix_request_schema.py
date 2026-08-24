@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from rlmkit.server.routes.compare_matrix import (
+from rlmstudio.server.routes.compare_matrix import (
     CompareMatrixRequest,
     CompareMatrixRequestV2,
     CompareMatrixUnifiedRequest,

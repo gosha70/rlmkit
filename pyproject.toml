@@ -3,33 +3,36 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rlmkit"
+name = "rlm-studio"
 version = "1.0.0"
-description = "Recursive Language Model (RLM) toolkit for managing large context through code generation"
+description = "RLM Studio — a workbench to measure whether Recursive Language Models beat Direct/RAG on your data, with any provider"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "RLMKit Contributors"}
+    {name = "RLM Studio Contributors"}
 ]
-keywords = ["llm", "rlm", "recursive", "context", "large-context", "code-generation"]
+keywords = ["llm", "rlm", "rlm-studio", "recursive", "context", "large-context", "code-generation", "evaluation", "benchmark", "rag"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
     "httpx>=0.25.0",
     "pyyaml>=6.0",
     "psutil>=5.9.0",
-    "cryptography>=48.0.1",  # CVE-2026-34073, CVE-2026-39892; vulnerable OpenSSL in wheels (48.0.1)
+    "cryptography>=50.0.0",  # CVE-2026-34073, CVE-2026-39892; vulnerable OpenSSL in wheels (48.0.1); PYSEC-2026-3552 (50.0.0)
+    # NOTE: litellm >= 1.98.0 imports typing.NotRequired at import time, which
+    # is Python 3.11+, even though its metadata still claims >=3.10. That is one
+    # of the reasons this project requires 3.11+ (see CHANGELOG).
     "litellm>=1.84.0",  # CVE-2026-35029, CVE-2026-35030 (1.83.0); GHSA-xqmj-j6mv-4862 proxy SSTI (1.83.7); CVE-2026-40217 / GHSA-wxxx-gvqv-xp7p custom-code-guardrail sandbox escape (1.83.11); auth bypass via host header injection (1.84.0) — proxy-only CVEs; RLMKit uses litellm as a library
-    "aiohttp>=3.14.1",  # CVE-2026-22815, CVE-2026-34513..34520, CVE-2026-34525 (3.13.4); TLS hostname override ignored on HTTPS connection reuse (3.14.1); DigestAuth credentials forwarded on cross-origin redirect (3.14.1)
+    "aiohttp>=3.14.3",  # PYSEC-2026-3545/3546/3547 (3.14.3); CVE-2026-22815, CVE-2026-34513..34520, CVE-2026-34525 (3.13.4); TLS hostname override ignored on HTTPS connection reuse (3.14.1); DigestAuth credentials forwarded on cross-origin redirect (3.14.1)
     "msgpack>=1.2.1",  # OOB read / crash on Unpacker reuse after a caught error (transitive via litellm)
     "tornado>=6.5.7",  # gzip bomb via unbound decompression (6.5.6); Authorization header forwarded on cross-origin redirect (6.5.6); per-request credentials leaked on CurlAsyncHTTPClient handle reuse (6.5.7) — transitive via litellm
     "idna>=3.15",  # PYSEC-2026-215 fix (transitive via httpx/aiohttp/requests)
@@ -37,6 +40,7 @@ dependencies = [
     "RestrictedPython>=7.0",
     "tenacity>=9.1.2",
     "pygments>=2.20.0",
+    "requests>=2.33.0",  # CVE-2026-25645 fix; imported by rlmstudio.llm.ollama_client (direct provider="ollama" path) — explicit, not just transitive via tiktoken
 ]
 
 [project.optional-dependencies]
@@ -55,67 +59,73 @@ dev = [
     "pre-commit>=3.7.0",
     "types-pyyaml>=6.0.12.20250915",
     "nest-asyncio>=1.6.0",
-    "pip>=26.1.2",  # PYSEC-2026-196 fix; pip is installed in the venv and scanned by pip-audit
+    "pip>=26.2",  # PYSEC-2026-196 (26.1.2), PYSEC-2026-3721 (26.2); pip is installed in the venv and scanned by pip-audit
     "pip-audit>=2.7.0",
     "pyarrow>=23.0.1",  # PYSEC-2026-113 fix (transitive via litellm)
-    "requests>=2.33.0",  # CVE-2026-25645 fix; transitive via pip-audit/tiktoken
 ]
 
-server = [
+# `studio` = everything the FastAPI backend + bundled UI need. This is the
+# extra a user installs: `pip install "rlm-studio[studio]" && rlm-studio studio`.
+studio = [
     "fastapi>=0.138.0",  # >=0.138.0 drops starlette<1.0.0 upper-bound; required for starlette 1.x security fixes
     "starlette>=1.3.1",  # form() limits ignored DoS (HIGH, 1.3.1); StaticFiles SSRF via UNC paths on Windows (HIGH, 1.1.0); arbitrary HTTP method dispatch via getattr (MEDIUM, 1.1.0); URL hostname poisoning (LOW, 1.3.0)
     "uvicorn>=0.27.0",
     "python-multipart>=0.0.31",  # CVE-2026-40347 / CVE-2026-42561 (0.0.27); CVE-2026-53538/53539/53540 fixed in 0.0.30/0.0.31 — runtime-reachable via /api/files/upload
-    "pypdf>=6.13.3",  # PDF text extraction; memory exhaustion via XMP metadata (6.12.1); FlateDecode inefficiency / form XObject memory (6.12.2); infinite loop in fonts and outline retrieval (6.13.0); missing stream length limits (6.13.3)
+    "pypdf>=6.15.0",  # PDF text extraction; PYSEC-2026-3655/3656 (6.15.0); memory exhaustion via XMP metadata (6.12.1); FlateDecode inefficiency / form XObject memory (6.12.2); infinite loop in fonts and outline retrieval (6.13.0); missing stream length limits (6.13.3)
     "python-docx>=1.1.0",  # DOCX text extraction in /api/files/upload
     "lxml>=6.1.0",  # CVE-2026-41066 fix (transitive via python-docx)
 ]
 
-ui = [
-    "streamlit>=1.55.0",  # CVE-2026-SSRF fix (NTLM credential exposure on Windows)
-    "gitpython>=3.1.55",  # GHSA-rpm5-65cw-6hj4, GHSA-x2qx-6953-8485 (3.1.47); CVE-2026-44244 (config_writer().set_value() RCE via core.hooksPath) fix in 3.1.49; GHSA-2f96-g7mh-g2hx, GHSA-v396-v7q4-x2qj, GHSA-956x-8gvw-wg5v (3.1.51); GHSA-3rp5-jjmw-4wv2 (3.1.53); GHSA-fjr4-x663-mwxc, GHSA-6p8h-3wgx-97gf, GHSA-r9mr-m37c-5fr3 (3.1.54); GHSA-94p4-4cq8-9g67 (3.1.55) — not reachable in RLMKit (transitive via streamlit only; no first-party imports)
-    "pillow>=12.3.0",  # PYSEC-2026-2253..2257, PYSEC-2026-3451..3454, PYSEC-2026-3493..3496 fixed in 12.3.0 (transitive via streamlit)
-    "plotly>=5.18.0",
-    # External LLM providers
-    "openai>=1.0.0",
-    "anthropic>=0.7.0",
-    "ollama>=0.1.0",
-    "requests>=2.31.0",  # For HTTP-based providers (LM Studio)
+# Backward-compat alias for the pre-rename `server` extra (one release).
+server = [
+    "rlm-studio[studio]",
 ]
+
+# Direct-provider SDKs for the legacy non-LiteLLM clients
+# (rlmstudio.llm.{openai,anthropic,ollama}_client / provider= on the public
+# client). `openai` is already a hard dependency of litellm and the Ollama
+# client uses `requests` (base dep), so only anthropic needs an explicit pin.
+providers = [
+    "anthropic>=0.7.0",
+]
+
+# Optional engines for the Compare matrix (see specs/interop-official-rlm).
+# Intentionally empty until the official-RLM engine lands.
+interop = []
 
 eval = [
     "openai>=1.0.0",  # For embeddings + generation
 ]
 
 all = [
-    "rlmkit[dev,server,ui,eval]",
+    "rlm-studio[studio,providers,eval,interop]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/gosha70/rlmkit"
-Repository = "https://github.com/gosha70/rlmkit"
-Documentation = "https://github.com/gosha70/rlmkit/blob/main/README.md"
+Homepage = "https://github.com/gosha70/rlm-studio"
+Repository = "https://github.com/gosha70/rlm-studio"
+Documentation = "https://github.com/gosha70/rlm-studio/blob/master/README.md"
 
 [project.scripts]
-# Console script — `rlmkit studio` is the one-click entry point for RLM
+# Console script — `rlm-studio studio` is the one-click entry point for RLM
 # Studio (FastAPI + bundled Next.js UI on a single port). See
-# `src/rlmkit/cli/main.py` for the dispatcher and
+# `src/rlmstudio/cli/main.py` for the dispatcher and
 # `doc_internal/release/steps/04-publish-and-distribute.md` for the
-# release-time build pipeline that populates `src/rlmkit/_ui/`.
-rlmkit = "rlmkit.cli.main:main"
+# release-time build pipeline that populates `src/rlmstudio/_ui/`.
+rlm-studio = "rlmstudio.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-rlmkit = ["rlmkit_config.default.yaml"]
-"rlmkit.prompts" = ["*.yaml", "*.yml", "*.json"]
+rlmstudio = ["rlm_studio_config.default.yaml"]
+"rlmstudio.prompts" = ["*.yaml", "*.yml", "*.json"]
 # Bundled Studio UI — populated at release time by the frontend static
 # export. The `_ui/__init__.py` placeholder is always present so the
 # package directory exists even in unbuilt source checkouts; everything
 # under `_ui/` (HTML, JS, CSS, fonts, images, the Next.js `_next/`
 # build manifest) ships in the wheel when the frontend has been built.
-"rlmkit._ui" = ["**/*"]
+"rlmstudio._ui" = ["**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -158,10 +168,10 @@ ignore = ["E501"]  # Line length (formatter handles)
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["N802", "N803", "N806", "PT011"]  # Tests: allow naming conventions, broad pytest.raises
-"src/rlmkit/server/routes/*" = ["B008", "PT028"]  # Depends() in FastAPI route defaults; PT028: route functions named test_* are not pytest tests
+"src/rlmstudio/server/routes/*" = ["B008", "PT028"]  # Depends() in FastAPI route defaults; PT028: route functions named test_* are not pytest tests
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -172,26 +182,13 @@ ignore_missing_imports = true
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
-# Tests are not checked by CI mypy (which runs only on src/rlmkit/).
+# Tests are not checked by CI mypy (which runs only on src/rlmstudio/).
 # Relax annotations requirement to match that scope.
 module = "tests.*"
 disallow_untyped_defs = false
 
 [tool.coverage.run]
-omit = [
-    # These files call Streamlit APIs (st.*, switch_page, session_state) and
-    # require a live Streamlit runtime to import. The `ui` extra is not
-    # installed in the dev+server test environment, so they cannot be measured
-    # here. To cover them: uv sync --extra ui && pytest --cov ...
-    #
-    # Pure-Python modules under ui/ (data/, services/, utils/, file_processor)
-    # are NOT omitted — they are imported by the server layer and are measured.
-    "src/rlmkit/ui/app.py",
-    "src/rlmkit/ui/charts.py",
-    "src/rlmkit/ui/session.py",
-    "src/rlmkit/ui/pages/*",
-    "src/rlmkit/ui/components/*",
-]
+omit = []
 
 [tool.bandit]
 exclude_dirs = ["tests", "poc", "notebooks"]

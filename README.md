@@ -1,42 +1,45 @@
 
 <h1>
   <img
-    src="docs/RLMKit_Logo.png"
+    src="docs/RLM_Studio_Logo.png"
     width="200"
-    alt="RLMKit Logo"
+    alt="RLM Studio Logo"
     style="vertical-align: middle; margin-right: 12px; position: relative; top: -2px;" />
-  RLMKit
+  RLM Studio
 </h1>
 
-**Recursive Language Model toolkit** — a Python library that lets LLMs write code to explore content that exceeds their context window.
+**A workbench for Recursive Language Models** — measure whether the RLM pattern beats direct prompting or RAG on *your* documents, with *your* model (local or cloud), at what cost.
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+RLM Studio is a working implementation of the MIT [Recursive Language Models paper](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab; official repo: [alexzhang13/rlm](https://github.com/alexzhang13/rlm)), extended in areas the original work does not address: side-by-side comparison of Direct / RAG / RLM across providers, persistent telemetry, step-by-step traces and replay, budget guardrails, and a one-command web UI. Formerly published as *RLMKit*.
+
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
-[![CI](https://github.com/gosha70/rlmkit/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/gosha70/rlmkit/actions/workflows/ci.yml)
+[![CI](https://github.com/gosha70/rlm-studio/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/gosha70/rlm-studio/actions/workflows/ci.yml)
 
-## What is RLMKit?
+## What is RLM Studio?
 
-LLMs have fixed context windows. When your document is too large to fit in a single prompt, you lose information. RLMKit solves this by giving the LLM a Python sandbox where it can write code to navigate and analyze content dynamically — exploring only what's relevant.
+LLMs have fixed context windows. When a document is too large for a single prompt, an RLM gives the model a Python sandbox in which it writes code to navigate the content — reading only what is relevant and calling sub-LLMs over the pieces. That helps a lot on some tasks and not at all on others, and the answer depends on the model, the document, and the budget. RLM Studio exists to answer that question with numbers instead of anecdotes.
 
-RLMKit provides:
+It ships as a Python library (`rlmstudio`) plus a web UI, and provides:
 
-- **Three execution modes** — Direct (full context), RAG (retrieval-augmented), and RLM (recursive code generation)
-- **Compare matrix** — runs any combination of the three modes across N providers in parallel, ranking by cost, latency, TTFT, cache hit rate, or LLM-judge score
+- **Three execution modes** — Direct (full context), RAG (retrieval-augmented), and RLM (recursive code generation), selectable per run
+- **Compare matrix** — runs any combination of the modes across N providers in parallel, ranking by cost, latency, TTFT, cache hit rate, or LLM-judge score
 - **Auto mode** — selects Direct or RLM based on content size (< 8K tokens → Direct, ≥ 8K → RLM)
-- **100+ LLM providers** — via LiteLLM (OpenAI, Anthropic, Ollama, LM Studio, and more)
-- **Budget controls** — cap tokens, cost, steps, and time
-- **Sandboxed execution** — RestrictedPython prevents file/network/system access
-- **[RLM Studio](#rlm-studio)** — a web app for experimenting, tuning, and comparing execution modes
+- **100+ LLM providers** — via LiteLLM (OpenAI, Anthropic, Ollama, LM Studio, vLLM, and more) — local models are first-class
+- **Persistent telemetry, traces and replay** — every step the model took, what it cost, and how long it waited, across restarts
+- **Budget controls** — cap tokens, cost, steps, and time; failures are classified, not silent
+- **Sandboxed execution** — RestrictedPython / subprocess / Docker sandboxes behind one interface
+- **[The Studio UI](#rlm-studio-web-ui)** — Chat, Compare, Dashboard, Traces, Learn, Settings, served from a single process
 
-## Where RLMKit Shines
+## Where RLM Studio Shines
 
-RLMKit solves a specific class of problem. Knowing when it helps (and when it doesn't) saves you from over-engineering.
+RLM Studio solves a specific class of problem. Knowing when it helps (and when it doesn't) saves you from over-engineering.
 
 ### Good fit
 
 **Large documents that blow past context windows.** When inputs regularly exceed `50K`–`100K` tokens, full-context prompting gets expensive and answer quality degrades. RLM mode lets the model explore selectively, - reading only the sections it needs at a fraction of the token cost.
 
-**Production workloads that need cost and time guardrails.** RLMKit caps tokens, cost, steps, and wall-clock time per execution. The outcome classifier flags failures and degraded results automatically. If you're running LLM workloads in production, budget enforcement is built in.
+**Production workloads that need cost and time guardrails.** RLM Studio caps tokens, cost, steps, and wall-clock time per execution. The outcome classifier flags failures and degraded results automatically. If you're running LLM workloads in production, budget enforcement is built in.
 
 **Tasks where targeted exploration beats brute-force context.** Compliance reviews, contract analysis, multi-section report synthesis, and codebase Q&A all benefit from an LLM that can navigate to relevant sections instead of processing everything at once. RLM's `peek()`, `grep()`, and `chunk()` sandbox gives the model surgical access.
 
@@ -51,51 +54,51 @@ RLMKit solves a specific class of problem. Knowing when it helps (and when it do
 
 **Workloads that don't benefit from code generation in the loop.** RLM's core mechanism is an LLM writing `Python` to explore content. For straightforward Q&A, short-text summarization, or classification, the recursive loop adds latency without adding value.
 
-**Massive production retrieval workloads.** RLMKit includes a RAG mode that's a good fit for embedded knowledge bases and Chat Provider workflows where retrieval beats context-window navigation. For very large retrieval workloads (millions of documents, sharded indexes), a dedicated RAG infrastructure (Qdrant / Weaviate / Pinecone + reranker) is the right tool — RLMKit's RAG is not built to compete at that scale.
+**Massive production retrieval workloads.** RLM Studio includes a RAG mode that's a good fit for embedded knowledge bases and Chat Provider workflows where retrieval beats context-window navigation. For very large retrieval workloads (millions of documents, sharded indexes), a dedicated RAG infrastructure (Qdrant / Weaviate / Pinecone + reranker) is the right tool — RLM Studio's RAG is not built to compete at that scale.
 
 ## Deployment model & support boundary
 
-RLMKit v1.1 targets **single-node self-hosted use** by developers, prompt engineers, and small teams. That is the supported surface.
+RLM Studio v1.0 targets **single-node self-hosted use** by developers, prompt engineers, and small teams. That is the supported surface.
 
-**Supported in v1.1:**
+**Supported in v1.0:**
 
 - One backend process + one frontend process on a single machine (laptop, workstation, or a shared GPU host like DGX Spark).
 - Per-execution budgets (tokens, cost, time, steps) and per-provider connection testing.
 - Large documents end-to-end through `/api/chat` on a single user's session — the 8MB-class payloads described in [docs/hosts/dgx-spark.md](docs/hosts/dgx-spark.md) work today.
-- State persistence across restarts via `~/.rlmkit/` and the SQLite telemetry DB, with auto-migration on upgrade.
+- State persistence across restarts via `~/.rlm-studio/` and the SQLite telemetry DB, with auto-migration on upgrade.
 
-**Explicitly out of scope in v1.1:**
+**Explicitly out of scope in v1.0:**
 
-- **Shared multi-tenant service.** There is no per-user request queue, no tenant isolation, and no admission-control layer. Two users uploading 8MB documents simultaneously will both run; the inference backend (vLLM, Ollama, cloud API) is responsible for handling that load, not RLMKit.
-- **Automatic failover between inference backends.** If your configured provider goes offline, the run fails with a classified error; RLMKit does not silently retry against a different provider.
+- **Shared multi-tenant service.** There is no per-user request queue, no tenant isolation, and no admission-control layer. Two users uploading 8MB documents simultaneously will both run; the inference backend (vLLM, Ollama, cloud API) is responsible for handling that load, not RLM Studio.
+- **Automatic failover between inference backends.** If your configured provider goes offline, the run fails with a classified error; RLM Studio does not silently retry against a different provider.
 - **Horizontal scale-out.** There is no clustering, no distributed telemetry, no cross-process queue (Redis/Celery).
 - **Enterprise deployment packaging** beyond the Dockerfiles + compose stack shipped here.
 
-If those are requirements, RLMKit v1.1 is not the right fit today; they are tracked as later milestones. For operational details — state paths, backup/restore, and upgrade behavior — see [docs/OPERATIONS.md](docs/OPERATIONS.md).
+If those are requirements, RLM Studio v1.0 is not the right fit today; they are tracked as later milestones. For operational details — state paths, backup/restore, and upgrade behavior — see [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Quick Start
 
 ### One-click — RLM Studio (the easiest path)
 
 ```bash
-pip install "rlmkit[all]"
-rlmkit studio
+pip install "rlm-studio[all]"
+rlm-studio studio
 ```
 
 That installs the package with all extras, starts the API server, mounts the bundled web UI, and opens [http://localhost:8000/studio](http://localhost:8000/studio) in your default browser. Chat, Dashboard, Traces, Compare, Learn, and Settings all run from a single process — no Node, no second terminal.
 
-To skip the browser auto-open: `rlmkit studio --no-browser`. To change the bind address: `rlmkit studio --host 0.0.0.0 --port 9000`.
+To skip the browser auto-open: `rlm-studio studio --no-browser`. To change the bind address: `rlm-studio studio --host 0.0.0.0 --port 9000`.
 
 ### One-click — self-hosted via Docker Compose
 
 ```bash
-git clone https://github.com/gosha70/rlmkit.git
-cd rlmkit
+git clone https://github.com/gosha70/rlm-studio.git
+cd rlm-studio
 cp .env.example .env   # add at least one provider key
 docker compose up --build
 ```
 
-Backend at [http://localhost:8000](http://localhost:8000), frontend at [http://localhost:3000](http://localhost:3000). State persists to the `rlmkit-data` named volume. See `docs/OPERATIONS.md` for the backup/restore procedure.
+Backend at [http://localhost:8000](http://localhost:8000), frontend at [http://localhost:3000](http://localhost:3000). State persists to the `rlm-studio-data` named volume. See `docs/OPERATIONS.md` for the backup/restore procedure.
 
 ### Library use (Python only, no UI)
 
@@ -108,7 +111,7 @@ pip install -e ".[all]"
 ```
 
 ```python
-from rlmkit import interact
+from rlmstudio import interact
 
 result = interact(
     content="Your document text here...",
@@ -132,7 +135,7 @@ result = interact(content, query, mode="direct")
 # RLM — LLM writes Python to explore content recursively (large documents)
 result = interact(content, query, mode="rlm")
 
-# Auto — let RLMKit choose based on content size (default)
+# Auto — let RLM Studio choose based on content size (default)
 result = interact(content, query, mode="auto")
 
 # Compare — run both RLM and Direct, return metrics for each
@@ -175,18 +178,18 @@ Set the API key as an environment variable, then pass the provider name:
 | Google | `GOOGLE_API_KEY` | `gemini-pro` |
 | 100+ more | via LiteLLM | See [LiteLLM docs](https://docs.litellm.ai/) |
 
-## RLM Studio
+## RLM Studio web UI
 
-RLM Studio is a web application for experimenting with RLMKit interactively. Use it to demo RLM capabilities, tune runtime parameters, compare execution modes side by side, and monitor cost/performance metrics.
+The web UI is where you experiment interactively: demo RLM behaviour, tune runtime parameters, compare execution modes side by side, and monitor cost/performance metrics. The one-click `rlm-studio studio` command above runs it; the two-process layout below is the development workflow.
 
-### Starting RLM Studio
+### Starting the UI in development mode
 
 ```bash
 # Terminal 1: Backend API server (default port 8000)
-uv run python -m rlmkit.server --reload
+uv run python -m rlmstudio.server --reload
 
-# Custom port — set RLMKIT_PORT and point the frontend at the same address
-RLMKIT_PORT=8080 uv run python -m rlmkit.server --reload
+# Custom port — set RLM_STUDIO_PORT and point the frontend at the same address
+RLM_STUDIO_PORT=8080 uv run python -m rlmstudio.server --reload
 NEXT_PUBLIC_API_URL=http://localhost:8080 npm run dev  # Terminal 2
 
 # Terminal 2: Frontend (default, connects to port 8000)
@@ -211,11 +214,11 @@ In-depth guides live under [`docs/`](docs/). Start with whichever matches what y
 
 | Guide | For |
 |-------|-----|
-| [docs/rlm-concepts.md](docs/rlm-concepts.md) | Understanding the RLM paradigm — the recursive loop, circuit breakers, the JSON action protocol, and what RLMKit adds beyond the original paper |
+| [docs/rlm-concepts.md](docs/rlm-concepts.md) | Understanding the RLM paradigm — the recursive loop, circuit breakers, the JSON action protocol, and what RLM Studio adds beyond the original paper |
 | [docs/rlm-studio-guide.md](docs/rlm-studio-guide.md) | Full walkthrough of the RLM Studio web app — pages, settings, workflows, Learn / Compare / Judge |
 | [docs/rlm-prompt-tuning.md](docs/rlm-prompt-tuning.md) | Safe patterns for customizing system prompts in Direct / RLM / RAG modes |
 | [docs/hosts/README.md](docs/hosts/README.md) | Connecting an LLM backend — decision tree across providers, deployment topologies, security boundaries. Per-provider guides for OpenAI, Anthropic, Ollama, LM Studio, vLLM, DGX Spark |
-| [docs/RLMKit_Design_Document.md](docs/RLMKit_Design_Document.md) | Design rationale, architecture decisions, and internals for contributors |
+| [docs/RLM_Studio_Design_Document.md](docs/RLM_Studio_Design_Document.md) | Design rationale, architecture decisions, and internals for contributors |
 
 ## Architecture
 
@@ -261,7 +264,7 @@ graph TB
 **Dependency rule:** inner layers never import from outer layers. All external dependencies sit behind port interfaces.
 
 ```
-src/rlmkit/
+src/rlmstudio/
 ├── domain/            # Entities, ports (zero external deps)
 ├── application/       # Use cases (run_rlm, run_direct, run_rag)
 ├── infrastructure/    # Adapters (LiteLLM, sandbox, storage)
@@ -281,7 +284,7 @@ frontend/              # Next.js 16 + React 19 + shadcn/ui
 uv run pytest tests/ -v
 
 # With coverage
-uv run pytest tests/ --cov=rlmkit --cov-report=term-missing
+uv run pytest tests/ --cov=rlmstudio --cov-report=term-missing
 
 # Frontend type check
 cd frontend && npx tsc --noEmit

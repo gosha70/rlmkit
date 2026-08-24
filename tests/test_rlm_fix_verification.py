@@ -8,9 +8,9 @@ This test demonstrates that the fix correctly:
 4. Accepts FINAL answers after successful execution
 """
 
-from rlmkit.config import ExecutionConfig, RLMConfig
-from rlmkit.core.rlm import RLM
-from rlmkit.llm import MockLLMClient
+from rlmstudio.config import ExecutionConfig, RLMConfig
+from rlmstudio.core.rlm import RLM
+from rlmstudio.llm import MockLLMClient
 
 
 def test_rejects_final_after_error():

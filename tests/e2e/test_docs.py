@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.routes.docs import _DOCS_ALLOWLIST, _DOCS_DIR, _TROUBLESHOOT_FILE
+from rlmstudio.server.routes.docs import _DOCS_ALLOWLIST, _DOCS_DIR, _TROUBLESHOOT_FILE
 
 pytestmark = [pytest.mark.e2e]
 
@@ -82,7 +82,9 @@ class TestDocsEndpoint:
     def test_docs_root_is_not_above_repo(self) -> None:
         # Sanity: resolved docs dir does not escape to the filesystem root.
         assert str(_DOCS_DIR.resolve()) != "/"
-        assert "rlmkit" in str(_DOCS_DIR.resolve()).lower()
+        # The docs dir must live directly under the repo root — identified by
+        # a marker file, not by the checkout directory's name.
+        assert (_DOCS_DIR.resolve().parent / "pyproject.toml").is_file()
 
 
 class TestDocsPathTraversalDefense:
@@ -103,7 +105,7 @@ class TestDocsPathTraversalDefense:
             pytest.skip("symlink creation unsupported on this platform")
         try:
             # Poison the allowlist for the duration of this test.
-            from rlmkit.server.routes import docs as docs_mod
+            from rlmstudio.server.routes import docs as docs_mod
 
             monkeypatch.setitem(docs_mod._DOCS_ALLOWLIST, "test-symlink", "__test_symlink.md")
             resp = client.get("/api/docs/test-symlink")
@@ -173,7 +175,7 @@ class TestTroubleshootEndpoint:
     ) -> None:
         bad = tmp_path / "troubleshoot.yaml"
         bad.write_text("this: is: not: valid: yaml: [\n", encoding="utf-8")
-        from rlmkit.server.routes import docs as docs_mod
+        from rlmstudio.server.routes import docs as docs_mod
 
         monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
         resp = client.get("/api/docs/troubleshoot")
@@ -184,7 +186,7 @@ class TestTroubleshootEndpoint:
     ) -> None:
         bad = tmp_path / "troubleshoot.yaml"
         bad.write_text("top-level: not a list\n", encoding="utf-8")
-        from rlmkit.server.routes import docs as docs_mod
+        from rlmstudio.server.routes import docs as docs_mod
 
         monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
         resp = client.get("/api/docs/troubleshoot")
@@ -203,7 +205,7 @@ class TestTroubleshootEndpoint:
             "  fix: []\n",
             encoding="utf-8",
         )
-        from rlmkit.server.routes import docs as docs_mod
+        from rlmstudio.server.routes import docs as docs_mod
 
         monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
         resp = client.get("/api/docs/troubleshoot")
@@ -219,7 +221,7 @@ class TestTroubleshootEndpoint:
             "- id: no-fix\n  title: Missing fix\n  symptom: x\n  cause: y\n  category: Runtime\n",
             encoding="utf-8",
         )
-        from rlmkit.server.routes import docs as docs_mod
+        from rlmstudio.server.routes import docs as docs_mod
 
         monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", bad)
         resp = client.get("/api/docs/troubleshoot")
@@ -229,7 +231,7 @@ class TestTroubleshootEndpoint:
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         nowhere = tmp_path / "does-not-exist.yaml"
-        from rlmkit.server.routes import docs as docs_mod
+        from rlmstudio.server.routes import docs as docs_mod
 
         monkeypatch.setattr(docs_mod, "_TROUBLESHOOT_FILE", nowhere)
         resp = client.get("/api/docs/troubleshoot")

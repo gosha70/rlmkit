@@ -9,7 +9,7 @@ Installs **host Ollama** on DGX Spark, configures it to listen on `0.0.0.0:11434
 
 Use it when you want:
 - host Ollama as the main model backend
-- RLMKit or document-assistant to connect directly to DGX Spark
+- RLM Studio or document-assistant to connect directly to DGX Spark
 - one clean Ollama service instead of multiple embedded stores
 
 Run:
@@ -161,7 +161,7 @@ Leave at least 10-15 GB headroom for the OS and Ollama overhead.
 
 ## Recommendation
 
-For apps like **RLMKit** and **document-assistant**, prefer:
+For apps like **RLM Studio** and **document-assistant**, prefer:
 
 - **host Ollama** as the source of truth
 - Open WebUI only as an optional UI layer

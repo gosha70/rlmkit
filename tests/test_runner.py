@@ -2,9 +2,9 @@
 
 import pytest
 
-from rlmkit.benchmark.dataset import BenchmarkCase, BenchmarkDataset
-from rlmkit.benchmark.runner import BenchmarkRun, BenchmarkRunner, CaseResult
-from rlmkit.strategies.base import StrategyResult
+from rlmstudio.benchmark.dataset import BenchmarkCase, BenchmarkDataset
+from rlmstudio.benchmark.runner import BenchmarkRun, BenchmarkRunner, CaseResult
+from rlmstudio.strategies.base import StrategyResult
 
 # ---------------------------------------------------------------------------
 # Helpers

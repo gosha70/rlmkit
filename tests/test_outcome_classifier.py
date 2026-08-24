@@ -2,7 +2,7 @@
 
 import pytest
 
-from rlmkit.application.services.outcome_classifier import (
+from rlmstudio.application.services.outcome_classifier import (
     ExecutionOutcome,
     OutcomeCategory,
     classify_execution_outcome,

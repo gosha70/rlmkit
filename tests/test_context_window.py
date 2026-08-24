@@ -20,9 +20,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from starlette.testclient import TestClient
 
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import reset_state
-from rlmkit.ui.data.providers_catalog import PROVIDERS_BY_KEY
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import reset_state
+from rlmstudio.ui.data.providers_catalog import PROVIDERS_BY_KEY
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -84,7 +84,7 @@ class TestProviderUpdateRediscovery:
         result: dict[str, Any] = resp.json()
         return result
 
-    @patch("rlmkit.server.routes.llm_providers._discover_context_window")
+    @patch("rlmstudio.server.routes.llm_providers._discover_context_window")
     def test_model_change_triggers_rediscovery(
         self, mock_discover: MagicMock, client: TestClient, valid_provider_key: str
     ) -> None:
@@ -105,7 +105,7 @@ class TestProviderUpdateRediscovery:
         assert resp.json()["context_window"] == 32768
         mock_discover.assert_called_once()
 
-    @patch("rlmkit.server.routes.llm_providers._discover_context_window")
+    @patch("rlmstudio.server.routes.llm_providers._discover_context_window")
     def test_endpoint_change_triggers_rediscovery(
         self, mock_discover: MagicMock, client: TestClient, valid_provider_key: str
     ) -> None:
@@ -122,7 +122,7 @@ class TestProviderUpdateRediscovery:
         assert resp.status_code == 200
         assert resp.json()["context_window"] == 16384
 
-    @patch("rlmkit.server.routes.llm_providers._discover_context_window")
+    @patch("rlmstudio.server.routes.llm_providers._discover_context_window")
     def test_explicit_context_window_overrides_rediscovery(
         self, mock_discover: MagicMock, client: TestClient, valid_provider_key: str
     ) -> None:
@@ -140,7 +140,7 @@ class TestProviderUpdateRediscovery:
         # Discovery should NOT have been called — explicit override wins
         mock_discover.assert_not_called()
 
-    @patch("rlmkit.server.routes.llm_providers._discover_context_window")
+    @patch("rlmstudio.server.routes.llm_providers._discover_context_window")
     def test_no_rediscovery_when_model_unchanged(
         self, mock_discover: MagicMock, client: TestClient, valid_provider_key: str
     ) -> None:
@@ -158,7 +158,7 @@ class TestProviderUpdateRediscovery:
         assert resp.json()["context_window"] == 8192
         mock_discover.assert_not_called()
 
-    @patch("rlmkit.server.routes.llm_providers._discover_context_window")
+    @patch("rlmstudio.server.routes.llm_providers._discover_context_window")
     def test_rediscovery_failure_clears_stale_context_window(
         self, mock_discover: MagicMock, client: TestClient, valid_provider_key: str
     ) -> None:
@@ -195,7 +195,7 @@ class TestLocalUIContextWindowClamping:
         max_tokens: int = 4096,
     ) -> Any:
         """Build a minimal LLMProviderConfig-like object for the local UI path."""
-        from rlmkit.ui.services.models import LLMProviderConfig as UIProviderConfig
+        from rlmstudio.ui.services.models import LLMProviderConfig as UIProviderConfig
 
         return UIProviderConfig(
             provider=provider,
@@ -207,16 +207,16 @@ class TestLocalUIContextWindowClamping:
             api_key="",
         )
 
-    @patch("rlmkit.ui.services.chat_manager.get_llm_client")
+    @patch("rlmstudio.ui.services.chat_manager.get_llm_client")
     @patch.object(
-        __import__("rlmkit.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
+        __import__("rlmstudio.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
         "_discover_context_window",
     )
     def test_clamps_max_tokens_when_context_window_discovered(
         self, mock_discover: MagicMock, mock_get_client: MagicMock
     ) -> None:
         """When context_window is discovered, max_tokens should be capped to 75%."""
-        from rlmkit.ui.services.chat_manager import ChatManager
+        from rlmstudio.ui.services.chat_manager import ChatManager
 
         mock_discover.return_value = 8192
         mock_client = MagicMock()
@@ -233,16 +233,16 @@ class TestLocalUIContextWindowClamping:
         # 4096 < int(8192 * 0.75) = 6144, so no clamping needed — max_tokens stays 4096
         assert actual_max == 4096
 
-    @patch("rlmkit.ui.services.chat_manager.get_llm_client")
+    @patch("rlmstudio.ui.services.chat_manager.get_llm_client")
     @patch.object(
-        __import__("rlmkit.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
+        __import__("rlmstudio.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
         "_discover_context_window",
     )
     def test_clamps_when_max_tokens_exceeds_safe_limit(
         self, mock_discover: MagicMock, mock_get_client: MagicMock
     ) -> None:
         """When max_tokens > 75% of context_window, it should be reduced."""
-        from rlmkit.ui.services.chat_manager import ChatManager
+        from rlmstudio.ui.services.chat_manager import ChatManager
 
         mock_discover.return_value = 8192  # 75% = 6144
         mock_client = MagicMock()
@@ -258,16 +258,16 @@ class TestLocalUIContextWindowClamping:
         actual_max = call_kwargs.kwargs.get("max_tokens") or call_kwargs[1].get("max_tokens")
         assert actual_max == int(8192 * 0.75)  # 6144
 
-    @patch("rlmkit.ui.services.chat_manager.get_llm_client")
+    @patch("rlmstudio.ui.services.chat_manager.get_llm_client")
     @patch.object(
-        __import__("rlmkit.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
+        __import__("rlmstudio.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
         "_discover_context_window",
     )
     def test_no_clamping_when_discovery_fails(
         self, mock_discover: MagicMock, mock_get_client: MagicMock
     ) -> None:
         """When context_window cannot be discovered, max_tokens passes through."""
-        from rlmkit.ui.services.chat_manager import ChatManager
+        from rlmstudio.ui.services.chat_manager import ChatManager
 
         mock_discover.return_value = None
         mock_client = MagicMock()
@@ -282,9 +282,9 @@ class TestLocalUIContextWindowClamping:
         actual_max = call_kwargs.kwargs.get("max_tokens") or call_kwargs[1].get("max_tokens")
         assert actual_max == 4096
 
-    @patch("rlmkit.ui.services.chat_manager.get_llm_client")
+    @patch("rlmstudio.ui.services.chat_manager.get_llm_client")
     @patch.object(
-        __import__("rlmkit.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
+        __import__("rlmstudio.ui.services.chat_manager", fromlist=["ChatManager"]).ChatManager,
         "_discover_context_window",
     )
     def test_session_state_max_tokens_overrides_provider(
@@ -292,7 +292,7 @@ class TestLocalUIContextWindowClamping:
     ) -> None:
         """session_state['default_max_tokens'] takes precedence over provider config,
         but still gets clamped by context_window."""
-        from rlmkit.ui.services.chat_manager import ChatManager
+        from rlmstudio.ui.services.chat_manager import ChatManager
 
         mock_discover.return_value = 4096  # 75% = 3072
         mock_client = MagicMock()
@@ -324,11 +324,11 @@ class TestOllamaClientStaticMaxTokens:
     but does not dynamically shrink max_tokens as the conversation grows.
     """
 
-    @patch("rlmkit.llm.ollama_client.requests.get")
-    @patch("rlmkit.llm.ollama_client.requests.post")
+    @patch("rlmstudio.llm.ollama_client.requests.get")
+    @patch("rlmstudio.llm.ollama_client.requests.post")
     def test_ollama_uses_static_max_tokens(self, mock_post: MagicMock, mock_get: MagicMock) -> None:
         """OllamaClient passes the constructor max_tokens to every call unchanged."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
         # Mock connection check
         mock_get.return_value = MagicMock(status_code=200, json=lambda: {"models": []})
@@ -351,13 +351,13 @@ class TestOllamaClientStaticMaxTokens:
         payload_2 = mock_post.call_args[1]["json"]
         assert payload_2["options"]["num_predict"] == 2048  # no dynamic clamping
 
-    @patch("rlmkit.llm.ollama_client.requests.get")
-    @patch("rlmkit.llm.ollama_client.requests.post")
+    @patch("rlmstudio.llm.ollama_client.requests.get")
+    @patch("rlmstudio.llm.ollama_client.requests.post")
     def test_ollama_no_num_predict_when_max_tokens_none(
         self, mock_post: MagicMock, mock_get: MagicMock
     ) -> None:
         """When max_tokens is None, num_predict should not appear in options."""
-        from rlmkit.llm.ollama_client import OllamaClient
+        from rlmstudio.llm.ollama_client import OllamaClient
 
         mock_get.return_value = MagicMock(status_code=200, json=lambda: {"models": []})
         mock_post.return_value = MagicMock(
@@ -399,7 +399,7 @@ class TestDiscoveryURLAndModelMatching:
         self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """Endpoint http://host:8000/v1 should query http://host:8000/v1/models, not /v1/v1/models."""
-        from rlmkit.server.routes.llm_providers import _discover_context_window
+        from rlmstudio.server.routes.llm_providers import _discover_context_window
 
         mock_urlopen.return_value = self._mock_urlopen("Qwen/Qwen2.5-7B-Instruct", 8192)
 
@@ -420,7 +420,7 @@ class TestDiscoveryURLAndModelMatching:
         self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """Endpoint http://host:8000 should query http://host:8000/v1/models."""
-        from rlmkit.server.routes.llm_providers import _discover_context_window
+        from rlmstudio.server.routes.llm_providers import _discover_context_window
 
         mock_urlopen.return_value = self._mock_urlopen("some-model", 4096)
 
@@ -439,7 +439,7 @@ class TestDiscoveryURLAndModelMatching:
         self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """Model 'openai/Qwen/Qwen2.5-7B-Instruct' should match vLLM id 'Qwen/Qwen2.5-7B-Instruct'."""
-        from rlmkit.server.routes.llm_providers import _discover_context_window
+        from rlmstudio.server.routes.llm_providers import _discover_context_window
 
         # vLLM reports model as "Qwen/Qwen2.5-7B-Instruct" (no openai/ prefix)
         mock_urlopen.return_value = self._mock_urlopen("Qwen/Qwen2.5-7B-Instruct", 8192)
@@ -457,7 +457,7 @@ class TestDiscoveryURLAndModelMatching:
         self, mock_urlopen: MagicMock, mock_litellm: MagicMock
     ) -> None:
         """When model name matches exactly, discovery should still work."""
-        from rlmkit.server.routes.llm_providers import _discover_context_window
+        from rlmstudio.server.routes.llm_providers import _discover_context_window
 
         mock_urlopen.return_value = self._mock_urlopen("llama3.2", 131072)
 
@@ -472,7 +472,7 @@ class TestDiscoveryURLAndModelMatching:
     @patch("urllib.request.urlopen")
     def test_no_match_returns_none(self, mock_urlopen: MagicMock, mock_litellm: MagicMock) -> None:
         """When model doesn't match any reported ID, return None."""
-        from rlmkit.server.routes.llm_providers import _discover_context_window
+        from rlmstudio.server.routes.llm_providers import _discover_context_window
 
         mock_urlopen.return_value = self._mock_urlopen("completely-different-model", 8192)
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rlmkit.application.services.outcome_classifier import OutcomeCategory
-from rlmkit.telemetry.store import TelemetryStore
+from rlmstudio.application.services.outcome_classifier import OutcomeCategory
+from rlmstudio.telemetry.store import TelemetryStore
 
 
 def _make_store(tmp_path: Path) -> TelemetryStore:

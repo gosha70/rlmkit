@@ -1,4 +1,4 @@
-# RLMKit — single-node self-hosted compose stack.
+# RLM Studio — single-node self-hosted compose stack.
 #
 # One-command startup:
 #
@@ -9,18 +9,25 @@
 # Backend:  http://localhost:8000  (health at /health)
 # Frontend: http://localhost:3000
 #
-# State persists to the `rlmkit-data` named volume, mounted at
-# /home/rlmkit/.rlmkit inside the backend container (the non-root
+# State persists to the `rlm-studio-data` named volume, mounted at
+# /home/rlmstudio/.rlm-studio inside the backend container (the non-root
 # runtime user's state directory). Back it up with:
 #
-#   docker run --rm -v rlmkit-data:/data -v "$PWD:/backup" alpine \
-#     tar -czf /backup/rlmkit-backup-$(date +%F).tar.gz -C /data .
+#   docker run --rm -v rlm-studio-data:/data -v "$PWD:/backup" alpine \
+#     tar -czf /backup/rlm-studio-backup-$(date +%F).tar.gz -C /data .
+#
+# Upgrading from the pre-rename stack (RLMKit): state lived in the
+# `rlmkit-data` volume. Copy it once before the first `up`:
+#
+#   docker volume create rlm-studio-data
+#   docker run --rm -v rlmkit-data:/from -v rlm-studio-data:/to alpine \
+#     sh -c "cp -a /from/. /to/"
 #
 # For scope and support boundary, see docs/OPERATIONS.md. v1.1 is
 # single-node; this compose stack is intentionally not a multi-tenant
 # deployment template.
 
-name: rlmkit
+name: rlm-studio
 
 services:
 
@@ -28,8 +35,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.api
-    image: rlmkit-api:local
-    container_name: rlmkit-backend
+    image: rlm-studio-api:local
+    container_name: rlm-studio-backend
     restart: unless-stopped
     environment:
       # Provider keys. Read from the compose .env file. Anything not set
@@ -47,18 +54,18 @@ services:
       LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-}
       VLLM_BASE_URL: ${VLLM_BASE_URL:-}
 
-      # Server bind. Leaving RLMKIT_HOST at 0.0.0.0 inside the container
+      # Server bind. Leaving RLM_STUDIO_HOST at 0.0.0.0 inside the container
       # is correct — container isolation is the security boundary, not
       # loopback. Do not publish the port to a public interface without
       # a reverse proxy in front.
-      RLMKIT_HOST: 0.0.0.0
-      RLMKIT_PORT: "8000"
+      RLM_STUDIO_HOST: 0.0.0.0
+      RLM_STUDIO_PORT: "8000"
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       # Persisted state: config, sessions, evaluations, telemetry.db,
       # api_keys.json fallback. See docs/OPERATIONS.md §2.
-      - rlmkit-data:/home/rlmkit/.rlmkit
+      - rlm-studio-data:/home/rlmstudio/.rlm-studio
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read(); sys.exit(0)"]
       interval: 30s
@@ -75,9 +82,9 @@ services:
         # go to this URL — which is the host's localhost, not the
         # container network — because the browser is on the host.
         NEXT_PUBLIC_API_URL: http://localhost:8000
-        NEXT_PUBLIC_RLMKIT_PERF_UI: ${NEXT_PUBLIC_RLMKIT_PERF_UI:-}
-    image: rlmkit-frontend:local
-    container_name: rlmkit-frontend
+        NEXT_PUBLIC_RLM_STUDIO_PERF_UI: ${NEXT_PUBLIC_RLM_STUDIO_PERF_UI:-}
+    image: rlm-studio-frontend:local
+    container_name: rlm-studio-frontend
     restart: unless-stopped
     environment:
       # Next.js server-side rewrites (see frontend/next.config.ts) run
@@ -107,7 +114,7 @@ services:
   #
   # ollama:
   #   image: ollama/ollama:latest
-  #   container_name: rlmkit-ollama
+  #   container_name: rlm-studio-ollama
   #   restart: unless-stopped
   #   ports:
   #     - "127.0.0.1:11434:11434"
@@ -115,7 +122,7 @@ services:
   #     - ollama-models:/root/.ollama
 
 volumes:
-  rlmkit-data:
-    name: rlmkit-data
+  rlm-studio-data:
+    name: rlm-studio-data
   # ollama-models:
-  #   name: rlmkit-ollama-models
+  #   name: rlm-studio-ollama-models

@@ -1,0 +1,79 @@
+"""Factory for creating sandbox instances based on configuration."""
+
+from __future__ import annotations
+
+import threading
+
+from rlmstudio.application.ports.sandbox_port import SandboxPort
+
+from .local_sandbox import LocalSandboxAdapter
+
+
+def create_sandbox(
+    sandbox_type: str = "local",
+    safe_mode: bool = True,
+    allowed_imports: list[str] | None = None,
+    max_exec_time_s: float = 5.0,
+    max_stdout_chars: int = 10000,
+) -> SandboxPort:
+    """Create a sandbox adapter based on the requested type.
+
+    Args:
+        sandbox_type: Type of sandbox
+            ("local", "restricted", "docker", "subprocess").
+        safe_mode: Enable restricted execution.
+        allowed_imports: Modules allowed in safe mode.
+        max_exec_time_s: Per-execution timeout.
+        max_stdout_chars: Maximum stdout capture.
+
+    Returns:
+        A sandbox adapter implementing SandboxPort.
+
+    Raises:
+        ValueError: If sandbox_type is not supported.
+    """
+    # Auto-select subprocess when "local" is requested off the main thread,
+    # because LocalSandboxAdapter's signal-based timeouts only work on the
+    # main thread.
+    if sandbox_type == "local" and threading.current_thread() is not threading.main_thread():
+        sandbox_type = "subprocess"
+
+    if sandbox_type == "local":
+        return LocalSandboxAdapter(
+            safe_mode=safe_mode,
+            allowed_imports=allowed_imports,
+            max_exec_time_s=max_exec_time_s,
+            max_stdout_chars=max_stdout_chars,
+        )
+    elif sandbox_type == "subprocess":
+        from .subprocess_sandbox import SubprocessSandboxAdapter  # nosec B404
+
+        return SubprocessSandboxAdapter(
+            safe_mode=safe_mode,
+            allowed_imports=allowed_imports,
+            max_exec_time_s=max_exec_time_s,
+            max_stdout_chars=max_stdout_chars,
+        )
+    elif sandbox_type == "restricted":
+        from .restricted_sandbox import RestrictedSandboxAdapter
+
+        allowed = frozenset(allowed_imports) if allowed_imports else None
+        return RestrictedSandboxAdapter(
+            allowed_modules=allowed,
+            max_stdout_chars=max_stdout_chars,
+        )
+    elif sandbox_type == "docker":
+        from rlmstudio.envs.sandbox import DockerExecutor
+
+        if not DockerExecutor.is_available():
+            raise ValueError("Docker sandbox requires Docker to be installed and running.")
+        from .docker_sandbox_adapter import DockerSandboxAdapter
+
+        return DockerSandboxAdapter(
+            timeout=int(max_exec_time_s),
+        )
+    else:
+        raise ValueError(
+            f"Unknown sandbox type: {sandbox_type!r}. "
+            "Supported: 'local', 'subprocess', 'restricted', 'docker'."
+        )

@@ -1,6 +1,6 @@
 # RLM Prompt Tuning Guide
 
-This guide is for teams customizing RLM prompts in RLMKit.
+This guide is for teams customizing RLM prompts in RLM Studio.
 
 The main rule is simple: prompt changes must respect the actual tool contract. If a prompt teaches an impossible workflow, better wording will not save it.
 

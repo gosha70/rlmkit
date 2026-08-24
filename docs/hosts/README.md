@@ -1,6 +1,6 @@
-# Connecting an LLM to RLMKit
+# Connecting an LLM to RLM Studio
 
-RLMKit treats every LLM as a pluggable backend behind a single adapter (LiteLLM). This page is the landing doc for the `hosts/` subtree: it covers the decision of *which* backend to run, *how* to arrange your network, and *what* RLM Studio needs from you to talk to it. Each per-provider guide ([anthropic](anthropic.md), [openai](openai.md), [ollama](ollama.md), [lmstudio](lmstudio.md), [vllm](vllm.md), [dgx-spark](dgx-spark.md)) keeps the specifics.
+RLM Studio treats every LLM as a pluggable backend behind a single adapter (LiteLLM). This page is the landing doc for the `hosts/` subtree: it covers the decision of *which* backend to run, *how* to arrange your network, and *what* RLM Studio needs from you to talk to it. Each per-provider guide ([anthropic](anthropic.md), [openai](openai.md), [ollama](ollama.md), [lmstudio](lmstudio.md), [vllm](vllm.md), [dgx-spark](dgx-spark.md)) keeps the specifics.
 
 ## 1. Pick a backend
 
@@ -17,27 +17,27 @@ RLMKit treats every LLM as a pluggable backend behind a single adapter (LiteLLM)
 
 ## 2. Deployment topologies
 
-RLMKit is two processes — the FastAPI backend (:8000) and the Next.js frontend (:3000). The LLM is a third process, which you can place anywhere you can route to.
+RLM Studio is two processes — the FastAPI backend (:8000) and the Next.js frontend (:3000). The LLM is a third process, which you can place anywhere you can route to.
 
 ### All-local
 
-RLMKit, frontend, and the LLM (Ollama / LM Studio) all run on one machine. Simplest; bounded by the machine's RAM and GPU.
+RLM Studio, frontend, and the LLM (Ollama / LM Studio) all run on one machine. Simplest; bounded by the machine's RAM and GPU.
 
 ### Laptop + remote GPU host
 
-RLMKit runs on your dev laptop; the LLM runs on a remote GPU box (DGX Spark, a workstation, a rented GPU). RLM Studio points at `http://<gpu-host-ip>:<port>`. This is the topology the DGX Spark guide explicitly supports — it keeps your development tools on the laptop and offloads inference to hardware that can handle it.
+RLM Studio runs on your dev laptop; the LLM runs on a remote GPU box (DGX Spark, a workstation, a rented GPU). RLM Studio points at `http://<gpu-host-ip>:<port>`. This is the topology the DGX Spark guide explicitly supports — it keeps your development tools on the laptop and offloads inference to hardware that can handle it.
 
 End-to-end health check for this topology:
 
 ```bash
 # From the laptop
 curl http://<gpu-host-ip>:11434/api/tags          # Ollama reachable?
-curl http://localhost:8000/health | python3 -m json.tool   # RLMKit backend up?
+curl http://localhost:8000/health | python3 -m json.tool   # RLM Studio backend up?
 ```
 
 ### All-cloud
 
-RLMKit runs locally; the LLM is a cloud API (OpenAI, Anthropic, Google, etc.). No networking to think about beyond the laptop's outbound connection. This is the default path for the two cloud guides.
+RLM Studio runs locally; the LLM is a cloud API (OpenAI, Anthropic, Google, etc.). No networking to think about beyond the laptop's outbound connection. This is the default path for the two cloud guides.
 
 ### Self-hosted behind a VPN / SSH tunnel
 
@@ -60,16 +60,16 @@ Every LLM Provider in RLM Studio is four fields. Three are always required; one 
 
 Two surfaces can configure a provider:
 
-- **Settings → LLM Providers** — runtime, UI-driven. Changes take effect immediately. Stored in the SecretStore (OS keyring when available, or `~/.rlmkit/api_keys.json` chmod 600).
+- **Settings → LLM Providers** — runtime, UI-driven. Changes take effect immediately. Stored in the SecretStore (OS keyring when available, or `~/.rlm-studio/api_keys.json` chmod 600).
 - **`.env` and environment variables** — startup-only. Read once by pydantic-settings when the server boots.
 
 **Precedence:** real environment variables → SecretStore (from the UI) → legacy `.env`. If you set `OPENAI_API_KEY` in both the UI and the shell, the shell value wins.
 
-See `.env.example` for the full list of overrides (`RLMKIT_OPENAI_DEFAULT_MODEL`, `OLLAMA_BASE_URL`, …).
+See `.env.example` for the full list of overrides (`RLM_STUDIO_OPENAI_DEFAULT_MODEL`, `OLLAMA_BASE_URL`, …).
 
 ## 5. Security & network boundaries
 
-- **Secret storage** is handled for you: cloud API keys go to the OS keyring where available, falling back to `~/.rlmkit/api_keys.json` with `chmod 600`. They are never logged, never returned in API responses, and masked in the UI after first save.
+- **Secret storage** is handled for you: cloud API keys go to the OS keyring where available, falling back to `~/.rlm-studio/api_keys.json` with `chmod 600`. They are never logged, never returned in API responses, and masked in the UI after first save.
 - **Local backends have no API-key field in Settings.** `vllm --api-key` and similar are intentionally not surfaced — for a local backend, the meaningful boundary is the network, not a shared secret. Prefer one of:
   - Bind the server to `127.0.0.1` and route RLM Studio to it through an SSH tunnel.
   - Put the server behind a VPN.
@@ -97,7 +97,7 @@ Every execution gets classified into one of `success`, `timeout`, `budget_exhaus
 
 If a provider flips to **offline** and you think it shouldn't have, check:
 
-1. The network path from the RLMKit backend to the base URL (`curl` the base URL directly).
+1. The network path from the RLM Studio backend to the base URL (`curl` the base URL directly).
 2. Whether the key is still valid / has billing (`401` vs connection refused).
 3. Whether the server process is actually up (`ss -lntp | grep <port>` on the host).
 

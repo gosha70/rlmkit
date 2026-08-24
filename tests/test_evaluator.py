@@ -2,11 +2,11 @@
 
 import pytest
 
-from rlmkit import MockLLMClient
-from rlmkit.strategies.base import StrategyResult
-from rlmkit.strategies.direct import DirectStrategy
-from rlmkit.strategies.evaluator import EvaluationResult, MultiStrategyEvaluator
-from rlmkit.strategies.rlm_strategy import RLMStrategy
+from rlmstudio import MockLLMClient
+from rlmstudio.strategies.base import StrategyResult
+from rlmstudio.strategies.direct import DirectStrategy
+from rlmstudio.strategies.evaluator import EvaluationResult, MultiStrategyEvaluator
+from rlmstudio.strategies.rlm_strategy import RLMStrategy
 
 # ---------------------------------------------------------------------------
 # Helpers

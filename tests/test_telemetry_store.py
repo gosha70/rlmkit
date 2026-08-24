@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from rlmkit.telemetry.store import TelemetryStore
+from rlmstudio.telemetry.store import TelemetryStore
 
 
 @pytest.fixture
@@ -284,11 +284,11 @@ class TestExportJsonl:
         assert metadata["max_iterations"] == len(lines) - 1  # == 1 here
         assert metadata["environment_type"] == "subprocess"
         # Non-standard extras are allowed (upstream ignores unknown fields)
-        assert metadata["rlmkit_query"] == "test query"
-        assert metadata["rlmkit_total_tokens"] == 100
+        assert metadata["rlm_studio_query"] == "test query"
+        assert metadata["rlm_studio_total_tokens"] == 100
         # The raw step count is still available as an extra, for
         # cross-referencing with the telemetry store.
-        assert metadata["rlmkit_raw_steps_count"] == 1
+        assert metadata["rlm_studio_raw_steps_count"] == 1
 
     def test_iteration_line_shape(self, store: TelemetryStore) -> None:
         """Each iteration line must have the upstream RLMIteration fields."""
@@ -386,7 +386,7 @@ class TestExportJsonl:
         # guard for the "metadata says 3, body has 2" inconsistency.
         metadata = json.loads(lines[0])
         assert metadata["max_iterations"] == 2
-        assert metadata["rlmkit_raw_steps_count"] == 3
+        assert metadata["rlm_studio_raw_steps_count"] == 3
 
         iter0 = json.loads(lines[1])
         # Iter 0 should have 2 code blocks: one from inspect (empty result),
@@ -649,21 +649,21 @@ class TestServerIntegration:
     """Telemetry store wired into AppState."""
 
     def test_appstate_has_telemetry(self) -> None:
-        from rlmkit.server.dependencies import AppState
+        from rlmstudio.server.dependencies import AppState
 
         state = AppState(load_from_disk=False)
         assert hasattr(state, "telemetry")
         assert isinstance(state.telemetry, TelemetryStore)
 
     def test_reset_state_has_telemetry(self) -> None:
-        from rlmkit.server.dependencies import get_state, reset_state
+        from rlmstudio.server.dependencies import get_state, reset_state
 
         reset_state()
         state = get_state()
         assert isinstance(state.telemetry, TelemetryStore)
 
     def test_save_executions_is_noop(self) -> None:
-        from rlmkit.server.dependencies import AppState
+        from rlmstudio.server.dependencies import AppState
 
         state = AppState(load_from_disk=False)
         # Should not raise
@@ -676,9 +676,9 @@ class TestRecordTelemetryHelper:
     def test_structured_provider_and_model_recorded(self) -> None:
         from datetime import datetime, timezone
 
-        from rlmkit.application.dto import RunResultDTO
-        from rlmkit.server.dependencies import AppState, ExecutionRecord
-        from rlmkit.server.routes.chat import _record_telemetry
+        from rlmstudio.application.dto import RunResultDTO
+        from rlmstudio.server.dependencies import AppState, ExecutionRecord
+        from rlmstudio.server.routes.chat import _record_telemetry
 
         state = AppState(load_from_disk=False)
         execution = ExecutionRecord(
@@ -728,9 +728,9 @@ class TestRecordTelemetryHelper:
         ExecutionTrace action types; the last successful step becomes 'final'."""
         from datetime import datetime, timezone
 
-        from rlmkit.application.dto import RunResultDTO
-        from rlmkit.server.dependencies import AppState, ExecutionRecord
-        from rlmkit.server.routes.chat import _record_telemetry
+        from rlmstudio.application.dto import RunResultDTO
+        from rlmstudio.server.dependencies import AppState, ExecutionRecord
+        from rlmstudio.server.routes.chat import _record_telemetry
 
         state = AppState(load_from_disk=False)
         execution = ExecutionRecord(
@@ -765,9 +765,9 @@ class TestRecordTelemetryHelper:
         """On a failed run, the last step is NOT promoted to 'final'."""
         from datetime import datetime, timezone
 
-        from rlmkit.application.dto import RunResultDTO
-        from rlmkit.server.dependencies import AppState, ExecutionRecord
-        from rlmkit.server.routes.chat import _record_telemetry
+        from rlmstudio.application.dto import RunResultDTO
+        from rlmstudio.server.dependencies import AppState, ExecutionRecord
+        from rlmstudio.server.routes.chat import _record_telemetry
 
         state = AppState(load_from_disk=False)
         execution = ExecutionRecord(
@@ -806,8 +806,8 @@ class TestExecutionsListingSortOrder:
 
         from fastapi.testclient import TestClient
 
-        from rlmkit.server.app import app
-        from rlmkit.server.dependencies import ExecutionRecord, get_state, reset_state
+        from rlmstudio.server.app import app
+        from rlmstudio.server.dependencies import ExecutionRecord, get_state, reset_state
 
         reset_state()
         state = get_state()
@@ -853,8 +853,8 @@ class TestExecutionsListingSortOrder:
     def test_limit_respected_after_merge(self) -> None:
         from fastapi.testclient import TestClient
 
-        from rlmkit.server.app import app
-        from rlmkit.server.dependencies import get_state, reset_state
+        from rlmstudio.server.app import app
+        from rlmstudio.server.dependencies import get_state, reset_state
 
         reset_state()
         state = get_state()
@@ -889,10 +889,10 @@ class TestGetTraceFromTelemetry:
 
         from fastapi.testclient import TestClient
 
-        from rlmkit.application.dto import RunResultDTO
-        from rlmkit.server.app import app
-        from rlmkit.server.dependencies import ExecutionRecord, get_state, reset_state
-        from rlmkit.server.routes.chat import _record_telemetry
+        from rlmstudio.application.dto import RunResultDTO
+        from rlmstudio.server.app import app
+        from rlmstudio.server.dependencies import ExecutionRecord, get_state, reset_state
+        from rlmstudio.server.routes.chat import _record_telemetry
 
         reset_state()
         state = get_state()
@@ -954,8 +954,8 @@ class TestGetTraceFromTelemetry:
         """Unknown execution_id returns 404 from the telemetry-backed path."""
         from fastapi.testclient import TestClient
 
-        from rlmkit.server.app import app
-        from rlmkit.server.dependencies import reset_state
+        from rlmstudio.server.app import app
+        from rlmstudio.server.dependencies import reset_state
 
         reset_state()
 

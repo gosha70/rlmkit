@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.dto import LLMResponseDTO, StreamChunk
-from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+from rlmstudio.application.dto import LLMResponseDTO, StreamChunk
+from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
 
 def _chunk(content: str | None, *, finish_reason: str | None = None, usage=None, model="gpt-4o"):
@@ -101,7 +101,7 @@ class TestCompleteTTFT:
 
         adapter = LiteLLMAdapter(model="gpt-4o")
         with patch(
-            "rlmkit.infrastructure.llm.litellm_adapter.time.monotonic",
+            "rlmstudio.infrastructure.llm.litellm_adapter.time.monotonic",
             lambda: next(times),
         ):
             result = adapter.complete([{"role": "user", "content": "?"}])
@@ -129,8 +129,8 @@ class TestCompleteTTFT:
 
     @patch("litellm.completion")
     def test_complete_flag_off_falls_back_to_non_streaming(self, mock_completion, monkeypatch):
-        """Panic lever: RLMKIT_STREAMED_COMPLETE=0 skips streaming; ttft_ms is None."""
-        monkeypatch.setenv("RLMKIT_STREAMED_COMPLETE", "0")
+        """Panic lever: RLM_STUDIO_STREAMED_COMPLETE=0 skips streaming; ttft_ms is None."""
+        monkeypatch.setenv("RLM_STUDIO_STREAMED_COMPLETE", "0")
 
         # Non-streaming mock: plain object with .choices/.usage/.model.
         mock_completion.return_value = SimpleNamespace(

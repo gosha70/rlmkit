@@ -17,8 +17,8 @@ from collections.abc import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.application.dto import RunResultDTO
-from rlmkit.application.sandbox_vars import (
+from rlmstudio.application.dto import RunResultDTO
+from rlmstudio.application.sandbox_vars import (
     TRACE_KEY_ELAPSED_SECONDS,
     TRACE_KEY_INPUT_TOKENS,
     TRACE_KEY_MODEL,
@@ -26,14 +26,14 @@ from rlmkit.application.sandbox_vars import (
     TRACE_KEY_ROLE,
     TRACE_KEY_STEP,
 )
-from rlmkit.server.app import create_app
-from rlmkit.server.dependencies import (
+from rlmstudio.server.app import create_app
+from rlmstudio.server.dependencies import (
     ExecutionRecord,
     SessionRecord,
     get_state,
     reset_state,
 )
-from rlmkit.server.routes.chat import _record_telemetry
+from rlmstudio.server.routes.chat import _record_telemetry
 
 pytestmark = pytest.mark.e2e
 
@@ -143,7 +143,7 @@ class TestJudgeUnchanged:
         judge_src = (
             pathlib.Path(__file__).resolve().parent.parent.parent
             / "src"
-            / "rlmkit"
+            / "rlmstudio"
             / "server"
             / "judge.py"
         )

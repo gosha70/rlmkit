@@ -1,6 +1,6 @@
 """Tests for RestrictedSandboxAdapter (RestrictedPython-based sandbox)."""
 
-from rlmkit.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
+from rlmstudio.infrastructure.sandbox.restricted_sandbox import RestrictedSandboxAdapter
 
 # ---------------------------------------------------------------------------
 # Safe operations

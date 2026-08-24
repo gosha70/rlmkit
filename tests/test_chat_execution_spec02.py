@@ -24,9 +24,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from rlmkit.server.app import app
-from rlmkit.server.dependencies import AppState, SessionRecord, get_state, reset_state
-from rlmkit.server.models import (
+from rlmstudio.server.app import app
+from rlmstudio.server.dependencies import AppState, SessionRecord, get_state, reset_state
+from rlmstudio.server.models import (
     ChatProviderConfig,
     RuntimeSettings,
 )
@@ -406,7 +406,7 @@ class TestAssistantMessageFields:
         mock_result.trace = []
 
         with patch(
-            "rlmkit.application.use_cases.run_direct.RunDirectUseCase.execute",
+            "rlmstudio.application.use_cases.run_direct.RunDirectUseCase.execute",
             return_value=mock_result,
         ):
             resp = client.post(

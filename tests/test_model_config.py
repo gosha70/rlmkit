@@ -6,7 +6,7 @@ This tests the Bet 4 implementation - using different models for root vs sub-age
 
 import pytest
 
-from rlmkit.core.model_config import ModelConfig, ModelMetrics
+from rlmstudio.core.model_config import ModelConfig, ModelMetrics
 
 
 class TestModelConfig:

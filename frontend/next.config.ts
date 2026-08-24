@@ -9,7 +9,7 @@ import type { NextConfig } from "next";
 //
 // * Bundle (`npm run build:bundle`, BUNDLE=1): produces a fully static
 //   export under `frontend/out/`, intended to be copied into
-//   `src/rlmkit/_ui/` and served by FastAPI at `/studio` in the same
+//   `src/rlmstudio/_ui/` and served by FastAPI at `/studio` in the same
 //   process as the API. No dev server, no rewrites — every request
 //   is same-origin, so the rewrites are unnecessary.
 //

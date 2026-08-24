@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from rlmkit.application.dto import LLMResponseDTO, RunConfigDTO
+from rlmstudio.application.dto import LLMResponseDTO, RunConfigDTO
 
 # ---------------------------------------------------------------------------
 # Fake adapters for unit testing (no real LLM / sandbox)
@@ -97,7 +97,7 @@ class FakeEventEmitter:
 class TestRLMExecute:
     def test_sync_execute_returns_final_answer(self) -> None:
         """RLM sync execute finds FINAL: answer."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(["FINAL: The answer is 42"])
         sandbox = FakeSandbox()
@@ -112,7 +112,7 @@ class TestRLMExecute:
 
     def test_sync_execute_runs_code_then_final(self) -> None:
         """RLM sync execute runs code, then finds FINAL on step 2."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(
             [
@@ -131,7 +131,7 @@ class TestRLMExecute:
 
     def test_sync_execute_respects_budget(self) -> None:
         """RLM stops when budget is exceeded."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         # LLM always returns code, never FINAL
         llm = FakeLLM(["```python\nx = 1\n```"] * 20)
@@ -152,7 +152,7 @@ class TestRLMExecuteAsync:
     @pytest.mark.asyncio
     async def test_async_execute_with_emitter(self) -> None:
         """execute_async emits step and metrics events."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(["FINAL: async answer"])
         sandbox = FakeSandbox()
@@ -170,7 +170,7 @@ class TestRLMExecuteAsync:
     @pytest.mark.asyncio
     async def test_async_execute_code_then_final(self) -> None:
         """execute_async runs code exploration then returns final."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(
             [
@@ -196,7 +196,7 @@ class TestRLMExecuteAsync:
     @pytest.mark.asyncio
     async def test_async_execute_without_emitter(self) -> None:
         """execute_async works without event_emitter (REST path)."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(["FINAL: no emitter answer"])
         sandbox = FakeSandbox()
@@ -210,7 +210,7 @@ class TestRLMExecuteAsync:
     @pytest.mark.asyncio
     async def test_async_budget_exceeded(self) -> None:
         """execute_async returns warning (not error) when budget exceeded."""
-        from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+        from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
         llm = FakeLLM(["```python\nx = 1\n```"] * 10)
         sandbox = FakeSandbox()

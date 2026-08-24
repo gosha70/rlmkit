@@ -1,13 +1,20 @@
 """Tests for SQLite Database connection manager."""
 
-from rlmkit.storage.database import _SCHEMA_VERSION, Database, get_default_db_path
+from rlmstudio.storage.database import _SCHEMA_VERSION, Database, get_default_db_path
 
 
 class TestGetDefaultDbPath:
-    def test_returns_path_under_home(self):
+    def test_returns_path_under_home(self, monkeypatch):
+        # conftest overrides RLM_STUDIO_DIR for isolation; clear it to test
+        # the default resolution.
+        monkeypatch.delenv("RLM_STUDIO_DIR", raising=False)
         p = get_default_db_path()
         assert p.name == "conversations.db"
-        assert ".rlmkit" in p.parts
+        assert ".rlm-studio" in p.parts
+
+    def test_honours_state_dir_override(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("RLM_STUDIO_DIR", str(tmp_path))
+        assert get_default_db_path() == tmp_path / "conversations.db"
 
 
 class TestDatabase:

@@ -5,7 +5,7 @@
 import json
 from types import SimpleNamespace
 
-from rlmkit.ui.services.profile_store import (
+from rlmstudio.ui.services.profile_store import (
     BUILTIN_PROFILES,
     SYSTEM_PROMPT_TEMPLATE_NAMES,
     SYSTEM_PROMPT_TEMPLATES,
@@ -316,8 +316,8 @@ class TestReloadSystemPromptTemplates:
         assert "Default" in result
 
     def test_reload_clears_prompt_caches(self):
-        """reload clears the prompt-rendering caches in rlmkit.prompts.templates."""
-        from rlmkit.prompts.templates import _template_cache
+        """reload clears the prompt-rendering caches in rlmstudio.prompts.templates."""
+        from rlmstudio.prompts.templates import _template_cache
 
         # Seed a fake cache entry
         _template_cache["__test_sentinel__"] = "stale"

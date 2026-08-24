@@ -1,6 +1,6 @@
-# Releasing RLMKit
+# Releasing RLM Studio
 
-RLMKit releases are cut by the project maintainer following a manual playbook. This document is the public-facing pointer to the artifacts that travel with each release.
+RLM Studio releases are cut by the project maintainer following a manual playbook. This document is the public-facing pointer to the artifacts that travel with each release.
 
 ## Where to look
 
@@ -14,33 +14,33 @@ RLMKit releases are cut by the project maintainer following a manual playbook. T
 For each release, the maintainer:
 
 1. Confirms every CI gate passes on `master` and runs a manual test plan on a fresh checkout.
-2. Builds the bundled Studio UI so `rlmkit studio` ships a working one-click experience:
+2. Builds the bundled Studio UI so `rlm-studio studio` ships a working one-click experience:
    ```bash
    cd frontend
    npm install
    npm run build:bundle             # produces frontend/out/
 
-   # Wipe the previous bundle contents but PRESERVE ../src/rlmkit/_ui/__init__.py.
-   # That file is what makes `rlmkit._ui` a discovered package under
-   # [tool.setuptools.packages.find] — without it, `rlmkit._ui` is not
-   # found, `"rlmkit._ui" = ["**/*"]` in package-data has nothing to
+   # Wipe the previous bundle contents but PRESERVE ../src/rlmstudio/_ui/__init__.py.
+   # That file is what makes `rlmstudio._ui` a discovered package under
+   # [tool.setuptools.packages.find] — without it, `rlmstudio._ui` is not
+   # found, `"rlmstudio._ui" = ["**/*"]` in package-data has nothing to
    # attach to, and the wheel ships without the bundled UI even though
    # the source tree looks correct locally.
-   find ../src/rlmkit/_ui -mindepth 1 -not -name __init__.py -delete
-   cp -r out/. ../src/rlmkit/_ui/   # the wheel ships this directory
+   find ../src/rlmstudio/_ui -mindepth 1 -not -name __init__.py -delete
+   cp -r out/. ../src/rlmstudio/_ui/   # the wheel ships this directory
 
    # Verify the package marker survived and the bundle landed.
-   test -f ../src/rlmkit/_ui/__init__.py
-   test -f ../src/rlmkit/_ui/index.html
+   test -f ../src/rlmstudio/_ui/__init__.py
+   test -f ../src/rlmstudio/_ui/index.html
    ```
    `build:bundle` (not `build`) is the right script — `build` produces a Next.js server build (`.next/`), `build:bundle` sets `BUNDLE=1` and emits a static export under `frontend/out/`.
 3. Opens a release PR that bumps `pyproject.toml`, promotes the `[Unreleased]` section in `CHANGELOG.md` to a dated version header, and updates any docs whose user-facing copy changed.
-4. After merge, pushes an annotated tag `vX.Y.Z` to `master` and publishes a GitHub release with the wheel and sdist attached.
-5. Verifies the published artifacts install cleanly on Python 3.10, 3.11, and 3.12 from a fresh environment before announcing.
+4. After merge, pushes an annotated tag `vX.Y.Z` to `master`. That tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which rebuilds the bundle + wheel + sdist, smoke-installs the wheel, publishes to **PyPI** via a trusted publisher (OIDC — no tokens in the repo), pushes the sandbox image to `ghcr.io/gosha70/rlm-studio-sandbox:<version>` (+ `latest`), and attaches `dist/` to the workflow run. A pre-release tag `vX.Y.Z-rc.N` publishes to **TestPyPI** instead (bump `pyproject.toml` to `X.Y.ZrcN` if you need more than one rc — an index refuses to overwrite a version). The maintainer then publishes the GitHub release page by hand with the same wheel and sdist attached.
+5. Verifies the published artifacts install cleanly on Python 3.11, 3.12, and 3.13 from a fresh environment before announcing (CI's `wheel-smoke` job already does this on every push, including booting `rlm-studio studio` against the bundled UI).
 
-Between releases, `src/rlmkit/_ui/` is intentionally empty (only the `__init__.py` placeholder is tracked) so the dev workflow stays clean. The `_ui/` payload is regenerated at every release cut.
+Between releases, `src/rlmstudio/_ui/` is intentionally empty (only the `__init__.py` placeholder is tracked) so the dev workflow stays clean. The `_ui/` payload is regenerated at every release cut.
 
-CI gates and the seven enforced jobs are defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+CI gates — lint (incl. a grep gate against legacy `rlmkit` module paths), typecheck, backend tests with coverage, frontend, security (bandit + pip-audit over the `all` + `dev` surface), docker sandbox, build check, and `wheel-smoke` (bundle → wheel → fresh venv per Python 3.11/3.12/3.13 → `rlm-studio studio` serves `/health` and `/studio/`) — are defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## For contributors
 

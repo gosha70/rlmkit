@@ -1,10 +1,10 @@
 """Tests for strategy protocol conformance and base types."""
 
-from rlmkit import MockLLMClient
-from rlmkit.core.budget import TokenUsage
-from rlmkit.strategies.base import LLMStrategy, StrategyResult
-from rlmkit.strategies.direct import DirectStrategy
-from rlmkit.strategies.rlm_strategy import RLMStrategy
+from rlmstudio import MockLLMClient
+from rlmstudio.core.budget import TokenUsage
+from rlmstudio.strategies.base import LLMStrategy, StrategyResult
+from rlmstudio.strategies.direct import DirectStrategy
+from rlmstudio.strategies.rlm_strategy import RLMStrategy
 
 
 class TestStrategyResult:

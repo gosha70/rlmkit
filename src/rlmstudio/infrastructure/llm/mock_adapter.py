@@ -1,0 +1,80 @@
+"""Mock LLM adapter for testing: implements LLMPort with canned responses."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator, Iterator
+
+from rlmstudio.application.dto import LLMResponseDTO, StreamChunk
+
+
+class MockLLMAdapter:
+    """Mock adapter that returns pre-programmed responses.
+
+    Useful for unit-testing use cases without hitting real LLM APIs.
+
+    Args:
+        responses: Ordered list of response strings. After the list is
+            exhausted the last response is repeated.
+    """
+
+    def __init__(self, responses: list[str]) -> None:
+        if not responses:
+            raise ValueError("MockLLMAdapter requires at least one response")
+        self._responses = responses
+        self._call_count = 0
+        self.call_history: list[list[dict[str, str]]] = []
+
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        """Return the next canned response.
+
+        Args:
+            messages: Chat messages (recorded but ignored).
+
+        Returns:
+            LLMResponseDTO with the canned content.
+        """
+        self.call_history.append(list(messages))
+        idx = min(self._call_count, len(self._responses) - 1)
+        text = self._responses[idx]
+        self._call_count += 1
+        return LLMResponseDTO(content=text, model="mock")
+
+    def complete_stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
+        """Yield the next canned response as a single chunk."""
+        result = self.complete(messages)
+        yield result.content
+
+    def count_tokens(self, text: str) -> int:
+        """Simple heuristic token count."""
+        return max(1, len(text) // 4)
+
+    def get_pricing(self) -> dict[str, float]:
+        """Mock pricing (free)."""
+        return {"input_cost_per_1m": 0.0, "output_cost_per_1m": 0.0}
+
+    async def complete_async(self, messages: list[dict[str, str]]) -> LLMResponseDTO:
+        """Async completion delegating to the sync method."""
+        return await asyncio.to_thread(self.complete, messages)
+
+    async def complete_stream_async(
+        self, messages: list[dict[str, str]]
+    ) -> AsyncIterator[StreamChunk]:
+        """Yield one ``StreamChunk`` per character plus a terminal chunk.
+
+        The terminal chunk carries an ``LLMResponseDTO`` with synthetic
+        but deterministic telemetry (``ttft_ms=1``, ``decode_ms`` equal
+        to ``max(0, len(content) - 1)``) so tests can assert exact
+        values.
+        """
+        response = await self.complete_async(messages)
+        for char in response.content:
+            yield StreamChunk(delta=char, is_final=False)
+        response.ttft_ms = 1
+        response.decode_ms = max(0, len(response.content) - 1)
+        yield StreamChunk(delta="", is_final=True, response=response)
+
+    def reset(self) -> None:
+        """Reset call count and history."""
+        self._call_count = 0
+        self.call_history = []

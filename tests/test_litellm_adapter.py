@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.application.dto import LLMResponseDTO
-from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+from rlmstudio.application.dto import LLMResponseDTO
+from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock litellm responses
@@ -579,14 +579,14 @@ class TestPublicClientLiteLLM:
     """Test that the public client correctly wires up the LiteLLM adapter."""
 
     def test_client_creates_litellm_adapter(self):
-        from rlmkit.public.client import RLMKitClient
+        from rlmstudio.public.client import RLMKitClient
 
         client = RLMKitClient(provider="litellm", model="gpt-4o")
         assert type(client._llm).__name__ == "LiteLLMAdapter"
         assert client._llm.active_model == "gpt-4o"
 
     def test_client_creates_two_model_litellm(self):
-        from rlmkit.public.client import RLMKitClient
+        from rlmstudio.public.client import RLMKitClient
 
         client = RLMKitClient(
             provider="litellm",
@@ -599,7 +599,7 @@ class TestPublicClientLiteLLM:
         assert client._llm.recursive_model == "gpt-4o-mini"
 
     def test_client_mock_still_works(self):
-        from rlmkit.public.client import RLMKitClient
+        from rlmstudio.public.client import RLMKitClient
 
         client = RLMKitClient(provider="mock")
         assert type(client._llm).__name__ == "MockLLMAdapter"

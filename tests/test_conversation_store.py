@@ -4,15 +4,15 @@ import json
 
 import pytest
 
-from rlmkit.storage.conversation_store import (
+from rlmstudio.storage.conversation_store import (
     ConversationStore,
     _deserialize_comparison,
     _deserialize_metrics,
     _deserialize_response,
     _serialize_optional,
 )
-from rlmkit.storage.database import Database
-from rlmkit.ui.services.models import (
+from rlmstudio.storage.database import Database
+from rlmstudio.ui.services.models import (
     ChatMessage,
     ComparisonMetrics,
     ExecutionMetrics,

@@ -154,5 +154,5 @@ Use vLLM when you want:
 - instruct/chat model serving
 
 Use **host Ollama** instead when you want:
-- simpler RLMKit integration
+- simpler RLM Studio integration
 - direct Ollama-based local serving

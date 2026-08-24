@@ -1,8 +1,8 @@
 # Test simple math that shouldn't need code execution
 
-from rlmkit.config import ExecutionConfig, RLMConfig
-from rlmkit.core.rlm import RLM
-from rlmkit.llm import MockLLMClient
+from rlmstudio.config import ExecutionConfig, RLMConfig
+from rlmstudio.core.rlm import RLM
+from rlmstudio.llm import MockLLMClient
 
 # Test 1: Simple math, no code needed
 print("Test 1: Simple math - direct answer (no code)")

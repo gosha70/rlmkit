@@ -2,10 +2,10 @@
 
 import pytest
 
-from rlmkit.storage.database import Database
-from rlmkit.storage.vector_store import VectorStore
-from rlmkit.strategies.base import LLMStrategy, StrategyResult
-from rlmkit.strategies.indexed_rag import IndexedRAGStrategy
+from rlmstudio.storage.database import Database
+from rlmstudio.storage.vector_store import VectorStore
+from rlmstudio.strategies.base import LLMStrategy, StrategyResult
+from rlmstudio.strategies.indexed_rag import IndexedRAGStrategy
 
 # ---------------------------------------------------------------------------
 # Mocks

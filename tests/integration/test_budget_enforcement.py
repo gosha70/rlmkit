@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from rlmkit import (
+from rlmstudio import (
     RLM,
     BudgetExceeded,
     BudgetLimits,

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from rlmkit.application.services.history_context import (
+from rlmstudio.application.services.history_context import (
     HistoryAssemblyResult,
     HistoryTurn,
     assemble_inprompt_history_within_budget,
@@ -472,27 +472,27 @@ class TestComposeInpromptPrefix:
 
 class TestComputeHistoryCapBytes:
     def test_env_override_int(self, monkeypatch):
-        monkeypatch.setenv("RLMKIT_HISTORY_MAX_BYTES", "1048576")  # 1 MB
+        monkeypatch.setenv("RLM_STUDIO_HISTORY_MAX_BYTES", "1048576")  # 1 MB
         assert compute_history_cap_bytes() == 1_048_576
 
     def test_env_override_non_int_ignored(self, monkeypatch):
-        monkeypatch.setenv("RLMKIT_HISTORY_MAX_BYTES", "not-an-int")
+        monkeypatch.setenv("RLM_STUDIO_HISTORY_MAX_BYTES", "not-an-int")
         # Falls back to auto-derived value; must be in [256MB, 4GB]
         cap = compute_history_cap_bytes()
         assert 256 * 1024 * 1024 <= cap <= 4 * 1024 * 1024 * 1024
 
     def test_env_override_zero_clamps_to_minimum_of_one(self, monkeypatch):
-        monkeypatch.setenv("RLMKIT_HISTORY_MAX_BYTES", "0")
+        monkeypatch.setenv("RLM_STUDIO_HISTORY_MAX_BYTES", "0")
         # max(1, 0) = 1
         assert compute_history_cap_bytes() == 1
 
     def test_autoderive_within_bounds(self, monkeypatch):
-        monkeypatch.delenv("RLMKIT_HISTORY_MAX_BYTES", raising=False)
+        monkeypatch.delenv("RLM_STUDIO_HISTORY_MAX_BYTES", raising=False)
         cap = compute_history_cap_bytes()
         assert 256 * 1024 * 1024 <= cap <= 4 * 1024 * 1024 * 1024
 
     def test_tiny_ram_floors_at_256mb(self, monkeypatch):
-        monkeypatch.delenv("RLMKIT_HISTORY_MAX_BYTES", raising=False)
+        monkeypatch.delenv("RLM_STUDIO_HISTORY_MAX_BYTES", raising=False)
         # Pretend the host only reports 1 GB RAM → 1 GB * 0.055 ≈ 56 MB → floor
         with patch("os.sysconf") as mock_sysconf:
             mock_sysconf.side_effect = lambda key: {
@@ -503,7 +503,7 @@ class TestComputeHistoryCapBytes:
         assert cap == 256 * 1024 * 1024
 
     def test_huge_ram_ceilings_at_4gb(self, monkeypatch):
-        monkeypatch.delenv("RLMKIT_HISTORY_MAX_BYTES", raising=False)
+        monkeypatch.delenv("RLM_STUDIO_HISTORY_MAX_BYTES", raising=False)
         # Pretend the host has 256 GB RAM → 256 * 0.055 = ~14 GB → ceiling
         with patch("os.sysconf") as mock_sysconf:
             mock_sysconf.side_effect = lambda key: {
@@ -515,7 +515,7 @@ class TestComputeHistoryCapBytes:
 
     def test_mac_36gb_yields_roughly_2gb(self, monkeypatch):
         """The user's reference point: 36 GB Mac → ~2 GB cap."""
-        monkeypatch.delenv("RLMKIT_HISTORY_MAX_BYTES", raising=False)
+        monkeypatch.delenv("RLM_STUDIO_HISTORY_MAX_BYTES", raising=False)
         with patch("os.sysconf") as mock_sysconf:
             mock_sysconf.side_effect = lambda key: {
                 "SC_PHYS_PAGES": 9_437_184,  # 36 GB / 4096
@@ -526,7 +526,7 @@ class TestComputeHistoryCapBytes:
         assert 1.9 * 1024**3 < cap < 2.1 * 1024**3
 
     def test_sysconf_failure_falls_back(self, monkeypatch):
-        monkeypatch.delenv("RLMKIT_HISTORY_MAX_BYTES", raising=False)
+        monkeypatch.delenv("RLM_STUDIO_HISTORY_MAX_BYTES", raising=False)
         with patch("os.sysconf") as mock_sysconf:
             mock_sysconf.side_effect = OSError("not supported")
             cap = compute_history_cap_bytes()

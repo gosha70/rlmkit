@@ -8,12 +8,12 @@ from typing import Any
 
 import pytest
 
-from rlmkit.application.dto import (
+from rlmstudio.application.dto import (
     ExecutionResultDTO,
     LLMResponseDTO,
     RunConfigDTO,
 )
-from rlmkit.application.use_cases.run_matrix_comparison import (
+from rlmstudio.application.use_cases.run_matrix_comparison import (
     MatrixComparisonResultDTO,
     MatrixSlotDTO,
     RunMatrixComparisonUseCase,
@@ -443,7 +443,7 @@ class TestConfigIsolation:
     def test_extra_dict_not_shared_between_slots(self) -> None:
         """Each slot must get its own ``config.extra`` copy so mutations
         in one slot don't leak into another (e.g. RAG collection key)."""
-        from rlmkit.application.use_cases.run_matrix_comparison import (
+        from rlmstudio.application.use_cases.run_matrix_comparison import (
             _copy_config_for_slot,
         )
 

@@ -1,0 +1,168 @@
+name: Release
+
+# Triggered by the maintainer pushing an annotated tag (playbook:
+# doc_internal/release/steps/04-publish-and-distribute.md — the release
+# itself stays MANUAL; this workflow is the automatable sub-step).
+#
+#   vX.Y.Z-rc.N  → build, publish to TestPyPI, push sandbox image with the rc tag
+#   vX.Y.Z       → build, publish to PyPI, push sandbox image with the version tag + latest
+#
+# Publishing uses PyPI/TestPyPI *trusted publishers* (OIDC) — no long-lived
+# tokens live in this repo. One-time setup on both indexes:
+#   Owner: gosha70 · Repository: rlm-studio · Workflow: release.yml ·
+#   Environment: pypi (or testpypi)
+# The wheel/sdist are also attached to the workflow run as artifacts so the
+# maintainer can upload them to the GitHub release page by hand.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build wheel + sdist (bundled UI)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Tag metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"                # e.g. v1.0.0 or v1.0.0-rc.1
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${TAG}" == *-rc.* || "${TAG}" == *-rc* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Tag must match pyproject version
+        run: |
+          PY_VERSION="$(uv run --no-project python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+          TAG_VERSION="${{ steps.meta.outputs.version }}"
+          # rc tags: v1.0.0-rc.1 must match pyproject 1.0.0rc1 (PEP 440) or 1.0.0
+          NORMALIZED="$(echo "$TAG_VERSION" | sed -E 's/-rc\.?([0-9]+)/rc\1/')"
+          if [[ "$PY_VERSION" != "$NORMALIZED" && "$PY_VERSION" != "${TAG_VERSION%%-rc*}" ]]; then
+            echo "::error::tag ${TAG_VERSION} does not match pyproject version ${PY_VERSION}"; exit 1
+          fi
+      - name: Build the bundled Studio UI (static export)
+        run: |
+          npm ci --prefix frontend
+          npm run build:bundle --prefix frontend
+          test -f frontend/out/index.html
+      - name: Ship the bundle inside the package
+        run: |
+          find src/rlmstudio/_ui -mindepth 1 -not -name __init__.py -delete
+          cp -r frontend/out/. src/rlmstudio/_ui/
+          test -f src/rlmstudio/_ui/__init__.py
+          test -f src/rlmstudio/_ui/index.html
+      - name: uv build
+        run: uv build
+      - name: Verify wheel contents
+        run: |
+          uv run --no-project python - <<'PY'
+          import glob, zipfile
+          whl = glob.glob("dist/*.whl")[0]
+          z = zipfile.ZipFile(whl); names = z.namelist()
+          assert "rlmstudio/_ui/index.html" in names, "bundled UI missing"
+          assert not [n for n in names if n.startswith("rlmkit/")], "legacy paths in wheel"
+          ep = [n for n in names if n.endswith("entry_points.txt")][0]
+          assert "rlm-studio = rlmstudio.cli.main:main" in z.read(ep).decode()
+          print("wheel OK:", whl)
+          PY
+      - name: Fresh-venv smoke of the built wheel
+        run: |
+          uv venv --python 3.12 /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python "$(ls dist/*.whl)[studio]"
+          /tmp/smoke/bin/rlm-studio version
+          /tmp/smoke/bin/python -c "import rlmstudio; from rlmstudio import interact; import rlmstudio.server.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish-testpypi:
+    name: Publish to TestPyPI (rc tags)
+    needs: build
+    if: needs.build.outputs.prerelease == 'true'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write   # OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          print-hash: true
+
+  publish-pypi:
+    name: Publish to PyPI (release tags)
+    needs: build
+    if: needs.build.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+
+  sandbox-image:
+    name: Push sandbox image to GHCR
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/rlm-studio-sandbox"
+          TAGS="${IMAGE}:${{ needs.build.outputs.version }}"
+          if [[ "${{ needs.build.outputs.prerelease }}" == "false" ]]; then
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker
+          file: docker/Dockerfile.sandbox
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

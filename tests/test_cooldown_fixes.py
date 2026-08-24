@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rlmkit.application.dto import ExecutionResultDTO, LLMResponseDTO, RunConfigDTO
-from rlmkit.application.use_cases.run_rlm import RunRLMUseCase
+from rlmstudio.application.dto import ExecutionResultDTO, LLMResponseDTO, RunConfigDTO
+from rlmstudio.application.use_cases.run_rlm import RunRLMUseCase
 
 # ---------------------------------------------------------------------------
 # MAJOR-1: restricted_sandbox.py imports SecurityViolationError from domain
@@ -19,22 +19,22 @@ class TestMajor1DomainImport:
 
     def test_restricted_sandbox_imports_domain_exception(self):
         """restricted_sandbox should import SecurityViolationError from domain."""
-        import rlmkit.infrastructure.sandbox.restricted_sandbox as mod
+        import rlmstudio.infrastructure.sandbox.restricted_sandbox as mod
 
         # The module should reference SecurityViolationError from domain
-        from rlmkit.domain.exceptions import SecurityViolationError
+        from rlmstudio.domain.exceptions import SecurityViolationError
 
         assert hasattr(mod, "SecurityViolationError")
         assert mod.SecurityViolationError is SecurityViolationError
 
     def test_restricted_sandbox_does_not_import_core_errors(self):
-        """restricted_sandbox should NOT import from rlmkit.core.errors."""
+        """restricted_sandbox should NOT import from rlmstudio.core.errors."""
         import inspect
 
-        import rlmkit.infrastructure.sandbox.restricted_sandbox as mod
+        import rlmstudio.infrastructure.sandbox.restricted_sandbox as mod
 
         source = inspect.getsource(mod)
-        assert "from rlmkit.core.errors" not in source
+        assert "from rlmstudio.core.errors" not in source
 
 
 # ---------------------------------------------------------------------------
@@ -46,18 +46,18 @@ class TestMajor2DockerSandboxAdapter:
     """Verify DockerSandboxAdapter implements SandboxPort protocol."""
 
     def test_adapter_exists(self):
-        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+        from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
             DockerSandboxAdapter,
         )
 
         assert DockerSandboxAdapter is not None
 
     def test_adapter_exported_from_package(self):
-        from rlmkit.infrastructure.sandbox import DockerSandboxAdapter
+        from rlmstudio.infrastructure.sandbox import DockerSandboxAdapter
 
         assert DockerSandboxAdapter is not None
 
-    @patch("rlmkit.envs.sandbox.DockerExecutor")
+    @patch("rlmstudio.envs.sandbox.DockerExecutor")
     def test_execute_returns_execution_result_dto(self, MockExecutor):
         mock_instance = MagicMock()
         mock_instance.execute.return_value = {
@@ -67,7 +67,7 @@ class TestMajor2DockerSandboxAdapter:
         }
         MockExecutor.return_value = mock_instance
 
-        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+        from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
             DockerSandboxAdapter,
         )
 
@@ -80,7 +80,7 @@ class TestMajor2DockerSandboxAdapter:
         assert result.stdout == "hello world"
         assert result.exception is None
 
-    @patch("rlmkit.envs.sandbox.DockerExecutor")
+    @patch("rlmstudio.envs.sandbox.DockerExecutor")
     def test_execute_handles_error(self, MockExecutor):
         mock_instance = MagicMock()
         mock_instance.execute.return_value = {
@@ -90,7 +90,7 @@ class TestMajor2DockerSandboxAdapter:
         }
         MockExecutor.return_value = mock_instance
 
-        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+        from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
             DockerSandboxAdapter,
         )
 
@@ -102,7 +102,7 @@ class TestMajor2DockerSandboxAdapter:
         assert not result.success
         assert "NameError" in result.exception
 
-    @patch("rlmkit.envs.sandbox.DockerExecutor")
+    @patch("rlmstudio.envs.sandbox.DockerExecutor")
     def test_execute_handles_timeout(self, MockExecutor):
         mock_instance = MagicMock()
         mock_instance.execute.return_value = {
@@ -112,7 +112,7 @@ class TestMajor2DockerSandboxAdapter:
         }
         MockExecutor.return_value = mock_instance
 
-        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+        from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
             DockerSandboxAdapter,
         )
 
@@ -123,9 +123,9 @@ class TestMajor2DockerSandboxAdapter:
         result = adapter.execute("while True: pass")
         assert result.timeout is True
 
-    @patch("rlmkit.envs.sandbox.DockerExecutor")
+    @patch("rlmstudio.envs.sandbox.DockerExecutor")
     def test_set_get_variable(self, MockExecutor):
-        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+        from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
             DockerSandboxAdapter,
         )
 
@@ -137,9 +137,9 @@ class TestMajor2DockerSandboxAdapter:
         assert adapter.get_variable("x") == 42
         assert adapter.get_variable("nonexistent") is None
 
-    @patch("rlmkit.envs.sandbox.DockerExecutor")
+    @patch("rlmstudio.envs.sandbox.DockerExecutor")
     def test_reset_clears_namespace(self, MockExecutor):
-        from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+        from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
             DockerSandboxAdapter,
         )
 
@@ -152,14 +152,14 @@ class TestMajor2DockerSandboxAdapter:
 
     def test_sandbox_factory_docker_type(self):
         """sandbox_factory should return DockerSandboxAdapter for 'docker' type."""
-        from rlmkit.infrastructure.sandbox.sandbox_factory import create_sandbox
+        from rlmstudio.infrastructure.sandbox.sandbox_factory import create_sandbox
 
-        with patch("rlmkit.envs.sandbox.DockerExecutor") as MockExecutor:
+        with patch("rlmstudio.envs.sandbox.DockerExecutor") as MockExecutor:
             MockExecutor.is_available.return_value = True
             MockExecutor.return_value = MagicMock()
 
             sandbox = create_sandbox(sandbox_type="docker")
-            from rlmkit.infrastructure.sandbox.docker_sandbox_adapter import (
+            from rlmstudio.infrastructure.sandbox.docker_sandbox_adapter import (
                 DockerSandboxAdapter,
             )
 
@@ -177,7 +177,7 @@ class TestMajor3AsyncPorts:
     def test_llm_port_has_complete_async(self):
         import inspect
 
-        from rlmkit.application.ports.llm_port import LLMPort
+        from rlmstudio.application.ports.llm_port import LLMPort
 
         assert hasattr(LLMPort, "complete_async")
         assert inspect.iscoroutinefunction(LLMPort.complete_async)
@@ -185,7 +185,7 @@ class TestMajor3AsyncPorts:
     def test_llm_port_has_complete_stream_async(self):
         import inspect
 
-        from rlmkit.application.ports.llm_port import LLMPort
+        from rlmstudio.application.ports.llm_port import LLMPort
 
         assert hasattr(LLMPort, "complete_stream_async")
         assert inspect.isasyncgenfunction(LLMPort.complete_stream_async)
@@ -193,7 +193,7 @@ class TestMajor3AsyncPorts:
     def test_sandbox_port_has_execute_async(self):
         import inspect
 
-        from rlmkit.application.ports.sandbox_port import SandboxPort
+        from rlmstudio.application.ports.sandbox_port import SandboxPort
 
         assert hasattr(SandboxPort, "execute_async")
         assert inspect.iscoroutinefunction(SandboxPort.execute_async)
@@ -201,7 +201,7 @@ class TestMajor3AsyncPorts:
     def test_litellm_adapter_has_complete_async(self):
         import inspect
 
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         assert hasattr(LiteLLMAdapter, "complete_async")
         assert inspect.iscoroutinefunction(LiteLLMAdapter.complete_async)
@@ -209,7 +209,7 @@ class TestMajor3AsyncPorts:
     def test_litellm_adapter_has_complete_stream_async(self):
         import inspect
 
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         assert hasattr(LiteLLMAdapter, "complete_stream_async")
         assert inspect.isasyncgenfunction(LiteLLMAdapter.complete_stream_async)
@@ -224,7 +224,7 @@ class TestMajor3AsyncPorts:
         """
         from types import SimpleNamespace
 
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="gpt-4o")
 
@@ -274,8 +274,8 @@ class TestMajor3AsyncPorts:
         """
         from types import SimpleNamespace
 
-        from rlmkit.application.dto import StreamChunk
-        from rlmkit.infrastructure.llm.litellm_adapter import LiteLLMAdapter
+        from rlmstudio.application.dto import StreamChunk
+        from rlmstudio.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 
         adapter = LiteLLMAdapter(model="gpt-4o")
 

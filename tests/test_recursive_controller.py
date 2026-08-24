@@ -2,9 +2,9 @@
 
 import pytest
 
-from rlmkit import RLM, BudgetExceeded, BudgetLimits, BudgetTracker, MockLLMClient, RLMConfig
-from rlmkit.config import ExecutionConfig
-from rlmkit.core.recursion import RecursiveController
+from rlmstudio import RLM, BudgetExceeded, BudgetLimits, BudgetTracker, MockLLMClient, RLMConfig
+from rlmstudio.config import ExecutionConfig
+from rlmstudio.core.recursion import RecursiveController
 
 # ---------------------------------------------------------------------------
 # Helpers

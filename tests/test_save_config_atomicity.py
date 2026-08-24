@@ -17,15 +17,15 @@ from unittest.mock import patch
 
 import pytest
 
-from rlmkit.server import dependencies
-from rlmkit.server.dependencies import AppState
+from rlmstudio.server import dependencies
+from rlmstudio.server.dependencies import AppState
 
 
 @pytest.fixture
 def isolated_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect _CONFIG_FILE to a temp location so tests never touch ~/.rlmkit."""
     config_path = tmp_path / "config.json"
-    monkeypatch.setattr(dependencies, "_RLMKIT_DIR", tmp_path)
+    monkeypatch.setattr(dependencies, "_STATE_DIR", tmp_path)
     monkeypatch.setattr(dependencies, "_CONFIG_FILE", config_path)
     return config_path
 
@@ -66,7 +66,7 @@ def test_save_config_is_atomic_under_simulated_crash(isolated_config: Path) -> N
     state.config.active_model = "claude-4"
 
     with patch(
-        "rlmkit.server.dependencies.os.replace",
+        "rlmstudio.server.dependencies.os.replace",
         side_effect=OSError("simulated abort"),
     ):
         state.save_config()  # save_config swallows exceptions; that's fine.
@@ -103,7 +103,7 @@ def test_save_config_cleans_up_temp_file_on_write_failure(
     before = {p.name for p in target_dir.iterdir()}
 
     with patch(
-        "rlmkit.server.dependencies.os.fsync",
+        "rlmstudio.server.dependencies.os.fsync",
         side_effect=OSError("ENOSPC: simulated disk full"),
     ):
         state.save_config()  # swallows the OSError
@@ -132,7 +132,7 @@ def test_save_config_cleans_up_temp_file_on_rename_failure(
     before = {p.name for p in target_dir.iterdir()}
 
     with patch(
-        "rlmkit.server.dependencies.os.replace",
+        "rlmstudio.server.dependencies.os.replace",
         side_effect=OSError("simulated abort"),
     ):
         state.save_config()
@@ -166,7 +166,7 @@ def test_save_config_uses_same_directory_for_temp(isolated_config: Path) -> None
         return real_named_tempfile(*args, **kwargs)
 
     state = AppState(load_from_disk=False)
-    with patch("rlmkit.server.dependencies.tempfile.NamedTemporaryFile", _capturing_tempfile):
+    with patch("rlmstudio.server.dependencies.tempfile.NamedTemporaryFile", _capturing_tempfile):
         state.save_config()
 
     assert captured_dirs, "save_config did not pass a dir= to NamedTemporaryFile"
