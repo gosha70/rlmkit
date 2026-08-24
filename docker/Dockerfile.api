@@ -107,6 +107,8 @@ COPY --chown=rlmstudio:rlmstudio docs/ /app/docs/
 WORKDIR /app
 USER rlmstudio
 
+# Metadata only — the actual bind comes from RLM_STUDIO_PORT (see CMD).
+# Docker cannot expand runtime env here, so this documents the default.
 EXPOSE 8000
 
 # Healthcheck hits the existing GET /health endpoint.
@@ -118,4 +120,10 @@ sys.exit(0)" || exit 1
 # tini is PID 1 so the uvicorn process gets clean SIGTERM propagation on
 # `docker stop` — important for SQLite WAL checkpointing.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["python", "-m", "rlmstudio.server", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form so RLM_STUDIO_HOST / RLM_STUDIO_PORT actually take effect: an
+# explicit --port on the command line beats the env-var default in argparse,
+# so hardcoding it here made those variables inert while the HEALTHCHECK below
+# still honoured them — change the port and the check probed a closed socket.
+# `exec` keeps the python process as tini's direct child so SIGTERM still
+# propagates cleanly (see the tini note above).
+CMD ["sh", "-c", "exec python -m rlmstudio.server --host \"${RLM_STUDIO_HOST}\" --port \"${RLM_STUDIO_PORT}\""]

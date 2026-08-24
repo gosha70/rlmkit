@@ -148,3 +148,40 @@ def test_browse_host_maps_wildcards_to_loopback(bind_host: str, expected: str) -
     so we hand the browser a loopback URL.
     """
     assert _browse_host(bind_host) == expected
+
+
+# ---------------------------------------------------------------------------
+# Bind defaults come from rlmstudio.branding, and the env vars win
+# ---------------------------------------------------------------------------
+
+
+def test_bind_defaults_come_from_branding_constants() -> None:
+    """The parser must not carry its own copies of the host/port literals."""
+    from rlmstudio.branding import DEFAULT_HOST, DEFAULT_PORT
+    from rlmstudio.cli.main import _build_parser
+
+    args = _build_parser().parse_args(["studio"])
+    assert args.host == DEFAULT_HOST
+    assert args.port == DEFAULT_PORT
+
+
+def test_env_overrides_bind_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RLM_STUDIO_HOST / _PORT drive the defaults — this is what the Docker
+    image relies on now that its CMD no longer hardcodes --port."""
+    import importlib
+
+    monkeypatch.setenv("RLM_STUDIO_HOST", "0.0.0.0")
+    monkeypatch.setenv("RLM_STUDIO_PORT", "9000")
+    main_mod = importlib.import_module("rlmstudio.cli.main")
+
+    args = main_mod._build_parser().parse_args(["studio"])
+    assert args.host == "0.0.0.0"
+    assert args.port == 9000
+
+
+def test_explicit_flags_still_beat_the_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RLM_STUDIO_PORT", "9000")
+    from rlmstudio.cli.main import _build_parser
+
+    args = _build_parser().parse_args(["studio", "--port", "7777"])
+    assert args.port == 7777

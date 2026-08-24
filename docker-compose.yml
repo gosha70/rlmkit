@@ -7,6 +7,8 @@
 #   docker compose up --build
 #
 # Backend:  http://localhost:8000  (health at /health)
+#           Set RLM_STUDIO_PORT in .env to move it; the published port,
+#           the container bind and both frontend URLs follow it.
 # Frontend: http://localhost:3000
 #
 # State persists to the `rlm-studio-data` named volume, mounted at
@@ -59,9 +61,9 @@ services:
       # loopback. Do not publish the port to a public interface without
       # a reverse proxy in front.
       RLM_STUDIO_HOST: 0.0.0.0
-      RLM_STUDIO_PORT: "8000"
+      RLM_STUDIO_PORT: "${RLM_STUDIO_PORT:-8000}"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${RLM_STUDIO_PORT:-8000}:${RLM_STUDIO_PORT:-8000}"
     volumes:
       # Persisted state: config, sessions, evaluations, telemetry.db,
       # api_keys.json fallback. See docs/OPERATIONS.md §2.
@@ -81,12 +83,12 @@ services:
         # Baked into the client bundle at build time. Browser requests
         # go to this URL — which is the host's localhost, not the
         # container network — because the browser is on the host.
-        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_API_URL: http://localhost:${RLM_STUDIO_PORT:-8000}
         # Address THIS container uses to reach the backend (compose network),
         # as opposed to the browser's localhost above. Passed at build time so
         # it is baked into the rewrite manifest, and again at runtime below so
         # route handlers pick it up.
-        INTERNAL_API_URL: http://backend:8000
+        INTERNAL_API_URL: http://backend:${RLM_STUDIO_PORT:-8000}
         NEXT_PUBLIC_RLM_STUDIO_PERF_UI: ${NEXT_PUBLIC_RLM_STUDIO_PERF_UI:-}
     image: rlm-studio-frontend:local
     container_name: rlm-studio-frontend
@@ -97,7 +99,7 @@ services:
       # host's localhost. This CANNOT be expressed with NEXT_PUBLIC_* —
       # Next inlines those at build time, so a runtime value is ignored and
       # the container proxies to itself (ECONNREFUSED 127.0.0.1:8000).
-      INTERNAL_API_URL: http://backend:8000
+      INTERNAL_API_URL: http://backend:${RLM_STUDIO_PORT:-8000}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

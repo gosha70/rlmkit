@@ -49,6 +49,12 @@ STATE_DIR_NAME = ".rlm-studio"
 LEGACY_STATE_DIR_NAMES: tuple[str, ...] = (".rlmkit",)
 """Older state-directory names; contents are copied forward on first boot."""
 
+DEFAULT_HOST = "127.0.0.1"
+"""Default bind address for the API server (override: ``<ENV_PREFIX>HOST``)."""
+
+DEFAULT_PORT = 8000
+"""Default bind port for the API server (override: ``<ENV_PREFIX>PORT``)."""
+
 STATE_DIR_ENV_SUFFIX = "DIR"
 """``<ENV_PREFIX>DIR`` overrides the state directory location."""
 
