@@ -6,7 +6,7 @@ Thank you for your interest in contributing to RLM Studio! This guide will help 
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11+
 - [uv](https://github.com/astral-sh/uv) for Python dependency management
 - Node.js 22+ (for the frontend)
 - Git

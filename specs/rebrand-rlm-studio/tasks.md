@@ -60,7 +60,7 @@ Execute in order on `feat/rebrand-rlm-studio`; one commit per phase; CI green be
 - [x] T8.1 `git rm debug_parsing.py` (or `git mv` to `scripts/dev/`); `.gitignore` += `build/`, `htmlcov/`, `frontend/out/`.
 
 ## Phase 9 — CI wheel-smoke + release workflow
-- [x] T9.1 `ci.yml` job `wheel-smoke` (FR-10), matrix 3.10/3.11/3.12, Node 22.
+- [x] T9.1 `ci.yml` job `wheel-smoke` (FR-10), matrix 3.11/3.12/3.13, Node 22.
 - [x] T9.2 `.github/workflows/release.yml` (FR-11): `v*` → PyPI, `v*-rc.*` → TestPyPI, `id-token: write`, no secrets.
 - [x] T9.3 AC-6 grep gate as a CI lint step.
 

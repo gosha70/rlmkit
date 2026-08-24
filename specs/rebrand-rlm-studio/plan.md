@@ -56,7 +56,7 @@ Implements `spec.md`. Branch: `feat/rebrand-rlm-studio` off `master`. Estimated 
 6. **Frontend brand + env** (FR-6): `frontend/src/**` strings, `package.json` name, `NEXT_PUBLIC_RLM_STUDIO_PERF_UI` (read both during the cycle), `next.config.ts` comments. `npm test && npm run build:bundle`.
 7. **Docs + logo** (FR-12): README install block → `pip install "rlm-studio[all]" && rlm-studio studio`; `RELEASING.md` bundle path `../src/rlmstudio/_ui/`; `docs/OPERATIONS.md` new env names, state dir, migration note; `SECURITY.md` supported versions; `CHANGELOG.md` `[Unreleased]` → "Changed — **BREAKING:** project renamed…" + Migration callout; `CLAUDE.md`/`AGENTS.md` paths.
 8. **Hygiene** (FR-9): `git rm debug_parsing.py` (or move to `scripts/dev/`), `.gitignore` additions.
-9. **CI wheel-smoke job** (FR-10) in `ci.yml` (matrix 3.10/3.11/3.12; needs Node 22 for the bundle).
+9. **CI wheel-smoke job** (FR-10) in `ci.yml` (matrix 3.11/3.12/3.13; needs Node 22 for the bundle).
 10. **`release.yml`** (FR-11) — written now, exercised in M3 with `v1.0.0-rc.1` after the owner configures the trusted publisher on TestPyPI/PyPI (manual, playbook `steps/04`).
 11. **GitHub rename + triage** (FR-15) — owner action after merge: rename repo, update local remotes, reply on #34/#37, close #38/#39/#41.
 

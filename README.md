@@ -12,7 +12,7 @@
 
 RLM Studio is a working implementation of the MIT [Recursive Language Models paper](https://arxiv.org/abs/2512.24601) (Zhang, Kraska, Khattab; official repo: [alexzhang13/rlm](https://github.com/alexzhang13/rlm)), extended in areas the original work does not address: side-by-side comparison of Direct / RAG / RLM across providers, persistent telemetry, step-by-step traces and replay, budget guardrails, and a one-command web UI. Formerly published as *RLMKit*.
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
 [![CI](https://github.com/gosha70/rlm-studio/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/gosha70/rlm-studio/actions/workflows/ci.yml)
 

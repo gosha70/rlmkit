@@ -44,7 +44,7 @@ spec_mode_justification: >
 - G1 New identity everywhere: distribution `rlm-studio`, import `rlmstudio`, console script `rlm-studio` (subcommands unchanged: `studio`, `version`), GitHub `gosha70/rlm-studio`, brand string "RLM Studio", logo renamed.
 - G2 Existing users of a source checkout keep working across the upgrade: env vars and the state directory migrate automatically for one release cycle.
 - G3 Release-grade extras: `studio` (server + file extraction), `eval`, `interop` (placeholder for `specs/interop-official-rlm`), `dev`; `all` = `studio,eval,interop` (no `dev`). Legacy Streamlit removed from the package.
-- G4 CI green including `security`; a new CI job builds the bundled wheel and smoke-tests `rlm-studio --help` + `import rlmstudio` on Python 3.10/3.11/3.12.
+- G4 CI green including `security`; a new CI job builds the bundled wheel and smoke-tests `rlm-studio --help` + `import rlmstudio` on Python 3.11/3.12/3.13.
 - G5 `release.yml`: on tag `v*` build bundle → copy to `_ui/` → `uv build` → publish via PyPI trusted publisher (OIDC); rc tags publish to TestPyPI. Optional: push sandbox image to GHCR.
 
 **Non-goals**
@@ -65,7 +65,7 @@ spec_mode_justification: >
 | FR-7 | Extras per G3. Delete only the **Streamlit-bound** files: `ui/app.py`, `ui/pages/`, `ui/components/`, `ui/session.py`, plus `ui/charts.py` (sole plotly user, unreferenced) — with their tests and coverage-omit entries. **Keep** `ui/services/` (`secret_store`, `profile_store`, … — imported by `server/app.py`, `server/routes/*`, `server/dependencies.py`, `application/services/provider_tester.py`) and `ui/data/providers_catalog.py` in place; relocating them out of `ui/` is v1.1 cleanup, not this feature. Remove `streamlit`, `plotly`, `gitpython`, `pillow` pins from `pyproject.toml` (re-run `pip-audit` — the CVE comments for those packages go away). |
 | FR-8 | `cryptography>=50.0.0`; dependabot #60/#61 content folded in or rebased; `security` job green. |
 | FR-9 | `debug_parsing.py` untracked (moved to `scripts/dev/` or deleted); `build/`, `htmlcov/`, `frontend/out/` in `.gitignore`. |
-| FR-10 | CI: new `wheel-smoke` job — `npm ci && npm run build:bundle`, copy to `_ui/`, `uv build`, install the wheel in a fresh venv per Python 3.10/3.11/3.12, run `rlm-studio --help`, `rlm-studio version`, `python -c "import rlmstudio; from rlmstudio import interact"`, and assert `_ui/index.html` is inside the wheel. |
+| FR-10 | CI: new `wheel-smoke` job — `npm ci && npm run build:bundle`, copy to `_ui/`, `uv build`, install the wheel in a fresh venv per Python 3.11/3.12/3.13, run `rlm-studio --help`, `rlm-studio version`, `python -c "import rlmstudio; from rlmstudio import interact"`, and assert `_ui/index.html` is inside the wheel. |
 | FR-11 | `.github/workflows/release.yml` per playbook `steps/04` "future state": tag `v*` → build → `pypa/gh-action-pypi-publish` with `id-token: write`; `v*-rc.*` → TestPyPI. No long-lived credentials. |
 | FR-12 | Docs: README, `docs/*`, `docs/hosts/*`, `CONTRIBUTING.md`, `SECURITY.md`, `RELEASING.md`, `AGENTS.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/*`, `CODE_OF_CONDUCT.md` renamed/updated; `docs/RLMKit_Logo.png` → `docs/RLM_Studio_Logo.png`. |
 | FR-13 | Prompt YAML/JSON files contain **no** "RLMKit" mentions (verified); only `prompts/README.md` import examples and the package-resource strings in `prompts/templates.py` (`files("rlmkit.prompts")` ×3) change. Prompt template *names/keys* unchanged (cross-module constants). |
@@ -86,7 +86,7 @@ spec_mode_justification: >
 
 ## 5. Acceptance criteria
 - AC-1 Fresh clone: `uv sync --extra all && uv run pytest -n auto` green; `ruff`, `mypy`, `bandit`, `pip-audit` green.
-- AC-2 `uv build` wheel installs on 3.10/3.11/3.12; `rlm-studio --no-browser` serves `/studio` with the Dashboard and no console errors.
+- AC-2 `uv build` wheel installs on 3.11/3.12/3.13; `rlm-studio --no-browser` serves `/studio` with the Dashboard and no console errors.
 - AC-3 With `RLMKIT_PORT=8123` set and no `RLM_STUDIO_PORT`, the server binds 8123 and logs a deprecation warning once.
 - AC-4 With an existing `~/.rlmkit/` and no `~/.rlm-studio/`, first boot copies state; providers and telemetry appear unchanged in the UI.
 - AC-5 `docker compose up --build` boots both services; a Direct-mode chat completes.

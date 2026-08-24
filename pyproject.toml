@@ -7,7 +7,7 @@ name = "rlm-studio"
 version = "1.0.0"
 description = "RLM Studio — a workbench to measure whether Recursive Language Models beat Direct/RAG on your data, with any provider"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "RLM Studio Contributors"}
@@ -18,9 +18,9 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 dependencies = [
@@ -28,6 +28,9 @@ dependencies = [
     "pyyaml>=6.0",
     "psutil>=5.9.0",
     "cryptography>=50.0.0",  # CVE-2026-34073, CVE-2026-39892; vulnerable OpenSSL in wheels (48.0.1); PYSEC-2026-3552 (50.0.0)
+    # NOTE: litellm >= 1.98.0 imports typing.NotRequired at import time, which
+    # is Python 3.11+, even though its metadata still claims >=3.10. That is one
+    # of the reasons this project requires 3.11+ (see CHANGELOG).
     "litellm>=1.84.0",  # CVE-2026-35029, CVE-2026-35030 (1.83.0); GHSA-xqmj-j6mv-4862 proxy SSTI (1.83.7); CVE-2026-40217 / GHSA-wxxx-gvqv-xp7p custom-code-guardrail sandbox escape (1.83.11); auth bypass via host header injection (1.84.0) — proxy-only CVEs; RLMKit uses litellm as a library
     "aiohttp>=3.14.3",  # PYSEC-2026-3545/3546/3547 (3.14.3); CVE-2026-22815, CVE-2026-34513..34520, CVE-2026-34525 (3.13.4); TLS hostname override ignored on HTTPS connection reuse (3.14.1); DigestAuth credentials forwarded on cross-origin redirect (3.14.1)
     "msgpack>=1.2.1",  # OOB read / crash on Unpacker reuse after a caught error (transitive via litellm)
@@ -168,7 +171,7 @@ ignore = ["E501"]  # Line length (formatter handles)
 "src/rlmstudio/server/routes/*" = ["B008", "PT028"]  # Depends() in FastAPI route defaults; PT028: route functions named test_* are not pytest tests
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

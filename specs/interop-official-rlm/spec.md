@@ -32,7 +32,7 @@ RLM Studio's Compare matrix ranks `direct` / `rag` / `rlm` across providers, but
 - G1 New slot mode `rlm_official` selectable in Compare (matrix + unified requests) and in Chat provider config, executing the `rlms` library (`from rlm import RLM`) against the slot's provider/model.
 - G2 Same output contract as `RunRLMUseCase` (`RunResultDTO` with `TraceStep`s, tokens, cost, timing) so Traces, replay, Dashboard, telemetry store, ranking, judge, and JSONL export work unchanged.
 - G3 Studio budgets (wall-clock, max steps, token/cost caps) enforced around the engine even where `rlms` only exposes iteration limits.
-- G4 Optional extra `interop` (`rlms; python_version >= "3.11"`); a clear, classified "engine unavailable" outcome on 3.10 or when not installed; the frontend hides/disables the option when the backend reports it unavailable.
+- G4 Optional extra `interop` (`rlms`); a clear, classified "engine unavailable" outcome when it is not installed; the frontend hides/disables the option when the backend reports it unavailable.
 - G5 Provider mapping: `rlms` speaks OpenAI/Anthropic/OpenRouter/Portkey/vLLM natively; Studio maps its provider config to those clients where possible and otherwise routes through an OpenAI-compatible endpoint (LM Studio, vLLM, Ollama's OpenAI endpoint). Documented matrix of what works.
 
 **Non-goals**
@@ -55,14 +55,14 @@ RLM Studio's Compare matrix ranks `direct` / `rag` / `rlm` across providers, but
 
 ## 4. Constraints
 - Dependency rule: `domain` untouched except if a new value object is strictly required; `application` imports nothing from `infrastructure`/`server`. `RunResultDTO` (`application/dto.py:156`) is already the contract — no new domain port; the built-in `RunRLMUseCase` may be wrapped as an engine so all engines are peers behind `RLMEnginePort` (optional refactor, only if it simplifies dispatch).
-- **Dependency reality of `rlms` (verified on PyPI 2026-08-15):** `requires_python >= 3.11`; hard deps `anthropic>=0.75.0`, `google-genai>=1.56.0`, `openai>=2.14.0`, `portkey-ai>=2.1.0`, `pytest>=9.0.2` (a test framework as a runtime dep), `python-dotenv`, `requests`, `rich`. The `[interop]` extra must be resolvable together with `[studio]` (LiteLLM's own `openai`/`anthropic` pins) — verify in a fresh 3.11 venv before committing the extra; if unresolvable, ship interop as a separately documented `pip install rlm-studio[interop]` in its own venv and say so.
+- **Dependency reality of `rlms` (verified on PyPI 2026-08-15):** `requires_python >= 3.11` (now moot — the project floor is 3.11); hard deps `anthropic>=0.75.0`, `google-genai>=1.56.0`, `openai>=2.14.0`, `portkey-ai>=2.1.0`, `pytest>=9.0.2` (a test framework as a runtime dep), `python-dotenv`, `requests`, `rich`. The `[interop]` extra must be resolvable together with `[studio]` (LiteLLM's own `openai`/`anthropic` pins) — verify in a fresh 3.11 venv before committing the extra; if unresolvable, ship interop as a separately documented `pip install rlm-studio[interop]` in its own venv and say so.
 - No inline prompts (the engine's own prompts are the engine's; Studio passes none).
-- Python 3.10 remains supported for everything except this extra.
+- The project requires Python 3.11+ (see `specs/rebrand-rlm-studio`, CHANGELOG: litellm >= 1.98.0 is 3.11-only in practice), so `rlms`' own >=3.11 floor no longer needs a version marker.
 - Tests use a fake engine; exactly one `--runslow` test exercises real `rlms` on 3.11+ with a local OpenAI-compatible stub or a recorded fixture — no live API calls.
 
 ## 5. Acceptance criteria
 - AC-1 On 3.11 with `[interop]`, a Compare run `{openai/gpt-4o-mini, ollama/qwen} × {direct, rlm, rlm_official}` completes; each `rlm_official` slot has ≥1 `inspect`, ≥0 `subcall`, exactly 1 `final` step; ranking by cost/latency/TTFT/judge includes the slots.
-- AC-2 On 3.10 or without the extra: `/api/engines` reports unavailable with a reason; Compare/Chat with the mode return 400 + reason; frontend disables the option.
+- AC-2 Without the extra installed: `/api/engines` reports unavailable with a reason; Compare/Chat with the mode return 400 + reason; frontend disables the option.
 - AC-3 A `while True: pass` inside the engine's REPL is stopped by Studio's wall-clock budget and classified `timeout`.
 - AC-4 Trace/replay/Dashboard/telemetry pages render `rlm_official` runs without code changes beyond FR-7/FR-8.
 - AC-5 `git grep '"rlm_official"'` finds only the constants module(s) and tests.

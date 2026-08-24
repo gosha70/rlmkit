@@ -49,6 +49,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   ("does RLM beat Direct/RAG on your data, with your model?") with paper
   and official-repo attribution; `docs/OPERATIONS.md` §2.1a documents the
   upgrade path.
+- **BREAKING:** minimum Python is now **3.11** (was 3.10). `litellm >= 1.98.0`
+  — the adapter every LLM call goes through — imports `typing.NotRequired`
+  at import time, which is 3.11+, while still advertising `requires_python
+  >=3.10`; 1.99.0rc1 carries the same import, so it will not self-heal.
+  Pinning 3.10 users below litellm 1.98 would freeze them under future
+  litellm security fixes, and Python 3.10 reaches end-of-life in October
+  2026. CI, classifiers and docs now target 3.11 / 3.12 / 3.13.
 - Housekeeping: `debug_parsing.py` removed; `cryptography>=50.0.0`,
   `aiohttp>=3.14.3`, `pypdf>=6.15.0`, `gitpython>=3.1.58` floors
   (pip-audit clean); coverage omit list emptied.

@@ -38,7 +38,7 @@ Reuse: `RunConfigDTO`/`RunResultDTO` (`application/dto.py:156`), mode constants 
 3. **Fake engine + use case** (FR-4): `RunRLMOfficialUseCase` with budgets/classification; tests with `FakeRLMEngine` returning a scripted trajectory (happy path, error, timeout, budget breach).
 4. **Adapter** (FR-3): `rlms_adapter.py` — client factory from Studio provider config (openai/anthropic native; `openai_compatible` base_url for vLLM/LM Studio/Ollama; document what is unsupported), trajectory → `TraceStep` mapping, usage → tokens/cost, `is_available()` (import + version). One `--runslow` test on 3.11 against an OpenAI-compatible stub server (reuse existing test stubs if present in `tests/`).
 5. **Matrix + routes** (FR-5/6): dispatch, validation, `GET /api/engines`, 400 path; wiring in `dependencies.py`; e2e tests in `tests/e2e/test_api_endpoints.py`.
-6. **Extra** (FR-4): `interop = ["rlms>=0.1.3; python_version >= '3.11'"]`; `all` includes it; `uv lock`; CI matrix already runs 3.10–3.12 → 3.10 exercises the unavailable path, 3.11+ the available path (install extra only there).
+6. **Extra** (FR-4): `interop = ["rlms>=0.1.3"]`; `all` includes it; `uv lock`; CI matrix already runs 3.10–3.12 → 3.10 exercises the unavailable path, 3.11+ the available path (install extra only there).
 7. **Frontend** (FR-7): option + availability gating + badge; vitest for the picker and gating.
 8. **Telemetry + docs** (FR-8/9); CHANGELOG.
 
