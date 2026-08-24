@@ -54,15 +54,22 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Tag must match pyproject version
+      - name: Tag must match pyproject version EXACTLY
         run: |
           PY_VERSION="$(uv run --no-project python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
           TAG_VERSION="${{ steps.meta.outputs.version }}"
-          # rc tags: v1.0.0-rc.1 must match pyproject 1.0.0rc1 (PEP 440) or 1.0.0
-          NORMALIZED="$(echo "$TAG_VERSION" | sed -E 's/-rc\.?([0-9]+)/rc\1/')"
-          if [[ "$PY_VERSION" != "$NORMALIZED" && "$PY_VERSION" != "${TAG_VERSION%%-rc*}" ]]; then
-            echo "::error::tag ${TAG_VERSION} does not match pyproject version ${PY_VERSION}"; exit 1
+          # The uploaded artifact's version comes from pyproject, NOT from the
+          # tag. An approximate match here would let `v1.0.0-rc.1` upload a
+          # package called `1.0.0` — burning that version on the index and
+          # making a second rc impossible. So: exact match after PEP 440
+          # normalisation of the tag (v1.0.0-rc.1 -> 1.0.0rc1).
+          NORMALIZED="$(echo "$TAG_VERSION" | sed -E 's/-?rc\.?([0-9]+)$/rc\1/')"
+          if [[ "$PY_VERSION" != "$NORMALIZED" ]]; then
+            echo "::error::tag ${TAG_VERSION} (normalised: ${NORMALIZED}) does not match pyproject version ${PY_VERSION}."
+            echo "::error::Bump [project] version in pyproject.toml to ${NORMALIZED} and re-tag."
+            exit 1
           fi
+          echo "tag ${TAG_VERSION} == pyproject ${PY_VERSION} (normalised ${NORMALIZED})"
       - name: Build the bundled Studio UI (static export)
         run: |
           npm ci --prefix frontend
@@ -86,7 +93,13 @@ jobs:
           assert not [n for n in names if n.startswith("rlmkit/")], "legacy paths in wheel"
           ep = [n for n in names if n.endswith("entry_points.txt")][0]
           assert "rlm-studio = rlmstudio.cli.main:main" in z.read(ep).decode()
-          print("wheel OK:", whl)
+          # The artifact version is what actually lands on the index — assert it
+          # against pyproject (which the tag was already checked against above).
+          import os, re, tomllib
+          expected = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          built = re.match(r"rlm_studio-([^-]+)-", os.path.basename(whl)).group(1)
+          assert built == expected, f"built artifact version {built} != pyproject {expected}"
+          print("wheel OK:", whl, "version", built)
           PY
       - name: Fresh-venv smoke of the built wheel
         run: |

@@ -56,6 +56,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   Pinning 3.10 users below litellm 1.98 would freeze them under future
   litellm security fixes, and Python 3.10 reaches end-of-life in October
   2026. CI, classifiers and docs now target 3.11 / 3.12 / 3.13.
+- Release plumbing: `release.yml` requires the tag and the `pyproject.toml`
+  version to match exactly (normalising `v1.0.0-rc.1` → `1.0.0rc1`) and
+  re-checks the built wheel's version, so a release-candidate run cannot
+  upload — and permanently burn — the final release version on an index.
+  `pyproject.toml` carries `1.0.0rc1` until the release PR sets `1.0.0`.
 - Housekeeping: `debug_parsing.py` removed; `cryptography>=50.0.0`,
   `aiohttp>=3.14.3`, `pypdf>=6.15.0`, `gitpython>=3.1.58` floors
   (pip-audit clean); coverage omit list emptied.

@@ -11,6 +11,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+import rlmstudio
 from rlmstudio.server.dependencies import get_state
 
 pytestmark = [pytest.mark.e2e]
@@ -29,7 +30,9 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert data["version"] == "1.0.0"
+        # Assert the invariant (endpoint reports the installed package
+        # version), not a literal — otherwise every release bump breaks a test.
+        assert data["version"] == rlmstudio.__version__
         assert "uptime_seconds" in data
         assert isinstance(data["uptime_seconds"], int | float)
 

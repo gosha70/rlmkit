@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rlm-studio"
-version = "1.0.0"
+version = "1.0.0rc1"
 description = "RLM Studio — a workbench to measure whether Recursive Language Models beat Direct/RAG on your data, with any provider"
 readme = "README.md"
 requires-python = ">=3.11"
